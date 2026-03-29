@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="theme-color" content="#0a0a2a">
 <title>EuAqui — Sua rede, seu mundo</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" crossorigin="anonymous" onerror="document.body.innerHTML='<div style=\"display:flex;align-items:center;justify-content:center;height:100vh;color:#00ffcc;font-family:monospace;text-align:center;\">⚠ Sem conexão com internet.<br>Verifique sua rede e recarregue a página.</div>'"></script>
-<script>window.addEventListener("error",function(e){if(e.target&&e.target.src&&e.target.src.includes("supabase")){var s=document.createElement("script");s.src="https://unpkg.com/@supabase/supabase-js@2";document.head.appendChild(s);}},true);</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link href="https://fonts.googleapis.com/css2?family=VT323&family=Silkscreen:wght@400;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -808,11 +807,6 @@ let cachedPosts={},cachedPostIds=new Set(),lastFeedLoad=0;
 const CACHE_TTL=60000;
 
 // ===== DB — iniciado imediatamente (SDK já está no <head>) =====
-// Inicializa Supabase (SDK já carregado pelo CDN no <head>)
-if(!window.supabase){
-  document.getElementById('loading-screen').innerHTML='<div style="color:#ff3366;font-family:VT323,monospace;font-size:24px;text-align:center;padding:40px;">⚠ SDK Supabase não carregou.<br>Verifique sua conexão e recarregue.</div>';
-  throw new Error('Supabase SDK not loaded');
-}
 const {createClient} = window.supabase;
 const db = createClient(SB_URL, SB_KEY);
 
@@ -1567,6 +1561,10 @@ async function loadFriendsPage(){
         <div class="friend-act"><button class="fbtn accept" onclick="sendFriendReq('${f.follower_id}')">+ Amigo</button></div>
       </div>`).join(''):'<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhum seguidor ainda</div>';
   }
+  }catch(e){
+    const list=document.getElementById('friends-list');
+    if(list)list.innerHTML='<div style="text-align:center;padding:30px;color:var(--neon-pink);font-size:12px;">Erro ao carregar. Execute o SQL do schema.<br><small>'+e.message+'</small></div>';
+  }
 }
 function openFindFriends(){openM('m-find-friends');document.getElementById('ff-search').focus();}
 async function searchFriends(){
@@ -1895,7 +1893,6 @@ async function updateLevel(){
   document.getElementById('lvl-xp').textContent=xp+' XP';
   const pct=Math.min(100,((xp-lvl.min)/(lvl.max-lvl.min+1))*100);
   document.getElementById('xpfill').style.width=pct+'%';
-  }catch(e){list.innerHTML='<div style="text-align:center;padding:30px;color:var(--neon-pink);font-size:12px;">Erro: '+e.message+'<br>Execute o SQL do schema no Supabase.</div>';}
 }
 
 // ===== VALIDATION =====
