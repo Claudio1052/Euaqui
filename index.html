@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="UTF-8"> 
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>EuAqui — Sua rede, seu mundo</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -1439,6 +1439,9 @@ nav {
       <div style="text-align:center;margin-top:16px;">
         <button style="background:none;border:none;color:var(--text-muted);font-size:11px;cursor:pointer;font-family:'Space Mono',monospace;" onclick="showForgotPassword()">Esqueci minha senha</button>
       </div>
+      <div id="supabase-tip" style="margin-top:16px;background:rgba(255,204,0,0.07);border:1px solid rgba(255,204,0,0.2);border-radius:8px;padding:10px 12px;font-size:10px;color:var(--neon-yellow);line-height:1.6;display:none;">
+        💡 <strong>Dica:</strong> Para OAuth (Google/GitHub) funcionar, configure os providers em <strong>Supabase → Authentication → Providers</strong> e adicione a URL de redirecionamento. Para desativar confirmação de email, vá em <strong>Auth → Settings → Email → Confirm email</strong>.
+      </div>
     </div>
 
     <!-- REGISTER FORM -->
@@ -1772,7 +1775,7 @@ nav {
 // ===== SUPABASE INIT =====
 const { createClient } = window.supabase;
 const SUPABASE_URL = 'https://gpustnmwxlolgyevjjtf.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdwdXN0bm13eGxvbGd5ZXZqanRmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NDMyMDksImV4cCI6MjA5MDMxOTIwOX0.0-8H5lQkbyholETlTyvfhmUnOOQKY7678hLCCLtjaN4';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdwdXN0bm13eGxvbGd5ZXZqanRmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NDMyMDksImV4cCI6MjA5MDMxOTIwOX0.0-8H5lQkbyholETlTyvfhmUnOOQKY7678hLCCLtjaNAh';
 const db = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let currentUser = null;
@@ -1862,8 +1865,23 @@ async function handleLogin() {
   const password = document.getElementById('login-password').value;
   if (!email || !password) return showAuthError('Preencha todos os campos');
 
+  const btn = document.querySelector('#form-login .auth-submit');
+  btn.textContent = '⏳ ENTRANDO...';
+  btn.disabled = true;
+
   const { error } = await db.auth.signInWithPassword({ email, password });
-  if (error) showAuthError(error.message);
+
+  btn.textContent = '▶ ENTRAR NO SISTEMA';
+  btn.disabled = false;
+
+  if (error) {
+    const msgs = {
+      'Invalid login credentials': 'Email ou senha incorretos',
+      'Email not confirmed': 'Confirme seu email antes de entrar',
+      'Too many requests': 'Muitas tentativas. Aguarde alguns minutos.',
+    };
+    showAuthError(msgs[error.message] || error.message);
+  }
 }
 
 async function handleRegister() {
@@ -1871,34 +1889,81 @@ async function handleRegister() {
   const username = document.getElementById('reg-username').value.trim().toLowerCase();
   const email = document.getElementById('reg-email').value.trim();
   const password = document.getElementById('reg-password').value;
+  const btn = document.querySelector('#form-register .auth-submit');
 
   if (!name || !username || !email || !password) return showAuthError('Preencha todos os campos');
-  if (password.length < 6) return showAuthError('Senha muito curta');
+  if (!/^[a-z0-9_]{3,20}$/.test(username)) return showAuthError('Username inválido: use letras, números e _ (3-20 chars)');
+  if (password.length < 6) return showAuthError('Senha mínima: 6 caracteres');
 
-  const { data, error } = await db.auth.signUp({
-    email, password,
-    options: { data: { full_name: name, username } }
-  });
-  if (error) return showAuthError(error.message);
+  btn.textContent = '⏳ CRIANDO CONTA...';
+  btn.disabled = true;
 
-  if (data.user) {
-    await db.from('profiles').upsert({
-      id: data.user.id,
-      username,
-      full_name: name,
-      email,
-      avatar_url: `https://api.dicebear.com/7.x/pixel-art/svg?seed=${username}`,
-      status_message: '✨ Novo por aqui!',
-      theme: 'cyber'
+  try {
+    // Verifica se username já existe
+    const { data: existing } = await db.from('profiles').select('id').eq('username', username).maybeSingle();
+    if (existing) {
+      btn.textContent = '✦ CRIAR CONTA';
+      btn.disabled = false;
+      return showAuthError('Este @username já está em uso');
+    }
+
+    const { data, error } = await db.auth.signUp({
+      email, password,
+      options: { data: { full_name: name, username } }
     });
-    showToast('Conta criada com sucesso! 🎉', 'success');
+
+    if (error) {
+      btn.textContent = '✦ CRIAR CONTA';
+      btn.disabled = false;
+      // Traduz erros comuns
+      const msgs = {
+        'User already registered': 'Este email já está cadastrado',
+        'Password should be at least 6 characters': 'Senha mínima: 6 caracteres',
+        'Unable to validate email address: invalid format': 'Email inválido',
+        'Signup requires a valid password': 'Senha inválida',
+      };
+      return showAuthError(msgs[error.message] || error.message);
+    }
+
+    if (data.user) {
+      const { error: profileError } = await db.from('profiles').upsert({
+        id: data.user.id,
+        username,
+        full_name: name,
+        email,
+        avatar_url: `https://api.dicebear.com/7.x/pixel-art/svg?seed=${username}`,
+        status_message: '✨ Novo por aqui!',
+        theme: 'cyber',
+        created_at: new Date().toISOString()
+      });
+
+      if (profileError) console.warn('Profile upsert warning:', profileError.message);
+
+      // Se confirmação de email desativada no Supabase, faz login direto
+      if (data.session) {
+        showToast('Conta criada! Bem-vindo! 🎉', 'success');
+      } else {
+        showToast('Conta criada! Verifique seu email para confirmar. 📧', 'success');
+        document.getElementById('auth-error').textContent = '📧 Verifique sua caixa de entrada para confirmar o email.';
+        document.getElementById('auth-error').style.color = 'var(--neon-cyan)';
+        document.getElementById('auth-error').style.borderColor = 'rgba(0,255,204,0.3)';
+        document.getElementById('auth-error').classList.add('show');
+      }
+    }
+  } catch(e) {
+    btn.textContent = '✦ CRIAR CONTA';
+    btn.disabled = false;
+    showAuthError('Erro inesperado: ' + e.message);
   }
+
+  btn.textContent = '✦ CRIAR CONTA';
+  btn.disabled = false;
 }
 
 async function handleOAuth(provider) {
   const { error } = await db.auth.signInWithOAuth({
     provider,
-    options: { redirectTo: window.location.origin }
+    options: { redirectTo: window.location.href.split('?')[0] }
   });
   if (error) showAuthError(error.message);
 }
@@ -1906,7 +1971,12 @@ async function handleOAuth(provider) {
 function showAuthError(msg) {
   const el = document.getElementById('auth-error');
   el.textContent = '⚠ ' + msg;
+  el.style.color = '';
+  el.style.borderColor = '';
   el.classList.add('show');
+  // Show Supabase tip after any error
+  const tip = document.getElementById('supabase-tip');
+  if (tip) tip.style.display = 'block';
 }
 
 async function handleLogout() {
@@ -1926,23 +1996,44 @@ function showForgotPassword() {
 // ===== PROFILE =====
 async function loadUserProfile() {
   if (!currentUser) return;
-  const { data } = await db.from('profiles').select('*').eq('id', currentUser.id).single();
+
+  const { data, error } = await db.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
+
   if (data) {
     currentProfile = data;
-  } else {
-    const username = currentUser.user_metadata?.username || currentUser.email?.split('@')[0] || 'user';
-    const newProfile = {
-      id: currentUser.id,
-      username,
-      full_name: currentUser.user_metadata?.full_name || username,
-      email: currentUser.email,
-      avatar_url: `https://api.dicebear.com/7.x/pixel-art/svg?seed=${username}`,
-      status_message: '✨ Novo por aqui!',
-      theme: 'cyber'
-    };
-    await db.from('profiles').upsert(newProfile);
-    currentProfile = newProfile;
+    return;
   }
+
+  // Cria perfil automaticamente (OAuth users ou signup sem confirmação)
+  const meta = currentUser.user_metadata || {};
+  // Gera username único a partir do email ou nome
+  let baseUsername = (meta.username || meta.user_name || meta.name || currentUser.email?.split('@')[0] || 'user')
+    .toLowerCase().replace(/[^a-z0-9_]/g, '_').substring(0, 18);
+
+  // Garante unicidade
+  let username = baseUsername;
+  let suffix = 1;
+  while (true) {
+    const { data: exists } = await db.from('profiles').select('id').eq('username', username).maybeSingle();
+    if (!exists) break;
+    username = baseUsername + suffix++;
+  }
+
+  const avatarFromOAuth = meta.avatar_url || meta.picture || null;
+  const newProfile = {
+    id: currentUser.id,
+    username,
+    full_name: meta.full_name || meta.name || username,
+    email: currentUser.email,
+    avatar_url: avatarFromOAuth || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${username}`,
+    status_message: '✨ Novo por aqui!',
+    theme: 'cyber',
+    created_at: new Date().toISOString()
+  };
+
+  const { error: upsertError } = await db.from('profiles').upsert(newProfile);
+  if (upsertError) console.warn('Profile create warning:', upsertError.message);
+  currentProfile = newProfile;
 }
 
 function updateSidebarUser() {
@@ -2788,6 +2879,7 @@ async function ensureTables() {
   // This is just a note for the user
 }
 </script>
+
 
 </body>
 </html>
