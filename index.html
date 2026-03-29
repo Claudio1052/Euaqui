@@ -420,6 +420,133 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(10,1
   .auth-card{padding:24px 18px;}
   .alogo{font-size:46px;}
 }
+
+/* ===== ABAS PRINCIPAIS (Friends / Communities / Notifications) ===== */
+.page-tabs{display:flex;gap:0;background:rgba(10,10,42,.9);border-bottom:2px solid var(--border-glow);position:sticky;top:var(--nav-h);z-index:100;overflow-x:auto;scrollbar-width:none;}
+.page-tabs::-webkit-scrollbar{display:none;}
+.ptab{flex-shrink:0;padding:12px 18px;font-family:'Silkscreen',monospace;font-size:10px;letter-spacing:1px;color:var(--text-muted);cursor:pointer;border:none;background:transparent;border-bottom:3px solid transparent;transition:all .2s;white-space:nowrap;}
+.ptab:hover{color:var(--text-light);}
+.ptab.active{color:var(--neon-cyan);border-bottom-color:var(--neon-cyan);}
+.tab-panel{display:none;padding:20px 0;}
+.tab-panel.active{display:block;}
+
+/* ===== COMUNIDADES ===== */
+.comm-header{height:160px;background:linear-gradient(135deg,var(--bg-mid),var(--bg-deep));border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:70px;margin-bottom:16px;position:relative;overflow:hidden;}
+.comm-header::before{content:'';position:absolute;inset:0;background:repeating-linear-gradient(135deg,transparent,transparent 20px,rgba(0,255,204,.02) 20px,rgba(0,255,204,.02) 21px);}
+.comm-banner-info{padding:0 4px 16px;}
+.comm-actions-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px;}
+.comm-stat-row{display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap;}
+.comm-stat-box{background:var(--glass);border:1px solid var(--border-glow);border-radius:8px;padding:10px 16px;text-align:center;flex:1;min-width:80px;}
+.comm-stat-n{font-family:'VT323',monospace;font-size:26px;color:var(--neon-cyan);}
+.comm-stat-l{font-size:9px;color:var(--text-muted);letter-spacing:1px;text-transform:uppercase;}
+.comm-members-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:20px;}
+.cmember{display:flex;align-items:center;gap:8px;background:var(--glass);border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:10px;}
+.cmember-av{width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid rgba(0,255,204,.2);}
+.cmember-name{font-family:'Silkscreen',monospace;font-size:9px;color:var(--text-light);}
+.cmember-role{font-size:9px;color:var(--text-muted);}
+.comm-tab-content{min-height:200px;}
+
+/* ===== CHAT COMPLETO ===== */
+.chat-page-wrap{display:grid;grid-template-columns:280px 1fr;height:calc(100vh - var(--nav-h));overflow:hidden;margin:-16px -20px;}
+.chat-sidebar{background:rgba(10,10,42,.8);border-right:1px solid var(--border-glow);display:flex;flex-direction:column;overflow:hidden;}
+.chat-sb-hdr{padding:14px;border-bottom:1px solid var(--border-glow);display:flex;align-items:center;justify-content:space-between;}
+.chat-sb-title{font-family:'Silkscreen',monospace;font-size:12px;color:var(--neon-cyan);}
+.chat-sb-list{flex:1;overflow-y:auto;}
+.ci{display:flex;align-items:center;gap:9px;padding:12px 14px;cursor:pointer;transition:background .15s;border-bottom:1px solid rgba(255,255,255,.03);position:relative;}
+.ci:hover{background:rgba(255,255,255,.03);}
+.ci.active{background:rgba(0,255,204,.06);}
+.ci-av{width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid rgba(0,255,204,.15);flex-shrink:0;font-size:20px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.06);}
+.ci-info{flex:1;min-width:0;}
+.ci-name{font-family:'Silkscreen',monospace;font-size:10px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ci-last{font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;}
+.ci-unread{background:var(--neon-pink);color:#fff;font-size:9px;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 4px;flex-shrink:0;}
+.chat-window{display:flex;flex-direction:column;background:var(--bg-deep);}
+.chat-win-hdr{padding:12px 16px;border-bottom:1px solid var(--border-glow);display:flex;align-items:center;gap:12px;background:rgba(10,10,42,.9);flex-shrink:0;}
+.chat-win-av{width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid var(--border-glow);font-size:18px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.06);flex-shrink:0;}
+.chat-win-name{font-family:'Silkscreen',monospace;font-size:12px;color:var(--neon-cyan);}
+.chat-win-status{font-size:10px;color:var(--text-muted);}
+.msgs-area{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px;}
+.msg-date-sep{text-align:center;font-size:10px;color:var(--text-muted);margin:8px 0;font-family:'VT323',monospace;font-size:14px;}
+.mb{max-width:75%;display:flex;flex-direction:column;}
+.mb.sent{align-self:flex-end;align-items:flex-end;}
+.mb.recv{align-self:flex-start;align-items:flex-start;}
+.mb-bubble{padding:9px 14px;border-radius:14px;font-size:12px;line-height:1.5;word-break:break-word;}
+.mb.sent .mb-bubble{background:linear-gradient(135deg,var(--neon-pink),var(--neon-purple));color:#fff;border-bottom-right-radius:3px;}
+.mb.recv .mb-bubble{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08);color:var(--text-light);border-bottom-left-radius:3px;}
+.mb-media{max-width:220px;border-radius:10px;overflow:hidden;margin-bottom:3px;cursor:pointer;}
+.mb-media img{width:100%;display:block;}
+.mb-media video{width:100%;display:block;}
+.mb-time{font-size:9px;color:var(--text-muted);margin-top:3px;font-family:'VT323',monospace;font-size:12px;}
+.msg-in-bar{padding:10px 14px;border-top:1px solid var(--border-glow);background:rgba(10,10,42,.95);display:flex;gap:8px;align-items:flex-end;flex-shrink:0;}
+.msg-attach-btn{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:var(--text-muted);width:36px;height:36px;border-radius:8px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0;}
+.msg-attach-btn:hover{color:var(--neon-cyan);border-color:var(--border-glow);}
+.msg-in{flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:20px;padding:9px 14px;color:var(--text-light);font-family:'Space Mono',monospace;font-size:12px;outline:none;resize:none;max-height:100px;overflow-y:auto;transition:border-color .2s;line-height:1.5;}
+.msg-in:focus{border-color:var(--border-glow);}
+.msg-snd{background:linear-gradient(135deg,var(--neon-pink),var(--neon-purple));border:none;color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0;}
+.msg-snd:hover{transform:scale(1.1);}
+.msg-attach-prev{padding:6px 14px 0;display:flex;gap:6px;flex-wrap:wrap;}
+.map{position:relative;width:70px;height:70px;border-radius:8px;overflow:hidden;border:1px solid var(--border-glow);}
+.map img,.map video{width:100%;height:100%;object-fit:cover;}
+.map-rm{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.7);border:none;color:#fff;width:18px;height:18px;border-radius:50%;cursor:pointer;font-size:10px;display:flex;align-items:center;justify-content:center;}
+.chat-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px;color:var(--text-muted);}
+.chat-empty-icon{font-size:60px;opacity:.3;}
+.chat-empty-txt{font-family:'VT323',monospace;font-size:22px;}
+
+/* ===== PERFIL — NOVA ABA ===== */
+.profile-page-tabs{display:flex;border-bottom:1px solid var(--border-glow);margin-bottom:16px;overflow-x:auto;scrollbar-width:none;}
+.profile-page-tabs::-webkit-scrollbar{display:none;}
+.pptab{padding:10px 16px;font-family:'Silkscreen',monospace;font-size:9px;letter-spacing:1px;color:var(--text-muted);cursor:pointer;border:none;background:transparent;border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap;flex-shrink:0;}
+.pptab.active{color:var(--neon-cyan);border-bottom-color:var(--neon-cyan);}
+.profile-tab-panel{display:none;}
+.profile-tab-panel.active{display:block;}
+.edit-section{background:var(--glass);border:1px solid var(--border-glow);border-radius:12px;padding:20px;margin-bottom:16px;}
+.edit-section-title{font-family:'Silkscreen',monospace;font-size:10px;color:var(--neon-yellow);letter-spacing:2px;margin-bottom:14px;}
+.avatar-picker-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;}
+.av-pick-item{width:100%;aspect-ratio:1;border-radius:50%;border:2px solid rgba(255,255,255,.1);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:26px;background:rgba(255,255,255,.04);transition:all .2s;}
+.av-pick-item:hover,.av-pick-item.sel{border-color:var(--neon-cyan);background:rgba(0,255,204,.1);transform:scale(1.08);}
+.av-pick-item img{width:100%;height:100%;border-radius:50%;object-fit:cover;}
+.av-current{width:90px;height:90px;border-radius:50%;border:3px solid var(--neon-cyan);margin:0 auto 12px;display:flex;align-items:center;justify-content:center;font-size:46px;background:rgba(255,255,255,.06);overflow:hidden;box-shadow:0 0 20px rgba(0,255,204,.25);}
+.av-current img{width:100%;height:100%;object-fit:cover;}
+
+/* ===== NOTIFICAÇÕES ===== */
+.notif-group-title{font-family:'Silkscreen',monospace;font-size:9px;color:var(--text-muted);letter-spacing:2px;padding:10px 0 6px;border-bottom:1px solid rgba(255,255,255,.05);margin-bottom:8px;}
+.notif-empty{text-align:center;padding:60px 20px;color:var(--text-muted);}
+.notif-empty-icon{font-size:48px;margin-bottom:12px;}
+.notif-empty-txt{font-family:'VT323',monospace;font-size:22px;}
+.ni{display:flex;align-items:flex-start;gap:10px;padding:12px;border-radius:8px;margin-bottom:6px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.05);cursor:pointer;transition:all .2s;}
+.ni:hover{background:rgba(255,255,255,.05);}
+.ni.unrd{border-color:rgba(0,255,204,.2);background:rgba(0,255,204,.03);}
+.ni-icon{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;background:rgba(255,255,255,.06);}
+.ni-body{flex:1;min-width:0;}
+.ni-txt{font-size:11px;color:var(--text-light);line-height:1.4;}
+.ni-time{font-family:'VT323',monospace;font-size:13px;color:var(--text-muted);margin-top:2px;}
+.ni-actions{display:flex;gap:6px;margin-top:6px;}
+.ni-act-btn{padding:4px 10px;border-radius:5px;font-size:9px;cursor:pointer;font-family:'Space Mono',monospace;border:none;transition:all .2s;}
+.ni-act-acc{background:rgba(0,255,204,.15);color:var(--neon-cyan);border:1px solid var(--border-glow);}
+.ni-act-rej{background:rgba(255,51,102,.1);color:var(--neon-pink);border:1px solid rgba(255,51,102,.2);}
+
+/* ===== RESPONSIVO GLOBAL ===== */
+@media(max-width:900px){
+  .chat-page-wrap{grid-template-columns:1fr;}
+  .chat-sidebar{display:none;position:fixed;top:0;left:0;width:280px;height:100vh;z-index:200;transform:translateX(-100%);transition:transform .3s;}
+  .chat-sidebar.mob-open{display:flex;transform:translateX(0);}
+  .chat-window{height:calc(100vh - var(--nav-h) - 65px);}
+}
+@media(max-width:768px){
+  .page-tabs{padding:0 4px;}
+  .ptab{padding:10px 12px;font-size:9px;}
+  .avatar-picker-grid{grid-template-columns:repeat(5,1fr);}
+  .comm-members-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));}
+  .comm-header{height:120px;font-size:50px;}
+  .comm-stat-row{gap:8px;}
+  .chat-page-wrap{margin:-12px;}
+}
+@media(max-width:480px){
+  .avatar-picker-grid{grid-template-columns:repeat(4,1fr);}
+  .comm-stat-row{grid-template-columns:1fr 1fr;}
+  .comm-stat-row{display:grid;}
+  .ptab{padding:9px 10px;font-size:8px;}
+}
 </style>
 </head>
 <body>
@@ -579,55 +706,116 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(10,1
 
     <!-- FRIENDS -->
     <div class="page" id="page-friends">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-        <h2 style="font-family:'Silkscreen',monospace;font-size:16px;color:var(--neon-cyan);">👥 AMIGOS</h2>
-        <button class="post-btn" onclick="openFindFriends()">+ Encontrar Amigos</button>
+      <div class="page-tabs" id="friends-page-tabs">
+        <button class="ptab active" data-tab="fl-friends" onclick="switchPageTab('friends',this)">👥 Amigos</button>
+        <button class="ptab" data-tab="fl-requests" onclick="switchPageTab('friends',this)">📩 Solicitações <span id="freq-badge" style="display:none;background:var(--neon-pink);color:#fff;font-size:9px;padding:1px 5px;border-radius:8px;margin-left:4px;">0</span></button>
+        <button class="ptab" data-tab="fl-following" onclick="switchPageTab('friends',this)">➕ Seguindo</button>
+        <button class="ptab" data-tab="fl-followers" onclick="switchPageTab('friends',this)">🌟 Seguidores</button>
+        <button class="ptab" data-tab="fl-find" onclick="switchPageTab('friends',this)">🔍 Encontrar</button>
       </div>
-      <div class="ftabs" style="margin-bottom:14px;">
-        <button class="ftab active" onclick="switchFriendTab('friends',this)">Amigos</button>
-        <button class="ftab" onclick="switchFriendTab('requests',this)">Solicitações</button>
-        <button class="ftab" onclick="switchFriendTab('following',this)">Seguindo</button>
-        <button class="ftab" onclick="switchFriendTab('followers',this)">Seguidores</button>
+      <div class="tab-panel active" id="fl-friends">
+        <div id="friends-list"></div>
       </div>
-      <div id="friends-list"></div>
+      <div class="tab-panel" id="fl-requests">
+        <div id="requests-list"></div>
+      </div>
+      <div class="tab-panel" id="fl-following">
+        <div id="following-list"></div>
+      </div>
+      <div class="tab-panel" id="fl-followers">
+        <div id="followers-list"></div>
+      </div>
+      <div class="tab-panel" id="fl-find">
+        <div style="margin:16px 0;">
+          <input class="ainput" type="text" id="ff-inline-search" placeholder="🔍 Buscar por nome ou @usuário..." oninput="searchFriendsInline()" style="margin-bottom:12px;">
+          <div id="ff-inline-results"></div>
+        </div>
+      </div>
     </div>
 
     <!-- COMMUNITIES -->
     <div class="page" id="page-communities">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-        <h2 style="font-family:'Silkscreen',monospace;font-size:16px;color:var(--neon-cyan);">🏘 COMUNIDADES</h2>
-        <button class="post-btn" onclick="openCreateComm()">+ Criar Comunidade</button>
+      <div class="page-tabs" id="comm-page-tabs">
+        <button class="ptab active" data-tab="cm-all" onclick="switchPageTab('communities',this)">🌍 Todas</button>
+        <button class="ptab" data-tab="cm-mine" onclick="switchPageTab('communities',this)">⭐ Minhas</button>
+        <button class="ptab" data-tab="cm-create" onclick="switchPageTab('communities',this)">✦ Criar</button>
       </div>
-      <div class="ftabs">
-        <button class="ftab active" onclick="switchCommTab('all',this)">Todas</button>
-        <button class="ftab" onclick="switchCommTab('mine',this)">Minhas</button>
+      <div class="tab-panel active" id="cm-all">
+        <div id="comm-grid-all" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-top:4px;"></div>
       </div>
-      <div id="comm-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:14px;"></div>
+      <div class="tab-panel" id="cm-mine">
+        <div id="comm-grid-mine" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-top:4px;"></div>
+      </div>
+      <div class="tab-panel" id="cm-create">
+        <div class="edit-section" style="max-width:500px;margin-top:4px;">
+          <div class="edit-section-title">✦ NOVA COMUNIDADE</div>
+          <div class="igrp"><label class="ilbl">Nome</label><input class="ainput" type="text" id="cm-name" placeholder="Nome da comunidade" oninput="genSlug()"></div>
+          <div class="igrp"><label class="ilbl">Slug / URL</label><input class="ainput" type="text" id="cm-slug" placeholder="slug-da-comunidade"></div>
+          <div class="igrp"><label class="ilbl">Descrição</label><textarea class="ainput" id="cm-desc" rows="3" maxlength="300" placeholder="Sobre a comunidade..." style="resize:none;"></textarea></div>
+          <div class="igrp"><label class="ilbl">Emoji / Ícone</label><input class="ainput" type="text" id="cm-icon" placeholder="🏘" maxlength="4" style="font-size:26px;text-align:center;width:80px;"></div>
+          <div class="igrp"><label class="ilbl">Visibilidade</label>
+            <select class="ainput" id="cm-vis" style="cursor:pointer;">
+              <option value="public">🌍 Pública</option>
+              <option value="private">🔒 Privada</option>
+            </select>
+          </div>
+          <button class="asubmit" onclick="createCommunity()">✦ CRIAR COMUNIDADE</button>
+        </div>
+      </div>
     </div>
 
     <!-- MESSAGES -->
     <div class="page" id="page-messages">
-      <div class="chat-wrap" style="margin:-16px -20px;">
-        <div class="chat-list-side" id="chat-side">
-          <div class="chat-hdr">💬 Mensagens</div>
-          <div class="chat-search"><input class="ainput" type="text" placeholder="Buscar..." style="margin-top:8px;font-size:11px;" oninput="filterChats(this.value)"></div>
-          <div id="chat-list"></div>
+      <div class="chat-page-wrap">
+        <div class="chat-sidebar" id="chat-sidebar">
+          <div class="chat-sb-hdr">
+            <span class="chat-sb-title">💬 Mensagens</span>
+            <button class="tbtn" onclick="openFindFriends()" style="font-size:11px;">+ Nova</button>
+          </div>
+          <div style="padding:8px 12px;">
+            <input class="ainput" type="text" placeholder="Buscar conversa..." style="font-size:11px;" oninput="filterChats(this.value)">
+          </div>
+          <div class="chat-sb-list" id="chat-list"></div>
         </div>
-        <div class="chat-main" id="chat-main">
-          <div class="chat-top" id="chat-top"><div style="color:var(--text-muted);font-size:12px;margin:auto;">Selecione uma conversa</div></div>
-          <div class="msgs-area" id="msgs-area"><div style="text-align:center;color:var(--text-muted);font-size:12px;margin:auto;">Selecione uma conversa para começar</div></div>
-          <div class="msg-in-area" id="msg-in-area" style="display:none;">
-            <input class="msg-in" id="msg-in" placeholder="Escreva uma mensagem..." onkeydown="if(event.key==='Enter')sendMsg()">
+        <div class="chat-window" id="chat-window">
+          <div class="chat-win-hdr" id="chat-win-hdr">
+            <button class="tbtn" id="chat-back-btn" onclick="showChatSidebar()" style="display:none;font-size:14px;padding:6px 8px;">← Voltar</button>
+            <div id="chat-win-info" style="display:flex;align-items:center;gap:10px;flex:1;">
+              <div style="color:var(--text-muted);font-size:12px;margin:auto;">Selecione uma conversa</div>
+            </div>
+          </div>
+          <div class="msgs-area" id="msgs-area">
+            <div class="chat-empty">
+              <div class="chat-empty-icon">💬</div>
+              <div class="chat-empty-txt">Nenhuma conversa selecionada</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Escolha uma conversa ao lado</div>
+            </div>
+          </div>
+          <div id="msg-attach-prev" class="msg-attach-prev"></div>
+          <div class="msg-in-bar" id="msg-in-area" style="display:none;">
+            <button class="msg-attach-btn" onclick="trigMsgFile()" title="Enviar arquivo">📎</button>
+            <button class="msg-attach-btn" onclick="trigMsgPhoto()" title="Enviar foto/vídeo">📷</button>
+            <textarea class="msg-in" id="msg-in" placeholder="Escreva uma mensagem..." rows="1" onkeydown="handleMsgKey(event)" oninput="autoResizeMsgIn(this)"></textarea>
             <button class="msg-snd" onclick="sendMsg()">➤</button>
           </div>
+          <input type="file" id="msg-file-input" style="display:none;" onchange="handleMsgFile(this)">
+          <input type="file" id="msg-photo-input" accept="image/*,video/*" style="display:none;" onchange="handleMsgFile(this)">
         </div>
       </div>
     </div>
 
     <!-- NOTIFICATIONS -->
     <div class="page" id="page-notifications">
-      <h2 style="font-family:'Silkscreen',monospace;font-size:16px;color:var(--neon-cyan);margin-bottom:14px;">🔔 NOTIFICAÇÕES</h2>
-      <div id="notif-list"></div>
+      <div class="page-tabs" id="notif-page-tabs">
+        <button class="ptab active" data-tab="nt-all" onclick="switchPageTab('notifications',this)">🔔 Todas</button>
+        <button class="ptab" data-tab="nt-mentions" onclick="switchPageTab('notifications',this)">@ Menções</button>
+        <button class="ptab" data-tab="nt-social" onclick="switchPageTab('notifications',this)">❤️ Social</button>
+        <button class="ptab" data-tab="nt-system" onclick="switchPageTab('notifications',this)">⚙️ Sistema</button>
+      </div>
+      <div class="tab-panel active" id="nt-all"><div id="notif-list-all"></div></div>
+      <div class="tab-panel" id="nt-mentions"><div id="notif-list-mentions"></div></div>
+      <div class="tab-panel" id="nt-social"><div id="notif-list-social"></div></div>
+      <div class="tab-panel" id="nt-system"><div id="notif-list-system"></div></div>
     </div>
 
     <!-- CAPSULES -->
@@ -644,7 +832,53 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(10,1
 
     <!-- PROFILE -->
     <div class="page" id="page-profile">
-      <div id="profile-content"></div>
+      <div id="profile-cover-bar"></div>
+      <div class="profile-page-tabs" id="profile-page-tabs" style="display:none;">
+        <button class="pptab active" data-tab="pp-posts" onclick="switchProfileTab(this)">📝 Posts</button>
+        <button class="pptab" data-tab="pp-about" onclick="switchProfileTab(this)">👤 Sobre</button>
+        <button class="pptab" data-tab="pp-edit" onclick="switchProfileTab(this)" id="pp-edit-tab" style="display:none;">✏ Editar</button>
+      </div>
+      <div class="profile-tab-panel active" id="pp-posts"><div id="profile-posts"></div></div>
+      <div class="profile-tab-panel" id="pp-about"><div id="profile-about"></div></div>
+      <div class="profile-tab-panel" id="pp-edit">
+        <div style="max-width:560px;">
+          <!-- Avatar -->
+          <div class="edit-section">
+            <div class="edit-section-title">📸 FOTO DE PERFIL</div>
+            <div style="text-align:center;margin-bottom:16px;">
+              <div class="av-current" id="av-current-preview"></div>
+              <div style="font-size:10px;color:var(--text-muted);">Avatar atual</div>
+            </div>
+            <div class="ftabs" style="margin-bottom:12px;">
+              <button class="ftab active" onclick="switchAvTab('upload',this)">📷 Upload</button>
+              <button class="ftab" onclick="switchAvTab('retro',this)">🎮 Ícones Retro</button>
+            </div>
+            <div id="av-upload-sec">
+              <input type="file" id="av-input" accept="image/*" style="display:none;" onchange="previewAvatar(this)">
+              <button class="tbtn" style="width:100%;justify-content:center;padding:12px;" onclick="document.getElementById('av-input').click()">📷 Escolher Foto</button>
+              <div id="av-file-preview" style="margin-top:8px;text-align:center;font-size:11px;color:var(--neon-cyan);"></div>
+            </div>
+            <div id="av-retro-sec" style="display:none;">
+              <div class="avatar-picker-grid" id="av-retro-grid"></div>
+            </div>
+          </div>
+          <!-- Info -->
+          <div class="edit-section">
+            <div class="edit-section-title">📋 INFORMAÇÕES</div>
+            <div class="igrp"><label class="ilbl">Nome de exibição</label><input class="ainput" type="text" id="set-name" placeholder="Seu nome"></div>
+            <div class="igrp"><label class="ilbl">Bio (máx. 200 chars)</label><textarea class="ainput" id="set-bio" rows="3" maxlength="200" style="resize:none;" placeholder="Fale sobre você..."></textarea></div>
+            <div class="igrp"><label class="ilbl">Status MSN</label><input class="ainput" type="text" id="set-status" placeholder="✨ Sua mensagem de status..."></div>
+          </div>
+          <!-- Links -->
+          <div class="edit-section">
+            <div class="edit-section-title">🔗 LINKS SOCIAIS</div>
+            <div class="igrp"><label class="ilbl">Instagram</label><input class="ainput" type="text" id="set-ig" placeholder="https://instagram.com/..."></div>
+            <div class="igrp"><label class="ilbl">Twitter / X</label><input class="ainput" type="text" id="set-tw" placeholder="https://x.com/..."></div>
+            <div class="igrp"><label class="ilbl">GitHub</label><input class="ainput" type="text" id="set-gh" placeholder="https://github.com/..."></div>
+          </div>
+          <button class="asubmit" onclick="saveSettings()">💾 SALVAR ALTERAÇÕES</button>
+        </div>
+      </div>
     </div>
 
     <!-- COMMUNITY DETAIL -->
@@ -736,60 +970,13 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(10,1
 </div></div>
 
 <!-- SETTINGS -->
-<div class="movl" id="m-settings"><div class="modal">
-  <div class="mhdr"><div class="mtitle">⚙️ CONFIGURAÇÕES</div><button class="mclose" onclick="closeM('m-settings')">✕</button></div>
-  <div style="text-align:center;margin-bottom:16px;">
-    <div style="position:relative;display:inline-block;">
-      <div id="set-av-preview" style="width:80px;height:80px;border-radius:50%;border:3px solid var(--neon-cyan);overflow:hidden;margin:0 auto;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:40px;background:var(--bg-deep);" onclick="toggleAvPicker()"></div>
-      <div style="position:absolute;bottom:0;right:0;background:var(--neon-cyan);border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:12px;cursor:pointer;" onclick="toggleAvPicker()">✏</div>
-    </div>
-    <div style="font-size:10px;color:var(--text-muted);margin-top:6px;">Clique para trocar o avatar</div>
-  </div>
-  <div id="av-picker-section" style="display:none;margin-bottom:16px;">
-    <div style="font-family:'Silkscreen',monospace;font-size:10px;color:var(--neon-yellow);margin-bottom:8px;">ESCOLHA SEU AVATAR</div>
-    <div class="ftabs" style="margin-bottom:10px;">
-      <button class="ftab active" onclick="switchAvTab('upload',this)">📷 Upload</button>
-      <button class="ftab" onclick="switchAvTab('retro',this)">🎮 Ícones Retro</button>
-    </div>
-    <div id="av-upload-sec">
-      <input type="file" id="av-input" accept="image/*" style="display:none;" onchange="previewAvatar(this)">
-      <button class="tbtn" style="width:100%;justify-content:center;" onclick="document.getElementById('av-input').click()">📷 Selecionar Foto</button>
-      <div id="av-file-preview" style="margin-top:8px;text-align:center;"></div>
-    </div>
-    <div id="av-retro-sec" style="display:none;">
-      <div class="av-grid" id="av-retro-grid"></div>
-    </div>
-  </div>
-  <div class="igrp"><label class="ilbl">Nome de exibição</label><input class="ainput" type="text" id="set-name"></div>
-  <div class="igrp"><label class="ilbl">Bio (máx. 200 chars)</label><textarea class="ainput" id="set-bio" rows="3" maxlength="200" style="resize:none;"></textarea></div>
-  <div class="igrp"><label class="ilbl">Instagram</label><input class="ainput" type="text" id="set-ig" placeholder="https://instagram.com/..."></div>
-  <div class="igrp"><label class="ilbl">Twitter / X</label><input class="ainput" type="text" id="set-tw" placeholder="https://x.com/..."></div>
-  <div class="igrp"><label class="ilbl">GitHub</label><input class="ainput" type="text" id="set-gh" placeholder="https://github.com/..."></div>
-  <button class="asubmit" onclick="saveSettings()">💾 SALVAR</button>
-</div></div>
+
 
 <!-- CREATE COMMUNITY -->
-<div class="movl" id="m-create-comm"><div class="modal">
-  <div class="mhdr"><div class="mtitle">🏘 CRIAR COMUNIDADE</div><button class="mclose" onclick="closeM('m-create-comm')">✕</button></div>
-  <div class="igrp"><label class="ilbl">Nome da Comunidade</label><input class="ainput" type="text" id="cm-name" placeholder="Nome da comunidade" oninput="genSlug()"></div>
-  <div class="igrp"><label class="ilbl">Slug (URL)</label><input class="ainput" type="text" id="cm-slug" placeholder="slug-da-comunidade"></div>
-  <div class="igrp"><label class="ilbl">Descrição</label><textarea class="ainput" id="cm-desc" rows="3" maxlength="300" placeholder="Sobre a comunidade..." style="resize:none;"></textarea></div>
-  <div class="igrp"><label class="ilbl">Emoji / Ícone</label><input class="ainput" type="text" id="cm-icon" placeholder="🏘" maxlength="4" style="font-size:24px;text-align:center;"></div>
-  <div class="igrp"><label class="ilbl">Visibilidade</label>
-    <select class="ainput" id="cm-vis" style="cursor:pointer;">
-      <option value="public">🌍 Pública — qualquer um pode entrar</option>
-      <option value="private">🔒 Privada — apenas por convite</option>
-    </select>
-  </div>
-  <button class="asubmit" onclick="createCommunity()">✦ CRIAR COMUNIDADE</button>
-</div></div>
+
 
 <!-- FIND FRIENDS -->
-<div class="movl" id="m-find-friends"><div class="modal">
-  <div class="mhdr"><div class="mtitle">🔍 ENCONTRAR AMIGOS</div><button class="mclose" onclick="closeM('m-find-friends')">✕</button></div>
-  <input class="ainput" type="text" id="ff-search" placeholder="Buscar por nome ou @usuário..." oninput="searchFriends()" style="margin-bottom:14px;">
-  <div id="ff-results"></div>
-</div></div>
+
 
 <!-- LIGHTBOX -->
 <div class="movl" id="m-lightbox" onclick="closeM('m-lightbox')"><div style="max-width:90vw;max-height:90vh;display:flex;align-items:center;justify-content:center;">
@@ -1006,7 +1193,7 @@ async function loadUserStats(){
 }
 
 // ===== NAVIGATION =====
-function nav(page){
+function _navBase(page){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   ['home','explore','friends','communities','messages','notifications','capsules','profile','comm-detail'].forEach(p=>{
     const slEl=document.getElementById('sl-'+p);if(slEl)slEl.classList.remove('active');
@@ -1432,20 +1619,9 @@ function switchAvTab(t,btn){
 function toggleAvPicker(){const s=document.getElementById('av-picker-section');s.style.display=s.style.display==='none'?'block':'none';}
 
 // ===== SETTINGS =====
-function showSettings(){
-  if(!CP)return;
-  document.getElementById('set-name').value=CP.full_name||'';
-  document.getElementById('set-bio').value=CP.bio||'';
-  document.getElementById('set-ig').value=CP.instagram||'';
-  document.getElementById('set-tw').value=CP.twitter||'';
-  document.getElementById('set-gh').value=CP.github||'';
-  // Show current avatar
-  const prev=document.getElementById('set-av-preview');
-  const av=getAvatar(CP);
-  if(av&&av.length<=4&&!av.startsWith('http')){prev.textContent=av;}
-  else{prev.innerHTML=`<img src="${av}" style="width:100%;height:100%;object-fit:cover;">`;}
-  openM('m-settings');
-}
+// showSettings — replaced by profile edit tab
+function showSettings(){nav('profile');setTimeout(()=>{const t=document.querySelector('.pptab[data-tab=pp-edit]');if(t)t.click();},200);}
+
 async function saveSettings(){
   if(!CU)return;
   let avatarUrl=CP?.avatar_url;let avatarType='upload';let retroIcon=null;
@@ -1539,7 +1715,7 @@ async function doSearch(){
 function quickSearch(){const v=document.getElementById('nav-search').value;document.getElementById('exp-search').value=v;if(v.length>=2)doSearch();}
 
 // ===== FRIENDS =====
-function switchFriendTab(t,btn){friendTab=t;document.querySelectorAll('#page-friends .ftab').forEach(b=>b.classList.remove('active'));btn.classList.add('active');loadFriendsPage();}
+// switchFriendTab — replaced by switchPageTab
 async function loadFriendsPage(){
   if(!CU)return;
   const list=document.getElementById('friends-list');list.innerHTML=skeletons(3);
@@ -1588,7 +1764,7 @@ async function loadFriendsPage(){
     if(list)list.innerHTML='<div style="text-align:center;padding:30px;color:var(--neon-pink);font-size:12px;">Erro ao carregar. Execute o SQL do schema.<br><small>'+e.message+'</small></div>';
   }
 }
-function openFindFriends(){openM('m-find-friends');document.getElementById('ff-search').focus();}
+function openFindFriends(){nav('friends');setTimeout(()=>{const t=document.querySelector('.ptab[data-tab=fl-find]');if(t)t.click();},100);}
 async function searchFriends(){
   const q=document.getElementById('ff-search').value.trim();
   const res=document.getElementById('ff-results');
@@ -1643,7 +1819,7 @@ async function unfollow(followId){
 }
 
 // ===== COMMUNITIES =====
-function switchCommTab(t,btn){commTab=t;document.querySelectorAll('#page-communities .ftab').forEach(b=>b.classList.remove('active'));btn.classList.add('active');loadCommunities();}
+// switchCommTab — replaced by switchPageTab
 async function loadCommunities(){
   const grid=document.getElementById('comm-grid');grid.innerHTML=skeletons(4,'100px');
   let comms=[];
@@ -1843,12 +2019,45 @@ async function openChat(userId,username,avatarUrl){
   await loadMsgs(userId);
 }
 async function loadMsgs(userId){
-  if(!CU)return;
-  const{data:msgs}=await db.from('messages').select('id,sender_id,receiver_id,content,media_url,read,created_at').or(`and(sender_id.eq.${CU.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${CU.id})`).order('created_at');
-  const area=document.getElementById('msgs-area');
-  area.innerHTML=(msgs||[]).map(m=>`<div class="mb ${m.sender_id===CU.id?'sent':'recv'}">${xss(m.content)}<div class="mb-time">${timeAgo(m.created_at)}</div></div>`).join('')||'<div style="text-align:center;color:var(--text-muted);font-size:11px;margin:auto;">Início da conversa ✨</div>';
-  area.scrollTop=area.scrollHeight;
+  if(!CU) return;
+  const area = document.getElementById('msgs-area');
+  if(!area) return;
+  const{data:msgs}=await db.from('messages')
+    .select('id,sender_id,receiver_id,content,media_url,media_type,read,created_at')
+    .or(`and(sender_id.eq.${CU.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${CU.id})`)
+    .order('created_at');
+  if(!msgs?.length){
+    area.innerHTML='<div class="chat-empty"><div class="chat-empty-icon">💬</div><div class="chat-empty-txt">Início da conversa</div><div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Diga olá! 👋</div></div>';
+    return;
+  }
+  let lastDate='', html='';
+  for(const m of msgs){
+    const isSent = m.sender_id===CU.id;
+    const msgDate = new Date(m.created_at).toLocaleDateString('pt-BR');
+    if(msgDate!==lastDate){
+      lastDate=msgDate;
+      html += '<div class="msg-date-sep">— '+msgDate+' —</div>';
+    }
+    // Build media HTML safely without nesting quotes
+    let mediaHtml='';
+    if(m.media_url){
+      const safeUrl = xss(m.media_url);
+      const isVideo = (m.media_type||'').startsWith('video') || /\.(mp4|webm|mov)$/i.test(m.media_url);
+      if(isVideo){
+        mediaHtml = '<div class="mb-media"><video src="'+safeUrl+'" controls playsinline style="width:100%;max-height:200px;display:block;border-radius:8px;"></video></div>';
+      } else {
+        mediaHtml = '<div class="mb-media" data-src="'+safeUrl+'" onclick="openLightbox(this.dataset.src)"><img src="'+safeUrl+'" alt="imagem" style="display:block;width:100%;border-radius:8px;"></div>';
+      }
+    }
+    const contentHtml = m.content ? '<div class="mb-bubble">'+xss(m.content)+'</div>' : '';
+    const timeHtml = '<div class="mb-time">'+timeAgo(m.created_at)+'</div>';
+    html += '<div class="mb '+(isSent?'sent':'recv')+'">'+mediaHtml+contentHtml+timeHtml+'</div>';
+  }
+  area.innerHTML = html;
+  area.scrollTop = area.scrollHeight;
 }
+
+
 async function sendMsg(){
   if(!CU||!currentChatUser)return;
   const inp=document.getElementById('msg-in');const txt=inp.value.trim();if(!txt)return;
@@ -1934,7 +2143,360 @@ function openM(id){document.getElementById(id).classList.add('open');}
 function closeM(id){document.getElementById(id).classList.remove('open');}
 function showToast(msg,type='success'){const w=document.getElementById('tst-wrap');const t=document.createElement('div');t.className=`tst ${type}`;t.innerHTML=`<span>${type==='success'?'✓':'⚠'}</span> ${msg}`;w.appendChild(t);setTimeout(()=>t.remove(),3200);}
 function toggleMusic(){const mn=document.querySelector('.mnote');const btn=document.querySelector('.mtgl');if(btn.textContent==='⏸'){btn.textContent='▶';mn.style.animationPlayState='paused';}else{btn.textContent='⏸';mn.style.animationPlayState='running';}}
-// ===== DIAGNOSTICO =====
+// ===== PAGE TAB SYSTEM =====
+function switchPageTab(page, btn){
+  const tabsEl = document.getElementById(page === 'friends' ? 'friends-page-tabs' : page === 'communities' ? 'comm-page-tabs' : 'notif-page-tabs');
+  if(!tabsEl) return;
+  tabsEl.querySelectorAll('.ptab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  const tabId = btn.dataset.tab;
+  // Hide all panels in this page
+  document.getElementById('page-' + page).querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  const panel = document.getElementById(tabId);
+  if(panel) panel.classList.add('active');
+  // Load content for tab
+  if(page === 'friends'){
+    if(tabId === 'fl-friends') loadFriendsList('friends');
+    else if(tabId === 'fl-requests') loadFriendsList('requests');
+    else if(tabId === 'fl-following') loadFriendsList('following');
+    else if(tabId === 'fl-followers') loadFriendsList('followers');
+  } else if(page === 'communities'){
+    if(tabId === 'cm-all') loadCommGrid('all');
+    else if(tabId === 'cm-mine') loadCommGrid('mine');
+  } else if(page === 'notifications'){
+    loadNotifTab(tabId);
+  }
+}
+
+// ===== FRIENDS TABS =====
+async function loadFriendsList(type){
+  if(!CU) return;
+  const listId = {friends:'friends-list',requests:'requests-list',following:'following-list',followers:'followers-list'}[type];
+  const list = document.getElementById(listId);
+  if(!list) return;
+  list.innerHTML = skeletons(3);
+  try{
+    if(type === 'requests'){
+      const{data} = await db.from('friend_requests')
+        .select('id,sender_id,status,created_at,profiles!friend_requests_sender_id_fkey(id,username,full_name,avatar_url)')
+        .eq('receiver_id',CU.id).eq('status','pending');
+      const count = (data||[]).length;
+      const badge = document.getElementById('freq-badge');
+      if(badge){ badge.textContent = count; badge.style.display = count > 0 ? 'inline-block' : 'none'; }
+      list.innerHTML = (data||[]).length ? data.map(r => `
+        <div class="friend-card">
+          ${renderAvatar(r.profiles,40,'friend-av')}
+          <div class="friend-info">
+            <div class="friend-name">${xss(r.profiles?.full_name||r.profiles?.username)}</div>
+            <div class="friend-user">@${xss(r.profiles?.username)}</div>
+          </div>
+          <div class="friend-act">
+            <button class="fbtn accept" onclick="handleFriendReq('${r.id}','${r.sender_id}','accept')">✓ Aceitar</button>
+            <button class="fbtn reject" onclick="handleFriendReq('${r.id}','${r.sender_id}','reject')">✕</button>
+          </div>
+        </div>`).join('') : '<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhuma solicitação pendente</div>';
+
+    } else if(type === 'friends'){
+      const{data} = await db.from('friends')
+        .select('id,friend_id,profiles!friends_friend_id_fkey(id,username,full_name,avatar_url)')
+        .eq('user_id',CU.id);
+      list.innerHTML = (data||[]).length ? data.map(f => `
+        <div class="friend-card">
+          ${renderAvatar(f.profiles,40,'friend-av')}
+          <div class="friend-info">
+            <div class="friend-name">${xss(f.profiles?.full_name||f.profiles?.username)}</div>
+            <div class="friend-user">@${xss(f.profiles?.username)}</div>
+          </div>
+          <div class="friend-act">
+            <button class="fbtn msg" onclick="openChat('${f.friend_id}','${f.profiles?.username}','${getAvatar(f.profiles)}');nav('messages')">💬</button>
+            <button class="fbtn reject" onclick="removeFriend('${f.id}',this)">✕</button>
+          </div>
+        </div>`).join('') : '<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhum amigo ainda<br><small>Use a aba Encontrar para buscar pessoas</small></div>';
+
+    } else if(type === 'following'){
+      const{data} = await db.from('follows')
+        .select('id,following_id,profiles!follows_following_id_fkey(id,username,full_name,avatar_url)')
+        .eq('follower_id',CU.id);
+      list.innerHTML = (data||[]).length ? data.map(f => `
+        <div class="friend-card">
+          ${renderAvatar(f.profiles,40,'friend-av')}
+          <div class="friend-info">
+            <div class="friend-name">${xss(f.profiles?.full_name||f.profiles?.username)}</div>
+            <div class="friend-user">@${xss(f.profiles?.username)}</div>
+          </div>
+          <div class="friend-act"><button class="fbtn reject" onclick="unfollow('${f.id}',this)">Deixar de seguir</button></div>
+        </div>`).join('') : '<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Não está seguindo ninguém</div>';
+
+    } else if(type === 'followers'){
+      const{data} = await db.from('follows')
+        .select('id,follower_id,profiles!follows_follower_id_fkey(id,username,full_name,avatar_url)')
+        .eq('following_id',CU.id);
+      list.innerHTML = (data||[]).length ? data.map(f => `
+        <div class="friend-card">
+          ${renderAvatar(f.profiles,40,'friend-av')}
+          <div class="friend-info">
+            <div class="friend-name">${xss(f.profiles?.full_name||f.profiles?.username)}</div>
+            <div class="friend-user">@${xss(f.profiles?.username)}</div>
+          </div>
+          <div class="friend-act"><button class="fbtn accept" onclick="sendFriendReq('${f.follower_id}',this)">+ Amigo</button></div>
+        </div>`).join('') : '<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhum seguidor ainda</div>';
+    }
+  } catch(e){
+    if(list) list.innerHTML = `<div style="color:var(--neon-pink);padding:20px;font-size:12px;">Erro: ${xss(e.message)}</div>`;
+  }
+}
+
+async function searchFriendsInline(){
+  const q = document.getElementById('ff-inline-search')?.value.trim();
+  const res = document.getElementById('ff-inline-results');
+  if(!res) return;
+  if(!q || q.length < 2){ res.innerHTML = ''; return; }
+  const{data:users} = await db.from('profiles')
+    .select('id,username,full_name,avatar_url')
+    .or(`username.ilike.%${q}%,full_name.ilike.%${q}%`)
+    .neq('id', CU?.id||'').limit(10);
+  let friendIds = new Set();
+  if(CU && users?.length){
+    const{data:frs} = await db.from('friends').select('friend_id').eq('user_id',CU.id).in('friend_id',users.map(u=>u.id));
+    (frs||[]).forEach(f=>friendIds.add(f.friend_id));
+  }
+  res.innerHTML = (users||[]).map(u => `
+    <div class="friend-card">
+      ${renderAvatar(u,40,'friend-av')}
+      <div class="friend-info">
+        <div class="friend-name">${xss(u.full_name||u.username)}</div>
+        <div class="friend-user">@${xss(u.username)}</div>
+      </div>
+      <div class="friend-act">
+        <button class="fbtn ${friendIds.has(u.id)?'reject':'accept'}" onclick="sendFriendReq('${u.id}',this)" ${friendIds.has(u.id)?'disabled':''}>${friendIds.has(u.id)?'✓ Amigos':'+ Amigo'}</button>
+        <button class="fbtn msg" onclick="loadProfilePage('${u.id}')">👤</button>
+      </div>
+    </div>`).join('') || '<div style="color:var(--text-muted);font-size:11px;padding:10px;">Nenhum resultado</div>';
+}
+
+// ===== COMMUNITIES TABS =====
+async function loadCommGrid(mode){
+  const gridId = mode === 'mine' ? 'comm-grid-mine' : 'comm-grid-all';
+  const grid = document.getElementById(gridId);
+  if(!grid) return;
+  grid.innerHTML = skeletons(4);
+  try{
+    let comms = [];
+    if(mode === 'mine' && CU){
+      const{data:mem} = await db.from('community_members').select('community_id').eq('user_id',CU.id);
+      const ids = (mem||[]).map(m=>m.community_id);
+      if(!ids.length){ grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Você não é membro de nenhuma comunidade ainda.<br>Explore e entre em comunidades!</div>'; return; }
+      const{data} = await db.from('communities').select('id,name,slug,description,avatar_url,visibility,members_count,posts_count').in('id',ids);
+      comms = data||[];
+    } else {
+      const{data} = await db.from('communities').select('id,name,slug,description,avatar_url,visibility,members_count,posts_count').order('members_count',{ascending:false}).limit(30);
+      comms = data||[];
+    }
+    let memberSet = new Set();
+    if(CU && comms.length){
+      const{data:mem} = await db.from('community_members').select('community_id').eq('user_id',CU.id).in('community_id',comms.map(c=>c.id));
+      (mem||[]).forEach(m=>memberSet.add(m.community_id));
+    }
+    grid.innerHTML = comms.map(c => {
+      const isMember = memberSet.has(c.id);
+      return `<div class="comm-card" onclick="openCommDetail('${c.id}')">
+        <div class="comm-cover">${xss(c.avatar_url||'🏘')}</div>
+        <div class="comm-info">
+          <div class="comm-name">${xss(c.name)}</div>
+          <div class="comm-desc">${xss(c.description||'')}</div>
+          <div class="comm-meta"><span>👥 ${c.members_count||0}</span><span>${c.visibility==='private'?'🔒 Privada':'🌍 Pública'}</span></div>
+          <button class="comm-join ${isMember?'joined':''}" style="margin-top:8px;width:100%;" onclick="event.stopPropagation();toggleJoinComm('${c.id}',${isMember},this)">${isMember?'✓ Membro':'+ Entrar'}</button>
+        </div>
+      </div>`;
+    }).join('') || '<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhuma comunidade encontrada.<br>Crie a primeira!</div>';
+  } catch(e){
+    grid.innerHTML = `<div style="grid-column:1/-1;color:var(--neon-pink);padding:20px;font-size:12px;">Erro: ${xss(e.message)}<br>Execute o SQL de migração no Supabase.</div>`;
+  }
+}
+
+// Community detail — tabs: Posts / Membros / Sobre
+
+function switchCommDetailTab(tabId, btn){
+  const detail = document.getElementById('comm-detail-content');
+  detail.querySelectorAll('.ptab').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  detail.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById(tabId)?.classList.add('active');
+}
+
+async function loadCommPosts(commId){
+  const el = document.getElementById('cd-posts-list');
+  if(!el) return;
+  const{data:cps} = await db.from('community_posts')
+    .select('posts(id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url))')
+    .eq('community_id',commId).order('created_at',{ascending:false}).limit(20);
+  const posts = (cps||[]).map(cp=>cp.posts).filter(Boolean);
+  // Load reactions
+  const postIds = posts.map(p=>p.id);
+  const[rxRes,myRxRes]=await Promise.all([
+    postIds.length?db.from('likes').select('post_id,reaction_type').in('post_id',postIds):{data:[]},
+    CU&&postIds.length?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id):{data:[]}
+  ]);
+  const rxMap={};(rxRes.data||[]).forEach(r=>{if(!rxMap[r.post_id])rxMap[r.post_id]={};rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1;});
+  const myRxMap={};(myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
+  el.innerHTML = posts.map(p=>renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||'')).join('') || '<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhum post ainda. Seja o primeiro!</div>';
+}
+
+async function loadCommMembers(commId){
+  const el = document.getElementById('cd-members-list');
+  if(!el) return;
+  const{data} = await db.from('community_members')
+    .select('user_id,role,joined_at,profiles(id,username,full_name,avatar_url)')
+    .eq('community_id',commId).limit(50);
+  el.innerHTML = `<div class="comm-members-grid">` + (data||[]).map(m=>`
+    <div class="cmember" onclick="loadProfilePage('${m.user_id}')">
+      ${renderAvatar(m.profiles,36,'cmember-av')}
+      <div>
+        <div class="cmember-name">${xss(m.profiles?.full_name||m.profiles?.username||'?')}</div>
+        <div class="cmember-role">${m.role==='owner'?'👑 Dono':m.role==='mod'?'🛡 Mod':'👤 Membro'}</div>
+      </div>
+    </div>`).join('') + '</div>';
+}
+
+// ===== NOTIFICATIONS TABS =====
+async function loadNotifTab(tabId){
+  if(!CU) return;
+  const typeMap = {
+    'nt-all': null,
+    'nt-mentions': 'mention',
+    'nt-social': ['follow','like','comment','friend_request','friend_accept'],
+    'nt-system': ['message','community_invite']
+  };
+  const filter = typeMap[tabId];
+  const listId = tabId.replace('nt-','notif-list-').replace('all','all');
+  const el = document.getElementById('notif-list-' + tabId.replace('nt-',''));
+  if(!el) return;
+  el.innerHTML = skeletons(3);
+  let q = db.from('notifications').select('id,type,content,read,created_at').eq('user_id',CU.id).order('created_at',{ascending:false}).limit(40);
+  if(Array.isArray(filter)) q = q.in('type', filter);
+  else if(filter) q = q.eq('type', filter);
+  const{data} = await q;
+  if(!data?.length){
+    el.innerHTML=`<div class="notif-empty"><div class="notif-empty-icon">🔔</div><div class="notif-empty-txt">Sem notificações</div></div>`;
+    return;
+  }
+  const icons={'follow':'👤','like':'❤️','comment':'💬','friend_request':'👥','friend_accept':'🎉','message':'💬','community_invite':'🏘','mention':'@'};
+  el.innerHTML = data.map(n=>`
+    <div class="ni ${n.read?'':'unrd'}" onclick="markRead('${n.id}',this)">
+      <div class="ni-icon">${icons[n.type]||'🔔'}</div>
+      <div class="ni-body">
+        <div class="ni-txt">${xss(n.content||'Nova notificação')}</div>
+        <div class="ni-time">${timeAgo(n.created_at)}</div>
+        ${n.type==='friend_request'?`<div class="ni-actions"><button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();acceptFriendFromNotif(this)">✓ Aceitar</button><button class="ni-act-btn ni-act-rej" onclick="event.stopPropagation();">✕ Recusar</button></div>`:''}
+      </div>
+    </div>`).join('');
+  // Mark all as read
+  try{ await db.from('notifications').update({read:true}).eq('user_id',CU.id).eq('read',false); }catch(e){}
+  document.getElementById('notif-badge').style.display='none';
+}
+
+// ===== CHAT MELHORADO =====
+let msgAttachFiles = [];
+
+function trigMsgFile(){ document.getElementById('msg-file-input').click(); }
+function trigMsgPhoto(){ document.getElementById('msg-photo-input').click(); }
+
+function handleMsgFile(inp){
+  const files = Array.from(inp.files);
+  files.forEach(f=>{ msgAttachFiles.push(f); });
+  renderMsgAttachPrev();
+  inp.value='';
+}
+
+function renderMsgAttachPrev(){
+  const prev = document.getElementById('msg-attach-prev');
+  if(!prev) return;
+  if(!msgAttachFiles.length){ prev.style.display='none'; return; }
+  prev.style.display='flex';
+  prev.innerHTML = msgAttachFiles.map((f,i)=>{
+    const url = URL.createObjectURL(f);
+    const isVid = f.type.startsWith('video');
+    const isImg = f.type.startsWith('image');
+    return `<div class="map">
+      ${isImg?`<img src="${url}" alt="preview">`:`${isVid?`<video src="${url}"></video>`:`<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:22px;">📄</div>`}`}
+      <button class="map-rm" onclick="removeMsgAttach(${i})">×</button>
+    </div>`;
+  }).join('');
+}
+
+function removeMsgAttach(i){ msgAttachFiles.splice(i,1); renderMsgAttachPrev(); }
+
+function handleMsgKey(e){
+  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendMsg(); }
+}
+
+function autoResizeMsgIn(el){
+  el.style.height='auto';
+  el.style.height = Math.min(el.scrollHeight,100)+'px';
+}
+
+function showChatSidebar(){
+  const sb = document.getElementById('chat-sidebar');
+  if(sb){ sb.classList.toggle('mob-open'); }
+}
+
+
+
+
+function switchProfileTab(btn){
+  const tabId = btn.dataset.tab;
+  document.querySelectorAll('.pptab').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.profile-tab-panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById(tabId)?.classList.add('active');
+  if(tabId==='pp-edit') loadEditForm();
+}
+
+function loadEditForm(){
+  if(!CP) return;
+  const setName = document.getElementById('set-name');
+  const setBio = document.getElementById('set-bio');
+  const setStatus = document.getElementById('set-status');
+  const setIg = document.getElementById('set-ig');
+  const setTw = document.getElementById('set-tw');
+  const setGh = document.getElementById('set-gh');
+  if(setName) setName.value = CP.full_name||'';
+  if(setBio) setBio.value = CP.bio||'';
+  if(setStatus) setStatus.value = CP.status_message||'';
+  if(setIg) setIg.value = CP.instagram||'';
+  if(setTw) setTw.value = CP.twitter||'';
+  if(setGh) setGh.value = CP.github||'';
+  // Show current avatar
+  updateAvPreview();
+  // Build retro grid
+  buildRetroGrid();
+}
+
+function updateAvPreview(){
+  const prev = document.getElementById('av-current-preview');
+  if(!prev||!CP) return;
+  const av = getAvatar(CP);
+  const isEmoji = av && av.length<=4 && !av.startsWith('http');
+  if(isEmoji){ prev.innerHTML=''; prev.textContent=av; }
+  else{ prev.innerHTML=`<img src="${xss(av)}" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${CP.username||'u'}'">`; }
+}
+
+
+function nav(page){
+  _navBase(page);
+  if(page==='friends'){
+    // Load first tab
+    setTimeout(()=>loadFriendsList('friends'),0);
+  } else if(page==='communities'){
+    setTimeout(()=>loadCommGrid('all'),0);
+  } else if(page==='notifications'){
+    setTimeout(()=>loadNotifTab('nt-all'),0);
+  } else if(page==='messages'){
+    setTimeout(()=>loadConversations(),0);
+  }
+}
+
+
 async function checkMigration(){
   // Verifica se colunas da migração existem testando um post
   const{error}=await db.from('posts').select('media_types,visibility,likes_count').limit(1);
