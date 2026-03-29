@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="theme-color" content="#0a0a2a">
 <title>EuAqui — Sua rede, seu mundo</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" crossorigin="anonymous"></script>
+<script>window.addEventListener("error",function(e){if(e.target&&e.target.src&&e.target.src.includes("supabase")){var s=document.createElement("script");s.src="https://unpkg.com/@supabase/supabase-js@2";document.head.appendChild(s);}},true);</script>
 <link href="https://fonts.googleapis.com/css2?family=VT323&family=Silkscreen:wght@400;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -784,42 +785,109 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(10,1
 // ===== CONFIG =====
 const SB_URL='https://gpustnmwxlolgyevjjtf.supabase.co';
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdwdXN0bm13eGxvbGd5ZXZqanRmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NDMyMDksImV4cCI6MjA5MDMxOTIwOX0.0-8H5lQkbyholETlTyvfhmUnOOQKY7678hLCCLtjaNA';
-const {createClient}=window.supabase;
-const db=createClient(SB_URL,SB_KEY);
+
+// db declarado como let para ser iniciado depois que o SDK carregar
+let db = null;
 
 // ===== STATE =====
-let CU=null,CP=null; // currentUser, currentProfile
+let CU=null,CP=null;
 let feedTab='recent',friendTab='friends',commTab='all';
 let postVisibility='public';
 let mediaFiles=[],mediaTypes=[];
 let currentChatUser=null;
 let avatarFile=null,retroIconSelected=null;
 let cachedPosts={},cachedPostIds=new Set(),lastFeedLoad=0;
-const CACHE_TTL=60000; // 60s cache
+const CACHE_TTL=60000;
 
 // ===== BOOT =====
 const bootMsgs=['Conectando ao servidor...','Carregando configurações...','Verificando sessão...','Preparando interface...','Pronto! 🎉'];
-let bi=0;const bel=document.getElementById('boot-step');
-const bt=setInterval(()=>{if(bi<bootMsgs.length)bel.textContent=bootMsgs[bi++];else clearInterval(bt);},480);
-setTimeout(async()=>{document.getElementById('loading-screen').style.display='none';await initApp();},2600);
+let bi=0;
+const bel=document.getElementById('boot-step');
+const bt=setInterval(()=>{if(bi<bootMsgs.length&&bel)bel.textContent=bootMsgs[bi++];else clearInterval(bt);},480);
+
+function hideLS(){
+  const ls=document.getElementById('loading-screen');
+  if(ls)ls.style.display='none';
+}
+
+// Aguarda o SDK Supabase estar disponível (CDN pode demorar)
+async function waitSDK(ms=5000){
+  const t=Date.now();
+  while(!(window.supabase&&window.supabase.createClient)){
+    if(Date.now()-t>ms)return false;
+    await new Promise(r=>setTimeout(r,80));
+  }
+  return true;
+}
+
+// Força saída da tela de loading após 7s em qualquer caso
+setTimeout(()=>{ hideLS(); if(!CU)showAuth(); },7000);
+
+(async()=>{
+  try{
+    const ok=await waitSDK(5000);
+    if(!ok){
+      hideLS();
+      showAuth();
+      const aerr=document.getElementById('aerr');
+      if(aerr){aerr.textContent='⚠ Supabase SDK não carregou. Verifique sua internet.';aerr.classList.add('show');}
+      return;
+    }
+    db=window.supabase.createClient(SB_URL,SB_KEY);
+    hideLS();
+    await initApp();
+  }catch(e){
+    console.error('Boot fatal:',e);
+    hideLS();
+    showAuth();
+    const aerr=document.getElementById('aerr');
+    if(aerr){aerr.textContent='⚠ Erro: '+e.message;aerr.classList.add('show');}
+  }
+})();
 
 // ===== INIT =====
 async function initApp(){
-  const{data:{session}}=await db.auth.getSession();
-  if(session){CU=session.user;await loadProfile();showApp();}
-  else showAuth();
+  let session=null;
+  try{
+    const res=await db.auth.getSession();
+    session=res.data?.session||null;
+  }catch(e){
+    console.warn('getSession error:',e);
+    showAuth();
+    return;
+  }
+  if(session){
+    CU=session.user;
+    try{ await loadProfile(); }catch(e){ console.warn('loadProfile error:',e); }
+    showApp();
+  } else {
+    showAuth();
+  }
   db.auth.onAuthStateChange(async(ev,sess)=>{
-    if(ev==='SIGNED_IN'&&sess){CU=sess.user;await loadProfile();showApp();}
-    else if(ev==='SIGNED_OUT'){CU=null;CP=null;showAuth();}
+    if(ev==='SIGNED_IN'&&sess){
+      CU=sess.user;
+      try{ await loadProfile(); }catch(e){ console.warn('loadProfile error:',e); }
+      showApp();
+    } else if(ev==='SIGNED_OUT'){
+      CU=null;CP=null;showAuth();
+    }
   });
 }
 function showApp(){
   document.getElementById('auth-screen').style.display='none';
   document.getElementById('app').style.display='block';
-  refreshUI();loadFeed();loadNotifCount();loadBlast();
-  fillEmojiGrid();setupRealtime();updateVisitCounter();updateLevel();
+  document.getElementById('loading-screen').style.display='none';
+  try{ refreshUI(); }catch(e){ console.warn('refreshUI:',e); }
+  try{ loadFeed(); }catch(e){ console.warn('loadFeed:',e); }
+  try{ loadNotifCount(); }catch(e){}
+  try{ loadBlast(); }catch(e){}
+  try{ fillEmojiGrid(); }catch(e){}
+  try{ setupRealtime(); }catch(e){}
+  try{ updateVisitCounter(); }catch(e){}
+  try{ updateLevel(); }catch(e){}
 }
 function showAuth(){
+  document.getElementById('loading-screen').style.display='none';
   document.getElementById('auth-screen').style.display='flex';
   document.getElementById('app').style.display='none';
 }
@@ -838,9 +906,22 @@ async function handleLogin(){
   if(!email||!pass)return showAErr('Preencha todos os campos');
   const btn=document.getElementById('login-btn');
   btn.textContent='⏳ ENTRANDO...';btn.disabled=true;
-  const{error}=await db.auth.signInWithPassword({email,password:pass});
+  try{
+    const{data,error}=await db.auth.signInWithPassword({email,password:pass});
+    if(error){
+      const m={
+        'Invalid login credentials':'Email ou senha incorretos',
+        'Email not confirmed':'Confirme seu email primeiro. Verifique sua caixa de entrada.',
+        'Too many requests':'Muitas tentativas. Aguarde alguns minutos.',
+        'Invalid API key':'Chave Supabase inválida. Verifique a configuração.',
+      };
+      showAErr(m[error.message]||error.message);
+    }
+    // onAuthStateChange vai chamar showApp() automaticamente ao logar
+  }catch(e){
+    showAErr('Erro de conexão: '+e.message);
+  }
   btn.textContent='▶ ENTRAR NO SISTEMA';btn.disabled=false;
-  if(error){const m={'Invalid login credentials':'Email ou senha incorretos','Email not confirmed':'Confirme seu email primeiro','Too many requests':'Muitas tentativas. Aguarde.'};showAErr(m[error.message]||error.message);}
 }
 async function handleRegister(){
   const name=document.getElementById('r-name').value.trim();
@@ -878,15 +959,22 @@ function hideAErr(){document.getElementById('aerr').classList.remove('show');}
 // ===== PROFILE LOAD =====
 async function loadProfile(){
   if(!CU)return;
-  const{data}=await db.from('profiles').select('id,username,full_name,email,avatar_url,bio,instagram,twitter,github,status_message,created_at,updated_at').eq('id',CU.id).maybeSingle();
+  let data=null;
+  try{
+    const res=await db.from('profiles').select('id,username,full_name,email,avatar_url,bio,instagram,twitter,github,status_message,created_at').eq('id',CU.id).maybeSingle();
+    data=res.data;
+    if(res.error)console.warn('Profile fetch:',res.error.message);
+  }catch(e){ console.warn('loadProfile exception:',e.message); }
   if(data){CP=data;return;}
   const meta=CU.user_metadata||{};
   let base=(meta.username||meta.user_name||meta.name||CU.email?.split('@')[0]||'user').toLowerCase().replace(/[^a-z0-9_]/g,'_').substring(0,18);
   let uname=base,s=1;
   while(true){const{data:e}=await db.from('profiles').select('id').eq('username',uname).maybeSingle();if(!e)break;uname=base+s++;}
   const np={id:CU.id,username:uname,full_name:meta.full_name||meta.name||uname,email:CU.email,avatar_url:meta.avatar_url||meta.picture||`https://api.dicebear.com/7.x/pixel-art/svg?seed=${uname}`,status_message:'✨ Novo por aqui!',created_at:new Date().toISOString()};
-  const{error:upErr}=await db.from('profiles').upsert(np);
-  if(upErr)console.warn('Profile create warning:',upErr.message);
+  try{
+    const{error:upErr}=await db.from('profiles').upsert(np);
+    if(upErr)console.warn('Profile create warning:',upErr.message);
+  }catch(e){ console.warn('Profile upsert exception:',e.message); }
   CP=np;
 }
 function refreshUI(){
@@ -962,6 +1050,7 @@ function toggleDrawer(){
 // ===== FEED (with caching to prevent flicker) =====
 async function loadFeed(force=false){
   const feed=document.getElementById('feed');
+  if(!feed)return;
   const now=Date.now();
   const cacheKey=`feed_${feedTab}`;
   // Mostra cache imediatamente, busca novidades em background
