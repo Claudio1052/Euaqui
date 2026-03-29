@@ -528,7 +528,7 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(10,1
           <div class="vis-opt" data-v="friends" onclick="setVis('friends',this)">👥 Amigos</div>
           <div class="vis-opt" data-v="private" onclick="setVis('private',this)">🔒 Privado</div>
         </div>
-        <div id="media-prev" style="display:none;margin-top:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:4px;"></div>
+        <div id="media-prev" style="display:none;margin-top:10px;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:4px;"></div>
         <div class="ctools">
           <button class="tbtn" onclick="trigUpload('image/*')">📷 Foto</button>
           <button class="tbtn" onclick="trigUpload('video/*')">🎬 Vídeo</button>
@@ -783,7 +783,7 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(10,1
 <script>
 // ===== CONFIG =====
 const SB_URL='https://gpustnmwxlolgyevjjtf.supabase.co';
-const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdwdXN0bm13eGxvbGd5ZXZqanRmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NDMyMDksImV4cCI6MjA5MDMxOTIwOX0.0-8H5lQkbyholETlTyvfhmUnOOQKY7678hLCCLtjaNA';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdwdXN0bm13eGxvbGd5ZXZqanRmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NDMyMDksImV4cCI6MjA5MDMxOTIwOX0.0-8H5lQkbyholETlTyvfhmUnOOQKY7678hLCCLtjaNAh';
 const {createClient}=window.supabase;
 const db=createClient(SB_URL,SB_KEY);
 
@@ -857,7 +857,7 @@ async function handleRegister(){
   btn.textContent='✦ CRIAR CONTA';btn.disabled=false;
   if(error){const m={'User already registered':'Email já cadastrado'};return showAErr(m[error.message]||error.message);}
   if(data.user){
-    await db.from('profiles').upsert({id:data.user.id,username:uname,full_name:name,email,avatar_url:`https://api.dicebear.com/7.x/pixel-art/svg?seed=${uname}`,status_message:'✨ Novo por aqui!',theme:'cyber',created_at:new Date().toISOString()});
+    await db.from('profiles').upsert({id:data.user.id,username:uname,full_name:name,email,avatar_url:`https://api.dicebear.com/7.x/pixel-art/svg?seed=${uname}`,status_message:'✨ Novo por aqui!',created_at:new Date().toISOString()});
     if(data.session)showToast('Bem-vindo ao EuAqui! 🎉','success');
     else{const el=document.getElementById('aerr');el.textContent='📧 Verifique seu email para confirmar a conta!';el.style.color='var(--neon-cyan)';el.style.borderColor='rgba(0,255,204,.3)';el.classList.add('show');}
   }
@@ -878,14 +878,16 @@ function hideAErr(){document.getElementById('aerr').classList.remove('show');}
 // ===== PROFILE LOAD =====
 async function loadProfile(){
   if(!CU)return;
-  const{data}=await db.from('profiles').select('*').eq('id',CU.id).maybeSingle();
+  const{data}=await db.from('profiles').select('id,username,full_name,email,avatar_url,bio,instagram,twitter,github,status_message,created_at,updated_at').eq('id',CU.id).maybeSingle();
   if(data){CP=data;return;}
   const meta=CU.user_metadata||{};
   let base=(meta.username||meta.user_name||meta.name||CU.email?.split('@')[0]||'user').toLowerCase().replace(/[^a-z0-9_]/g,'_').substring(0,18);
   let uname=base,s=1;
   while(true){const{data:e}=await db.from('profiles').select('id').eq('username',uname).maybeSingle();if(!e)break;uname=base+s++;}
-  const np={id:CU.id,username:uname,full_name:meta.full_name||meta.name||uname,email:CU.email,avatar_url:meta.avatar_url||meta.picture||`https://api.dicebear.com/7.x/pixel-art/svg?seed=${uname}`,status_message:'✨ Novo por aqui!',theme:'cyber',created_at:new Date().toISOString()};
-  await db.from('profiles').upsert(np);CP=np;
+  const np={id:CU.id,username:uname,full_name:meta.full_name||meta.name||uname,email:CU.email,avatar_url:meta.avatar_url||meta.picture||`https://api.dicebear.com/7.x/pixel-art/svg?seed=${uname}`,status_message:'✨ Novo por aqui!',created_at:new Date().toISOString()};
+  const{error:upErr}=await db.from('profiles').upsert(np);
+  if(upErr)console.warn('Profile create warning:',upErr.message);
+  CP=np;
 }
 function refreshUI(){
   if(!CP)return;
@@ -899,15 +901,23 @@ function refreshUI(){
   loadUserStats();updateLevel();
 }
 function getAvatar(profile){
-  if(!profile)return`https://api.dicebear.com/7.x/pixel-art/svg?seed=default`;
+  if(!profile)return'https://api.dicebear.com/7.x/pixel-art/svg?seed=default';
+  // retro_icon pode não existir na tabela ainda
   if(profile.avatar_type==='retro_icon'&&profile.retro_icon)return profile.retro_icon;
-  return profile.avatar_url||`https://api.dicebear.com/7.x/pixel-art/svg?seed=${profile.username}`;
+  if(profile.avatar_url&&profile.avatar_url.startsWith('http'))return profile.avatar_url;
+  // Fallback para ícone retro salvo em avatar_url como emoji
+  if(profile.avatar_url&&profile.avatar_url.length<=4&&!profile.avatar_url.startsWith('http'))return profile.avatar_url;
+  return`https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(profile.username||'user')}`;
 }
 function renderAvatar(profile,size=42,classes=''){
   const av=getAvatar(profile);
-  const isEmoji=av&&!av.startsWith('http')&&!av.startsWith('data');
-  if(isEmoji)return`<div class="${classes}" style="width:${size}px;height:${size}px;border-radius:50%;background:rgba(255,255,255,.06);border:2px solid rgba(0,255,204,.3);display:flex;align-items:center;justify-content:center;font-size:${Math.floor(size*.55)}px;flex-shrink:0;">${av}</div>`;
-  return`<img class="${classes}" src="${xss(av)}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${profile?.username||'u'}'">`;
+  const seed=encodeURIComponent(profile?.username||'user');
+  const fallback=`https://api.dicebear.com/7.x/pixel-art/svg?seed=${seed}`;
+  // Emoji / retro icon
+  if(av&&av.length<=4&&!av.startsWith('http')){
+    return`<div class="${classes}" style="width:${size}px;height:${size}px;border-radius:50%;background:rgba(255,255,255,.06);border:2px solid rgba(0,255,204,.3);display:flex;align-items:center;justify-content:center;font-size:${Math.floor(size*.55)}px;flex-shrink:0;">${av}</div>`;
+  }
+  return`<img class="${classes}" src="${xss(av)}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.src='${fallback}'">`;
 }
 async function loadUserStats(){
   if(!CU)return;
@@ -954,37 +964,54 @@ async function loadFeed(force=false){
   const feed=document.getElementById('feed');
   const now=Date.now();
   const cacheKey=`feed_${feedTab}`;
-  // Show cached immediately, then refresh
+  // Mostra cache imediatamente, busca novidades em background
   if(cachedPosts[cacheKey]&&!force){
     if(feed.children.length===0)feed.innerHTML=cachedPosts[cacheKey];
-    if(now-lastFeedLoad<CACHE_TTL)return; // fresh enough
+    if(now-lastFeedLoad<CACHE_TTL)return;
   } else if(feed.children.length===0){
     feed.innerHTML=skeletons(3);
   }
   lastFeedLoad=now;
-  let q=db.from('posts').select('*,profiles(id,username,full_name,avatar_url,avatar_type,retro_icon)').order('created_at',{ascending:false}).range(0,24);
-  if(feedTab==='popular')q=db.from('posts').select('*,profiles(id,username,full_name,avatar_url,avatar_type,retro_icon)').order('likes_count',{ascending:false}).range(0,24);
-  if(feedTab==='friends'&&CU){
+  // Select seguro — sem colunas que podem não existir
+  const SEL='id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url)';
+  let q;
+  if(feedTab==='popular'){
+    q=db.from('posts').select(SEL).order('likes_count',{ascending:false}).range(0,24);
+  } else if(feedTab==='friends'&&CU){
     const{data:fws}=await db.from('follows').select('following_id').eq('follower_id',CU.id);
     const ids=(fws||[]).map(f=>f.following_id);
-    if(!ids.length){feed.innerHTML='<div style="text-align:center;padding:40px;color:var(--text-muted);font-family:\'VT323\',monospace;font-size:20px;">Siga alguém para ver posts aqui!</div>';return;}
-    q=db.from('posts').select('*,profiles(id,username,full_name,avatar_url,avatar_type,retro_icon)').in('user_id',ids).order('created_at',{ascending:false}).range(0,24);
+    if(!ids.length){
+      if(feed.children.length===0)feed.innerHTML='<div style="text-align:center;padding:40px;color:var(--text-muted);font-family:\'VT323\',monospace;font-size:20px;">Siga alguém para ver posts aqui!</div>';
+      return;
+    }
+    q=db.from('posts').select(SEL).in('user_id',ids).order('created_at',{ascending:false}).range(0,24);
+  } else {
+    q=db.from('posts').select(SEL).order('created_at',{ascending:false}).range(0,24);
   }
-  const{data:posts}=await q;
-  if(!posts?.length&&feed.children.length===0){feed.innerHTML='<div style="text-align:center;padding:40px;color:var(--text-muted);font-family:\'VT323\',monospace;font-size:20px;">SEM POSTS AINDA ✨<br><span style="font-size:14px;font-family:\'Space Mono\',monospace;">Seja o primeiro!</span></div>';return;}
+  const{data:posts,error:fetchErr}=await q;
+  if(fetchErr){console.error('Feed error:',fetchErr.message);if(feed.children.length===0)feed.innerHTML='<div style="text-align:center;padding:30px;color:var(--neon-pink);font-size:12px;">Erro ao carregar feed.<br>'+fetchErr.message+'</div>';return;}
+  if(!posts?.length&&feed.children.length===0){
+    feed.innerHTML='<div style="text-align:center;padding:40px;color:var(--text-muted);font-family:\'VT323\',monospace;font-size:20px;">SEM POSTS AINDA ✨<br><span style="font-size:14px;font-family:\'Space Mono\',monospace;">Seja o primeiro!</span></div>';
+    return;
+  }
   if(!posts?.length)return;
-  // Incremental update: only add new posts, don't re-render existing
+  // Incremental: não re-renderiza posts que já estão na tela
   const newPosts=[];
   for(const p of posts){if(!cachedPostIds.has(p.id))newPosts.push(p);}
-  if(newPosts.length===0&&feed.children.length>0)return; // nothing new
-  // Build reaction map for all posts
+  if(newPosts.length===0&&feed.children.length>0)return;
+  // Busca reações para todos os posts de uma vez
   const postIds=posts.map(p=>p.id);
-  const[rxData,myLikesData]=await Promise.all([
+  const[rxRes,myRxRes]=await Promise.all([
     db.from('likes').select('post_id,reaction_type').in('post_id',postIds),
-    CU?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id):Promise.resolve({data:[]})
+    CU?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id):{data:[]}
   ]);
-  const rxMap={};(rxData.data||[]).forEach(r=>{if(!rxMap[r.post_id])rxMap[r.post_id]={};rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1;});
-  const myRxMap={};(myLikesData.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
+  const rxMap={};
+  (rxRes.data||[]).forEach(r=>{
+    if(!rxMap[r.post_id])rxMap[r.post_id]={};
+    rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1;
+  });
+  const myRxMap={};
+  (myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
   const html=posts.map(p=>renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||'')).join('');
   feed.innerHTML=html;
   posts.forEach(p=>cachedPostIds.add(p.id));
@@ -993,34 +1020,42 @@ async function loadFeed(force=false){
 
 function renderPost(post,rxCounts={},myRx=''){
   const prof=post.profiles||{};
-  const avHtml=renderAvatar(prof,42,'pav');
+  // Avatar seguro — usa apenas avatar_url (sem avatar_type/retro_icon que podem não existir na tabela)
+  const avUrl=prof.avatar_url||`https://api.dicebear.com/7.x/pixel-art/svg?seed=${prof.username||'user'}`;
+  const avHtml=`<img src="${xss(avUrl)}" style="width:42px;height:42px;border-radius:50%;object-fit:cover;border:2px solid rgba(0,255,204,.25);flex-shrink:0;cursor:pointer;" onclick="loadProfilePage('${post.user_id}')" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${prof.username||'u'}'">`;
   const time=timeAgo(post.created_at);
   const content=linkify(post.content||'');
-  const visBadge=post.visibility==='friends'?`<span class="vis-badge vis-fri">👥 Amigos</span>`:post.visibility==='private'?`<span class="vis-badge vis-prv">🔒 Privado</span>`:`<span class="vis-badge vis-pub">🌍 Público</span>`;
+  // Visibilidade (coluna pode não existir)
+  const vis=post.visibility||'public';
+  const visBadge=vis==='friends'?`<span class="vis-badge vis-fri">👥 Amigos</span>`:vis==='private'?`<span class="vis-badge vis-prv">🔒 Privado</span>`:`<span class="vis-badge vis-pub">🌍 Público</span>`;
   const REACTIONS=['👍','❤️','😂','😮','😢'];
   const rxHtml=REACTIONS.map(r=>{
     const cnt=rxCounts[r]||0;
     return`<button class="rxbtn${myRx===r?' active':''}" onclick="react('${post.id}','${r}',this)">${r} <span class="rxcnt">${cnt>0?cnt:''}</span></button>`;
   }).join('');
-  const mediaHtml=renderMedia(post.media_urls||[],post.media_types||[]);
+  // Mídia — colunas media_urls e media_types podem não existir
+  const mediaUrls=Array.isArray(post.media_urls)?post.media_urls:[];
+  const mediaTyps=Array.isArray(post.media_types)?post.media_types:[];
+  const mediaHtml=renderMedia(mediaUrls,mediaTyps);
+  const cmtCnt=post.comments_count||0;
   const isOwn=CU&&CU.id===post.user_id;
   return`<div class="post-card" id="post-${post.id}">
     <div class="ph">
-      <div onclick="loadProfilePage('${post.user_id}')" style="cursor:pointer;">${avHtml}</div>
+      ${avHtml}
       <div class="pmeta">
         <div class="pun" onclick="loadProfilePage('${post.user_id}')">${xss(prof.full_name||prof.username||'Usuário')}</div>
-        <div class="pt"><span style="color:var(--text-muted)">@${xss(prof.username||'user')}</span> · ${time} ${visBadge}</div>
+        <div class="pt"><span>@${xss(prof.username||'user')}</span> · ${time} ${visBadge}</div>
       </div>
       <div style="display:flex;gap:4px;margin-left:auto;">
-        ${isOwn?`<button class="abtn danger" onclick="deletePost('${post.id}')" title="Deletar post">🗑</button>`:''}
+        ${isOwn?`<button class="abtn danger" onclick="deletePost('${post.id}')" title="Deletar">🗑</button>`:''}
         <button class="abtn" onclick="sharePost('${post.id}')" title="Compartilhar">↗</button>
       </div>
     </div>
-    <div class="pcontent">${content}</div>
+    ${content?`<div class="pcontent">${content}</div>`:''}
     ${mediaHtml}
     <div class="preactions">${rxHtml}</div>
     <div class="pactions">
-      <button class="abtn" onclick="toggleCmts('${post.id}')">💬 <span id="cmtcnt-${post.id}">${post.comments_count||0}</span></button>
+      <button class="abtn" onclick="toggleCmts('${post.id}')">💬 <span id="cmtcnt-${post.id}">${cmtCnt}</span></button>
       <button class="abtn" onclick="savePost('${post.id}')">🔖 Salvar</button>
       ${!isOwn?`<button class="abtn" onclick="reportPost('${post.id}')">⚑ Reportar</button>`:''}
     </div>
@@ -1029,40 +1064,45 @@ function renderPost(post,rxCounts={},myRx=''){
 }
 
 function renderMedia(urls,types){
-  if(!urls.length)return'';
-  const items=urls.slice(0,4).map((url,i)=>{
-    const t=types[i]||'image';
-    if(t==='video'){
-      return`<div class="mi video-thumb"><video src="${xss(url)}" preload="metadata" controls style="width:100%;max-height:300px;display:block;border-radius:6px;"></video></div>`;
+  if(!Array.isArray(urls)||!urls.length)return'';
+  const safeUrls=urls.filter(u=>u&&typeof u==='string');
+  if(!safeUrls.length)return'';
+  const items=safeUrls.slice(0,4).map((url,i)=>{
+    const t=(Array.isArray(types)&&types[i])||'image';
+    const safeUrl=xss(url);
+    if(t==='video'||url.match(/\.mp4$|\.webm$|\.mov$|\.ogg$/i)){
+      return`<div class="mi" style="background:#000;border-radius:6px;overflow:hidden;">
+        <video src="${safeUrl}" preload="metadata" controls playsinline style="width:100%;max-height:320px;display:block;background:#000;" onerror="this.parentElement.style.display='none'"></video>
+      </div>`;
     }
-    return`<div class="mi"><img src="${xss(url)}" alt="media" loading="lazy" onclick="openLightbox('${xss(url)}')"></div>`;
+    return`<div class="mi" style="border-radius:6px;overflow:hidden;cursor:pointer;" onclick="openLightbox('${safeUrl}')">
+      <img src="${safeUrl}" alt="imagem do post" loading="lazy" style="width:100%;height:220px;object-fit:cover;display:block;" onerror="this.parentElement.style.display='none'">
+    </div>`;
   }).join('');
-  const g=['','g1','g2','g3','g3'][Math.min(urls.length,4)];
-  return`<div class="pmedia"><div class="media-grid ${g}">${items}</div></div>`;
+  const gClass=['','g1','g2','g3','g3'][Math.min(safeUrls.length,4)]||'g1';
+  return`<div class="pmedia"><div class="media-grid ${gClass}" style="border-radius:10px;overflow:hidden;">${items}</div></div>`;
 }
 
 // ===== REACTIONS =====
 async function react(postId,reaction,btn){
   if(!CU)return showToast('Faça login para reagir','error');
-  const{data:ex}=await db.from('likes').select('id,reaction_type').eq('post_id',postId).eq('user_id',CU.id).maybeSingle();
   const card=btn.closest('.post-card');
   const allRxBtns=card.querySelectorAll('.rxbtn');
-  if(ex){
-    if(ex.reaction_type===reaction){
-      await db.from('likes').delete().eq('id',ex.id);
-      btn.classList.remove('active');
-      adjustRxCount(btn,-1);
-    }else{
-      await db.from('likes').update({reaction_type:reaction}).eq('id',ex.id);
-      allRxBtns.forEach(b=>{if(b!==btn&&b.classList.contains('active')){b.classList.remove('active');adjustRxCount(b,-1);}});
-      btn.classList.add('active');
-      adjustRxCount(btn,1);
+  // Atualização otimista — UX instantânea
+  const wasActive=btn.classList.contains('active');
+  allRxBtns.forEach(b=>{if(b.classList.contains('active')&&b!==btn){b.classList.remove('active');adjustRxCount(b,-1);}});
+  if(wasActive){btn.classList.remove('active');adjustRxCount(btn,-1);}
+  else{btn.classList.add('active');adjustRxCount(btn,1);}
+  // Salva no banco
+  try{
+    const{data:ex}=await db.from('likes').select('id,reaction_type').eq('post_id',postId).eq('user_id',CU.id).maybeSingle();
+    if(ex){
+      if(ex.reaction_type===reaction){await db.from('likes').delete().eq('id',ex.id);}
+      else{await db.from('likes').update({reaction_type:reaction}).eq('id',ex.id);}
+    } else if(!wasActive){
+      await db.from('likes').insert({post_id:postId,user_id:CU.id,reaction_type:reaction});
     }
-  }else{
-    await db.from('likes').insert({post_id:postId,user_id:CU.id,reaction_type:reaction});
-    btn.classList.add('active');
-    adjustRxCount(btn,1);
-  }
+  }catch(e){console.warn('react error:',e);}
 }
 function adjustRxCount(btn,delta){
   const sp=btn.querySelector('.rxcnt');
@@ -1080,7 +1120,21 @@ async function toggleCmts(postId){
 async function loadCmts(postId){
   const sec=document.getElementById('cmts-'+postId);
   sec.innerHTML='<div style="color:var(--text-muted);font-size:11px;text-align:center;padding:8px;">carregando...</div>';
-  const{data:cmts}=await db.from('comments').select('*,profiles(id,username,avatar_url,avatar_type,retro_icon)').eq('post_id',postId).eq('deleted',false).order('created_at');
+  // Tenta buscar com colunas extras, fallback para básico
+  // Busca comentários — tenta com colunas extras, fallback para básico
+  let cmts=[];
+  const{data:cmtsFull,error:cmtsErr}=await db.from('comments')
+    .select('id,post_id,user_id,content,likes_count,dislikes_count,hidden,deleted,created_at,profiles(id,username,avatar_url)')
+    .eq('post_id',postId).order('created_at');
+  if(cmtsErr){
+    // Colunas extras não existem — usa select mínimo
+    const{data:cmtsMin}=await db.from('comments')
+      .select('id,post_id,user_id,content,created_at,profiles(id,username,avatar_url)')
+      .eq('post_id',postId).order('created_at');
+    cmts=(cmtsMin||[]);
+  } else {
+    cmts=(cmtsFull||[]).filter(c=>!(c.deleted??false));
+  }
   let myVotes={};
   if(CU&&cmts?.length){
     const ids=cmts.map(c=>c.id);
@@ -1095,20 +1149,27 @@ async function loadCmts(postId){
 }
 function renderComment(c,myVote,isPostOwner,postId){
   const prof=c.profiles||{};
-  const avHtml=renderAvatar(prof,28,'cmt-av');
-  if(c.hidden&&!isPostOwner&&CU?.id!==c.user_id)return''; // completely hide if not owner/author
-  const hiddenClass=c.hidden?'hidden-cmt':'';
+  const avUrl=prof.avatar_url||`https://api.dicebear.com/7.x/pixel-art/svg?seed=${prof.username||'u'}`;
+  const avHtml=`<img class="cmt-av" src="${xss(avUrl)}" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${prof.username||'u'}'">`;
+  // hidden/deleted podem não existir na tabela — usa ?? false como fallback
+  const isHidden=c.hidden??false;
+  const isDeleted=c.deleted??false;
+  if(isDeleted)return'';
+  if(isHidden&&!isPostOwner&&CU?.id!==c.user_id)return'';
+  const hiddenClass=isHidden?'hidden-cmt':'';
   const isOwn=CU&&CU.id===c.user_id;
+  const likeCount=c.likes_count??0;
+  const disCount=c.dislikes_count??0;
   return`<div class="cmt-item" id="cmt-${c.id}">
     ${avHtml}
     <div class="cmt-bubble ${hiddenClass}">
-      <div class="cmt-user">@${xss(prof.username||'user')}${c.hidden?' · <span style="color:var(--neon-pink);font-size:9px;">oculto</span>':''}</div>
+      <div class="cmt-user">@${xss(prof.username||'user')}${isHidden?' · <span style="color:var(--neon-pink);font-size:9px;">oculto</span>':''}</div>
       <div class="cmt-text">${xss(c.content)}</div>
       <div class="cmt-actions">
-        <button class="cvbtn${myVote==='like'?' active-like':''}" onclick="voteCmt('${c.id}','like',this,'${postId}')">👍 <span>${c.likes_count||0}</span></button>
-        <button class="cvbtn cv-dis${myVote==='dislike'?' active-dis':''}" onclick="voteCmt('${c.id}','dislike',this,'${postId}')">👎 <span>${c.dislikes_count||0}</span></button>
-        ${isOwn?`<button class="cmt-mod-btn" onclick="deleteCmt('${c.id}','${postId}')">🗑 Excluir</button>`:''}
-        ${isPostOwner&&!isOwn?`<button class="cmt-mod-btn" onclick="toggleHideCmt('${c.id}','${postId}',${c.hidden})">${c.hidden?'👁 Mostrar':'🙈 Ocultar'}</button>`:''}
+        <button class="cvbtn${myVote==='like'?' active-like':''}" onclick="voteCmt('${c.id}','like',this,'${postId}')">👍 <span>${likeCount>0?likeCount:''}</span></button>
+        <button class="cvbtn cv-dis${myVote==='dislike'?' active-dis':''}" onclick="voteCmt('${c.id}','dislike',this,'${postId}')">👎 <span>${disCount>0?disCount:''}</span></button>
+        ${isOwn?`<button class="cmt-mod-btn" onclick="deleteCmt('${c.id}','${postId}')">🗑</button>`:''}
+        ${isPostOwner&&!isOwn?`<button class="cmt-mod-btn" onclick="toggleHideCmt('${c.id}','${postId}',${isHidden})">${isHidden?'👁':'🙈'}</button>`:''}
       </div>
     </div>
   </div>`;
@@ -1116,8 +1177,9 @@ function renderComment(c,myVote,isPostOwner,postId){
 async function submitCmt(postId){
   if(!CU)return showToast('Faça login para comentar','error');
   const inp=document.getElementById('cin-'+postId);
-  const content=inp.value.trim();if(!content)return;
-  await db.from('comments').insert({post_id:postId,user_id:CU.id,content});
+  const txt=inp.value.trim();if(!txt)return;
+  const{error}=await db.from('comments').insert({post_id:postId,user_id:CU.id,content:txt});
+  if(error)return showToast('Erro ao comentar: '+error.message,'error');
   inp.value='';
   const cntEl=document.getElementById('cmtcnt-'+postId);
   if(cntEl)cntEl.textContent=parseInt(cntEl.textContent||'0')+1;
@@ -1125,27 +1187,60 @@ async function submitCmt(postId){
 }
 async function deleteCmt(cmtId,postId){
   if(!confirm('Excluir este comentário?'))return;
-  await db.from('comments').update({deleted:true}).eq('id',cmtId).eq('user_id',CU.id);
-  showToast('Comentário excluído','success');await loadCmts(postId);
+  // Tenta soft delete primeiro, fallback para hard delete
+  const{error}=await db.from('comments').update({deleted:true}).eq('id',cmtId).eq('user_id',CU.id);
+  if(error){
+    // Coluna 'deleted' pode não existir — faz delete real
+    await db.from('comments').delete().eq('id',cmtId).eq('user_id',CU.id);
+  }
+  document.getElementById('cmt-'+cmtId)?.remove();
+  showToast('Comentário excluído','success');
+  await loadCmts(postId);
 }
 async function toggleHideCmt(cmtId,postId,hidden){
-  await db.from('comments').update({hidden:!hidden}).eq('id',cmtId);
-  showToast(hidden?'Comentário visível 👁':'Comentário ocultado 🙈','success');await loadCmts(postId);
+  const{error}=await db.from('comments').update({hidden:!hidden}).eq('id',cmtId);
+  if(error)return showToast('Erro: coluna hidden não existe no banco. Execute o SQL.','error');
+  showToast(hidden?'Comentário visível 👁':'Comentário ocultado 🙈','success');
+  await loadCmts(postId);
 }
 async function voteCmt(cmtId,vote,btn,postId){
   if(!CU)return showToast('Faça login primeiro','error');
-  const{data:ex}=await db.from('comment_votes').select('id,vote').eq('comment_id',cmtId).eq('user_id',CU.id).maybeSingle();
-  const sec=btn.closest('.cmt-actions');
-  const likeBtn=sec.querySelector('.cvbtn:not(.cv-dis)');
-  const disBtn=sec.querySelector('.cv-dis');
-  if(ex){
-    if(ex.vote===vote){await db.from('comment_votes').delete().eq('id',ex.id);btn.classList.remove('active-like','active-dis');}
-    else{await db.from('comment_votes').update({vote}).eq('id',ex.id);likeBtn?.classList.remove('active-like');disBtn?.classList.remove('active-dis');btn.classList.add(vote==='like'?'active-like':'active-dis');}
-  }else{
-    await db.from('comment_votes').insert({comment_id:cmtId,user_id:CU.id,vote});
-    btn.classList.add(vote==='like'?'active-like':'active-dis');
+  try{
+    const{data:ex,error:selErr}=await db.from('comment_votes').select('id,vote').eq('comment_id',cmtId).eq('user_id',CU.id).maybeSingle();
+    if(selErr)throw selErr;
+    const sec=btn.closest('.cmt-actions');
+    const likeBtn=sec.querySelector('.cvbtn:not(.cv-dis)');
+    const disBtn=sec.querySelector('.cv-dis');
+    if(ex){
+      if(ex.vote===vote){
+        await db.from('comment_votes').delete().eq('id',ex.id);
+        btn.classList.remove('active-like','active-dis');
+        adjustCmtCount(btn,-1,vote);
+      } else {
+        await db.from('comment_votes').update({vote}).eq('id',ex.id);
+        likeBtn?.classList.remove('active-like');disBtn?.classList.remove('active-dis');
+        btn.classList.add(vote==='like'?'active-like':'active-dis');
+        // troca de contadores
+        const otherBtn=vote==='like'?disBtn:likeBtn;
+        adjustCmtCount(btn,1,vote);
+        if(otherBtn)adjustCmtCount(otherBtn,-1,vote==='like'?'dislike':'like');
+      }
+    } else {
+      await db.from('comment_votes').insert({comment_id:cmtId,user_id:CU.id,vote});
+      btn.classList.add(vote==='like'?'active-like':'active-dis');
+      adjustCmtCount(btn,1,vote);
+    }
+  } catch(e){
+    // comment_votes não existe — incrementa localmente só para UX
+    btn.classList.toggle(vote==='like'?'active-like':'active-dis');
+    adjustCmtCount(btn,btn.classList.contains('active-like')||btn.classList.contains('active-dis')?1:-1,vote);
   }
-  await loadCmts(postId);
+}
+function adjustCmtCount(btn,delta,vote){
+  const sp=btn.querySelector('span');if(!sp)return;
+  const cur=parseInt(sp.textContent)||0;
+  const nv=Math.max(0,cur+delta);
+  sp.textContent=nv>0?nv:'';
 }
 
 // ===== CREATE POST =====
@@ -1155,19 +1250,37 @@ async function createPost(){
   if(!content&&!mediaFiles.length)return showToast('Escreva algo ou adicione mídia!','error');
   const btn=document.getElementById('post-submit-btn');btn.textContent='⏳...';btn.disabled=true;
   let urls=[],mTypes=[];
+  // Upload de mídia (tenta Storage, falha silenciosamente se bucket não existir)
   for(let i=0;i<mediaFiles.length;i++){
     const f=mediaFiles[i];const t=mediaTypes[i];
-    const path=`${CU.id}/${Date.now()}-${i}-${f.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
-    const{data,error}=await db.storage.from('media').upload(path,f,{upsert:true,contentType:f.type});
-    if(data){const{data:u}=db.storage.from('media').getPublicUrl(path);urls.push(u.publicUrl);mTypes.push(t);}
-    else console.warn('Upload error:',error?.message);
+    try{
+      const safeName=f.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+      const path=`${CU.id}/${Date.now()}-${i}-${safeName}`;
+      const{data:upData,error:upErr}=await db.storage.from('media').upload(path,f,{upsert:true,contentType:f.type});
+      if(upErr){showToast('Upload de mídia falhou: crie o bucket "media" no Supabase Storage','error');console.warn('Storage error:',upErr.message);}
+      else if(upData){const{data:u}=db.storage.from('media').getPublicUrl(path);urls.push(u.publicUrl);mTypes.push(t);}
+    }catch(e){console.warn('Storage exception:',e);}
   }
-  const{error}=await db.from('posts').insert({user_id:CU.id,content,media_urls:urls,media_types:mTypes,type:mediaFiles.length?'media':'text',visibility:postVisibility});
+  // Monta payload apenas com colunas seguras
+  const payload={user_id:CU.id,content:content||null,type:mediaFiles.length?'media':'text'};
+  // Adiciona colunas extras se existirem (silencioso se não existir na tabela)
+  try{payload.visibility=postVisibility;}catch(e){}
+  try{if(urls.length){payload.media_urls=urls;payload.media_types=mTypes;}}catch(e){}
+  const{data:postData,error}=await db.from('posts').insert(payload).select().maybeSingle();
   btn.textContent='POSTAR ▶';btn.disabled=false;
-  if(error)return showToast('Erro: '+error.message,'error');
+  if(error){
+    console.error('Insert post error:',error);
+    // Erros comuns traduzidos
+    if(error.message.includes('media_urls'))showToast('Erro: coluna media_urls não existe. Execute o SQL do schema.','error');
+    else if(error.message.includes('visibility'))showToast('Erro: coluna visibility não existe. Execute o SQL do schema.','error');
+    else if(error.message.includes('permission'))showToast('Sem permissão. Verifique as políticas RLS no Supabase.','error');
+    else showToast('Erro ao postar: '+error.message,'error');
+    return;
+  }
   document.getElementById('post-txt').value='';document.getElementById('c-char').textContent='0 / 500';
-  mediaFiles=[];mediaTypes=[];document.getElementById('media-prev').style.display='none';document.getElementById('media-prev').innerHTML='';
-  cachedPostIds.clear();cachedPosts={};// invalidate cache
+  mediaFiles=[];mediaTypes=[];
+  const mp=document.getElementById('media-prev');mp.style.display='none';mp.innerHTML='';
+  cachedPostIds.clear();cachedPosts={};
   showToast('Post publicado! ✨','success');
   await loadFeed(true);updateLevel();
 }
@@ -1188,7 +1301,7 @@ function handleMedia(inp){
   const files=Array.from(inp.files).slice(0,4-mediaFiles.length);
   files.forEach(f=>{mediaFiles.push(f);mediaTypes.push(f.type.startsWith('video')?'video':'image');});
   const prev=document.getElementById('media-prev');
-  if(!mediaFiles.length){prev.style.display='none';return;}
+  if(!mediaFiles.length){prev.style.display='none';prev.innerHTML='';return;}
   prev.style.display='grid';
   prev.innerHTML=mediaFiles.map((f,i)=>{
     const url=URL.createObjectURL(f);
@@ -1258,10 +1371,29 @@ async function saveSettings(){
     if(data){const{data:u}=db.storage.from('avatars').getPublicUrl(path);avatarUrl=u.publicUrl;}
     else if(error)console.warn('Avatar upload:',error.message);
   }
-  const updates={full_name:document.getElementById('set-name').value.trim(),bio:document.getElementById('set-bio').value.trim(),instagram:document.getElementById('set-ig').value.trim(),twitter:document.getElementById('set-tw').value.trim(),github:document.getElementById('set-gh').value.trim(),avatar_url:avatarUrl,avatar_type:avatarType,retro_icon:retroIcon,updated_at:new Date().toISOString()};
-  const{error}=await db.from('profiles').update(updates).eq('id',CU.id);
-  if(error)return showToast('Erro ao salvar: '+error.message,'error');
-  Object.assign(CP,updates);refreshUI();closeM('m-settings');
+  // Monta updates com campos básicos sempre presentes
+  const updates={
+    full_name:document.getElementById('set-name').value.trim(),
+    bio:document.getElementById('set-bio').value.trim(),
+    instagram:document.getElementById('set-ig').value.trim(),
+    twitter:document.getElementById('set-tw').value.trim(),
+    github:document.getElementById('set-gh').value.trim(),
+    avatar_url:avatarUrl,
+    updated_at:new Date().toISOString()
+  };
+  // Campos extras opcionais — tenta incluir, remove se der erro
+  const tryUpdate=async(payload)=>{
+    const{error}=await db.from('profiles').update(payload).eq('id',CU.id);
+    return error;
+  };
+  let err=await tryUpdate({...updates,avatar_type:avatarType,retro_icon:retroIcon});
+  if(err&&(err.message.includes('avatar_type')||err.message.includes('retro_icon'))){
+    // Colunas não existem ainda — salva sem elas
+    err=await tryUpdate(updates);
+  }
+  if(err)return showToast('Erro ao salvar: '+err.message,'error');
+  Object.assign(CP,updates,{avatar_type:avatarType,retro_icon:retroIcon});
+  refreshUI();closeM('m-settings');
   showToast('Perfil atualizado! ✨','success');
   avatarFile=null;retroIconSelected=null;
 }
@@ -1281,7 +1413,7 @@ async function createCapsule(){
 }
 async function loadCapsules(){
   if(!CU)return;
-  const{data}=await db.from('time_capsules').select('*').eq('user_id',CU.id).order('open_date');
+  const{data}=await db.from('time_capsules').select('id,user_id,content,open_date,opened,created_at').eq('user_id',CU.id).order('open_date');
   const list=document.getElementById('caps-list');
   list.innerHTML=(data||[]).map(c=>{
     const open=new Date(c.open_date)<=new Date();
@@ -1300,7 +1432,8 @@ async function loadCapsules(){
 async function loadExploreFeed(){
   const feed=document.getElementById('explore-feed');
   feed.innerHTML='<h3 style="font-family:\'Silkscreen\',monospace;font-size:12px;color:var(--neon-cyan);margin-bottom:14px;margin-top:4px;">POSTS EM DESTAQUE</h3>'+skeletons(3);
-  const{data:posts}=await db.from('posts').select('*,profiles(id,username,full_name,avatar_url,avatar_type,retro_icon)').eq('visibility','public').order('likes_count',{ascending:false}).limit(20);
+  const{data:posts,error:expErr}=await db.from('posts').select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url)').order('created_at',{ascending:false}).limit(20);
+  if(expErr){feed.innerHTML='<div style="color:var(--neon-pink);padding:20px;font-size:12px;">Erro: '+expErr.message+'</div>';return;}
   const postIds=(posts||[]).map(p=>p.id);
   const[rxData,myLikesData]=await Promise.all([
     postIds.length?db.from('likes').select('post_id,reaction_type').in('post_id',postIds):{data:[]},
@@ -1314,7 +1447,7 @@ async function doSearch(){
   const q=document.getElementById('exp-search').value.trim();
   const res=document.getElementById('search-res');
   if(q.length<2){res.innerHTML='';return;}
-  const{data:users}=await db.from('profiles').select('*').or(`username.ilike.%${q}%,full_name.ilike.%${q}%`).limit(6);
+  const{data:users}=await db.from('profiles').select('id,username,full_name,avatar_url').or(`username.ilike.%${q}%,full_name.ilike.%${q}%`).limit(6);
   res.innerHTML='<div style="font-family:\'Silkscreen\',monospace;font-size:10px;color:var(--neon-yellow);margin-bottom:8px;">PESSOAS</div>'+(users||[]).map(u=>`
     <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--glass);border:1px solid var(--border-glow);border-radius:8px;margin-bottom:7px;cursor:pointer;" onclick="loadProfilePage('${u.id}')">
       ${renderAvatar(u,38,'')}
@@ -1331,8 +1464,9 @@ function switchFriendTab(t,btn){friendTab=t;document.querySelectorAll('#page-fri
 async function loadFriendsPage(){
   if(!CU)return;
   const list=document.getElementById('friends-list');list.innerHTML=skeletons(3);
+  try{
   if(friendTab==='requests'){
-    const{data}=await db.from('friend_requests').select('*,profiles!friend_requests_sender_id_fkey(id,username,full_name,avatar_url,avatar_type,retro_icon)').eq('receiver_id',CU.id).eq('status','pending');
+    const{data}=await db.from('friend_requests').select('id,sender_id,receiver_id,status,created_at,profiles!friend_requests_sender_id_fkey(id,username,full_name,avatar_url)').eq('receiver_id',CU.id).eq('status','pending');
     list.innerHTML=(data||[]).length?data.map(r=>`
       <div class="friend-card">
         ${renderAvatar(r.profiles,40,'friend-av')}
@@ -1343,7 +1477,7 @@ async function loadFriendsPage(){
         </div>
       </div>`).join(''):'<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Sem solicitações pendentes</div>';
   }else if(friendTab==='friends'){
-    const{data}=await db.from('friends').select('*,profiles!friends_friend_id_fkey(id,username,full_name,avatar_url,avatar_type,retro_icon)').eq('user_id',CU.id);
+    const{data}=await db.from('friends').select('id,user_id,friend_id,created_at,profiles!friends_friend_id_fkey(id,username,full_name,avatar_url)').eq('user_id',CU.id);
     list.innerHTML=(data||[]).length?data.map(f=>`
       <div class="friend-card">
         ${renderAvatar(f.profiles,40,'friend-av')}
@@ -1354,7 +1488,7 @@ async function loadFriendsPage(){
         </div>
       </div>`).join(''):'<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhum amigo ainda — encontre amigos acima!</div>';
   }else if(friendTab==='following'){
-    const{data}=await db.from('follows').select('*,profiles!follows_following_id_fkey(id,username,full_name,avatar_url,avatar_type,retro_icon)').eq('follower_id',CU.id);
+    const{data}=await db.from('follows').select('id,follower_id,following_id,created_at,profiles!follows_following_id_fkey(id,username,full_name,avatar_url)').eq('follower_id',CU.id);
     list.innerHTML=(data||[]).length?data.map(f=>`
       <div class="friend-card">
         ${renderAvatar(f.profiles,40,'friend-av')}
@@ -1362,7 +1496,7 @@ async function loadFriendsPage(){
         <div class="friend-act"><button class="fbtn reject" onclick="unfollow('${f.id}')">Deixar de seguir</button></div>
       </div>`).join(''):'<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Não está seguindo ninguém</div>';
   }else{
-    const{data}=await db.from('follows').select('*,profiles!follows_follower_id_fkey(id,username,full_name,avatar_url,avatar_type,retro_icon)').eq('following_id',CU.id);
+    const{data}=await db.from('follows').select('id,follower_id,following_id,created_at,profiles!follows_follower_id_fkey(id,username,full_name,avatar_url)').eq('following_id',CU.id);
     list.innerHTML=(data||[]).length?data.map(f=>`
       <div class="friend-card">
         ${renderAvatar(f.profiles,40,'friend-av')}
@@ -1376,7 +1510,7 @@ async function searchFriends(){
   const q=document.getElementById('ff-search').value.trim();
   const res=document.getElementById('ff-results');
   if(q.length<2){res.innerHTML='';return;}
-  const{data:users}=await db.from('profiles').select('*').or(`username.ilike.%${q}%,full_name.ilike.%${q}%`).neq('id',CU?.id||'').limit(8);
+  const{data:users}=await db.from('profiles').select('id,username,full_name,avatar_url').or(`username.ilike.%${q}%,full_name.ilike.%${q}%`).neq('id',CU?.id||'').limit(8);
   const friendIds=new Set();
   if(CU&&users?.length){
     const ids=users.map(u=>u.id);
@@ -1429,16 +1563,29 @@ async function unfollow(followId){
 function switchCommTab(t,btn){commTab=t;document.querySelectorAll('#page-communities .ftab').forEach(b=>b.classList.remove('active'));btn.classList.add('active');loadCommunities();}
 async function loadCommunities(){
   const grid=document.getElementById('comm-grid');grid.innerHTML=skeletons(4,'100px');
-  let q=db.from('communities').select('*').order('members_count',{ascending:false}).limit(20);
-  if(commTab==='mine'&&CU){
-    const{data:mem}=await db.from('community_members').select('community_id').eq('user_id',CU.id);
-    const ids=(mem||[]).map(m=>m.community_id);
-    if(!ids.length){grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Você não faz parte de nenhuma comunidade</div>';return;}
-    q=db.from('communities').select('*').in('id',ids);
+  let comms=[];
+  try{
+    let q=db.from('communities').select('id,name,slug,description,avatar_url,visibility,members_count,posts_count,owner_id').order('members_count',{ascending:false}).limit(20);
+    if(commTab==='mine'&&CU){
+      const{data:mem}=await db.from('community_members').select('community_id').eq('user_id',CU.id);
+      const ids=(mem||[]).map(m=>m.community_id);
+      if(!ids.length){grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Você não faz parte de nenhuma comunidade</div>';return;}
+      q=db.from('communities').select('id,name,slug,description,avatar_url,visibility,members_count,posts_count,owner_id').in('id',ids);
+    }
+    const{data,error}=await q;
+    if(error)throw error;
+    comms=data||[];
+  }catch(e){
+    grid.innerHTML=`<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--neon-pink);font-size:12px;">Erro ao carregar comunidades.<br>${e.message}<br><small>Execute o SQL do schema no Supabase.</small></div>`;
+    return;
   }
-  const{data:comms}=await q;
   let memberSet=new Set();
-  if(CU&&comms?.length){const{data:mem}=await db.from('community_members').select('community_id').eq('user_id',CU.id).in('community_id',comms.map(c=>c.id));(mem||[]).forEach(m=>memberSet.add(m.community_id));}
+  if(CU&&comms.length){
+    try{
+      const{data:mem}=await db.from('community_members').select('community_id').eq('user_id',CU.id).in('community_id',comms.map(c=>c.id));
+      (mem||[]).forEach(m=>memberSet.add(m.community_id));
+    }catch(e){}
+  }
   grid.innerHTML=(comms||[]).map(c=>{
     const isMember=memberSet.has(c.id);
     return`<div class="comm-card" onclick="openCommDetail('${c.id}')">
@@ -1474,7 +1621,7 @@ async function toggleJoinComm(commId,isMember,btn){
 async function openCommDetail(commId){
   nav('comm-detail');
   const{data:comm}=await db.from('communities').select('*,profiles!communities_owner_id_fkey(username)').eq('id',commId).single();
-  const{data:posts}=await db.from('community_posts').select('posts(*,profiles(id,username,full_name,avatar_url,avatar_type,retro_icon))').eq('community_id',commId).order('created_at',{ascending:false}).limit(20);
+  const{data:posts}=await db.from('community_posts').select('posts(id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url))').eq('community_id',commId).order('created_at',{ascending:false}).limit(20);
   let isMember=false;
   if(CU){const{data:m}=await db.from('community_members').select('id').eq('community_id',commId).eq('user_id',CU.id).maybeSingle();isMember=!!m;}
   const commPosts=(posts||[]).map(cp=>cp.posts).filter(Boolean);
@@ -1502,14 +1649,14 @@ async function postInComm(commId){
 async function loadProfilePage(userId){
   nav('profile');if(!userId)return;
   document.getElementById('profile-content').innerHTML='<div style="padding:30px;">'+skeletons(3)+'</div>';
-  const{data:profile}=await db.from('profiles').select('*').eq('id',userId).maybeSingle();
+  const{data:profile}=await db.from('profiles').select('id,username,full_name,email,avatar_url,bio,instagram,twitter,github,status_message,created_at').eq('id',userId).maybeSingle();
   if(!profile)return;
   const[pRes,frRes,fngRes]= await Promise.all([
     db.from('posts').select('id',{count:'exact',head:true}).eq('user_id',userId),
     db.from('follows').select('id',{count:'exact',head:true}).eq('following_id',userId),
     db.from('follows').select('id',{count:'exact',head:true}).eq('follower_id',userId)
   ]);
-  const{data:posts}=await db.from('posts').select('*,profiles(id,username,full_name,avatar_url,avatar_type,retro_icon)').eq('user_id',userId).order('created_at',{ascending:false}).limit(10);
+  const{data:posts}=await db.from('posts').select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url)').eq('user_id',userId).order('created_at',{ascending:false}).limit(10);
   let isFollowing=false,isFriend=false;
   if(CU&&CU.id!==userId){
     const[fol,fri]=await Promise.all([
@@ -1584,11 +1731,17 @@ async function loadConversations(){
   const seen=new Set(),userIds=[];
   (msgs||[]).forEach(m=>{const other=m.sender_id===CU.id?m.receiver_id:m.sender_id;if(!seen.has(other)){seen.add(other);userIds.push(other);}});
   // Also include friends who haven't messaged yet
-  const{data:friends}=await db.from('friends').select('friend_id').eq('user_id',CU.id);
-  (friends||[]).forEach(f=>{if(!seen.has(f.friend_id)){seen.add(f.friend_id);userIds.push(f.friend_id);}});
+  // Tenta carregar amigos (tabela pode não existir ainda)
+  try{
+    const{data:friends}=await db.from('friends').select('friend_id').eq('user_id',CU.id);
+    (friends||[]).forEach(f=>{if(f.friend_id&&!seen.has(f.friend_id)){seen.add(f.friend_id);userIds.push(f.friend_id);}});
+  }catch(e){console.log('friends table not ready yet');}
+  // Adiciona quem o usuário segue também (sempre disponível)
+  const{data:follows}=await db.from('follows').select('following_id').eq('follower_id',CU.id);
+  (follows||[]).forEach(f=>{if(f.following_id&&!seen.has(f.following_id)){seen.add(f.following_id);userIds.push(f.following_id);}});
   const cl=document.getElementById('chat-list');
   if(!userIds.length){cl.innerHTML='<div style="padding:16px;color:var(--text-muted);font-size:11px;text-align:center;">Adicione amigos para conversar!</div>';return;}
-  const{data:profiles}=await db.from('profiles').select('*').in('id',userIds);
+  const{data:profiles}=await db.from('profiles').select('id,username,full_name,avatar_url').in('id',userIds);
   cl.innerHTML=(profiles||[]).map(p=>`
     <div class="ci" id="ci-${p.id}" onclick="openChat('${p.id}','${p.username}','${getAvatar(p)}')">
       ${renderAvatar(p,38,'ci-av')}
@@ -1608,17 +1761,18 @@ async function openChat(userId,username,avatarUrl){
 }
 async function loadMsgs(userId){
   if(!CU)return;
-  const{data:msgs}=await db.from('messages').select('*').or(`and(sender_id.eq.${CU.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${CU.id})`).order('created_at');
+  const{data:msgs}=await db.from('messages').select('id,sender_id,receiver_id,content,media_url,read,created_at').or(`and(sender_id.eq.${CU.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${CU.id})`).order('created_at');
   const area=document.getElementById('msgs-area');
   area.innerHTML=(msgs||[]).map(m=>`<div class="mb ${m.sender_id===CU.id?'sent':'recv'}">${xss(m.content)}<div class="mb-time">${timeAgo(m.created_at)}</div></div>`).join('')||'<div style="text-align:center;color:var(--text-muted);font-size:11px;margin:auto;">Início da conversa ✨</div>';
   area.scrollTop=area.scrollHeight;
 }
 async function sendMsg(){
   if(!CU||!currentChatUser)return;
-  const inp=document.getElementById('msg-in');const content=inp.value.trim();if(!content)return;
-  await db.from('messages').insert({sender_id:CU.id,receiver_id:currentChatUser.id,content,read:false});
+  const inp=document.getElementById('msg-in');const txt=inp.value.trim();if(!txt)return;
+  const{error}=await db.from('messages').insert({sender_id:CU.id,receiver_id:currentChatUser.id,content:txt,read:false});
+  if(error)return showToast('Erro ao enviar: '+error.message,'error');
   inp.value='';await loadMsgs(currentChatUser.id);
-  await db.from('notifications').insert({user_id:currentChatUser.id,actor_id:CU.id,type:'message',content:`@${CP?.username} enviou uma mensagem`,read:false});
+  try{await db.from('notifications').insert({user_id:currentChatUser.id,actor_id:CU.id,type:'message',content:`@${CP?.username||'alguém'} enviou uma mensagem`,read:false});}catch(e){}
 }
 
 // ===== NOTIFICATIONS =====
@@ -1631,11 +1785,13 @@ async function loadNotifCount(){
 }
 async function loadNotifications(){
   if(!CU)return;
-  const{data}=await db.from('notifications').select('*').eq('user_id',CU.id).order('created_at',{ascending:false}).limit(30);
+  const{data,error}=await db.from('notifications').select('id,user_id,type,content,read,created_at').eq('user_id',CU.id).order('created_at',{ascending:false}).limit(30);
   const list=document.getElementById('notif-list');
+  if(error){list.innerHTML=`<div style="color:var(--neon-pink);padding:20px;font-size:12px;">Erro: ${error.message}</div>`;return;}
   const icons={'follow':'👤','like':'❤️','comment':'💬','friend_request':'👥','friend_accept':'🎉','message':'💬','community_invite':'🏘'};
-  list.innerHTML=(data||[]).map(n=>`<div class="ni ${n.read?'':'unrd'}" onclick="markRead('${n.id}',this)">${icons[n.type]||'🔔'} <div class="ni-txt">${xss(n.content)}<div class="ni-time">${timeAgo(n.created_at)}</div></div></div>`).join('')||'<div style="text-align:center;padding:40px;color:var(--text-muted);">Nenhuma notificação</div>';
-  await db.from('notifications').update({read:true}).eq('user_id',CU.id).eq('read',false);
+  list.innerHTML=(data||[]).map(n=>`<div class="ni ${n.read?'':'unrd'}" onclick="markRead('${n.id}',this)">${icons[n.type]||'🔔'} <div class="ni-txt">${xss(n.content||'Nova notificação')}<div class="ni-time">${timeAgo(n.created_at)}</div></div></div>`).join('')||'<div style="text-align:center;padding:40px;color:var(--text-muted);">Nenhuma notificação</div>';
+  // Marca como lidas em background
+  try{await db.from('notifications').update({read:true}).eq('user_id',CU.id).eq('read',false);}catch(e){}
   document.getElementById('notif-badge').style.display='none';
 }
 async function markRead(id,el){await db.from('notifications').update({read:true}).eq('id',id);el.classList.remove('unrd');}
@@ -1676,6 +1832,7 @@ async function updateLevel(){
   document.getElementById('lvl-xp').textContent=xp+' XP';
   const pct=Math.min(100,((xp-lvl.min)/(lvl.max-lvl.min+1))*100);
   document.getElementById('xpfill').style.width=pct+'%';
+  }catch(e){list.innerHTML='<div style="text-align:center;padding:30px;color:var(--neon-pink);font-size:12px;">Erro: '+e.message+'<br>Execute o SQL do schema no Supabase.</div>';}
 }
 
 // ===== VALIDATION =====
@@ -1695,6 +1852,19 @@ function openM(id){document.getElementById(id).classList.add('open');}
 function closeM(id){document.getElementById(id).classList.remove('open');}
 function showToast(msg,type='success'){const w=document.getElementById('tst-wrap');const t=document.createElement('div');t.className=`tst ${type}`;t.innerHTML=`<span>${type==='success'?'✓':'⚠'}</span> ${msg}`;w.appendChild(t);setTimeout(()=>t.remove(),3200);}
 function toggleMusic(){const mn=document.querySelector('.mnote');const btn=document.querySelector('.mtgl');if(btn.textContent==='⏸'){btn.textContent='▶';mn.style.animationPlayState='paused';}else{btn.textContent='⏸';mn.style.animationPlayState='running';}}
+// ===== DIAGNOSTICO =====
+// Verifica se as tabelas básicas existem e mostra aviso se não
+async function checkSetup(){
+  const{error}=await db.from('posts').select('id').limit(1);
+  if(error&&(error.message.includes('does not exist')||error.message.includes('relation'))){
+    const warn=document.createElement('div');
+    warn.style.cssText='position:fixed;top:70px;left:50%;transform:translateX(-50%);background:rgba(255,51,102,.15);border:1px solid rgba(255,51,102,.4);border-radius:10px;padding:14px 20px;z-index:5000;font-size:12px;max-width:500px;text-align:center;backdrop-filter:blur(10px);color:var(--text-light);';
+    warn.innerHTML='⚠️ <strong>Tabelas não encontradas!</strong><br>Execute o arquivo <code>schema_completo.sql</code> no <strong>Supabase → SQL Editor</strong> para criar as tabelas.<br><button onclick="this.parentElement.remove()" style="margin-top:8px;background:var(--neon-pink);border:none;color:#fff;padding:4px 12px;border-radius:5px;cursor:pointer;font-size:10px;">Fechar</button>';
+    document.body.appendChild(warn);
+  }
+}
+setTimeout(()=>{if(CU)checkSetup();},3000);
+
 // Close modals on overlay click
 document.querySelectorAll('.movl').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));
 // Responsive profile grid
