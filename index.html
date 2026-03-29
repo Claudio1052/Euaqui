@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="theme-color" content="#0a0a2a">
 <title>EuAqui — Sua rede, seu mundo</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" crossorigin="anonymous" onerror="document.body.innerHTML='<div style=\"display:flex;align-items:center;justify-content:center;height:100vh;color:#00ffcc;font-family:monospace;text-align:center;\">⚠ Sem conexão com internet.<br>Verifique sua rede e recarregue a página.</div>'"></script>
 <script>window.addEventListener("error",function(e){if(e.target&&e.target.src&&e.target.src.includes("supabase")){var s=document.createElement("script");s.src="https://unpkg.com/@supabase/supabase-js@2";document.head.appendChild(s);}},true);</script>
 <link href="https://fonts.googleapis.com/css2?family=VT323&family=Silkscreen:wght@400;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
 <style>
@@ -27,7 +27,7 @@ img{max-width:100%;}
 a{text-decoration:none;}
 
 /* LOADING */
-#loading-screen{position:fixed;inset:0;background:var(--bg-deep);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;}
+#loading-screen{position:fixed;inset:0;background:var(--bg-deep);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;transition:opacity .4s;}
 .boot-logo{font-family:'VT323',monospace;font-size:80px;color:var(--neon-cyan);text-shadow:0 0 20px var(--neon-cyan),0 0 40px rgba(0,255,204,.5);animation:flicker 3s infinite;}
 .boot-logo span{color:var(--neon-pink);}
 @keyframes flicker{0%,95%,100%{opacity:1;}96%{opacity:.4;}97%{opacity:1;}98%{opacity:.3;}}
@@ -782,12 +782,20 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(10,1
 <div class="tst-wrap" id="tst-wrap"></div>
 
 <script>
+// ===== FAILSAFE: garante que loading nunca trava =====
+window.addEventListener('load', ()=>{
+  setTimeout(()=>{
+    const ls=document.getElementById('loading-screen');
+    if(ls&&ls.style.display!=='none'){
+      ls.style.display='none';
+      if(!CU) document.getElementById('auth-screen').style.display='flex';
+    }
+  }, 5000); // 5s de failsafe absoluto
+});
+
 // ===== CONFIG =====
 const SB_URL='https://gpustnmwxlolgyevjjtf.supabase.co';
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdwdXN0bm13eGxvbGd5ZXZqanRmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NDMyMDksImV4cCI6MjA5MDMxOTIwOX0.0-8H5lQkbyholETlTyvfhmUnOOQKY7678hLCCLtjaNA';
-
-// db declarado como let para ser iniciado depois que o SDK carregar
-let db = null;
 
 // ===== STATE =====
 let CU=null,CP=null;
@@ -799,98 +807,64 @@ let avatarFile=null,retroIconSelected=null;
 let cachedPosts={},cachedPostIds=new Set(),lastFeedLoad=0;
 const CACHE_TTL=60000;
 
-// ===== BOOT =====
-const bootMsgs=['Conectando ao servidor...','Carregando configurações...','Verificando sessão...','Preparando interface...','Pronto! 🎉'];
-let bi=0;
-const bel=document.getElementById('boot-step');
-const bt=setInterval(()=>{if(bi<bootMsgs.length&&bel)bel.textContent=bootMsgs[bi++];else clearInterval(bt);},480);
+// ===== DB — iniciado imediatamente (SDK já está no <head>) =====
+// Inicializa Supabase (SDK já carregado pelo CDN no <head>)
+if(!window.supabase){
+  document.getElementById('loading-screen').innerHTML='<div style="color:#ff3366;font-family:VT323,monospace;font-size:24px;text-align:center;padding:40px;">⚠ SDK Supabase não carregou.<br>Verifique sua conexão e recarregue.</div>';
+  throw new Error('Supabase SDK not loaded');
+}
+const {createClient} = window.supabase;
+const db = createClient(SB_URL, SB_KEY);
 
+// ===== BOOT — simples e direto =====
 function hideLS(){
   const ls=document.getElementById('loading-screen');
-  if(ls)ls.style.display='none';
-}
-
-// Aguarda o SDK Supabase estar disponível (CDN pode demorar)
-async function waitSDK(ms=5000){
-  const t=Date.now();
-  while(!(window.supabase&&window.supabase.createClient)){
-    if(Date.now()-t>ms)return false;
-    await new Promise(r=>setTimeout(r,80));
-  }
-  return true;
-}
-
-// Força saída da tela de loading após 7s em qualquer caso
-setTimeout(()=>{ hideLS(); if(!CU)showAuth(); },7000);
-
-(async()=>{
-  try{
-    const ok=await waitSDK(5000);
-    if(!ok){
-      hideLS();
-      showAuth();
-      const aerr=document.getElementById('aerr');
-      if(aerr){aerr.textContent='⚠ Supabase SDK não carregou. Verifique sua internet.';aerr.classList.add('show');}
-      return;
-    }
-    db=window.supabase.createClient(SB_URL,SB_KEY);
-    hideLS();
-    await initApp();
-  }catch(e){
-    console.error('Boot fatal:',e);
-    hideLS();
-    showAuth();
-    const aerr=document.getElementById('aerr');
-    if(aerr){aerr.textContent='⚠ Erro: '+e.message;aerr.classList.add('show');}
-  }
-})();
-
-// ===== INIT =====
-async function initApp(){
-  let session=null;
-  try{
-    const res=await db.auth.getSession();
-    session=res.data?.session||null;
-  }catch(e){
-    console.warn('getSession error:',e);
-    showAuth();
-    return;
-  }
-  if(session){
-    CU=session.user;
-    try{ await loadProfile(); }catch(e){ console.warn('loadProfile error:',e); }
-    showApp();
-  } else {
-    showAuth();
-  }
-  db.auth.onAuthStateChange(async(ev,sess)=>{
-    if(ev==='SIGNED_IN'&&sess){
-      CU=sess.user;
-      try{ await loadProfile(); }catch(e){ console.warn('loadProfile error:',e); }
-      showApp();
-    } else if(ev==='SIGNED_OUT'){
-      CU=null;CP=null;showAuth();
-    }
-  });
+  if(ls){ ls.style.opacity='0'; ls.style.transition='opacity .4s'; setTimeout(()=>ls.style.display='none',400); }
 }
 function showApp(){
+  hideLS();
   document.getElementById('auth-screen').style.display='none';
   document.getElementById('app').style.display='block';
-  document.getElementById('loading-screen').style.display='none';
-  try{ refreshUI(); }catch(e){ console.warn('refreshUI:',e); }
-  try{ loadFeed(); }catch(e){ console.warn('loadFeed:',e); }
-  try{ loadNotifCount(); }catch(e){}
-  try{ loadBlast(); }catch(e){}
-  try{ fillEmojiGrid(); }catch(e){}
-  try{ setupRealtime(); }catch(e){}
-  try{ updateVisitCounter(); }catch(e){}
-  try{ updateLevel(); }catch(e){}
+  refreshUI();
+  loadFeed();
+  loadNotifCount();
+  loadBlast();
+  fillEmojiGrid();
+  setupRealtime();
+  updateVisitCounter();
+  updateLevel();
 }
 function showAuth(){
-  document.getElementById('loading-screen').style.display='none';
+  hideLS();
   document.getElementById('auth-screen').style.display='flex';
   document.getElementById('app').style.display='none';
 }
+
+// Inicia assim que o DOM estiver pronto
+document.addEventListener('DOMContentLoaded', async()=>{
+  // Animação mínima de 1.5s para não piscar
+  const minWait = new Promise(r=>setTimeout(r,1500));
+  try{
+    const [{data:{session}}] = await Promise.all([db.auth.getSession(), minWait]);
+    if(session){ CU=session.user; await loadProfile(); showApp(); }
+    else showAuth();
+  }catch(e){
+    console.error('Boot error:',e);
+    showAuth();
+  }
+  // Escuta mudanças de sessão (login/logout/OAuth callback)
+  db.auth.onAuthStateChange(async(ev,sess)=>{
+    if(ev==='SIGNED_IN'&&sess&&!CU){
+      CU=sess.user;
+      await loadProfile();
+      showApp();
+    } else if(ev==='TOKEN_REFRESHED'&&sess){
+      CU=sess.user;
+    } else if(ev==='SIGNED_OUT'){
+      CU=null; CP=null; showAuth();
+    }
+  });
+});
 
 // ===== AUTH =====
 function switchAuthTab(t){
