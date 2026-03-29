@@ -540,12 +540,31 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(10,1
   .comm-header{height:120px;font-size:50px;}
   .comm-stat-row{gap:8px;}
   .chat-page-wrap{margin:-12px;}
+  /* Profile responsive */
+  #profile-cover-bar .pbar{flex-direction:column;align-items:center;text-align:center;padding:0 14px 14px;}
+  #profile-cover-bar [style*="flex:1"]{min-width:unset;width:100%;}
+  #profile-cover-bar [style*="display:flex;gap:6px"]{justify-content:center;width:100%;}
+  .profile-page-tabs{margin:0;}
+  .edit-section{padding:14px;}
+  /* Friends responsive */
+  .friend-card{flex-wrap:wrap;}
+  /* Communities detail */
+  .comm-banner-info [style*="justify-content:space-between"]{flex-direction:column;gap:10px;}
 }
 @media(max-width:480px){
   .avatar-picker-grid{grid-template-columns:repeat(4,1fr);}
   .comm-stat-row{grid-template-columns:1fr 1fr;}
   .comm-stat-row{display:grid;}
   .ptab{padding:9px 10px;font-size:8px;}
+}
+
+/* Profile page layout */
+#page-profile{padding:0;}
+#page-profile .profile-tab-panel{padding:16px 20px;}
+@media(max-width:768px){
+  #page-profile .profile-tab-panel{padding:12px;}
+  .avatar-picker-grid{gap:6px;}
+  .av-pick-item{font-size:22px;}
 }
 </style>
 </head>
@@ -938,10 +957,10 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(10,1
 <div class="bottom-nav">
   <div class="bnav-items">
     <button class="bnav-btn active" id="bn-home" onclick="nav('home')"><span class="bi">🏠</span>Feed</button>
-    <button class="bnav-btn" id="bn-explore" onclick="nav('explore')"><span class="bi">🔍</span>Explorar</button>
     <button class="bnav-btn" id="bn-friends" onclick="nav('friends')"><span class="bi">👥</span>Amigos</button>
+    <button class="bnav-btn" id="bn-communities" onclick="nav('communities')"><span class="bi">🏘</span>Grupos</button>
     <button class="bnav-btn" id="bn-messages" onclick="nav('messages')"><span class="bi">💬</span>Chat</button>
-    <button class="bnav-btn" id="bn-profile" onclick="nav('profile')"><span class="bi">👤</span>Perfil</button>
+    <button class="bnav-btn" id="bn-notifications" onclick="nav('notifications')" style="position:relative;"><span class="bi">🔔</span>Notifs<span class="nbadge" id="bnav-notif-badge" style="display:none;position:absolute;top:4px;right:6px;font-size:8px;">0</span></button>
   </div>
 </div>
 
@@ -1155,7 +1174,21 @@ async function loadProfile(){
 function refreshUI(){
   if(!CP)return;
   const av=getAvatar(CP);
-  ['nav-av','sl-av','c-av','dr-av'].forEach(id=>{const el=document.getElementById(id);if(el){if(typeof av==='string'&&av.length>2){el.src=av;el.style.fontSize='';}else{el.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\'/%3E';el.style.fontSize='22px';}}});
+  const isEmoji = av && av.length <= 4 && !av.startsWith('http') && !av.startsWith('data');
+  ['nav-av','sl-av','c-av','dr-av'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(!el) return;
+    if(isEmoji){
+      el.src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+      el.style.fontSize='18px';
+      el.title=av;
+      el.setAttribute('data-emoji',av);
+    } else {
+      el.src=av;
+      el.style.fontSize='';
+      el.removeAttribute('data-emoji');
+    }
+  });
   document.getElementById('sl-name').textContent='@'+CP.username;
   document.getElementById('dr-name').textContent='@'+CP.username;
   document.getElementById('sl-status').textContent=CP.status_message||'...';
@@ -1205,14 +1238,6 @@ function _navBase(page){
   const nb=document.getElementById('nb-'+page);if(nb)nb.classList.add('active');
   const bn=document.getElementById('bn-'+page);if(bn)bn.classList.add('active');
   // page-specific loaders
-  if(page==='home')loadFeed();
-  if(page==='explore')loadExploreFeed();
-  if(page==='friends')loadFriendsPage();
-  if(page==='communities')loadCommunities();
-  if(page==='messages')loadConversations();
-  if(page==='notifications')loadNotifications();
-  if(page==='capsules')loadCapsules();
-  if(page==='profile')loadProfilePage(CU?.id);
   window.scrollTo(0,0);
 }
 function toggleDrawer(){
@@ -1599,24 +1624,36 @@ function insertEmoji(e){const ta=document.getElementById('post-txt');const p=ta.
 const RETRO_ICONS=['🤖','👾','🦄','🐉','🦊','🐺','🦁','🐯','🐻','🐼','🐨','🦋','👺','👹','💀','☠️','🧙','🧚','🧜','🧝','🧛','👽','🎭','🎪','🃏','🎮','🕹️','⚔️','🛡️','🎯','🔮','💎','👑','🌟','⚡','🔥','❄️','🌊','🌌','🎆','🎇','🎨','🎵','🎸','🎹','🎺','🥁','🎻'];
 function buildRetroGrid(){
   const grid=document.getElementById('av-retro-grid');
-  grid.innerHTML=RETRO_ICONS.map(ic=>`<div class="av-opt${retroIconSelected===ic?' sel':''}" onclick="selectRetroIcon('${ic}')">${ic}</div>`).join('');
+  if(!grid) return;
+  grid.innerHTML=RETRO_ICONS.map(function(ic){
+    const sel=retroIconSelected===ic?' sel':'';
+    return '<div class="av-pick-item'+sel+'" data-icon="'+ic+'" onclick="selectRetroIcon(this.dataset.icon)">'+ic+'</div>';
+  }).join('');
 }
-function selectRetroIcon(ic){retroIconSelected=ic;avatarFile=null;buildRetroGrid();document.getElementById('set-av-preview').textContent=ic;document.getElementById('set-av-preview').style.backgroundImage='';}
+function selectRetroIcon(ic){
+  retroIconSelected=ic; avatarFile=null;
+  buildRetroGrid();
+  const prev=document.getElementById('av-current-preview');
+  if(prev){ prev.innerHTML=''; prev.textContent=ic; }
+}
 function previewAvatar(inp){
   if(!inp.files[0])return;
   avatarFile=inp.files[0];retroIconSelected=null;
   const url=URL.createObjectURL(avatarFile);
-  const prev=document.getElementById('set-av-preview');
+  const prev=document.getElementById('av-current-preview');
   prev.innerHTML=`<img src="${url}" style="width:100%;height:100%;object-fit:cover;">`;
   document.getElementById('av-file-preview').innerHTML=`<div style="font-size:10px;color:var(--neon-cyan);">✓ Foto selecionada</div>`;
 }
 function switchAvTab(t,btn){
-  document.querySelectorAll('#av-picker-section .ftab').forEach(b=>b.classList.remove('active'));btn.classList.add('active');
-  document.getElementById('av-upload-sec').style.display=t==='upload'?'block':'none';
-  document.getElementById('av-retro-sec').style.display=t==='retro'?'block':'none';
-  if(t==='retro')buildRetroGrid();
+  document.querySelectorAll('#pp-edit .ftab').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  const u=document.getElementById('av-upload-sec');
+  const r=document.getElementById('av-retro-sec');
+  if(u) u.style.display=t==='upload'?'block':'none';
+  if(r) r.style.display=t==='retro'?'block':'none';
+  if(t==='retro') buildRetroGrid();
 }
-function toggleAvPicker(){const s=document.getElementById('av-picker-section');s.style.display=s.style.display==='none'?'block':'none';}
+function toggleAvPicker(){const s=document.getElementById('av-retro-sec')?.parentElement;s.style.display=s.style.display==='none'?'block':'none';}
 
 // ===== SETTINGS =====
 // showSettings — replaced by profile edit tab
@@ -1716,76 +1753,9 @@ function quickSearch(){const v=document.getElementById('nav-search').value;docum
 
 // ===== FRIENDS =====
 // switchFriendTab — replaced by switchPageTab
-async function loadFriendsPage(){
-  if(!CU)return;
-  const list=document.getElementById('friends-list');list.innerHTML=skeletons(3);
-  try{
-  if(friendTab==='requests'){
-    const{data}=await db.from('friend_requests').select('id,sender_id,receiver_id,status,created_at,profiles!friend_requests_sender_id_fkey(id,username,full_name,avatar_url)').eq('receiver_id',CU.id).eq('status','pending');
-    list.innerHTML=(data||[]).length?data.map(r=>`
-      <div class="friend-card">
-        ${renderAvatar(r.profiles,40,'friend-av')}
-        <div class="friend-info"><div class="friend-name">${xss(r.profiles?.full_name||r.profiles?.username)}</div><div class="friend-user">@${xss(r.profiles?.username)}</div></div>
-        <div class="friend-act">
-          <button class="fbtn accept" onclick="handleFriendReq('${r.id}','${r.sender_id}','accept')">✓ Aceitar</button>
-          <button class="fbtn reject" onclick="handleFriendReq('${r.id}','${r.sender_id}','reject')">✕ Recusar</button>
-        </div>
-      </div>`).join(''):'<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Sem solicitações pendentes</div>';
-  }else if(friendTab==='friends'){
-    const{data}=await db.from('friends').select('id,user_id,friend_id,created_at,profiles!friends_friend_id_fkey(id,username,full_name,avatar_url)').eq('user_id',CU.id);
-    list.innerHTML=(data||[]).length?data.map(f=>`
-      <div class="friend-card">
-        ${renderAvatar(f.profiles,40,'friend-av')}
-        <div class="friend-info"><div class="friend-name">${xss(f.profiles?.full_name||f.profiles?.username)}</div><div class="friend-user">@${xss(f.profiles?.username)}</div></div>
-        <div class="friend-act">
-          <button class="fbtn msg" onclick="openChat('${f.friend_id}','${f.profiles?.username}','${getAvatar(f.profiles)}')">💬</button>
-          <button class="fbtn reject" onclick="removeFriend('${f.id}')">✕</button>
-        </div>
-      </div>`).join(''):'<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhum amigo ainda — encontre amigos acima!</div>';
-  }else if(friendTab==='following'){
-    const{data}=await db.from('follows').select('id,follower_id,following_id,created_at,profiles!follows_following_id_fkey(id,username,full_name,avatar_url)').eq('follower_id',CU.id);
-    list.innerHTML=(data||[]).length?data.map(f=>`
-      <div class="friend-card">
-        ${renderAvatar(f.profiles,40,'friend-av')}
-        <div class="friend-info"><div class="friend-name">${xss(f.profiles?.full_name||f.profiles?.username)}</div><div class="friend-user">@${xss(f.profiles?.username)}</div></div>
-        <div class="friend-act"><button class="fbtn reject" onclick="unfollow('${f.id}')">Deixar de seguir</button></div>
-      </div>`).join(''):'<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Não está seguindo ninguém</div>';
-  }else{
-    const{data}=await db.from('follows').select('id,follower_id,following_id,created_at,profiles!follows_follower_id_fkey(id,username,full_name,avatar_url)').eq('following_id',CU.id);
-    list.innerHTML=(data||[]).length?data.map(f=>`
-      <div class="friend-card">
-        ${renderAvatar(f.profiles,40,'friend-av')}
-        <div class="friend-info"><div class="friend-name">${xss(f.profiles?.full_name||f.profiles?.username)}</div><div class="friend-user">@${xss(f.profiles?.username)}</div></div>
-        <div class="friend-act"><button class="fbtn accept" onclick="sendFriendReq('${f.follower_id}')">+ Amigo</button></div>
-      </div>`).join(''):'<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhum seguidor ainda</div>';
-  }
-  }catch(e){
-    const list=document.getElementById('friends-list');
-    if(list)list.innerHTML='<div style="text-align:center;padding:30px;color:var(--neon-pink);font-size:12px;">Erro ao carregar. Execute o SQL do schema.<br><small>'+e.message+'</small></div>';
-  }
-}
+
 function openFindFriends(){nav('friends');setTimeout(()=>{const t=document.querySelector('.ptab[data-tab=fl-find]');if(t)t.click();},100);}
-async function searchFriends(){
-  const q=document.getElementById('ff-search').value.trim();
-  const res=document.getElementById('ff-results');
-  if(q.length<2){res.innerHTML='';return;}
-  const{data:users}=await db.from('profiles').select('id,username,full_name,avatar_url').or(`username.ilike.%${q}%,full_name.ilike.%${q}%`).neq('id',CU?.id||'').limit(8);
-  const friendIds=new Set();
-  if(CU&&users?.length){
-    const ids=users.map(u=>u.id);
-    const{data:frs}=await db.from('friends').select('friend_id').eq('user_id',CU.id).in('friend_id',ids);
-    (frs||[]).forEach(f=>friendIds.add(f.friend_id));
-  }
-  res.innerHTML=(users||[]).map(u=>`
-    <div class="friend-card">
-      ${renderAvatar(u,38,'friend-av')}
-      <div class="friend-info"><div class="friend-name">${xss(u.full_name||u.username)}</div><div class="friend-user">@${xss(u.username)}</div></div>
-      <div class="friend-act">
-        <button class="fbtn accept" onclick="sendFriendReq('${u.id}',this)" ${friendIds.has(u.id)?'disabled style="opacity:.5"':''}>${friendIds.has(u.id)?'Amigos':'+ Amigo'}</button>
-        <button class="fbtn msg" onclick="loadProfilePage('${u.id}');closeM('m-find-friends')">👤</button>
-      </div>
-    </div>`).join('')||'<div style="color:var(--text-muted);font-size:11px;">Nenhum resultado</div>';
-}
+
 async function sendFriendReq(toId,btn){
   if(!CU)return showToast('Faça login primeiro','error');
   const{error}=await db.from('friend_requests').upsert({sender_id:CU.id,receiver_id:toId,status:'pending',updated_at:new Date().toISOString()},{onConflict:'sender_id,receiver_id'});
@@ -1805,59 +1775,22 @@ async function handleFriendReq(reqId,senderId,action){
     ]);
     showToast('Amizade aceita! 🎉','success');
   }else showToast('Solicitação recusada','success');
-  loadFriendsPage();
+  loadFriendsList('requests');
 }
 async function removeFriend(friendRowId){
   if(!confirm('Remover este amigo?'))return;
   const{data}=await db.from('friends').select('user_id,friend_id').eq('id',friendRowId).maybeSingle();
   if(data){await Promise.all([db.from('friends').delete().eq('user_id',data.user_id).eq('friend_id',data.friend_id),db.from('friends').delete().eq('user_id',data.friend_id).eq('friend_id',data.user_id)]);}
-  showToast('Amigo removido','success');loadFriendsPage();
+  showToast('Amigo removido','success');loadFriendsList('friends');
 }
 async function unfollow(followId){
   await db.from('follows').delete().eq('id',followId);
-  showToast('Deixou de seguir','success');loadFriendsPage();
+  showToast('Deixou de seguir','success');loadFriendsList('following');
 }
 
 // ===== COMMUNITIES =====
 // switchCommTab — replaced by switchPageTab
-async function loadCommunities(){
-  const grid=document.getElementById('comm-grid');grid.innerHTML=skeletons(4,'100px');
-  let comms=[];
-  try{
-    let q=db.from('communities').select('id,name,slug,description,avatar_url,visibility,members_count,posts_count,owner_id').order('members_count',{ascending:false}).limit(20);
-    if(commTab==='mine'&&CU){
-      const{data:mem}=await db.from('community_members').select('community_id').eq('user_id',CU.id);
-      const ids=(mem||[]).map(m=>m.community_id);
-      if(!ids.length){grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Você não faz parte de nenhuma comunidade</div>';return;}
-      q=db.from('communities').select('id,name,slug,description,avatar_url,visibility,members_count,posts_count,owner_id').in('id',ids);
-    }
-    const{data,error}=await q;
-    if(error)throw error;
-    comms=data||[];
-  }catch(e){
-    grid.innerHTML=`<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--neon-pink);font-size:12px;">Erro ao carregar comunidades.<br>${e.message}<br><small>Execute o SQL do schema no Supabase.</small></div>`;
-    return;
-  }
-  let memberSet=new Set();
-  if(CU&&comms.length){
-    try{
-      const{data:mem}=await db.from('community_members').select('community_id').eq('user_id',CU.id).in('community_id',comms.map(c=>c.id));
-      (mem||[]).forEach(m=>memberSet.add(m.community_id));
-    }catch(e){}
-  }
-  grid.innerHTML=(comms||[]).map(c=>{
-    const isMember=memberSet.has(c.id);
-    return`<div class="comm-card" onclick="openCommDetail('${c.id}')">
-      <div class="comm-cover">${c.avatar_url||'🏘'}</div>
-      <div class="comm-info">
-        <div class="comm-name">${xss(c.name)}</div>
-        <div class="comm-desc">${xss(c.description||'')}</div>
-        <div class="comm-meta"><span>👥 ${c.members_count} membros</span><span>📝 ${c.posts_count} posts</span></div>
-        <button class="comm-join ${isMember?'joined':''}" style="margin-top:8px;width:100%;" onclick="event.stopPropagation();toggleJoinComm('${c.id}',${isMember},this)">${isMember?'✓ Membro':'+ Entrar'}</button>
-      </div>
-    </div>`;
-  }).join('')||'<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhuma comunidade ainda — crie a primeira!</div>';
-}
+
 function genSlug(){const n=document.getElementById('cm-name').value;document.getElementById('cm-slug').value=n.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');}
 async function createCommunity(){
   if(!CU)return;
@@ -1907,7 +1840,7 @@ async function postInComm(commId){
 // ===== PROFILE =====
 async function loadProfilePage(userId){
   nav('profile');if(!userId)return;
-  document.getElementById('profile-content').innerHTML='<div style="padding:30px;">'+skeletons(3)+'</div>';
+  document.getElementById('profile-cover-bar').innerHTML='<div style="padding:30px;">'+skeletons(3)+'</div>';
   const{data:profile}=await db.from('profiles').select('id,username,full_name,email,avatar_url,avatar_type,retro_icon,bio,instagram,twitter,github,status_message,created_at').eq('id',userId).maybeSingle();
   if(!profile)return;
   const[pRes,frRes,fngRes]= await Promise.all([
@@ -1929,7 +1862,7 @@ async function loadProfilePage(userId){
   const isEmoji=av&&av.length<=4&&!av.startsWith('http');
   const days=Math.floor((Date.now()-new Date(profile.created_at))/(864e5));
   const isOwn=CU?.id===userId;
-  document.getElementById('profile-content').innerHTML=`
+  document.getElementById('profile-cover-bar').innerHTML=`
     <div class="pcov" style="background:linear-gradient(135deg,#0a0a2a,#1a0a3a);"></div>
     <div class="pbar">
       ${isEmoji?`<div class="pbav">${av}</div>`:`<img class="pbav" src="${xss(av)}" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${profile.username}'">`}
@@ -2012,7 +1945,7 @@ async function openChat(userId,username,avatarUrl){
   currentChatUser={id:userId,username,avatar:avatarUrl};
   document.querySelectorAll('.ci').forEach(c=>c.classList.remove('active'));
   document.getElementById('ci-'+userId)?.classList.add('active');
-  const top=document.getElementById('chat-top');
+  const top=document.getElementById('chat-win-hdr');
   const avH=renderAvatar({id:userId,username,avatar_url:avatarUrl},36,'');
   top.innerHTML=avH+`<div><div style="font-family:'Silkscreen',monospace;font-size:11px;color:var(--neon-cyan);">@${xss(username)}</div></div>`;
   document.getElementById('msg-in-area').style.display='flex';
@@ -2071,21 +2004,35 @@ async function sendMsg(){
 async function loadNotifCount(){
   if(!CU)return;
   const{count}=await db.from('notifications').select('id',{count:'exact',head:true}).eq('user_id',CU.id).eq('read',false);
+  const n = count||0;
+  // Update nav badge
   const badge=document.getElementById('notif-badge');
-  if(count>0){badge.textContent=count;badge.style.display='inline-block';}
-  else badge.style.display='none';
+  if(badge){ badge.textContent=n; badge.style.display=n>0?'inline-block':'none'; }
+  // Update bottom nav badge
+  const bnBadge=document.getElementById('bnav-notif-badge');
+  if(bnBadge){ bnBadge.textContent=n; bnBadge.style.display=n>0?'inline-block':'none'; }
 }
 async function loadNotifications(){
-  if(!CU)return;
-  const{data,error}=await db.from('notifications').select('id,user_id,type,content,read,created_at').eq('user_id',CU.id).order('created_at',{ascending:false}).limit(30);
-  const list=document.getElementById('notif-list');
-  if(error){list.innerHTML=`<div style="color:var(--neon-pink);padding:20px;font-size:12px;">Erro: ${error.message}</div>`;return;}
-  const icons={'follow':'👤','like':'❤️','comment':'💬','friend_request':'👥','friend_accept':'🎉','message':'💬','community_invite':'🏘'};
-  list.innerHTML=(data||[]).map(n=>`<div class="ni ${n.read?'':'unrd'}" onclick="markRead('${n.id}',this)">${icons[n.type]||'🔔'} <div class="ni-txt">${xss(n.content||'Nova notificação')}<div class="ni-time">${timeAgo(n.created_at)}</div></div></div>`).join('')||'<div style="text-align:center;padding:40px;color:var(--text-muted);">Nenhuma notificação</div>';
-  // Marca como lidas em background
-  try{await db.from('notifications').update({read:true}).eq('user_id',CU.id).eq('read',false);}catch(e){}
-  document.getElementById('notif-badge').style.display='none';
+  await loadNotifTab('nt-all');
 }
+
+async function acceptFriendFromNotif(btn){
+  // Find sender from notification content
+  const notifEl = btn.closest('.ni');
+  if(!notifEl) return;
+  const txt = notifEl.querySelector('.ni-txt')?.textContent||'';
+  const match = txt.match(/@(\w+)/);
+  if(!match) return;
+  const username = match[1];
+  const{data:sender}=await db.from('profiles').select('id').eq('username',username).maybeSingle();
+  if(!sender) return showToast('Usuário não encontrado','error');
+  // Find the pending request
+  const{data:req}=await db.from('friend_requests').select('id').eq('sender_id',sender.id).eq('receiver_id',CU.id).eq('status','pending').maybeSingle();
+  if(!req) return showToast('Solicitação não encontrada','error');
+  await handleFriendReq(req.id, sender.id, 'accept');
+  notifEl.querySelector('.ni-actions')?.remove();
+}
+
 async function markRead(id,el){await db.from('notifications').update({read:true}).eq('id',id);el.classList.remove('unrd');}
 
 // ===== REALTIME =====
@@ -2484,16 +2431,16 @@ function updateAvPreview(){
 
 function nav(page){
   _navBase(page);
-  if(page==='friends'){
-    // Load first tab
-    setTimeout(()=>loadFriendsList('friends'),0);
-  } else if(page==='communities'){
-    setTimeout(()=>loadCommGrid('all'),0);
-  } else if(page==='notifications'){
-    setTimeout(()=>loadNotifTab('nt-all'),0);
-  } else if(page==='messages'){
-    setTimeout(()=>loadConversations(),0);
-  }
+  setTimeout(()=>{
+    if(page==='home')           loadFeed();
+    else if(page==='explore')   loadExploreFeed();
+    else if(page==='friends')   loadFriendsList('friends');
+    else if(page==='communities') loadCommGrid('all');
+    else if(page==='messages')  loadConversations();
+    else if(page==='notifications') loadNotifTab('nt-all');
+    else if(page==='capsules')  loadCapsules();
+    else if(page==='profile')   loadProfilePage(CU?.id);
+  }, 0);
 }
 
 
