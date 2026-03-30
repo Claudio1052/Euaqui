@@ -2618,11 +2618,13 @@ async function createCommunity(){
   // Clear form
   ['cm-name','cm-slug','cm-desc','cm-icon'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('comm-create-error')?.remove();
-  showToast('Comunidade criada! 🏘','success');
-  // Switch to "Minhas" tab
+  showToast('Comunidade criada! 🏘 Aparecerá na aba "Minhas"','success');
+  // Always reload both grids to show the new community
+  await loadCommGrid('mine');
+  await loadCommGrid('all');
+  // Switch to "Minhas" tab to show the user their community
   const myTab=document.querySelector('#comm-page-tabs .ptab[data-tab="cm-mine"]');
   if(myTab) myTab.click();
-  else loadCommGrid('mine');
 }
 async function toggleJoinComm(commId,isMember,btn){
   if(!CU)return showToast('Faça login primeiro','error');
@@ -3343,20 +3345,12 @@ async function loadHomeComms(){
   if(!grid) return;
   grid.innerHTML=skeletons(4);
   try{
-    // Split query to bypass RLS infinite recursion on communities SELECT
-    const{data:pubC}=await db.from('communities')
-      .select('id,name,description,avatar_url,members_count')
-      .eq('visibility','public')
-      .order('members_count',{ascending:false}).limit(20);
-    let ownC=[];
-    if(CU){
-      const{data:o}=await db.from('communities')
-        .select('id,name,description,avatar_url,members_count')
-        .eq('owner_id',CU.id).limit(10);
-      ownC=o||[];
-    }
-    const _seen=new Set((pubC||[]).map(x=>x.id));
-    const data=[...(pubC||[]),...ownC.filter(x=>!_seen.has(x.id))];
+    // Multi-strategy fetch to bypass RLS issues
+    let data=[];
+    // Strategy 1: owned by user
+    if(CU){ try{ const{data:o}=await db.from('communities').select('id,name,description,avatar_url,members_count,owner_id').eq('owner_id',CU.id).limit(20); const s=new Set(data.map(x=>x.id));(o||[]).forEach(d=>{if(!s.has(d.id))data.push(d);}); }catch(e){} }
+    // Strategy 2: public communities
+    try{ const{data:p}=await db.from('communities').select('id,name,description,avatar_url,members_count,owner_id').eq('visibility','public').order('members_count',{ascending:false}).limit(30); const s=new Set(data.map(x=>x.id));(p||[]).forEach(d=>{if(!s.has(d.id))data.push(d);}); }catch(e){}
     let ms=new Set();
     if(CU&&(data||[]).length){
       const{data:mem}=await db.from('community_members').select('community_id').eq('user_id',CU.id).in('community_id',(data||[]).map(c=>c.id));
@@ -4037,73 +4031,122 @@ async function loadCommGrid(mode){
   const grid = document.getElementById(gridId);
   if(!grid) return;
   grid.innerHTML = skeletons(4);
-  try{
-    let comms = [];
-    if(mode === 'mine' && CU){
-      // Get communities where user is member
-      const{data:mem} = await db.from('community_members').select('community_id').eq('user_id',CU.id);
-      const memberIds = (mem||[]).map(m=>m.community_id);
-      // Also get communities created by user (in case RLS prevented member insert)
-      const{data:owned} = await db.from('communities').select('id,name,slug,description,avatar_url,visibility,members_count,posts_count').eq('owner_id',CU.id);
-      const ownedIds = (owned||[]).map(c=>c.id);
-      // Merge IDs
-      const allIds = [...new Set([...memberIds, ...ownedIds])];
-      if(!allIds.length){ grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Você não criou nem participa de nenhuma comunidade ainda.</div>'; return; }
-      // Fetch all, include owned communities directly
-      let fromMemberIds = [];
-      if(memberIds.length){
-        const{data:md} = await db.from('communities').select('id,name,slug,description,avatar_url,visibility,members_count,posts_count').in('id',memberIds);
-        fromMemberIds = md||[];
-      }
-      // Merge avoiding duplicates
-      const seen = new Set(fromMemberIds.map(c=>c.id));
-      comms = [...fromMemberIds, ...(owned||[]).filter(c=>!seen.has(c.id))];
-    } else {
-      // Use two separate queries to avoid RLS infinite recursion:
-      // 1. Public communities (no subquery in policy)
-      const{data:publicComms, error:pubErr} = await db.from('communities')
-        .select('id,name,slug,description,avatar_url,visibility,members_count,posts_count')
-        .eq('visibility','public')
-        .order('members_count',{ascending:false}).limit(30);
-      
-      // 2. User's own communities (direct owner_id check)
-      let ownedComms = [];
-      if(CU){
-        const{data:owned} = await db.from('communities')
-          .select('id,name,slug,description,avatar_url,visibility,members_count,posts_count')
-          .eq('owner_id',CU.id);
-        ownedComms = owned||[];
-      }
-      
-      // Merge, deduplicate
-      const seen = new Set((publicComms||[]).map(c=>c.id));
-      comms = [...(publicComms||[]), ...ownedComms.filter(c=>!seen.has(c.id))];
-    }
-    let memberSet = new Set();
-    if(CU && comms.length){
-      const{data:mem} = await db.from('community_members').select('community_id').eq('user_id',CU.id).in('community_id',comms.map(c=>c.id));
-      (mem||[]).forEach(m=>memberSet.add(m.community_id));
-    }
-    grid.innerHTML = comms.map(c => {
-      const isMember = memberSet.has(c.id);
-      return `<div class="comm-card" onclick="openCommDetail('${c.id}')">
-        <div class="comm-cover">${xss(c.avatar_url||'🏘')}</div>
-        <div class="comm-info">
-          <div class="comm-name">${xss(c.name)}</div>
-          <div class="comm-desc">${xss(c.description||'')}</div>
-          <div class="comm-meta"><span>👥 ${c.members_count||0}</span><span>${c.visibility==='private'?'🔒 Privada':'🌍 Pública'}</span></div>
-          <button class="comm-join ${isMember?'joined':''}" style="margin-top:8px;width:100%;" onclick="event.stopPropagation();toggleJoinComm('${c.id}',${isMember},this)">${isMember?'✓ Membro':'+ Entrar'}</button>
-        </div>
-      </div>`;
-    }).join('') || '<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhuma comunidade encontrada.<br>Crie a primeira!</div>';
-  } catch(e){
-    console.error('loadCommGrid error:', e);
-    if(e.message && e.message.includes('recursion')){
-      grid.innerHTML = '<div style="grid-column:1/-1;padding:20px;font-size:12px;color:var(--neon-pink);">⚠️ Erro de permissão RLS.<br><small style="color:var(--text-muted);">Execute o SQL de correção no Supabase SQL Editor.</small></div>';
-    } else {
-      grid.innerHTML = '<div style="grid-column:1/-1;color:var(--neon-pink);padding:20px;font-size:12px;">Erro: '+xss(e.message)+'</div>';
-    }
+
+  let comms = [];
+  const errors = [];
+
+  // Strategy 1: Try fetching communities owned by user (bypasses most RLS issues)
+  if(CU){
+    try{
+      const{data,error} = await db.from('communities')
+        .select('id,name,slug,description,avatar_url,visibility,members_count,posts_count,owner_id,created_at')
+        .eq('owner_id',CU.id)
+        .order('created_at',{ascending:false});
+      if(error) errors.push('owner: '+error.message);
+      else if(data?.length){ const s=new Set(comms.map(x=>x.id)); data.forEach(d=>{if(!s.has(d.id))comms.push(d);}); }
+    }catch(e){ errors.push('owner_ex: '+e.message); }
   }
+
+  // Strategy 2: Public communities only (simplest RLS-safe query)
+  try{
+    const{data,error} = await db.from('communities')
+      .select('id,name,slug,description,avatar_url,visibility,members_count,posts_count,owner_id,created_at')
+      .eq('visibility','public')
+      .order('created_at',{ascending:false}).limit(50);
+    if(error) errors.push('public: '+error.message);
+    else if(data?.length){ const s=new Set(comms.map(x=>x.id)); data.forEach(d=>{if(!s.has(d.id))comms.push(d);}); }
+  }catch(e){ errors.push('public_ex: '+e.message); }
+
+  // Strategy 3: Via community_members (user joined communities)
+  if(CU){
+    try{
+      const{data:mem,error:memErr} = await db.from('community_members')
+        .select('community_id').eq('user_id',CU.id);
+      if(!memErr && mem?.length){
+        const ids = mem.map(m=>m.community_id);
+        const known = new Set(comms.map(x=>x.id));
+        const missing = ids.filter(id=>!known.has(id));
+        if(missing.length){
+          const{data:joined} = await db.from('communities')
+            .select('id,name,slug,description,avatar_url,visibility,members_count,posts_count,owner_id,created_at')
+            .in('id',missing);
+          (joined||[]).forEach(d=>comms.push(d));
+        }
+      }
+    }catch(e){ errors.push('members_ex: '+e.message); }
+  }
+
+  // Filter based on mode
+  if(mode === 'mine' && CU){
+    const memberIds = new Set();
+    try{
+      const{data:m}=await db.from('community_members').select('community_id').eq('user_id',CU.id);
+      (m||[]).forEach(x=>memberIds.add(x.community_id));
+    }catch(e){}
+    comms = comms.filter(c=>c.owner_id===CU.id || memberIds.has(c.id));
+  }
+
+  // Build member set for UI
+  let memberSet = new Set();
+  if(CU && comms.length){
+    try{
+      const{data:mem}=await db.from('community_members').select('community_id').eq('user_id',CU.id).in('community_id',comms.map(c=>c.id));
+      (mem||[]).forEach(m=>memberSet.add(m.community_id));
+    }catch(e){}
+    // Also mark owned communities as member
+    comms.forEach(c=>{if(c.owner_id===CU.id)memberSet.add(c.id);});
+  }
+
+  if(!comms.length){
+    const rlsHint = errors.some(e=>e.includes('recursion')||e.includes('infinite'));
+    grid.innerHTML = rlsHint
+      ? showRLSFixCard()
+      : '<div style="grid-column:1/-1;text-align:center;padding:40px 20px;">'
+        +'<div style="font-size:48px;opacity:.3;margin-bottom:12px;">🏘</div>'
+        +'<div style="font-family:VT323,monospace;font-size:22px;color:var(--text-muted);">Nenhuma comunidade ainda</div>'
+        +'<div style="font-size:12px;color:var(--text-muted);margin-top:6px;">Seja o primeiro a criar uma!</div>'
+        +(errors.length?'<details style="margin-top:12px;font-size:10px;color:var(--text-muted);cursor:pointer;"><summary>Debug info</summary><pre style="text-align:left;padding:8px;background:rgba(0,0,0,.3);border-radius:6px;overflow:auto;">'+errors.join('\n')+'</pre></details>':'')
+        +'</div>';
+    return;
+  }
+
+  // Sort by creation date descending
+  comms.sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
+
+  // Render
+  grid.innerHTML='';
+  comms.forEach(comm=>{
+    const isMember = memberSet.has(comm.id);
+    const card = document.createElement('div');
+    card.className='comm-card';
+    card.innerHTML='<div class="comm-cover">'+xss(comm.avatar_url||'🏘')+'</div>'
+      +'<div class="comm-info">'
+        +'<div class="comm-name">'+xss(comm.name)+'</div>'
+        +'<div class="comm-desc">'+xss(comm.description||'')+'</div>'
+        +'<div class="comm-meta"><span>👥 '+(comm.members_count||0)+'</span><span>'+(comm.visibility==='private'?'🔒 Privada':'🌍 Pública')+'</span>'+(comm.owner_id===CU?.id?'<span style="color:var(--neon-yellow);font-size:9px;">👑 Sua</span>':'')+'</div>'
+        +'<button class="comm-join '+(isMember?'joined':'')+'" style="margin-top:8px;width:100%;">'+(isMember?'✓ Membro':'+ Entrar')+'</button>'
+      +'</div>';
+    card.onclick=()=>openCommDetail(comm.id);
+    card.querySelector('button').onclick=(e)=>{e.stopPropagation();toggleJoinComm(comm.id,isMember,card.querySelector('button'));};
+    grid.appendChild(card);
+  });
+}
+
+function copySQLFix(el){
+  const txt=el.textContent;
+  if(navigator.clipboard){ navigator.clipboard.writeText(txt).then(()=>showToast('SQL copiado! Cole no Supabase SQL Editor','success')); }
+  else { showToast('Copie o SQL manualmente','success'); }
+}
+
+function showRLSFixCard(){
+  const sql=`-- Execute no Supabase SQL Editor:\nDROP POLICY IF EXISTS "comm_sel" ON communities;\nCREATE POLICY "comm_sel" ON communities FOR SELECT USING (visibility='public' OR owner_id=auth.uid());`;
+  return '<div style="grid-column:1/-1;background:rgba(255,51,102,.08);border:1px solid rgba(255,51,102,.3);border-radius:12px;padding:20px;text-align:center;">'
+    +'<div style="font-size:32px;margin-bottom:8px;">⚠️</div>'
+    +'<div style="font-family:Silkscreen,monospace;font-size:12px;color:var(--neon-pink);margin-bottom:8px;">PERMISSÃO RLS BLOQUEANDO LEITURA</div>'
+    +'<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">Execute este SQL no Supabase → SQL Editor:</div>'
+    +'<pre style="background:rgba(0,0,0,.4);border:1px solid rgba(0,255,204,.2);border-radius:8px;padding:12px;font-size:10px;color:var(--neon-cyan);text-align:left;overflow-x:auto;cursor:pointer;" onclick="copySQLFix(this)">'+sql+'</pre>'
+    +'<button class="post-btn" style="margin-top:12px;" onclick="loadCommGrid(this.dataset.mode)" data-mode="all">🔄 Tentar novamente</button>'
+    +'</div>';
 }
 
 // Community detail — tabs: Posts / Membros / Sobre
