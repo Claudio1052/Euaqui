@@ -375,10 +375,6 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(10,1
 .bnav-btn.active{color:var(--neon-cyan);}
 .bnav-btn .bi{font-size:20px;}
 
-/* Performance - backdrop removed on mobile, see consolidated responsive below */
-/* ===== RESPONSIVE ===== */
-/* Responsive in consolidated block below */
-
 /* ===== ABAS PRINCIPAIS (Friends / Communities / Notifications) ===== */
 .page-tabs{display:flex;gap:0;background:rgba(10,10,42,.9);border-bottom:2px solid var(--border-glow);position:sticky;top:var(--nav-h);z-index:100;overflow-x:auto;scrollbar-width:none;}
 .page-tabs::-webkit-scrollbar{display:none;}
@@ -484,8 +480,6 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(10,1
 .ni-act-rej{background:rgba(255,51,102,.1);color:var(--neon-pink);border:1px solid rgba(255,51,102,.2);}
 
 /* ===== RESPONSIVO GLOBAL ===== */
-/* See consolidated responsive below */
-
 
 /* Profile page layout */
 #page-profile{padding:0;overflow-y:visible;}
@@ -524,14 +518,7 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(10,1
 
 
 /* ===== RESPONSIVE — SMALL PHONES ===== */
-@media(max-width:400px){
-  nav{padding:0 10px;}
-  .nav-logo{font-size:30px;}
-  .fc{padding:8px 8px 80px;}
-  .post-card{padding:10px;border-radius:8px;}
-  .ptab{padding:8px 8px;font-size:8px;}
-  #home-page-tabs .ptab{padding:8px 7px;font-size:8px;}
-}
+
 
 /* ===== REDUCE MOTION ===== */
 
@@ -599,166 +586,195 @@ body{
 }
 
 /* ===== GLOBAL RESPONSIVE ===== */
+
+
+
+
+
+/* Navbar mobile */
+
+/* =============================================
+   MOBILE-FIRST RESPONSIVE — EuAqui
+   ============================================= */
+
+/* Base layout hides/shows elements */
+.bottom-nav{display:none;}
+.hamburger{display:none;}
+.sl,.sr{position:sticky;top:var(--nav-h);height:calc(100vh - var(--nav-h));overflow-y:auto;overflow-x:hidden;align-self:start;}
+
+/* Tablet */
 @media(max-width:1100px){
   #main-layout{grid-template-columns:220px 1fr;}
   .sr{display:none;}
 }
+
+/* Mobile */
 @media(max-width:768px){
-  #main-layout{
-    grid-template-columns:1fr;
-    padding-bottom:65px;
+  /* Remove heavy effects */
+  .post-card,.composer,.wcard,.modal,.auth-card,nav,.sl,.sr,.music-pl,.mob-drawer{
+    backdrop-filter:none!important;-webkit-backdrop-filter:none!important;
   }
+  /* Layout */
+  #main-layout{grid-template-columns:1fr;padding-bottom:68px;}
   .sl{display:none;}
-  .fc{padding:10px 12px;max-width:100%;}
-  .chat-page-wrap{
-    height:calc(100vh - var(--nav-h) - 65px);
-    grid-template-columns:1fr;
-    margin:0;
-  }
-  .chat-sidebar{display:none;}
-  .chat-sidebar.mob-open{
-    display:flex;
-    position:fixed;
-    top:var(--nav-h);
-    left:0;
-    width:280px;
-    height:calc(100vh - var(--nav-h));
-    z-index:200;
-    background:var(--bg-mid);
-    border-right:1px solid var(--border-glow);
-  }
-  .post-card{border-radius:10px;padding:12px;}
-  .composer{border-radius:10px;}
-  .ctools{flex-wrap:wrap;}
-  #pp-edit{padding:0 0 40px;}
-  .edit-section{padding:14px;}
-  .pbar{flex-wrap:wrap;padding:0 14px 14px;}
-  .pstats{gap:12px;}
-}
-@media(max-width:480px){
-  .fc{padding:8px;}
-  nav{padding:0 10px;}
-  .nav-logo{font-size:30px;}
-  .post-card{padding:10px;}
-  .avatar-picker-grid{grid-template-columns:repeat(5,1fr);gap:6px;}
-  .comm-card{border-radius:10px;}
-}
-@media(prefers-reduced-motion:reduce){
-  *,*::before,*::after{
-    animation-duration:.01ms!important;
-    transition-duration:.01ms!important;
-  }
-}
+  .sr{display:none;}
+  .fc{padding:8px 10px 80px;max-width:100%;}
 
-/* ===== MOBILE IMPROVEMENTS ===== */
+  /* Nav */
+  .hamburger{display:flex;}
+  .nav-center{display:none;}
+  #nav-search{display:none;}
+  .music-pl{display:none;}
+  .nav-logo{font-size:26px;}
+  nav{padding:0 10px;height:52px;}
+  --nav-h:52px;
 
-/* Navbar mobile */
-@media(max-width:768px){
-  nav{padding:0 10px;gap:8px;}
-  .nav-logo{font-size:28px;}
-  .nav-right{gap:6px;}
-  .nav-av{width:30px;height:30px;}
+  /* Bottom nav */
+  .bottom-nav{display:block;}
 
   /* Posts */
-  .post-card{margin-bottom:8px;border-radius:8px;padding:12px;}
+  .post-card{border-radius:8px;padding:12px;margin-bottom:8px;}
   .ph{gap:8px;margin-bottom:10px;}
   .pav{width:36px;height:36px;}
   .pun{font-size:11px;}
-  .pcontent{font-size:13px;}
+  .pt{font-size:10px;}
+  .pcontent{font-size:13px;line-height:1.6;}
   .preactions{gap:3px;}
   .rxbtn{padding:4px 8px;font-size:12px;}
-  .rxcnt{font-size:14px;}
+  .rxcnt{font-size:13px;}
+  .pactions{gap:2px;}
   .abtn{padding:5px 8px;font-size:10px;}
 
   /* Composer */
-  .composer{padding:12px;border-radius:10px;}
-  .ctools{gap:3px;}
+  .composer{padding:10px;border-radius:10px;}
+  .ctools{gap:3px;flex-wrap:wrap;}
   .tbtn{padding:5px 7px;font-size:10px;}
-  .post-btn{padding:8px 14px;font-size:10px;}
-  .vis-sel{gap:3px;}
-  .vis-opt{padding:6px 4px;font-size:9px;}
+  .post-btn{padding:8px 12px;font-size:10px;}
+  .vis-sel{gap:2px;}
+  .vis-opt{padding:6px 3px;font-size:9px;}
 
-  /* Home tabs — scrollable without text cut */
+  /* Home tabs */
   #home-page-tabs{
-    overflow-x:auto;
-    scrollbar-width:none;
+    margin:-8px -10px 8px;
+    overflow-x:auto;scrollbar-width:none;
     -webkit-overflow-scrolling:touch;
+    padding:0 2px;
   }
-  #home-page-tabs .ptab{
-    padding:10px 12px;
-    font-size:9px;
-    flex-shrink:0;
-    white-space:nowrap;
-  }
+  #home-page-tabs::-webkit-scrollbar{display:none;}
+  #home-page-tabs .ptab{padding:10px 11px;font-size:9px;flex-shrink:0;white-space:nowrap;}
 
-  /* Friends cards */
-  .friend-card{padding:10px;gap:8px;}
+  /* Page tabs */
+  .page-tabs{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;}
+  .page-tabs::-webkit-scrollbar{display:none;}
+  .ptab{padding:9px 10px;font-size:9px;flex-shrink:0;}
+
+  /* Feed filter tabs */
+  .ftabs{overflow-x:auto;scrollbar-width:none;}
+  .ftab{padding:8px 10px;font-size:10px;flex-shrink:0;}
+
+  /* Friend cards */
+  .friend-card{padding:10px;gap:8px;border-radius:8px;}
   .friend-name{font-size:11px;}
   .friend-user{font-size:10px;}
   .fbtn{padding:5px 8px;font-size:9px;}
+  .friend-act{gap:4px;flex-wrap:wrap;}
 
   /* Community cards */
+  #ht-comms-grid,#comm-grid-all,#comm-grid-mine{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;}
   .comm-card .comm-name{font-size:11px;}
-  .comm-card .comm-desc{font-size:10px;-webkit-line-clamp:2;display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden;}
+  .comm-card .comm-desc{font-size:10px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+  .comm-cover{height:60px;font-size:30px;}
 
   /* Profile */
-  .pbav{width:72px!important;height:72px!important;margin-top:-36px!important;}
+  .pcov{height:100px!important;}
+  .pbav{width:72px!important;height:72px!important;margin-top:-36px!important;border-width:3px!important;}
   .pname{font-size:16px!important;}
   .phandle{font-size:10px!important;}
   .pbio{font-size:11px!important;}
+  .pbar{padding:0 12px 14px!important;flex-wrap:wrap;gap:10px!important;}
+  .pdet{min-width:0;width:100%;}
   .pstats{gap:10px!important;flex-wrap:wrap;}
   .pstn{font-size:18px!important;}
   .pstl{font-size:8px!important;}
+  .pbar > div:last-child{margin-left:0!important;flex-direction:row!important;flex-wrap:wrap;}
 
-  /* Chat home */
-  #ht-msgs-area{max-height:280px;}
+  /* Chat */
+  .chat-page-wrap{
+    grid-template-columns:1fr;
+    height:calc(100vh - 52px - 68px);
+    margin:-8px -10px;
+  }
+  .chat-sidebar{display:none;position:fixed;top:52px;left:0;width:100%;height:calc(100vh - 52px);z-index:200;background:var(--bg-mid);}
+  .chat-sidebar.mob-open{display:flex;flex-direction:column;}
+  .msgs-area{padding:10px;}
   .mb-bubble{font-size:12px;padding:8px 11px;}
+  .msg-in-bar{padding:8px 10px;}
+  .msg-in{font-size:12px;padding:8px 12px;}
+
+  /* Home chat */
+  #ht-msgs-area{max-height:260px;}
 
   /* Notifications */
-  .ni{padding:10px;}
+  .ni{padding:10px;border-radius:8px;}
   .ni-txt{font-size:11px;}
-  .ni-icon{width:30px;height:30px;font-size:14px;}
+  .ni-icon{width:30px;height:30px;font-size:14px;flex-shrink:0;}
+  .ni-time{font-size:12px;}
 
   /* Edit profile */
-  .av-current{width:70px!important;height:70px!important;}
+  .av-current{width:68px!important;height:68px!important;}
   .avatar-picker-grid{grid-template-columns:repeat(5,1fr);gap:5px;}
   .av-pick-item{font-size:22px;}
-  .edit-section{padding:12px;margin-bottom:10px;}
+  .edit-section{padding:12px;border-radius:10px;}
   .edit-section-title{font-size:9px;margin-bottom:10px;}
-  .ainput{font-size:12px;padding:10px 12px;}
+  .ainput{font-size:12px;padding:10px 11px;}
+  .asubmit{padding:12px;font-size:11px;}
 
-  /* Bottom nav - bigger touch targets */
-  .bnav-btn{min-width:44px;padding:6px 8px;}
-  .bnav-btn .bi{font-size:18px;}
+  /* Bottom nav */
+  .bnav-items{padding:0 4px;}
+  .bnav-btn{min-width:48px;padding:6px 4px;}
+  .bnav-btn .bi{font-size:20px;}
   .bnav-btn{font-size:8px;}
 
-  /* Modal */
-  .modal{padding:20px;margin:10px;}
-  .mtitle{font-size:12px;}
+  /* Auth */
+  .auth-card{padding:24px 16px;margin:10px;}
+  .alogo{font-size:44px;}
 
-  /* Sidebars in pages */
-  .wcard{padding:12px;}
-  .wtitle{font-size:9px;}
+  /* Modals */
+  .modal{padding:20px 16px;border-radius:14px;}
+  .movl{padding:10px;}
+
+  /* Sidebar left cards */
+  .user-mini{padding:12px;}
+  .uma{width:52px;height:52px;}
+  .umn{font-size:11px;}
 }
 
-/* Very small screens */
+/* Very small phones */
 @media(max-width:380px){
-  .nav-logo{font-size:24px;}
-  .post-card{padding:10px;border-radius:8px;}
-  .pun{font-size:10px;}
+  .fc{padding:6px 8px 80px;}
+  .post-card{padding:10px;}
+  nav{padding:0 8px;}
+  .nav-logo{font-size:22px;}
+  #home-page-tabs .ptab{padding:9px 8px;font-size:8px;}
   .rxbtn{padding:3px 6px;font-size:11px;}
-  #home-page-tabs .ptab{padding:9px 9px;font-size:8px;}
-  .composer{padding:10px;}
-  .tbtn{font-size:9px;padding:4px 6px;}
+  .abtn{padding:4px 6px;font-size:9px;}
+  .tbtn{padding:4px 5px;font-size:9px;}
+  .vis-opt{padding:5px 2px;font-size:8px;}
+  .pbav{width:60px!important;height:60px!important;margin-top:-30px!important;}
+  .bnav-btn .bi{font-size:18px;}
 }
 
-/* Touch improvements */
+/* Touch devices — remove hover effects */
 @media(hover:none){
-  .post-card:hover{border-color:rgba(255,255,255,.07);}
+  .post-card:hover{border-color:rgba(255,255,255,.07);box-shadow:none;}
   .rxbtn:hover{transform:none;}
-  .post-btn:hover{transform:none;box-shadow:0 4px 12px rgba(255,51,102,.3);}
+  .post-btn:hover{transform:none;}
   .slink:hover{color:var(--text-muted);background:transparent;border-color:transparent;}
-  .slink.active{color:var(--neon-cyan);background:rgba(0,255,204,.05);border-color:rgba(0,255,204,.1);}
+}
+
+/* Reduce motion */
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;}
 }
 </style>
 </head>
@@ -1596,21 +1612,25 @@ async function loadFeed(force=false){
 async function updateCommentCounts(postIds){
   if(!postIds?.length) return;
   try{
-    const{data}=await db.from('comments')
-      .select('post_id')
-      .in('post_id',postIds)
-      .eq('deleted',false);
-    // Count per post
+    // Try with deleted filter first, fallback without it
+    let data=null;
+    const r1=await db.from('comments').select('post_id').in('post_id',postIds).eq('deleted',false);
+    if(r1.error){
+      // deleted column doesn't exist — count all
+      const r2=await db.from('comments').select('post_id').in('post_id',postIds);
+      data=r2.data;
+    } else {
+      data=r1.data;
+    }
     const counts={};
     (data||[]).forEach(r=>{counts[r.post_id]=(counts[r.post_id]||0)+1;});
-    // Update all visible counters
     postIds.forEach(id=>{
       const n=counts[id]||0;
       document.querySelectorAll('[id="cmtcnt-'+id+'"]').forEach(el=>{
-        if(parseInt(el.textContent)!==n) el.textContent=n;
+        el.textContent=n;
       });
     });
-  }catch(e){/* column deleted may not exist */}
+  }catch(e){ console.log('updateCommentCounts:',e.message); }
 }
 
 function renderPost(post,rxCounts={},myRx=''){
@@ -1907,7 +1927,26 @@ async function deletePost(postId){
 
 // ===== POST CONTROLS =====
 function setVis(v,el){postVisibility=v;document.querySelectorAll('.vis-opt').forEach(o=>o.classList.remove('sel'));el.classList.add('sel');}
-function switchTab(t,btn){feedTab=t;document.querySelectorAll('.ftab').forEach(b=>b.classList.remove('active'));btn.classList.add('active');cachedPostIds.clear();cachedPosts={};loadFeed(true);}
+function switchTab(t,btn){
+  if(feedTab===t && btn){
+    // Same tab clicked again — just re-fetch
+    const feed=document.getElementById('feed');
+    if(feed) feed.innerHTML='';
+    cachedPosts={};lastFeedLoad=0;
+    loadFeed(true);
+    return;
+  }
+  feedTab=t;
+  document.querySelectorAll('.ftab').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  // Clear ALL cache to force fresh query
+  cachedPostIds.clear();
+  cachedPosts={};
+  lastFeedLoad=0;
+  const feed=document.getElementById('feed');
+  if(feed) feed.innerHTML=skeletons(3);
+  loadFeed(true);
+}
 function updateChar(){const v=document.getElementById('post-txt').value.length;const el=document.getElementById('c-char');el.textContent=v+' / 500';el.className='cchar'+(v>450?' danger':v>350?' warn':'');}
 function trigUpload(accept){const inp=document.getElementById('media-input');inp.accept=accept;inp.click();}
 function handleMedia(inp){
@@ -1940,11 +1979,13 @@ function insertEmoji(e){const ta=document.getElementById('post-txt');const p=ta.
 const RETRO_ICONS=['🤖','👾','🦄','🐉','🦊','🐺','🦁','🐯','🐻','🐼','🐨','🦋','👺','👹','💀','☠️','🧙','🧚','🧜','🧝','🧛','👽','🎭','🎪','🃏','🎮','🕹️','⚔️','🛡️','🎯','🔮','💎','👑','🌟','⚡','🔥','❄️','🌊','🌌','🎆','🎇','🎨','🎵','🎸','🎹','🎺','🥁','🎻'];
 function buildRetroGrid(){
   const grid=document.getElementById('av-retro-grid');
-  if(!grid) return;
+  if(!grid){ console.warn('av-retro-grid not found'); return; }
+  if(!RETRO_ICONS?.length){ console.warn('RETRO_ICONS empty'); return; }
   grid.innerHTML=RETRO_ICONS.map(function(ic){
     const sel=retroIconSelected===ic?' sel':'';
-    return '<div class="av-pick-item'+sel+'" data-icon="'+ic+'" onclick="selectRetroIcon(this.dataset.icon)">'+ic+'</div>';
+    return '<div class="av-pick-item'+sel+'" data-icon="'+ic+'" onclick="selectRetroIcon(this.dataset.icon)" title="'+ic+'">'+ic+'</div>';
   }).join('');
+  console.log('buildRetroGrid: rendered',RETRO_ICONS.length,'icons');
 }
 function selectRetroIcon(ic){
   retroIconSelected=ic; avatarFile=null;
@@ -2007,8 +2048,13 @@ async function saveSettings(){
   else if(avatarFile){
     const path=`${CU.id}/avatar-${Date.now()}`;
     const{data,error}=await db.storage.from('avatars').upload(path,avatarFile,{upsert:true,contentType:avatarFile.type});
-    if(data){const{data:u}=db.storage.from('avatars').getPublicUrl(path);avatarUrl=u.publicUrl;}
-    else if(error)console.warn('Avatar upload:',error.message);
+    if(data){
+      const{data:u}=db.storage.from('avatars').getPublicUrl(path);
+      avatarUrl=u.publicUrl;
+    } else if(error){
+      console.warn('Avatar upload error:',error.message);
+      showToast('Foto não enviada: crie o bucket "avatars" no Supabase Storage','error');
+    }
   }
   // Monta updates com campos básicos sempre presentes
   // Após a migração, todas as colunas existem
@@ -2023,12 +2069,26 @@ async function saveSettings(){
     retro_icon:  retroIcon,
     updated_at:  new Date().toISOString()
   };
+  // Add status message if field exists
+  const statusEl=document.getElementById('set-status');
+  if(statusEl&&statusEl.value.trim()) updates.status_message=statusEl.value.trim();
+
   const{error:err}=await db.from('profiles').update(updates).eq('id',CU.id);
-  if(err)return showToast('Erro ao salvar: '+err.message,'error');
+  if(err){
+    console.error('saveSettings error:',err);
+    return showToast('Erro ao salvar: '+err.message,'error');
+  }
   Object.assign(CP,updates,{avatar_type:avatarType,retro_icon:retroIcon});
-  refreshUI();closeM('m-settings');
-  showToast('Perfil atualizado! ✨','success');
+  refreshUI();
+  // Close modal if open, otherwise stay on edit tab
+  if(document.getElementById('m-settings')?.classList.contains('open')) closeM('m-settings');
+  showToast('Perfil salvo! ✨','success');
   avatarFile=null;retroIconSelected=null;
+  // Refresh profile view if open
+  if(document.getElementById('page-profile')?.classList.contains('active')){
+    updateAvPreview();
+    loadEditForm();
+  }
 }
 
 // ===== CAPSULE =====
@@ -2107,6 +2167,20 @@ async function sendFriendReq(toId,btn){
   }
 }
 async function handleFriendReq(reqId,senderId,action){
+  // Remove the card from DOM immediately (both possible containers)
+  ['hfl-requests-list','requests-list'].forEach(listId=>{
+    const list=document.getElementById(listId);
+    if(!list)return;
+    // Find button with matching req ID and remove parent friend-card
+    const btn=list.querySelector('[data-rid="'+reqId+'"]');
+    btn?.closest('.friend-card')?.remove();
+  });
+  // Remove accept buttons from notification items too
+  document.querySelectorAll('.ni-actions').forEach(el=>{
+    const btn=el.querySelector('.ni-act-acc, .ni-act-rej');
+    if(btn&&el.closest('.ni')) el.remove();
+  });
+
   await db.from('friend_requests').update({status:action,updated_at:new Date().toISOString()}).eq('id',reqId);
   if(action==='accept'){
     await Promise.all([
@@ -2183,9 +2257,30 @@ async function createCommunity(){
   const vis=document.getElementById('cm-vis').value;
   if(!name||!slug)return showToast('Nome e slug obrigatórios','error');
   const{data,error}=await db.from('communities').insert({owner_id:CU.id,name,slug,description:desc,avatar_url:icon,visibility:vis}).select().single();
-  if(error)return showToast('Erro: '+error.message,'error');
+  if(error){
+    if(error.message.includes('infinite recursion')){
+      showToast('Erro de permissão RLS. Execute o SQL de correção no Supabase!','error');
+      // Show fix instructions
+      const div=document.getElementById('comm-create-error')||document.createElement('div');
+      div.id='comm-create-error';
+      div.style.cssText='background:rgba(255,51,102,.1);border:1px solid rgba(255,51,102,.3);border-radius:8px;padding:12px;font-size:11px;color:var(--neon-pink);margin-top:12px;line-height:1.6;';
+      const sql="DROP POLICY IF EXISTS \"comm_sel\" ON communities; CREATE POLICY \"comm_sel\" ON communities FOR SELECT USING (visibility=\'public\' OR owner_id=auth.uid() OR id IN (SELECT community_id FROM community_members WHERE user_id=auth.uid()));";
+      div.innerHTML='⚠️ <strong>Erro RLS:</strong> Execute no Supabase → SQL Editor:<br><code style="display:block;margin-top:6px;background:rgba(0,0,0,.3);padding:8px;border-radius:4px;font-size:10px;color:var(--neon-cyan);word-break:break-all;">'+sql+'</code>';
+      document.getElementById('cm-create')?.appendChild(div);
+    } else {
+      showToast('Erro: '+error.message,'error');
+    }
+    return;
+  }
   await db.from('community_members').insert({community_id:data.id,user_id:CU.id,role:'owner'});
-  closeM('m-create-comm');showToast('Comunidade criada! 🏘','success');loadCommunities();
+  // Clear form
+  ['cm-name','cm-slug','cm-desc','cm-icon'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  document.getElementById('comm-create-error')?.remove();
+  showToast('Comunidade criada! 🏘','success');
+  // Switch to "Minhas" tab
+  const myTab=document.querySelector('#comm-page-tabs .ptab[data-tab="cm-mine"]');
+  if(myTab) myTab.click();
+  else loadCommGrid('mine');
 }
 async function toggleJoinComm(commId,isMember,btn){
   if(!CU)return showToast('Faça login primeiro','error');
@@ -2579,57 +2674,74 @@ async function acceptFriendFromNotif(btn){
 async function markRead(id,el){await db.from('notifications').update({read:true}).eq('id',id);el.classList.remove('unrd');}
 
 // ===== REALTIME =====
+let _msgPollInterval=null;
+
 function setupRealtime(){
   if(!CU)return;
 
   // Real-time notifications
-  db.channel('rt-notifs')
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:`user_id=eq.${CU.id}`},(pl)=>{
+  db.channel('rt-notifs-'+CU.id)
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'user_id=eq.'+CU.id},(pl)=>{
       showToast('🔔 '+pl.new.content,'success');
       loadNotifCount();
-      // Update home alerts if open
-      if(document.getElementById('ht-alerts-list')?.closest('.tab-panel.active')){
-        loadHomeAlerts();
-      }
+      if(document.getElementById('ht-alerts-list')?.children.length>0) loadHomeAlerts();
     }).subscribe();
 
-  // Real-time messages — update BOTH chat panels
-  db.channel('rt-msgs')
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:`receiver_id=eq.${CU.id}`},(pl)=>{
-      const senderId = pl.new.sender_id;
-
-      // Update messages page chat if open with this sender
-      if(currentChatUser?.id===senderId){
-        loadMsgs(senderId);
-      }
-
-      // Update home chat tab if open with this sender
-      if(homeChatUser?.id===senderId){
-        const winEl=document.getElementById('ht-chat-window');
-        if(winEl&&winEl.style.display!=='none'){
-          loadHomeMsgs(senderId);
-        }
-      }
-
-      // Show unread badge on chat nav button if not currently viewing this chat
-      const isViewingChat = (currentChatUser?.id===senderId || homeChatUser?.id===senderId);
-      if(!isViewingChat){
-        const chatNav=document.getElementById('nb-messages');
-        if(chatNav&&!chatNav.querySelector('.nbadge')){
-          const dot=document.createElement('span');
-          dot.className='nbadge';dot.id='msg-badge';dot.textContent='●';
-          chatNav.appendChild(dot);
-        }
-      }
-
-      // Refresh chat list sidebar
-      if(document.getElementById('page-messages')?.classList.contains('active')){
-        loadConversations();
-      }
-      if(document.getElementById('ht-chat')?.classList.contains('active')){
-        loadHomeChat();
-      }
+  // Real-time messages via Supabase Realtime
+  db.channel('rt-msgs-'+CU.id)
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'receiver_id=eq.'+CU.id},(pl)=>{
+      handleIncomingMessage(pl.new);
     }).subscribe();
+
+  // Polling fallback every 5s — ensures messages arrive even if realtime drops
+  clearInterval(_msgPollInterval);
+  _msgPollInterval = setInterval(()=>{ pollNewMessages(); }, 5000);
+}
+
+let _lastMsgCheck=new Date().toISOString();
+
+async function pollNewMessages(){
+  if(!CU) return;
+  try{
+    const{data}=await db.from('messages')
+      .select('id,sender_id,receiver_id,content,created_at')
+      .eq('receiver_id',CU.id)
+      .gt('created_at',_lastMsgCheck)
+      .order('created_at');
+    if(data?.length){
+      _lastMsgCheck=data[data.length-1].created_at;
+      data.forEach(msg=>handleIncomingMessage(msg));
+    }
+  }catch(e){}
+}
+
+function handleIncomingMessage(msg){
+  const senderId=msg.sender_id;
+
+  // Update messages page if open with this sender
+  if(currentChatUser?.id===senderId){
+    loadMsgs(senderId);
+  }
+
+  // Update home chat if open with this sender
+  if(homeChatUser?.id===senderId){
+    const winEl=document.getElementById('ht-chat-window');
+    if(winEl&&winEl.style.display!=='none') loadHomeMsgs(senderId);
+  }
+
+  // Badge on chat button if not viewing this chat
+  if(currentChatUser?.id!==senderId && homeChatUser?.id!==senderId){
+    const chatNav=document.getElementById('nb-messages');
+    if(chatNav&&!document.getElementById('msg-badge')){
+      const dot=document.createElement('span');
+      dot.className='nbadge';dot.id='msg-badge';dot.textContent='●';
+      chatNav.appendChild(dot);
+    }
+  }
+
+  // Refresh conversation list
+  if(document.getElementById('page-messages')?.classList.contains('active')) loadConversations();
+  if(document.getElementById('ht-chat')?.classList.contains('active')) loadHomeChat();
 }
 
 // ===== MISC =====
@@ -3491,8 +3603,8 @@ function nav(page){
   document.querySelector('.fc')?.scrollTo(0,0);
   setTimeout(()=>{
     if(page==='home'){
-      // Home: load feed if empty, also load home tab content
-      if(!document.getElementById('feed')?.children.length) loadFeed();
+      // Always reload feed on nav to ensure correct tab/filter is shown
+      loadFeed();
     }
     else if(page==='explore')        loadExploreFeed();
     else if(page==='friends')        loadFriendsList('friends');
