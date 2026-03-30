@@ -1646,9 +1646,9 @@ async function submitCmt(postId){
   if(error)return showToast('Erro ao comentar: '+error.message,'error');
   inp.value='';
   // Update counter on ALL matching elements (post may be rendered multiple times)
-  document.querySelectorAll('#cmtcnt-'+postId).forEach(el=>{
-    const cur=parseInt(el.textContent)||0;
-    el.textContent=cur+1;
+  // Update counter - use attribute selector to safely match numeric IDs
+  document.querySelectorAll('[id="cmtcnt-'+postId+'"]').forEach(el=>{
+    el.textContent=(parseInt(el.textContent)||0)+1;
   });
   // Also invalidate feed cache so count reflects on next load
   cachedPostIds.delete(postId);
@@ -2075,80 +2075,208 @@ async function postInComm(commId){
 
 // ===== PROFILE =====
 async function loadProfilePage(userId){
-  nav('profile');if(!userId)return;
-  // Show/manage profile tabs
-  const _editTab=document.getElementById('pp-edit-tab');
-  const _tabs=document.getElementById('profile-page-tabs');
-  const _isOwn=CU?.id===userId;
-  if(_editTab) _editTab.style.display=_isOwn?'inline-block':'none';
-  if(_tabs) _tabs.style.display='flex';
-  // Reset to posts tab
+  if(!userId) return;
+  // Navigate without triggering loadProfilePage again
+  _navBase('profile');
+  document.querySelectorAll('.nbtn,.slink,.bnav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('nb-profile') && document.getElementById('nb-profile').classList.add('active');
+  document.getElementById('sl-profile') && document.getElementById('sl-profile').classList.add('active');
+  document.getElementById('bn-profile') && document.getElementById('bn-profile').classList.add('active');
+  window.scrollTo({top:0,behavior:'instant'});
+
+  // Manage profile tabs
+  const isOwn = CU?.id === userId;
+  const editTab = document.getElementById('pp-edit-tab');
+  const tabsBar = document.getElementById('profile-page-tabs');
+  if(editTab) editTab.style.display = isOwn ? 'inline-block' : 'none';
+  if(tabsBar) tabsBar.style.display = 'flex';
   document.querySelectorAll('.pptab').forEach(t=>t.classList.remove('active'));
   document.querySelector('.pptab[data-tab="pp-posts"]')?.classList.add('active');
   document.querySelectorAll('.profile-tab-panel').forEach(p=>p.classList.remove('active'));
   document.getElementById('pp-posts')?.classList.add('active');
-  document.getElementById('profile-cover-bar').innerHTML='<div style="padding:30px;">'+skeletons(3)+'</div>';
-  const{data:profile}=await db.from('profiles').select('id,username,full_name,email,avatar_url,avatar_type,retro_icon,bio,instagram,twitter,github,status_message,created_at').eq('id',userId).maybeSingle();
-  if(!profile)return;
-  const[pRes,frRes,fngRes]= await Promise.all([
+
+  // Show skeleton while loading
+  const coverBar = document.getElementById('profile-cover-bar');
+  const postsPanel = document.getElementById('profile-posts');
+  const aboutPanel = document.getElementById('profile-about');
+  if(coverBar) coverBar.innerHTML = '<div style="padding:30px;">'+skeletons(2)+'</div>';
+  if(postsPanel) postsPanel.innerHTML = skeletons(3);
+  if(aboutPanel) aboutPanel.innerHTML = '';
+
+  // Fetch data in parallel
+  const[profRes, pRes, frRes, fngRes] = await Promise.all([
+    db.from('profiles').select('id,username,full_name,avatar_url,avatar_type,retro_icon,bio,instagram,twitter,github,status_message,created_at').eq('id',userId).maybeSingle(),
     db.from('posts').select('id',{count:'exact',head:true}).eq('user_id',userId),
     db.from('follows').select('id',{count:'exact',head:true}).eq('following_id',userId),
     db.from('follows').select('id',{count:'exact',head:true}).eq('follower_id',userId)
   ]);
-  const{data:posts}=await db.from('posts').select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url)').eq('user_id',userId).order('created_at',{ascending:false}).limit(10);
-  let isFollowing=false,isFriend=false;
-  if(CU&&CU.id!==userId){
-    const[fol,fri]=await Promise.all([
+  const profile = profRes.data;
+  if(!profile){
+    if(coverBar) coverBar.innerHTML = '<div style="padding:30px;text-align:center;color:var(--neon-pink);">Perfil não encontrado</div>';
+    return;
+  }
+
+  // Follow/friend status
+  let isFollowing=false, isFriend=false;
+  if(CU && !isOwn){
+    const[fol,fri] = await Promise.all([
       db.from('follows').select('id').eq('follower_id',CU.id).eq('following_id',userId).maybeSingle(),
       db.from('friends').select('id').eq('user_id',CU.id).eq('friend_id',userId).maybeSingle()
     ]);
-    isFollowing=!!fol.data;isFriend=!!fri.data;
+    isFollowing = !!fol.data; isFriend = !!fri.data;
   }
-  const{data:gb}=await db.from('guestbook_entries').select('*,profiles(username)').eq('profile_id',userId).order('created_at',{ascending:false}).limit(5);
-  const av=getAvatar(profile);
-  const isEmoji=av&&av.length<=4&&!av.startsWith('http');
-  const days=Math.floor((Date.now()-new Date(profile.created_at))/(864e5));
-  const isOwn=CU?.id===userId;
-  document.getElementById('profile-cover-bar').innerHTML=`
-    <div class="pcov" style="background:linear-gradient(135deg,#0a0a2a,#1a0a3a);"></div>
-    <div class="pbar">
-      ${isEmoji?`<div class="pbav">${av}</div>`:`<img class="pbav" src="${xss(av)}" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${profile.username}'">`}
-      <div class="pdet">
-        <div class="pname">${xss(profile.full_name||profile.username)}</div>
-        <div class="phandle">@${xss(profile.username)}</div>
-        <div class="pbio">${xss(profile.bio||'Sem bio ainda...')}</div>
-        <div style="font-size:10px;color:var(--text-muted);margin-top:5px;">⏱ ${days} dias na plataforma</div>
-        <div class="pstats">
-          <div class="pstat"><div class="pstn">${pRes.count||0}</div><div class="pstl">Posts</div></div>
-          <div class="pstat"><div class="pstn">${frRes.count||0}</div><div class="pstl">Seguidores</div></div>
-          <div class="pstat"><div class="pstn">${fngRes.count||0}</div><div class="pstl">Seguindo</div></div>
-        </div>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:6px;margin-left:auto;flex-shrink:0;">
-        ${isOwn?`<button class="post-btn" onclick="showSettings()" style="background:none;border:1px solid var(--border-glow);color:var(--neon-cyan);">✏ Editar</button>`:`
-          <button class="post-btn" id="flw-btn-${userId}" onclick="toggleFollow('${userId}',this)">${isFollowing?'✓ Seguindo':'+ Seguir'}</button>
-          <button class="post-btn" style="background:none;border:1px solid var(--border-glow);color:var(--neon-purple);" onclick="sendFriendReq('${userId}')">${isFriend?'👥 Amigos':'+ Amigo'}</button>
-          <button class="post-btn" style="background:none;border:1px solid var(--border-glow);color:var(--neon-cyan);" onclick="openChat('${userId}','${profile.username}','${getAvatar(profile)}')">💬</button>
-        `}
-      </div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 280px;gap:16px;padding:16px;flex-wrap:wrap;" class="prof-grid">
-      <div>
-        <div style="font-family:'Silkscreen',monospace;font-size:12px;color:var(--neon-cyan);margin-bottom:12px;">POSTS</div>
-        ${(posts||[]).map(p=>renderPost(p,{},'')).join('')||'<div style="color:var(--text-muted);font-size:12px;">Nenhum post</div>'}
-      </div>
-      <div>
-        <div class="wcard" style="margin-bottom:12px;">
-          <div class="wtitle">📖 Guestbook</div>
-          ${(gb||[]).map(g=>`<div style="background:rgba(255,204,0,.05);border-left:3px solid var(--neon-yellow);padding:8px 12px;margin-bottom:8px;border-radius:0 7px 7px 0;"><div style="font-family:'Silkscreen',monospace;font-size:9px;color:var(--neon-yellow);">@${xss(g.profiles?.username||'user')} · ${timeAgo(g.created_at)}</div><div style="font-size:11px;color:var(--text-light);margin-top:3px;">${xss(g.message)}</div></div>`).join('')||'<div style="color:var(--text-muted);font-size:11px;margin-bottom:8px;">Sem mensagens ainda!</div>'}
-          ${!isOwn?`<div style="display:flex;gap:7px;margin-top:8px;"><input class="cmt-input" type="text" id="gb-in" placeholder="Deixe uma mensagem..."><button class="cmt-sub" onclick="submitGb('${userId}')">➤</button></div>`:''}
-        </div>
-        ${profile.instagram||profile.twitter||profile.github?`<div class="wcard"><div class="wtitle">🔗 Links</div>${profile.instagram?`<a href="${xss(profile.instagram)}" target="_blank" style="display:block;color:var(--neon-pink);font-size:11px;margin-bottom:5px;">📷 Instagram</a>`:''}${profile.twitter?`<a href="${xss(profile.twitter)}" target="_blank" style="display:block;color:var(--neon-cyan);font-size:11px;margin-bottom:5px;">🐦 Twitter/X</a>`:''}${profile.github?`<a href="${xss(profile.github)}" target="_blank" style="display:block;color:var(--text-light);font-size:11px;">💻 GitHub</a>`:''}</div>`:''}
-      </div>
-    </div>`;
-  // Make profile grid responsive
-  const pg=document.querySelector('.prof-grid');if(pg&&window.innerWidth<640)pg.style.gridTemplateColumns='1fr';
+
+  // Avatar
+  const av = getAvatar(profile);
+  const isEmoji = av && av.length <= 4 && !av.startsWith('http');
+  const days = Math.floor((Date.now()-new Date(profile.created_at))/(864e5));
+  const seed = 'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(profile.username||'u');
+
+  // Build cover bar using DOM to avoid all quote issues
+  if(coverBar){
+    coverBar.innerHTML = '';
+
+    // Cover gradient
+    const cov = document.createElement('div');
+    cov.className = 'pcov';
+    cov.style.background = 'linear-gradient(135deg,#0a0a2a,#1a0a3a)';
+    coverBar.appendChild(cov);
+
+    // Profile bar
+    const pbar = document.createElement('div');
+    pbar.className = 'pbar';
+
+    // Avatar
+    if(isEmoji){
+      const avDiv = document.createElement('div');
+      avDiv.className = 'pbav';
+      avDiv.style.display = 'flex';
+      avDiv.style.alignItems = 'center';
+      avDiv.style.justifyContent = 'center';
+      avDiv.style.fontSize = '50px';
+      avDiv.style.background = 'rgba(255,255,255,.06)';
+      avDiv.textContent = av;
+      pbar.appendChild(avDiv);
+    } else {
+      const avImg = document.createElement('img');
+      avImg.className = 'pbav';
+      avImg.src = av;
+      avImg.alt = profile.username||'';
+      avImg.onerror = function(){ this.src = seed; };
+      pbar.appendChild(avImg);
+    }
+
+    // Details
+    const pdet = document.createElement('div');
+    pdet.className = 'pdet';
+    pdet.innerHTML =
+      '<div class="pname">'+xss(profile.full_name||profile.username||'')+'</div>'+
+      '<div class="phandle">@'+xss(profile.username||'')+'</div>'+
+      '<div class="pbio">'+xss(profile.bio||'')+'</div>'+
+      '<div style="font-size:10px;color:var(--text-muted);margin-top:5px;">⏱ '+days+' dias na plataforma</div>'+
+      '<div class="pstats">'+
+        '<div class="pstat"><div class="pstn">'+(pRes.count||0)+'</div><div class="pstl">Posts</div></div>'+
+        '<div class="pstat"><div class="pstn">'+(frRes.count||0)+'</div><div class="pstl">Seguidores</div></div>'+
+        '<div class="pstat"><div class="pstn">'+(fngRes.count||0)+'</div><div class="pstl">Seguindo</div></div>'+
+      '</div>';
+    pbar.appendChild(pdet);
+
+    // Action buttons
+    const btns = document.createElement('div');
+    btns.style.cssText = 'display:flex;flex-direction:column;gap:6px;margin-left:auto;flex-shrink:0;flex-wrap:wrap;';
+    if(isOwn){
+      const b = document.createElement('button');
+      b.className = 'post-btn';
+      b.style.cssText = 'background:none;border:1px solid var(--border-glow);color:var(--neon-cyan);';
+      b.textContent = '✏ Editar Perfil';
+      b.onclick = () => showSettings();
+      btns.appendChild(b);
+    } else {
+      const flwBtn = document.createElement('button');
+      flwBtn.className = 'post-btn';
+      flwBtn.id = 'flw-btn-'+userId;
+      flwBtn.textContent = isFollowing ? '✓ Seguindo' : '+ Seguir';
+      flwBtn.onclick = () => toggleFollow(userId, flwBtn);
+      btns.appendChild(flwBtn);
+
+      const friBtn = document.createElement('button');
+      friBtn.className = 'post-btn';
+      friBtn.style.cssText = 'background:none;border:1px solid rgba(191,95,255,.4);color:var(--neon-purple);';
+      friBtn.textContent = isFriend ? '👥 Amigos' : '+ Amigo';
+      if(!isFriend) friBtn.onclick = () => sendFriendReq(userId, friBtn);
+      else friBtn.disabled = true;
+      btns.appendChild(friBtn);
+
+      const chatBtn = document.createElement('button');
+      chatBtn.className = 'post-btn';
+      chatBtn.style.cssText = 'background:none;border:1px solid var(--border-glow);color:var(--neon-cyan);';
+      chatBtn.textContent = '💬 Chat';
+      chatBtn.onclick = () => { openHomeChatWith(userId, profile.username||'', av); nav('messages'); };
+      btns.appendChild(chatBtn);
+    }
+    pbar.appendChild(btns);
+    coverBar.appendChild(pbar);
+  }
+
+  // Load posts for Posts tab
+  if(postsPanel){
+    const{data:posts} = await db.from('posts')
+      .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url)')
+      .eq('user_id',userId).order('created_at',{ascending:false}).limit(10);
+    if(!posts?.length){
+      postsPanel.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhum post ainda</div>';
+    } else {
+      const postIds = posts.map(p=>p.id);
+      const[rxRes,myRxRes] = await Promise.all([
+        db.from('likes').select('post_id,reaction_type').in('post_id',postIds),
+        CU ? db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id) : {data:[]}
+      ]);
+      const rxMap={};(rxRes.data||[]).forEach(r=>{if(!rxMap[r.post_id])rxMap[r.post_id]={};rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1;});
+      const myRxMap={};(myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
+      postsPanel.innerHTML = posts.map(p=>renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||'')).join('');
+    }
+  }
+
+  // Build About tab
+  if(aboutPanel){
+    const{data:gb} = await db.from('guestbook_entries').select('id,message,created_at,profiles(username)').eq('profile_id',userId).order('created_at',{ascending:false}).limit(5);
+    const gbHtml = (gb||[]).map(g=>
+      '<div style="background:rgba(255,204,0,.05);border-left:3px solid var(--neon-yellow);padding:8px 12px;margin-bottom:8px;border-radius:0 7px 7px 0;">'
+      +'<div style="font-family:Silkscreen,monospace;font-size:9px;color:var(--neon-yellow);">@'+xss(g.profiles?.username||'user')+' · '+timeAgo(g.created_at)+'</div>'
+      +'<div style="font-size:11px;color:var(--text-light);margin-top:3px;">'+xss(g.message)+'</div>'
+      +'</div>'
+    ).join('') || '<div style="color:var(--text-muted);font-size:11px;margin-bottom:8px;">Sem mensagens ainda</div>';
+
+    const linksHtml = (profile.instagram||profile.twitter||profile.github) ?
+      '<div class="edit-section" style="margin-top:12px;">'
+      +'<div class="edit-section-title">🔗 LINKS</div>'
+      +(profile.instagram?'<a href="'+xss(profile.instagram)+'" target="_blank" rel="noopener" style="display:block;color:var(--neon-pink);font-size:11px;margin-bottom:5px;text-decoration:none;">📷 Instagram</a>':'')
+      +(profile.twitter?'<a href="'+xss(profile.twitter)+'" target="_blank" rel="noopener" style="display:block;color:var(--neon-cyan);font-size:11px;margin-bottom:5px;text-decoration:none;">🐦 Twitter/X</a>':'')
+      +(profile.github?'<a href="'+xss(profile.github)+'" target="_blank" rel="noopener" style="display:block;color:var(--text-light);font-size:11px;text-decoration:none;">💻 GitHub</a>':'')
+      +'</div>' : '';
+
+    aboutPanel.innerHTML =
+      '<div style="max-width:500px;">'
+      +'<div class="edit-section">'
+      +'<div class="edit-section-title">👤 SOBRE</div>'
+      +'<p style="font-size:12px;color:var(--text-light);line-height:1.7;margin-bottom:8px;">'+xss(profile.bio||'Sem bio')+'</p>'
+      +'<div style="font-size:10px;color:var(--text-muted);">⏱ '+days+' dias na plataforma</div>'
+      +(profile.status_message?'<div style="font-size:11px;color:var(--neon-yellow);font-style:italic;margin-top:6px;">"'+xss(profile.status_message)+'"</div>':'')
+      +'</div>'
+      + linksHtml
+      +'<div class="edit-section" style="margin-top:12px;">'
+      +'<div class="edit-section-title">📖 GUESTBOOK</div>'
+      + gbHtml
+      +(isOwn?'':'<div style="display:flex;gap:7px;margin-top:8px;"><input class="cmt-input" type="text" id="gb-in" placeholder="Deixe uma mensagem..."><button class="cmt-sub" data-uid="'+userId+'" onclick="submitGb(this.dataset.uid)">➤</button></div>')
+      +'</div>'
+      +'</div>';
+  }
+
+  // If own profile, pre-fill edit form
+  if(isOwn){ Object.assign(CP, profile); }
 }
+
+
 async function toggleFollow(userId,btn){
   if(!CU)return showToast('Faça login primeiro','error');
   const{data:ex}=await db.from('follows').select('id').eq('follower_id',CU.id).eq('following_id',userId).maybeSingle();
