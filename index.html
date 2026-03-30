@@ -1301,7 +1301,15 @@ body{
           <div class="igrp"><label class="ilbl">Nome</label><input class="ainput" type="text" id="cm-name" placeholder="Nome da comunidade" oninput="genSlug()"></div>
           <div class="igrp"><label class="ilbl">Slug / URL</label><input class="ainput" type="text" id="cm-slug" placeholder="slug-da-comunidade"></div>
           <div class="igrp"><label class="ilbl">Descrição</label><textarea class="ainput" id="cm-desc" rows="3" maxlength="300" placeholder="Sobre a comunidade..." style="resize:none;"></textarea></div>
-          <div class="igrp"><label class="ilbl">Emoji / Ícone</label><input class="ainput" type="text" id="cm-icon" placeholder="🏘" maxlength="4" style="font-size:26px;text-align:center;width:80px;"></div>
+          <div class="igrp">
+            <label class="ilbl">Emoji / Ícone da Comunidade</label>
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+              <div id="cm-icon-preview" style="width:54px;height:54px;border-radius:12px;border:2px solid var(--border-glow);background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;font-size:30px;flex-shrink:0;">🏘</div>
+              <input class="ainput" type="hidden" id="cm-icon" value="🏘">
+              <span style="font-size:11px;color:var(--text-muted);">Escolha um ícone abaixo</span>
+            </div>
+            <div id="cm-icon-grid" style="display:grid;grid-template-columns:repeat(8,1fr);gap:6px;max-height:180px;overflow-y:auto;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:10px;"></div>
+          </div>
           <div class="igrp"><label class="ilbl">Visibilidade</label>
             <select class="ainput" id="cm-vis" style="cursor:pointer;">
               <option value="public">🌍 Pública</option>
@@ -2507,7 +2515,61 @@ async function unfollow(followId){
 // ===== COMMUNITIES =====
 // switchCommTab — replaced by switchPageTab
 
-function genSlug(){const n=document.getElementById('cm-name').value;document.getElementById('cm-slug').value=n.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');}
+
+
+// ===== COMMUNITY ICON PICKER =====
+const COMM_ICONS = [
+  '🏘','🌍','🌎','🌏','🏙','🏡','🏢','🌆','🌇',
+  '👥','👫','👬','👭','🤝','💬','📣','📢','🎤',
+  '⛪','🕌','🛕','🕍','☮️','✝️','☪️','✡️','🙏','📖','🕊️',
+  '🛒','🛍️','💰','💳','🏪','🏬','📦','🏷️','💼','📊','📈',
+  '💻','📱','🖥️','⌨️','🔧','🔩','⚙️','🤖','👾','🎮',
+  '⚽','🏀','🏈','⚾','🎾','🏐','🏉','🎯','🏆','🥇','🏅','⛹️',
+  '🎵','🎶','🎸','🎹','🥁','🎺','🎻','🎨','🖌️','🎭','🎬','📸',
+  '🍕','🍔','🌮','🍜','🍣','☕','🍺','🥗','🍰','🧁',
+  '💊','🏥','🩺','💉','🧬','❤️','🧘','🏃','💪','🌿',
+  '📚','📝','✏️','🎓','🏫','🔬','🔭','🧪','💡','🧠',
+  '🌲','🌸','🌺','🌻','🦋','🐶','🐱','🌈','☀️','🌙',
+  '✈️','🚗','🚢','🏖️','🗺️','🧳','🏕️','⛺','🗼','🗽',
+];
+
+function buildCommIconGrid(){
+  const grid = document.getElementById('cm-icon-grid');
+  if(!grid || grid.children.length > 0) return;
+  COMM_ICONS.forEach(ic=>{
+    const btn = document.createElement('button');
+    btn.type='button';
+    btn.style.cssText='background:none;border:2px solid transparent;border-radius:8px;cursor:pointer;font-size:22px;padding:6px;transition:all .15s;line-height:1;aspect-ratio:1;display:flex;align-items:center;justify-content:center;';
+    btn.textContent=ic;
+    btn.title=ic;
+    btn.onclick=function(){
+      selectCommIcon(ic);
+      grid.querySelectorAll('button').forEach(b=>{b.style.borderColor='transparent';b.style.background='none';});
+      btn.style.borderColor='var(--neon-cyan)';
+      btn.style.background='rgba(0,255,204,.1)';
+    };
+    grid.appendChild(btn);
+  });
+  // Select first icon by default
+  grid.querySelector('button')?.click();
+}
+
+
+function selectCommIcon(ic){
+  const input=document.getElementById('cm-icon');
+  const preview=document.getElementById('cm-icon-preview');
+  if(input) input.value=ic;
+  if(preview) preview.textContent=ic;
+}
+
+
+function genSlug(){
+  const name=document.getElementById('cm-name')?.value||'';
+  const slug=name.toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+  const el=document.getElementById('cm-slug');
+  if(el) el.value=slug;
+}
+
 async function createCommunity(){
   if(!CU)return;
   const name=document.getElementById('cm-name').value.trim();
@@ -2522,8 +2584,18 @@ async function createCommunity(){
   // Get the created community by slug to get its ID
   let data=null;
   if(!error){
-    const{data:found}=await db.from('communities').select('id').eq('slug',slug).eq('owner_id',CU.id).maybeSingle();
-    data=found;
+    // Try to get the created community ID
+    try{
+      const{data:found}=await db.from('communities').select('id').eq('slug',slug).eq('owner_id',CU.id).maybeSingle();
+      data=found;
+    }catch(e){}
+    // If still null, try selecting just owned communities ordered by date
+    if(!data){
+      try{
+        const{data:latest}=await db.from('communities').select('id').eq('owner_id',CU.id).order('created_at',{ascending:false}).limit(1).maybeSingle();
+        data=latest;
+      }catch(e){}
+    }
   }
   if(error){
     if(error.message.includes('infinite recursion')){
@@ -2578,10 +2650,32 @@ async function openCommDetail(commId){
 }
 async function postInComm(commId){
   if(!CU)return;
-  const content=document.getElementById('comm-post-txt').value.trim();
-  if(!content)return;
-  const{data:post}=await db.from('posts').insert({user_id:CU.id,content,type:'text',visibility:'public'}).select().single();
-  if(post){await db.from('community_posts').insert({community_id:commId,post_id:post.id});document.getElementById('comm-post-txt').value='';showToast('Post publicado na comunidade! 🏘','success');openCommDetail(commId);}
+  const txtEl=document.getElementById('comm-post-txt');
+  const content=txtEl?.value.trim();
+  if(!content)return showToast('Escreva algo para postar','error');
+  try{
+    // Insert post without .select().single() to avoid SELECT RLS issues
+    const{error:postErr}=await db.from('posts').insert({
+      user_id:CU.id, content, type:'text', visibility:'public'
+    });
+    if(postErr) throw postErr;
+    // Get the post ID we just created
+    const{data:myPost}=await db.from('posts')
+      .select('id')
+      .eq('user_id',CU.id)
+      .order('created_at',{ascending:false})
+      .limit(1)
+      .maybeSingle();
+    if(myPost?.id){
+      await db.from('community_posts').insert({community_id:commId,post_id:myPost.id});
+    }
+    if(txtEl) txtEl.value='';
+    showToast('Post publicado na comunidade! 🏘','success');
+    // Reload community posts
+    await loadCommPosts(commId);
+  }catch(e){
+    showToast('Erro ao postar: '+e.message,'error');
+  }
 }
 
 // ===== PROFILE =====
@@ -2984,7 +3078,8 @@ async function acceptFriendFromNotif(btn){
 }
 
 async function markRead(id,el){
-  await db.from('notifications').update({read:true}).eq('id',id);
+  // Delete the notification so it never appears again
+  await db.from('notifications').delete().eq('id',id).eq('user_id',CU.id);
   // Remove from DOM with fade
   if(el){
     el.style.transition='opacity .3s,max-height .3s';
@@ -3158,12 +3253,21 @@ async function loadHomeFriendsList(type){
       .select('id,sender_id,status,profiles!friend_requests_sender_id_fkey(id,username,full_name,avatar_url)')
       .eq('receiver_id',CU.id).eq('status','pending')
       .order('created_at',{ascending:false});
-    const cnt=(data||[]).length;
+    // Also cross-check: filter out senders who are already friends
+    let alreadyFriends=new Set();
+    if(data?.length){
+      try{
+        const{data:frs}=await db.from('friends').select('friend_id').eq('user_id',CU.id).in('friend_id',(data||[]).map(r=>r.sender_id));
+        (frs||[]).forEach(f=>alreadyFriends.add(f.friend_id));
+      }catch(e){}
+    }
+    const filtered=(data||[]).filter(r=>!alreadyFriends.has(r.sender_id));
+    const cnt=(filtered||[]).length;
     const badge=document.getElementById('home-freq-badge');
     if(badge){badge.textContent=cnt;badge.style.display=cnt>0?'inline-block':'none';}
     if(!cnt){list.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px;">Sem solicitações</div>';return;}
     list.innerHTML='';
-    (data||[]).forEach(r=>{
+    (filtered||[]).forEach(r=>{
       const div=document.createElement('div');div.className='friend-card';
       div.innerHTML=renderAvatar(r.profiles,40,'friend-av')+'<div class="friend-info"><div class="friend-name">'+xss(r.profiles?.full_name||r.profiles?.username||'?')+'</div><div class="friend-user">@'+xss(r.profiles?.username||'')+'</div></div><div class="friend-act"><button class="fbtn accept">✓</button><button class="fbtn reject">✕</button></div>';
       div.querySelectorAll('button')[0].onclick=()=>handleFriendReq(r.id,r.sender_id,'accept');
@@ -3465,16 +3569,15 @@ async function loadHomeAlerts(){
     }
     el.appendChild(div);
   });
-  try{await db.from('notifications').update({read:true}).eq('user_id',CU.id).eq('read',false);}catch(e){}
-  document.getElementById('notif-badge').style.display='none';
-  const bnb=document.getElementById('bnav-notif-badge');if(bnb)bnb.style.display='none';
-  const dot=document.getElementById('home-notif-dot');if(dot)dot.style.display='none';
+  // Don't auto-mark as read — user must dismiss individually or use "Marcar todas lidas"
+  loadNotifCount();
 }
 
 
 async function markAllNotifsRead(){
   if(!CU) return;
-  await db.from('notifications').update({read:true}).eq('user_id',CU.id).eq('read',false);
+  // Delete ALL notifications for this user permanently
+  await db.from('notifications').delete().eq('user_id',CU.id);
   // Remove all notification items from every list
   ['ht-alerts-list','notif-list-all','notif-list-mentions','notif-list-social','notif-list-system'].forEach(id=>{
     const el=document.getElementById(id);
@@ -3794,6 +3897,7 @@ function switchPageTab(page, btn){
   } else if(page === 'communities'){
     if(tabId === 'cm-all') loadCommGrid('all');
     else if(tabId === 'cm-mine') loadCommGrid('mine');
+    else if(tabId === 'cm-create') buildCommIconGrid();
   } else if(page === 'notifications'){
     loadNotifTab(tabId);
   }
@@ -3914,11 +4018,24 @@ async function loadCommGrid(mode){
   try{
     let comms = [];
     if(mode === 'mine' && CU){
+      // Get communities where user is member
       const{data:mem} = await db.from('community_members').select('community_id').eq('user_id',CU.id);
-      const ids = (mem||[]).map(m=>m.community_id);
-      if(!ids.length){ grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Você não é membro de nenhuma comunidade ainda.<br>Explore e entre em comunidades!</div>'; return; }
-      const{data} = await db.from('communities').select('id,name,slug,description,avatar_url,visibility,members_count,posts_count').in('id',ids);
-      comms = data||[];
+      const memberIds = (mem||[]).map(m=>m.community_id);
+      // Also get communities created by user (in case RLS prevented member insert)
+      const{data:owned} = await db.from('communities').select('id,name,slug,description,avatar_url,visibility,members_count,posts_count').eq('owner_id',CU.id);
+      const ownedIds = (owned||[]).map(c=>c.id);
+      // Merge IDs
+      const allIds = [...new Set([...memberIds, ...ownedIds])];
+      if(!allIds.length){ grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Você não criou nem participa de nenhuma comunidade ainda.</div>'; return; }
+      // Fetch all, include owned communities directly
+      let fromMemberIds = [];
+      if(memberIds.length){
+        const{data:md} = await db.from('communities').select('id,name,slug,description,avatar_url,visibility,members_count,posts_count').in('id',memberIds);
+        fromMemberIds = md||[];
+      }
+      // Merge avoiding duplicates
+      const seen = new Set(fromMemberIds.map(c=>c.id));
+      comms = [...fromMemberIds, ...(owned||[]).filter(c=>!seen.has(c.id))];
     } else {
       const{data} = await db.from('communities').select('id,name,slug,description,avatar_url,visibility,members_count,posts_count').order('members_count',{ascending:false}).limit(30);
       comms = data||[];
@@ -4159,7 +4276,7 @@ function nav(page){
     }
     else if(page==='explore')        loadExploreFeed();
     else if(page==='friends')        loadFriendsList('friends');
-    else if(page==='communities')    loadCommGrid('all');
+    else if(page==='communities')    { loadCommGrid('all'); setTimeout(buildCommIconGrid,200); }
     else if(page==='messages')       loadConversations();
     else if(page==='notifications')  loadNotifTab('nt-all');
     else if(page==='capsules')       loadCapsules();
