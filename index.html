@@ -3078,15 +3078,22 @@ async function acceptFriendFromNotif(btn){
 }
 
 async function markRead(id,el){
-  // Delete the notification so it never appears again
-  await db.from('notifications').delete().eq('id',id).eq('user_id',CU.id);
-  // Remove from DOM with fade
-  if(el){
-    el.style.transition='opacity .3s,max-height .3s';
-    el.style.opacity='0';
-    el.style.maxHeight='0';
-    el.style.overflow='hidden';
-    setTimeout(()=>el.remove(), 300);
+  // Remove from DOM immediately (optimistic)
+  const niEl = el?.closest ? el.closest('.ni') || el : el;
+  if(niEl){
+    niEl.style.transition='opacity .3s,max-height .3s,padding .3s,margin .3s';
+    niEl.style.opacity='0';
+    niEl.style.maxHeight='0';
+    niEl.style.padding='0';
+    niEl.style.margin='0';
+    niEl.style.overflow='hidden';
+    setTimeout(()=>niEl.remove(), 320);
+  }
+  // Try DELETE first
+  const{error:delErr} = await db.from('notifications').delete().eq('id',id).eq('user_id',CU.id);
+  if(delErr){
+    // Fallback: mark as read if DELETE fails (RLS may only allow UPDATE)
+    await db.from('notifications').update({read:true}).eq('id',id).eq('user_id',CU.id);
   }
   loadNotifCount();
 }
@@ -3336,9 +3343,20 @@ async function loadHomeComms(){
   if(!grid) return;
   grid.innerHTML=skeletons(4);
   try{
-    const{data}=await db.from('communities')
+    // Split query to bypass RLS infinite recursion on communities SELECT
+    const{data:pubC}=await db.from('communities')
       .select('id,name,description,avatar_url,members_count')
+      .eq('visibility','public')
       .order('members_count',{ascending:false}).limit(20);
+    let ownC=[];
+    if(CU){
+      const{data:o}=await db.from('communities')
+        .select('id,name,description,avatar_url,members_count')
+        .eq('owner_id',CU.id).limit(10);
+      ownC=o||[];
+    }
+    const _seen=new Set((pubC||[]).map(x=>x.id));
+    const data=[...(pubC||[]),...ownC.filter(x=>!_seen.has(x.id))];
     let ms=new Set();
     if(CU&&(data||[]).length){
       const{data:mem}=await db.from('community_members').select('community_id').eq('user_id',CU.id).in('community_id',(data||[]).map(c=>c.id));
@@ -3545,7 +3563,8 @@ async function loadHomeAlerts(){
   el.innerHTML=skeletons(3);
   const{data}=await db.from('notifications')
     .select('id,type,content,read,created_at')
-    .eq('user_id',CU.id).order('created_at',{ascending:false}).limit(40);
+    .eq('user_id',CU.id).eq('read',false)
+    .order('created_at',{ascending:false}).limit(40);
   el.innerHTML='';
   if(!data?.length){
     el.innerHTML='<div class="notif-empty"><div class="notif-empty-icon">🔔</div><div class="notif-empty-txt">Sem alertas</div></div>';
@@ -3576,8 +3595,11 @@ async function loadHomeAlerts(){
 
 async function markAllNotifsRead(){
   if(!CU) return;
-  // Delete ALL notifications for this user permanently
-  await db.from('notifications').delete().eq('user_id',CU.id);
+  // Try DELETE all notifications; fallback to marking as read
+  const{error:delAllErr} = await db.from('notifications').delete().eq('user_id',CU.id);
+  if(delAllErr){
+    await db.from('notifications').update({read:true}).eq('user_id',CU.id).eq('read',false);
+  }
   // Remove all notification items from every list
   ['ht-alerts-list','notif-list-all','notif-list-mentions','notif-list-social','notif-list-system'].forEach(id=>{
     const el=document.getElementById(id);
@@ -4037,8 +4059,25 @@ async function loadCommGrid(mode){
       const seen = new Set(fromMemberIds.map(c=>c.id));
       comms = [...fromMemberIds, ...(owned||[]).filter(c=>!seen.has(c.id))];
     } else {
-      const{data} = await db.from('communities').select('id,name,slug,description,avatar_url,visibility,members_count,posts_count').order('members_count',{ascending:false}).limit(30);
-      comms = data||[];
+      // Use two separate queries to avoid RLS infinite recursion:
+      // 1. Public communities (no subquery in policy)
+      const{data:publicComms, error:pubErr} = await db.from('communities')
+        .select('id,name,slug,description,avatar_url,visibility,members_count,posts_count')
+        .eq('visibility','public')
+        .order('members_count',{ascending:false}).limit(30);
+      
+      // 2. User's own communities (direct owner_id check)
+      let ownedComms = [];
+      if(CU){
+        const{data:owned} = await db.from('communities')
+          .select('id,name,slug,description,avatar_url,visibility,members_count,posts_count')
+          .eq('owner_id',CU.id);
+        ownedComms = owned||[];
+      }
+      
+      // Merge, deduplicate
+      const seen = new Set((publicComms||[]).map(c=>c.id));
+      comms = [...(publicComms||[]), ...ownedComms.filter(c=>!seen.has(c.id))];
     }
     let memberSet = new Set();
     if(CU && comms.length){
@@ -4058,7 +4097,12 @@ async function loadCommGrid(mode){
       </div>`;
     }).join('') || '<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhuma comunidade encontrada.<br>Crie a primeira!</div>';
   } catch(e){
-    grid.innerHTML = `<div style="grid-column:1/-1;color:var(--neon-pink);padding:20px;font-size:12px;">Erro: ${xss(e.message)}<br>Execute o SQL de migração no Supabase.</div>`;
+    console.error('loadCommGrid error:', e);
+    if(e.message && e.message.includes('recursion')){
+      grid.innerHTML = '<div style="grid-column:1/-1;padding:20px;font-size:12px;color:var(--neon-pink);">⚠️ Erro de permissão RLS.<br><small style="color:var(--text-muted);">Execute o SQL de correção no Supabase SQL Editor.</small></div>';
+    } else {
+      grid.innerHTML = '<div style="grid-column:1/-1;color:var(--neon-pink);padding:20px;font-size:12px;">Erro: '+xss(e.message)+'</div>';
+    }
   }
 }
 
@@ -4120,7 +4164,7 @@ async function loadNotifTab(tabId){
   const el = document.getElementById('notif-list-' + tabId.replace('nt-',''));
   if(!el) return;
   el.innerHTML = skeletons(3);
-  let q = db.from('notifications').select('id,type,content,read,created_at').eq('user_id',CU.id).order('created_at',{ascending:false}).limit(40);
+  let q = db.from('notifications').select('id,type,content,read,created_at').eq('user_id',CU.id).eq('read',false).order('created_at',{ascending:false}).limit(40);
   if(Array.isArray(filter)) q = q.in('type', filter);
   else if(filter) q = q.eq('type', filter);
   const{data} = await q;
