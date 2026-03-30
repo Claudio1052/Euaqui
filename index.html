@@ -649,6 +649,117 @@ body{
     transition-duration:.01ms!important;
   }
 }
+
+/* ===== MOBILE IMPROVEMENTS ===== */
+
+/* Navbar mobile */
+@media(max-width:768px){
+  nav{padding:0 10px;gap:8px;}
+  .nav-logo{font-size:28px;}
+  .nav-right{gap:6px;}
+  .nav-av{width:30px;height:30px;}
+
+  /* Posts */
+  .post-card{margin-bottom:8px;border-radius:8px;padding:12px;}
+  .ph{gap:8px;margin-bottom:10px;}
+  .pav{width:36px;height:36px;}
+  .pun{font-size:11px;}
+  .pcontent{font-size:13px;}
+  .preactions{gap:3px;}
+  .rxbtn{padding:4px 8px;font-size:12px;}
+  .rxcnt{font-size:14px;}
+  .abtn{padding:5px 8px;font-size:10px;}
+
+  /* Composer */
+  .composer{padding:12px;border-radius:10px;}
+  .ctools{gap:3px;}
+  .tbtn{padding:5px 7px;font-size:10px;}
+  .post-btn{padding:8px 14px;font-size:10px;}
+  .vis-sel{gap:3px;}
+  .vis-opt{padding:6px 4px;font-size:9px;}
+
+  /* Home tabs — scrollable without text cut */
+  #home-page-tabs{
+    overflow-x:auto;
+    scrollbar-width:none;
+    -webkit-overflow-scrolling:touch;
+  }
+  #home-page-tabs .ptab{
+    padding:10px 12px;
+    font-size:9px;
+    flex-shrink:0;
+    white-space:nowrap;
+  }
+
+  /* Friends cards */
+  .friend-card{padding:10px;gap:8px;}
+  .friend-name{font-size:11px;}
+  .friend-user{font-size:10px;}
+  .fbtn{padding:5px 8px;font-size:9px;}
+
+  /* Community cards */
+  .comm-card .comm-name{font-size:11px;}
+  .comm-card .comm-desc{font-size:10px;-webkit-line-clamp:2;display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden;}
+
+  /* Profile */
+  .pbav{width:72px!important;height:72px!important;margin-top:-36px!important;}
+  .pname{font-size:16px!important;}
+  .phandle{font-size:10px!important;}
+  .pbio{font-size:11px!important;}
+  .pstats{gap:10px!important;flex-wrap:wrap;}
+  .pstn{font-size:18px!important;}
+  .pstl{font-size:8px!important;}
+
+  /* Chat home */
+  #ht-msgs-area{max-height:280px;}
+  .mb-bubble{font-size:12px;padding:8px 11px;}
+
+  /* Notifications */
+  .ni{padding:10px;}
+  .ni-txt{font-size:11px;}
+  .ni-icon{width:30px;height:30px;font-size:14px;}
+
+  /* Edit profile */
+  .av-current{width:70px!important;height:70px!important;}
+  .avatar-picker-grid{grid-template-columns:repeat(5,1fr);gap:5px;}
+  .av-pick-item{font-size:22px;}
+  .edit-section{padding:12px;margin-bottom:10px;}
+  .edit-section-title{font-size:9px;margin-bottom:10px;}
+  .ainput{font-size:12px;padding:10px 12px;}
+
+  /* Bottom nav - bigger touch targets */
+  .bnav-btn{min-width:44px;padding:6px 8px;}
+  .bnav-btn .bi{font-size:18px;}
+  .bnav-btn{font-size:8px;}
+
+  /* Modal */
+  .modal{padding:20px;margin:10px;}
+  .mtitle{font-size:12px;}
+
+  /* Sidebars in pages */
+  .wcard{padding:12px;}
+  .wtitle{font-size:9px;}
+}
+
+/* Very small screens */
+@media(max-width:380px){
+  .nav-logo{font-size:24px;}
+  .post-card{padding:10px;border-radius:8px;}
+  .pun{font-size:10px;}
+  .rxbtn{padding:3px 6px;font-size:11px;}
+  #home-page-tabs .ptab{padding:9px 9px;font-size:8px;}
+  .composer{padding:10px;}
+  .tbtn{font-size:9px;padding:4px 6px;}
+}
+
+/* Touch improvements */
+@media(hover:none){
+  .post-card:hover{border-color:rgba(255,255,255,.07);}
+  .rxbtn:hover{transform:none;}
+  .post-btn:hover{transform:none;box-shadow:0 4px 12px rgba(255,51,102,.3);}
+  .slink:hover{color:var(--text-muted);background:transparent;border-color:transparent;}
+  .slink.active{color:var(--neon-cyan);background:rgba(0,255,204,.05);border-color:rgba(0,255,204,.1);}
+}
 </style>
 </head>
 <body>
@@ -1478,6 +1589,28 @@ async function loadFeed(force=false){
   feed.innerHTML=html;
   posts.forEach(p=>cachedPostIds.add(p.id));
   cachedPosts[cacheKey]=html;
+  // Update comment counts with real DB values (handles cases where trigger hasn't run)
+  updateCommentCounts(posts.map(p=>p.id));
+}
+
+async function updateCommentCounts(postIds){
+  if(!postIds?.length) return;
+  try{
+    const{data}=await db.from('comments')
+      .select('post_id')
+      .in('post_id',postIds)
+      .eq('deleted',false);
+    // Count per post
+    const counts={};
+    (data||[]).forEach(r=>{counts[r.post_id]=(counts[r.post_id]||0)+1;});
+    // Update all visible counters
+    postIds.forEach(id=>{
+      const n=counts[id]||0;
+      document.querySelectorAll('[id="cmtcnt-'+id+'"]').forEach(el=>{
+        if(parseInt(el.textContent)!==n) el.textContent=n;
+      });
+    });
+  }catch(e){/* column deleted may not exist */}
 }
 
 function renderPost(post,rxCounts={},myRx=''){
@@ -1645,13 +1778,14 @@ async function submitCmt(postId){
   inp.disabled=false;
   if(error)return showToast('Erro ao comentar: '+error.message,'error');
   inp.value='';
-  // Update counter on ALL matching elements (post may be rendered multiple times)
-  // Update counter - use attribute selector to safely match numeric IDs
+  // Update counter visually on all elements showing this post
   document.querySelectorAll('[id="cmtcnt-'+postId+'"]').forEach(el=>{
-    el.textContent=(parseInt(el.textContent)||0)+1;
+    const n=(parseInt(el.textContent)||0)+1;
+    el.textContent=n;
   });
-  // Also invalidate feed cache so count reflects on next load
+  // Invalidate cache so count reflects on next full load
   cachedPostIds.delete(postId);
+  cachedPosts={};
   await loadCmts(postId);
 }
 async function deleteCmt(cmtId,postId){
@@ -2007,10 +2141,22 @@ async function handleFriendReq(reqId,senderId,action){
     badge.textContent=nv;
     badge.style.display=nv>0?'inline-block':'none';
   }
-  // Refresh both lists
+  // Mark friend_request notifications as read so accept button disappears
+  try{
+    await db.from('notifications')
+      .update({read:true})
+      .eq('user_id',CU.id)
+      .eq('type','friend_request')
+      .eq('read',false);
+  }catch(e){}
+
+  // Refresh both lists  
   setTimeout(()=>{
     loadFriendsList('requests');
     loadHomeFriendsList('requests');
+    // Reload alerts if open
+    if(document.getElementById('ht-alerts-list')?.innerHTML) loadHomeAlerts();
+    if(document.getElementById('notif-list-all')?.innerHTML) loadNotifTab('nt-all');
   },300);
 }
 async function removeFriend(friendRowId){
@@ -2321,6 +2467,7 @@ async function loadConversations(){
 function filterChats(v){document.querySelectorAll('.ci').forEach(ci=>{ci.style.display=ci.textContent.toLowerCase().includes(v.toLowerCase())?'flex':'none';});}
 async function openChat(userId,username,avatarUrl){
   currentChatUser={id:userId,username,avatar:avatarUrl};
+  document.getElementById('msg-badge')?.remove();
   document.querySelectorAll('.ci').forEach(c=>c.classList.remove('active'));
   document.getElementById('ci-'+userId)?.classList.add('active');
   const top=document.getElementById('chat-win-hdr');
@@ -2395,20 +2542,38 @@ async function loadNotifications(){
 }
 
 async function acceptFriendFromNotif(btn){
-  // Find sender from notification content
   const notifEl = btn.closest('.ni');
   if(!notifEl) return;
+
+  // Immediately hide buttons to prevent double-click
+  const actionsEl = notifEl.querySelector('.ni-actions');
+  if(actionsEl){ actionsEl.innerHTML='<span style="font-size:10px;color:var(--neon-cyan);">⏳ processando...</span>'; }
+
   const txt = notifEl.querySelector('.ni-txt')?.textContent||'';
   const match = txt.match(/@(\w+)/);
-  if(!match) return;
+  if(!match){
+    if(actionsEl) actionsEl.remove();
+    return showToast('Usuário não identificado','error');
+  }
   const username = match[1];
   const{data:sender}=await db.from('profiles').select('id').eq('username',username).maybeSingle();
-  if(!sender) return showToast('Usuário não encontrado','error');
-  // Find the pending request
-  const{data:req}=await db.from('friend_requests').select('id').eq('sender_id',sender.id).eq('receiver_id',CU.id).eq('status','pending').maybeSingle();
-  if(!req) return showToast('Solicitação não encontrada','error');
+  if(!sender){
+    if(actionsEl) actionsEl.remove();
+    return showToast('Usuário não encontrado','error');
+  }
+  const{data:req}=await db.from('friend_requests')
+    .select('id')
+    .eq('sender_id',sender.id)
+    .eq('receiver_id',CU.id)
+    .eq('status','pending')
+    .maybeSingle();
+
+  // Remove actions regardless (even if req not found - may have been handled)
+  if(actionsEl) actionsEl.remove();
+  notifEl.classList.remove('unrd');
+
+  if(!req){ showToast('Solicitação já processada','success'); return; }
   await handleFriendReq(req.id, sender.id, 'accept');
-  notifEl.querySelector('.ni-actions')?.remove();
 }
 
 async function markRead(id,el){await db.from('notifications').update({read:true}).eq('id',id);el.classList.remove('unrd');}
@@ -2416,8 +2581,55 @@ async function markRead(id,el){await db.from('notifications').update({read:true}
 // ===== REALTIME =====
 function setupRealtime(){
   if(!CU)return;
-  db.channel('rt-notifs').on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:`user_id=eq.${CU.id}`},(pl)=>{showToast('🔔 '+pl.new.content,'success');loadNotifCount();}).subscribe();
-  db.channel('rt-msgs').on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:`receiver_id=eq.${CU.id}`},(pl)=>{if(currentChatUser?.id===pl.new.sender_id)loadMsgs(pl.new.sender_id);}).subscribe();
+
+  // Real-time notifications
+  db.channel('rt-notifs')
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:`user_id=eq.${CU.id}`},(pl)=>{
+      showToast('🔔 '+pl.new.content,'success');
+      loadNotifCount();
+      // Update home alerts if open
+      if(document.getElementById('ht-alerts-list')?.closest('.tab-panel.active')){
+        loadHomeAlerts();
+      }
+    }).subscribe();
+
+  // Real-time messages — update BOTH chat panels
+  db.channel('rt-msgs')
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:`receiver_id=eq.${CU.id}`},(pl)=>{
+      const senderId = pl.new.sender_id;
+
+      // Update messages page chat if open with this sender
+      if(currentChatUser?.id===senderId){
+        loadMsgs(senderId);
+      }
+
+      // Update home chat tab if open with this sender
+      if(homeChatUser?.id===senderId){
+        const winEl=document.getElementById('ht-chat-window');
+        if(winEl&&winEl.style.display!=='none'){
+          loadHomeMsgs(senderId);
+        }
+      }
+
+      // Show unread badge on chat nav button if not currently viewing this chat
+      const isViewingChat = (currentChatUser?.id===senderId || homeChatUser?.id===senderId);
+      if(!isViewingChat){
+        const chatNav=document.getElementById('nb-messages');
+        if(chatNav&&!chatNav.querySelector('.nbadge')){
+          const dot=document.createElement('span');
+          dot.className='nbadge';dot.id='msg-badge';dot.textContent='●';
+          chatNav.appendChild(dot);
+        }
+      }
+
+      // Refresh chat list sidebar
+      if(document.getElementById('page-messages')?.classList.contains('active')){
+        loadConversations();
+      }
+      if(document.getElementById('ht-chat')?.classList.contains('active')){
+        loadHomeChat();
+      }
+    }).subscribe();
 }
 
 // ===== MISC =====
@@ -2627,6 +2839,7 @@ async function loadHomeChat(){
 async function openHomeChatWith(userId, username, avatarUrl){
   homeChatUser={id:userId,username,avatar:avatarUrl};
   currentChatUser={id:userId,username,avatar:avatarUrl};
+  document.getElementById('msg-badge')?.remove();
   const chatTabBtn=document.querySelector('#home-page-tabs .ptab[data-tab="ht-chat"]');
   if(chatTabBtn) switchHomeTab(chatTabBtn);
   const listEl=document.getElementById('ht-chat-list');
@@ -2753,7 +2966,7 @@ async function loadHomeAlerts(){
     div.innerHTML='<div class="ni-icon">'+(icons[n.type]||'🔔')+'</div>'
       +'<div class="ni-body"><div class="ni-txt">'+xss(n.content||'Nova notificação')+'</div>'
       +'<div class="ni-time">'+timeAgo(n.created_at)+'</div>'
-      +(n.type==='friend_request'?'<div class="ni-actions"><button class="ni-act-btn ni-act-acc">✓ Aceitar</button><button class="ni-act-btn ni-act-rej">✕</button></div>':'')
+      +(n.type==='friend_request'&&!n.read?'<div class="ni-actions"><button class="ni-act-btn ni-act-acc">✓ Aceitar</button><button class="ni-act-btn ni-act-rej">✕</button></div>':'')
       +'</div>';
     div.onclick=function(){markRead(n.id,this);};
     if(n.type==='friend_request'){
@@ -3169,7 +3382,7 @@ async function loadNotifTab(tabId){
       <div class="ni-body">
         <div class="ni-txt">${xss(n.content||'Nova notificação')}</div>
         <div class="ni-time">${timeAgo(n.created_at)}</div>
-        ${n.type==='friend_request'?`<div class="ni-actions"><button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();acceptFriendFromNotif(this)">✓ Aceitar</button><button class="ni-act-btn ni-act-rej" onclick="event.stopPropagation();">✕ Recusar</button></div>`:''}
+        ${n.type==='friend_request'&&!n.read?`<div class="ni-actions"><button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();acceptFriendFromNotif(this)">✓ Aceitar</button><button class="ni-act-btn ni-act-rej" onclick="event.stopPropagation();">✕ Recusar</button></div>`:''}
       </div>
     </div>`).join('');
   // Mark all as read
