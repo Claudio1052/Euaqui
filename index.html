@@ -52,7 +52,7 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(10,1
 .hamburger{display:none;background:none;border:1px solid var(--border-glow);color:var(--neon-cyan);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:16px;}
 
 /* LAYOUT */
-#main-layout{display:grid;grid-template-columns:240px 1fr 280px;padding-top:var(--nav-h);min-height:100vh;}
+#main-layout{display:grid;grid-template-columns:240px 1fr 280px;padding-top:var(--nav-h);min-height:100vh;align-items:start;}
 
 /* SIDEBAR LEFT */
 .sl{position:sticky;top:var(--nav-h);height:calc(100vh - var(--nav-h));overflow-y:auto;padding:16px 12px;border-right:1px solid var(--border-glow);background:rgba(10,10,42,.6);}
@@ -71,7 +71,7 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(10,1
 .slink .ic{font-size:15px;width:18px;text-align:center;}
 
 /* FEED CENTER */
-.fc{padding:16px 20px;max-width:660px;margin:0 auto;width:100%;}
+.fc{padding:16px 20px 80px;max-width:700px;margin:0 auto;width:100%;}
 
 /* COMPOSER */
 .composer{background:var(--bg-card);border:1px solid var(--border-glow);border-radius:16px;padding:16px;margin-bottom:16px;backdrop-filter:blur(20px);}
@@ -375,51 +375,9 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(10,1
 .bnav-btn.active{color:var(--neon-cyan);}
 .bnav-btn .bi{font-size:20px;}
 
-/* ===== PERFORMANCE MOBILE =====
-@media (max-width:768px){
-  /* Remove backdrop-filter no mobile — causa repaint constante */
-  .post-card,.composer,.wcard,.modal,.auth-card,nav,.sl,.sr,
-  .music-pl,.mob-drawer,.chat-main,.chat-list-side{
-    backdrop-filter:none !important;
-    -webkit-backdrop-filter:none !important;
-  }
-  /* Remove will-change e transforms desnecessários */
-  .post-card:hover{transform:none;}
-  /* Desativa animações em preferência do sistema */
-}
-@media (prefers-reduced-motion: reduce){
-  *,*::before,*::after{
-    animation-duration:0.01ms !important;
-    animation-iteration-count:1 !important;
-    transition-duration:0.01ms !important;
-  }
-}
+/* Performance - backdrop removed on mobile, see consolidated responsive below */
 /* ===== RESPONSIVE ===== */
-@media (max-width:1100px){
-  #main-layout{grid-template-columns:220px 1fr;}
-  .sr{display:none;}
-}
-@media (max-width:768px){
-  #main-layout{grid-template-columns:1fr;padding-bottom:65px;}
-  .sl{display:none;}
-  .fc{padding:12px;}
-  .hamburger{display:flex;}
-  .nav-center{display:none;}
-  #nav-search{display:none;}
-  .music-pl{display:none;}
-  .bottom-nav{display:block;}
-  .post-card{border-radius:10px;}
-  .composer{border-radius:10px;}
-  .chat-wrap{grid-template-columns:1fr;height:calc(100vh - var(--nav-h) - 65px);}
-  .chat-list-side{display:none;}
-  .chat-list-side.show{display:block;position:fixed;inset:0;z-index:100;padding-top:var(--nav-h);}
-  .pbar{flex-wrap:wrap;padding:0 14px 14px;}
-  .pdet{min-width:100%;}
-}
-@media (max-width:400px){
-  .auth-card{padding:24px 18px;}
-  .alogo{font-size:46px;}
-}
+/* Responsive in consolidated block below */
 
 /* ===== ABAS PRINCIPAIS (Friends / Communities / Notifications) ===== */
 .page-tabs{display:flex;gap:0;background:rgba(10,10,42,.9);border-bottom:2px solid var(--border-glow);position:sticky;top:var(--nav-h);z-index:100;overflow-x:auto;scrollbar-width:none;}
@@ -526,45 +484,170 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(10,1
 .ni-act-rej{background:rgba(255,51,102,.1);color:var(--neon-pink);border:1px solid rgba(255,51,102,.2);}
 
 /* ===== RESPONSIVO GLOBAL ===== */
-@media(max-width:900px){
-  .chat-page-wrap{grid-template-columns:1fr;}
-  .chat-sidebar{display:none;position:fixed;top:0;left:0;width:280px;height:100vh;z-index:200;transform:translateX(-100%);transition:transform .3s;}
-  .chat-sidebar.mob-open{display:flex;transform:translateX(0);}
-  .chat-window{height:calc(100vh - var(--nav-h) - 65px);}
-}
-@media(max-width:768px){
-  .page-tabs{padding:0 4px;}
-  .ptab{padding:10px 12px;font-size:9px;}
-  .avatar-picker-grid{grid-template-columns:repeat(5,1fr);}
-  .comm-members-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));}
-  .comm-header{height:120px;font-size:50px;}
-  .comm-stat-row{gap:8px;}
-  .chat-page-wrap{margin:-12px;}
-  /* Profile responsive */
-  #profile-cover-bar .pbar{flex-direction:column;align-items:center;text-align:center;padding:0 14px 14px;}
-  #profile-cover-bar [style*="flex:1"]{min-width:unset;width:100%;}
-  #profile-cover-bar [style*="display:flex;gap:6px"]{justify-content:center;width:100%;}
-  .profile-page-tabs{margin:0;}
-  .edit-section{padding:14px;}
-  /* Friends responsive */
-  .friend-card{flex-wrap:wrap;}
-  /* Communities detail */
-  .comm-banner-info [style*="justify-content:space-between"]{flex-direction:column;gap:10px;}
-}
-@media(max-width:480px){
-  .avatar-picker-grid{grid-template-columns:repeat(4,1fr);}
-  .comm-stat-row{grid-template-columns:1fr 1fr;}
-  .comm-stat-row{display:grid;}
-  .ptab{padding:9px 10px;font-size:8px;}
-}
+/* See consolidated responsive below */
+
 
 /* Profile page layout */
+#page-profile{padding:0;overflow-y:visible;}
+#page-profile .profile-tab-panel{padding:16px 20px;}
+
+
+/* ===== PAGE SYSTEM ===== */
+.page{display:none;}
+.page.active{display:block;}
+
+/* ===== SIDEBAR STICKY ===== */
+.sl,.sr{position:sticky;top:var(--nav-h);height:calc(100vh - var(--nav-h));overflow-y:auto;overflow-x:hidden;align-self:start;}
+
+/* ===== PROFILE PAGE ===== */
 #page-profile{padding:0;}
 #page-profile .profile-tab-panel{padding:16px 20px;}
+.profile-tab-panel{display:none;}
+.profile-tab-panel.active{display:block;}
+#pp-edit{padding-bottom:60px;}
+
+/* ===== TAB PANELS ===== */
+.tab-panel{display:none;}
+.tab-panel.active{display:block;}
+
+/* ===== CHAT LAYOUT ===== */
+.chat-page-wrap{display:grid;grid-template-columns:280px 1fr;height:calc(100vh - var(--nav-h));overflow:hidden;margin:-16px -20px;}
+.chat-sidebar{background:rgba(10,10,42,.8);border-right:1px solid var(--border-glow);display:flex;flex-direction:column;overflow:hidden;}
+.chat-window{display:flex;flex-direction:column;overflow:hidden;}
+.msgs-area{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px;}
+.msg-in-bar{flex-shrink:0;padding:10px 14px;border-top:1px solid var(--border-glow);background:rgba(10,10,42,.95);display:flex;gap:8px;align-items:flex-end;}
+
+/* ===== RESPONSIVE — TABLET ===== */
+
+
+/* ===== RESPONSIVE — MOBILE ===== */
+
+
+/* ===== RESPONSIVE — SMALL PHONES ===== */
+@media(max-width:400px){
+  nav{padding:0 10px;}
+  .nav-logo{font-size:30px;}
+  .fc{padding:8px 8px 80px;}
+  .post-card{padding:10px;border-radius:8px;}
+  .ptab{padding:8px 8px;font-size:8px;}
+  #home-page-tabs .ptab{padding:8px 7px;font-size:8px;}
+}
+
+/* ===== REDUCE MOTION ===== */
+
+
+/* Tab panels */
+.tab-panel{display:none;}
+.tab-panel.active{display:block;}
+
+/* ===== GLOBAL LAYOUT FIXES ===== */
+/* Main content area scrolls properly */
+/* .fc defined above */
+
+/* Sidebar scroll */
+.sl,.sr{
+  overflow-y:auto;
+  overflow-x:hidden;
+}
+
+/* Prevent body scroll issues on mobile */
+body{
+  overflow-x:hidden;
+}
+
+/* Page content scrolls naturally with body */
+#main-layout{
+  overflow-x:hidden;
+}
+
+/* Edit section proper scroll */
+#pp-edit{
+  overflow-y:auto;
+  padding-bottom:40px;
+}
+
+/* ===== CHAT LAYOUT FIXES ===== */
+.chat-page-wrap{
+  height:calc(100vh - var(--nav-h));
+  overflow:hidden;
+}
+.chat-window{
+  display:flex;
+  flex-direction:column;
+  height:100%;
+  overflow:hidden;
+}
+.msgs-area{
+  flex:1;
+  overflow-y:auto;
+  padding:16px;
+}
+.msg-in-bar{
+  flex-shrink:0;
+}
+
+/* ===== NOTIFICATION BADGE CLEAR ===== */
+.ni-actions{
+  display:flex;
+  gap:6px;
+  margin-top:6px;
+}
+
+/* ===== POST CARD RESPONSIVE ===== */
+.post-card{
+  contain:content;
+}
+
+/* ===== GLOBAL RESPONSIVE ===== */
+@media(max-width:1100px){
+  #main-layout{grid-template-columns:220px 1fr;}
+  .sr{display:none;}
+}
 @media(max-width:768px){
-  #page-profile .profile-tab-panel{padding:12px;}
-  .avatar-picker-grid{gap:6px;}
-  .av-pick-item{font-size:22px;}
+  #main-layout{
+    grid-template-columns:1fr;
+    padding-bottom:65px;
+  }
+  .sl{display:none;}
+  .fc{padding:10px 12px;max-width:100%;}
+  .chat-page-wrap{
+    height:calc(100vh - var(--nav-h) - 65px);
+    grid-template-columns:1fr;
+    margin:0;
+  }
+  .chat-sidebar{display:none;}
+  .chat-sidebar.mob-open{
+    display:flex;
+    position:fixed;
+    top:var(--nav-h);
+    left:0;
+    width:280px;
+    height:calc(100vh - var(--nav-h));
+    z-index:200;
+    background:var(--bg-mid);
+    border-right:1px solid var(--border-glow);
+  }
+  .post-card{border-radius:10px;padding:12px;}
+  .composer{border-radius:10px;}
+  .ctools{flex-wrap:wrap;}
+  #pp-edit{padding:0 0 40px;}
+  .edit-section{padding:14px;}
+  .pbar{flex-wrap:wrap;padding:0 14px 14px;}
+  .pstats{gap:12px;}
+}
+@media(max-width:480px){
+  .fc{padding:8px;}
+  nav{padding:0 10px;}
+  .nav-logo{font-size:30px;}
+  .post-card{padding:10px;}
+  .avatar-picker-grid{grid-template-columns:repeat(5,1fr);gap:6px;}
+  .comm-card{border-radius:10px;}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    animation-duration:.01ms!important;
+    transition-duration:.01ms!important;
+  }
 }
 </style>
 </head>
@@ -796,6 +879,9 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(10,1
 
     <!-- FRIENDS -->
     <div class="page" id="page-friends">
+      <div class="page-header" style="padding:16px 0 8px;display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <h1 style="font-family:'Silkscreen',monospace;font-size:16px;color:var(--neon-cyan);">👥 AMIGOS</h1>
+      </div>
       <div class="page-tabs" id="friends-page-tabs">
         <button class="ptab active" data-tab="fl-friends" onclick="switchPageTab('friends',this)">👥 Amigos</button>
         <button class="ptab" data-tab="fl-requests" onclick="switchPageTab('friends',this)">📩 Solicitações <span id="freq-badge" style="display:none;background:var(--neon-pink);color:#fff;font-size:9px;padding:1px 5px;border-radius:8px;margin-left:4px;">0</span></button>
@@ -825,6 +911,9 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(10,1
 
     <!-- COMMUNITIES -->
     <div class="page" id="page-communities">
+      <div class="page-header" style="padding:16px 0 8px;display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <h1 style="font-family:'Silkscreen',monospace;font-size:16px;color:var(--neon-cyan);">🏘 COMUNIDADES</h1>
+      </div>
       <div class="page-tabs" id="comm-page-tabs">
         <button class="ptab active" data-tab="cm-all" onclick="switchPageTab('communities',this)">🌍 Todas</button>
         <button class="ptab" data-tab="cm-mine" onclick="switchPageTab('communities',this)">⭐ Minhas</button>
@@ -896,6 +985,10 @@ nav{position:fixed;top:0;left:0;right:0;height:var(--nav-h);background:rgba(10,1
 
     <!-- NOTIFICATIONS -->
     <div class="page" id="page-notifications">
+      <div class="page-header" style="padding:16px 0 8px;display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <h1 style="font-family:'Silkscreen',monospace;font-size:16px;color:var(--neon-cyan);">🔔 NOTIFICAÇÕES</h1>
+        <button class="tbtn" onclick="markAllNotifsRead()" style="font-size:10px;">✓ Marcar lidas</button>
+      </div>
       <div class="page-tabs" id="notif-page-tabs">
         <button class="ptab active" data-tab="nt-all" onclick="switchPageTab('notifications',this)">🔔 Todas</button>
         <button class="ptab" data-tab="nt-mentions" onclick="switchPageTab('notifications',this)">@ Menções</button>
@@ -1546,12 +1639,19 @@ function renderComment(c,myVote,isPostOwner,postId){
 async function submitCmt(postId){
   if(!CU)return showToast('Faça login para comentar','error');
   const inp=document.getElementById('cin-'+postId);
-  const txt=inp.value.trim();if(!txt)return;
+  const txt=inp?.value.trim();if(!txt)return;
+  inp.disabled=true;
   const{error}=await db.from('comments').insert({post_id:postId,user_id:CU.id,content:txt});
+  inp.disabled=false;
   if(error)return showToast('Erro ao comentar: '+error.message,'error');
   inp.value='';
-  const cntEl=document.getElementById('cmtcnt-'+postId);
-  if(cntEl)cntEl.textContent=parseInt(cntEl.textContent||'0')+1;
+  // Update counter on ALL matching elements (post may be rendered multiple times)
+  document.querySelectorAll('#cmtcnt-'+postId).forEach(el=>{
+    const cur=parseInt(el.textContent)||0;
+    el.textContent=cur+1;
+  });
+  // Also invalidate feed cache so count reflects on next load
+  cachedPostIds.delete(postId);
   await loadCmts(postId);
 }
 async function deleteCmt(cmtId,postId){
@@ -1740,18 +1840,30 @@ function toggleAvPicker(){const s=document.getElementById('av-retro-sec')?.paren
 // ===== SETTINGS =====
 // showSettings — replaced by profile edit tab
 function showSettings(){
-  nav('profile');
-  // Wait for profile to load then click edit tab
-  const tryClick = (attempts) => {
-    const t = document.querySelector('.pptab[data-tab="pp-edit"]');
+  // Navigate to profile then open edit tab directly
+  _navBase('profile');
+  // Update nav state
+  document.querySelectorAll('.nbtn,.slink,.bnav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('sl-profile')?.classList.add('active');
+  // Load profile if needed then open edit tab
+  const openEditTab = () => {
     const tabs = document.getElementById('profile-page-tabs');
-    if(t && tabs && tabs.style.display !== 'none'){
-      t.click();
-    } else if(attempts > 0){
-      setTimeout(()=>tryClick(attempts-1), 150);
-    }
+    if(tabs) tabs.style.display='flex';
+    document.querySelectorAll('.pptab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.profile-tab-panel').forEach(p=>p.classList.remove('active'));
+    const editTab = document.querySelector('.pptab[data-tab="pp-edit"]');
+    const editPanel = document.getElementById('pp-edit');
+    if(editTab) editTab.classList.add('active');
+    if(editPanel) editPanel.classList.add('active');
+    loadEditForm();
+    // Scroll to top of page
+    window.scrollTo(0,0);
   };
-  setTimeout(()=>tryClick(10), 100);
+  if(CP){
+    openEditTab();
+  } else {
+    loadProfilePage(CU?.id).then(()=>openEditTab());
+  }
 }
 
 async function saveSettings(){
@@ -1866,11 +1978,40 @@ async function handleFriendReq(reqId,senderId,action){
     await Promise.all([
       db.from('friends').upsert({user_id:CU.id,friend_id:senderId}),
       db.from('friends').upsert({user_id:senderId,friend_id:CU.id}),
-      db.from('notifications').insert({user_id:senderId,actor_id:CU.id,type:'friend_accept',content:`@${CP?.username} aceitou sua amizade! 🎉`,read:false})
+      db.from('notifications').insert({user_id:senderId,actor_id:CU.id,type:'friend_accept',content:'@'+(CP?.username||'alguém')+' aceitou sua amizade! 🎉',read:false})
     ]);
     showToast('Amizade aceita! 🎉','success');
-  }else showToast('Solicitação recusada','success');
-  loadFriendsList('requests');
+  } else {
+    showToast('Solicitação recusada','success');
+  }
+  // Reload whichever requests list is visible
+  const panels=['hfl-requests-list','requests-list'];
+  panels.forEach(id=>{
+    const el=document.getElementById(id);
+    if(el&&el.closest('.tab-panel.active')) {
+      // reload based on which page is active
+      if(document.getElementById('page-friends')?.classList.contains('active')){
+        loadFriendsList('requests');
+      } else {
+        loadHomeFriendsList('requests');
+      }
+    }
+  });
+  // Clear the notification badge/dot from the request item
+  loadNotifCount();
+  // Update home freq badge
+  const badge=document.getElementById('home-freq-badge');
+  if(badge){
+    const cur=parseInt(badge.textContent)||0;
+    const nv=Math.max(0,cur-1);
+    badge.textContent=nv;
+    badge.style.display=nv>0?'inline-block':'none';
+  }
+  // Refresh both lists
+  setTimeout(()=>{
+    loadFriendsList('requests');
+    loadHomeFriendsList('requests');
+  },300);
 }
 async function removeFriend(friendRowId){
   if(!confirm('Remover este amigo?'))return;
@@ -1935,6 +2076,17 @@ async function postInComm(commId){
 // ===== PROFILE =====
 async function loadProfilePage(userId){
   nav('profile');if(!userId)return;
+  // Show/manage profile tabs
+  const _editTab=document.getElementById('pp-edit-tab');
+  const _tabs=document.getElementById('profile-page-tabs');
+  const _isOwn=CU?.id===userId;
+  if(_editTab) _editTab.style.display=_isOwn?'inline-block':'none';
+  if(_tabs) _tabs.style.display='flex';
+  // Reset to posts tab
+  document.querySelectorAll('.pptab').forEach(t=>t.classList.remove('active'));
+  document.querySelector('.pptab[data-tab="pp-posts"]')?.classList.add('active');
+  document.querySelectorAll('.profile-tab-panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('pp-posts')?.classList.add('active');
   document.getElementById('profile-cover-bar').innerHTML='<div style="padding:30px;">'+skeletons(3)+'</div>';
   const{data:profile}=await db.from('profiles').select('id,username,full_name,email,avatar_url,avatar_type,retro_icon,bio,instagram,twitter,github,status_message,created_at').eq('id',userId).maybeSingle();
   if(!profile)return;
@@ -2957,6 +3109,8 @@ function switchProfileTab(btn){
 }
 
 function loadEditForm(){
+  window.scrollTo(0,0);
+  document.getElementById('page-profile')?.scrollTo(0,0);
   if(!CP) return;
   const setName = document.getElementById('set-name');
   const setBio = document.getElementById('set-bio');
@@ -2988,15 +3142,21 @@ function updateAvPreview(){
 
 function nav(page){
   _navBase(page);
+  // Scroll to top on every page change (feels like a new page)
+  window.scrollTo({top:0,behavior:'instant'});
+  document.querySelector('.fc')?.scrollTo(0,0);
   setTimeout(()=>{
-    if(page==='home')           loadFeed();
-    else if(page==='explore')   loadExploreFeed();
-    else if(page==='friends')   loadFriendsList('friends');
-    else if(page==='communities') loadCommGrid('all');
-    else if(page==='messages')  loadConversations();
-    else if(page==='notifications') loadNotifTab('nt-all');
-    else if(page==='capsules')  loadCapsules();
-    else if(page==='profile')   loadProfilePage(CU?.id);
+    if(page==='home'){
+      // Home: load feed if empty, also load home tab content
+      if(!document.getElementById('feed')?.children.length) loadFeed();
+    }
+    else if(page==='explore')        loadExploreFeed();
+    else if(page==='friends')        loadFriendsList('friends');
+    else if(page==='communities')    loadCommGrid('all');
+    else if(page==='messages')       loadConversations();
+    else if(page==='notifications')  loadNotifTab('nt-all');
+    else if(page==='capsules')       loadCapsules();
+    else if(page==='profile')        loadProfilePage(CU?.id);
   }, 0);
 }
 
