@@ -2516,10 +2516,18 @@ async function createCommunity(){
   const icon=document.getElementById('cm-icon').value.trim()||'🏘';
   const vis=document.getElementById('cm-vis').value;
   if(!name||!slug)return showToast('Nome e slug obrigatórios','error');
-  const{data,error}=await db.from('communities').insert({owner_id:CU.id,name,slug,description:desc,avatar_url:icon,visibility:vis}).select().single();
+  // Insert without .select().single() to avoid triggering SELECT RLS policy
+  const{error:insErr}=await db.from('communities').insert({owner_id:CU.id,name,slug,description:desc,avatar_url:icon,visibility:vis});
+  const error=insErr;
+  // Get the created community by slug to get its ID
+  let data=null;
+  if(!error){
+    const{data:found}=await db.from('communities').select('id').eq('slug',slug).eq('owner_id',CU.id).maybeSingle();
+    data=found;
+  }
   if(error){
     if(error.message.includes('infinite recursion')){
-      showToast('Erro de permissão RLS. Execute o SQL de correção no Supabase!','error');
+      showToast('Permissão negada. Execute o SQL abaixo no Supabase para corrigir.','error');
       // Show fix instructions
       const div=document.getElementById('comm-create-error')||document.createElement('div');
       div.id='comm-create-error';
@@ -2532,7 +2540,9 @@ async function createCommunity(){
     }
     return;
   }
-  await db.from('community_members').insert({community_id:data.id,user_id:CU.id,role:'owner'});
+  if(data?.id){
+    await db.from('community_members').insert({community_id:data.id,user_id:CU.id,role:'owner'}).catch(()=>{});
+  }
   // Clear form
   ['cm-name','cm-slug','cm-desc','cm-icon'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('comm-create-error')?.remove();
@@ -2624,10 +2634,9 @@ async function loadProfilePage(userId){
     // 3. Follow/friend status
     let isFollowing=false, isFriend=false;
     if(CU && !isOwn){
-      const[fol,fri] = await Promise.all([
-        db.from('follows').select('id').eq('follower_id',CU.id).eq('following_id',userId).maybeSingle(),
-        db.from('friends').select('id').eq('user_id',CU.id).eq('friend_id',userId).maybeSingle().catch(()=>({data:null}))
-      ]);
+      let fol={data:null}, fri={data:null};
+      try{ fol=await db.from('follows').select('id').eq('follower_id',CU.id).eq('following_id',userId).maybeSingle(); }catch(e){}
+      try{ fri=await db.from('friends').select('id').eq('user_id',CU.id).eq('friend_id',userId).maybeSingle(); }catch(e){}
       isFollowing = !!fol.data; isFriend = !!fri?.data;
     }
 
@@ -2974,7 +2983,18 @@ async function acceptFriendFromNotif(btn){
   await handleFriendReq(req.id, sender.id, 'accept');
 }
 
-async function markRead(id,el){await db.from('notifications').update({read:true}).eq('id',id);el.classList.remove('unrd');}
+async function markRead(id,el){
+  await db.from('notifications').update({read:true}).eq('id',id);
+  // Remove from DOM with fade
+  if(el){
+    el.style.transition='opacity .3s,max-height .3s';
+    el.style.opacity='0';
+    el.style.maxHeight='0';
+    el.style.overflow='hidden';
+    setTimeout(()=>el.remove(), 300);
+  }
+  loadNotifCount();
+}
 
 // ===== REALTIME =====
 let _msgPollInterval=null;
@@ -3135,8 +3155,9 @@ async function loadHomeFriendsList(type){
 
   if(type==='requests'){
     const{data}=await db.from('friend_requests')
-      .select('id,sender_id,profiles!friend_requests_sender_id_fkey(id,username,full_name,avatar_url)')
-      .eq('receiver_id',CU.id).eq('status','pending');
+      .select('id,sender_id,status,profiles!friend_requests_sender_id_fkey(id,username,full_name,avatar_url)')
+      .eq('receiver_id',CU.id).eq('status','pending')
+      .order('created_at',{ascending:false});
     const cnt=(data||[]).length;
     const badge=document.getElementById('home-freq-badge');
     if(badge){badge.textContent=cnt;badge.style.display=cnt>0?'inline-block':'none';}
@@ -3454,7 +3475,13 @@ async function loadHomeAlerts(){
 async function markAllNotifsRead(){
   if(!CU) return;
   await db.from('notifications').update({read:true}).eq('user_id',CU.id).eq('read',false);
-  document.querySelectorAll('.ni.unrd').forEach(n=>n.classList.remove('unrd'));
+  // Remove all notification items from every list
+  ['ht-alerts-list','notif-list-all','notif-list-mentions','notif-list-social','notif-list-system'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.innerHTML='<div class="notif-empty"><div class="notif-empty-icon">🔔</div><div class="notif-empty-txt">Sem notificações</div></div>';
+  });
+  document.getElementById('notif-badge').style.display='none';
+  const bnb=document.getElementById('bnav-notif-badge');if(bnb)bnb.style.display='none';
   showToast('Todas as notificações lidas ✓','success');
   loadNotifCount();
 }
@@ -3474,10 +3501,9 @@ async function showPostAuthorProfile(userId, triggerEl){
 
   let isFollowing=false, isFriend=false;
   if(CU){
-    const[fol,fri]=await Promise.all([
-      db.from('follows').select('id').eq('follower_id',CU.id).eq('following_id',userId).maybeSingle(),
-      db.from('friends').select('id').eq('user_id',CU.id).eq('friend_id',userId).maybeSingle()
-    ]);
+    let fol={data:null}, fri={data:null};
+    try{ fol=await db.from('follows').select('id').eq('follower_id',CU.id).eq('following_id',userId).maybeSingle(); }catch(e){}
+    try{ fri=await db.from('friends').select('id').eq('user_id',CU.id).eq('friend_id',userId).maybeSingle(); }catch(e){}
     isFollowing=!!fol.data; isFriend=!!fri.data;
   }
 
