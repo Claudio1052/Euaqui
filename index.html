@@ -776,6 +776,40 @@ body{
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;}
 }
+
+/* ===== EMOJI PICKER ===== */
+.emoji-picker{
+  position:absolute;
+  bottom:100%;
+  right:0;
+  width:280px;
+  max-height:220px;
+  background:var(--bg-mid);
+  border:1px solid var(--border-glow);
+  border-radius:12px;
+  padding:10px;
+  z-index:500;
+  display:none;
+  box-shadow:0 -8px 32px rgba(0,0,0,.5);
+  flex-direction:column;
+  gap:6px;
+}
+.emoji-picker.open{display:flex;}
+.emoji-cats{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;flex-shrink:0;}
+.emoji-cats::-webkit-scrollbar{display:none;}
+.emoji-cat-btn{background:none;border:none;cursor:pointer;font-size:16px;padding:4px 6px;border-radius:6px;opacity:.6;transition:opacity .15s;}
+.emoji-cat-btn.active,.emoji-cat-btn:hover{opacity:1;background:rgba(255,255,255,.08);}
+.emoji-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:2px;overflow-y:auto;flex:1;}
+.emoji-item{font-size:20px;text-align:center;cursor:pointer;padding:4px;border-radius:6px;transition:background .1s;line-height:1.3;}
+.emoji-item:hover{background:rgba(255,255,255,.1);}
+.emoji-search{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:var(--text-light);font-size:11px;padding:6px 10px;outline:none;width:100%;flex-shrink:0;}
+.emoji-search:focus{border-color:var(--border-glow);}
+.emoji-wrap{position:relative;}
+@media(max-width:768px){
+  .emoji-picker{width:240px;max-height:190px;right:-10px;}
+  .emoji-grid{grid-template-columns:repeat(7,1fr);}
+  .emoji-item{font-size:18px;}
+}
 </style>
 </head>
 <body>
@@ -969,9 +1003,13 @@ body{
             <div id="ht-chat-title" style="font-family:'Silkscreen',monospace;font-size:11px;color:var(--neon-cyan);"></div>
           </div>
           <div id="ht-msgs-area" style="max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-bottom:8px;"></div>
-          <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">
+          <div style="display:flex;gap:8px;margin-top:10px;align-items:center;position:relative;">
             <button class="msg-attach-btn" onclick="trigMsgFile()" title="Arquivo">📎</button>
             <button class="msg-attach-btn" onclick="trigMsgPhoto()" title="Foto">📷</button>
+            <div class="emoji-wrap" style="position:relative;">
+              <button class="msg-attach-btn" onclick="toggleEmojiPicker('home-emoji','ht-msg-in')" title="Emojis">😊</button>
+              <div class="emoji-picker" id="home-emoji"></div>
+            </div>
             <input class="msg-in" id="ht-msg-in" placeholder="Escreva uma mensagem..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendHomeMsg()}" style="flex:1;border-radius:20px;padding:9px 14px;">
             <button class="msg-snd" onclick="sendHomeMsg()">➤</button>
           </div>
@@ -1101,6 +1139,10 @@ body{
           <div class="msg-in-bar" id="msg-in-area" style="display:none;">
             <button class="msg-attach-btn" onclick="trigMsgFile()" title="Enviar arquivo">📎</button>
             <button class="msg-attach-btn" onclick="trigMsgPhoto()" title="Enviar foto/vídeo">📷</button>
+            <div class="emoji-wrap" style="position:relative;">
+              <button class="msg-attach-btn" onclick="toggleEmojiPicker('chat-emoji','msg-in')" title="Emojis">😊</button>
+              <div class="emoji-picker" id="chat-emoji"></div>
+            </div>
             <textarea class="msg-in" id="msg-in" placeholder="Escreva uma mensagem..." rows="1" onkeydown="handleMsgKey(event)" oninput="autoResizeMsgIn(this)"></textarea>
             <button class="msg-snd" onclick="sendMsg()">➤</button>
           </div>
@@ -1671,6 +1713,7 @@ function renderPost(post,rxCounts={},myRx=''){
     <div class="preactions">${rxHtml}</div>
     <div class="pactions">
       <button class="abtn" onclick="toggleCmts('${post.id}')">💬 <span id="cmtcnt-${post.id}">${cmtCnt}</span></button>
+      <button class="abtn" onclick="sharePost('${post.id}','${xss(prof.full_name||prof.username||'')}','${xss((post.content||'').slice(0,80))}')">🔗 Compartilhar</button>
       <button class="abtn" onclick="savePost('${post.id}')">🔖 Salvar</button>
       ${!isOwn?`<button class="abtn" onclick="reportPost('${post.id}')">⚑ Reportar</button>`:''}
     </div>
@@ -1965,18 +2008,12 @@ function handleMedia(inp){
   }).join('');
 }
 function removeMedia(i){mediaFiles.splice(i,1);mediaTypes.splice(i,1);handleMedia({files:mediaFiles});}
-function sharePost(id){const url=`${location.origin}${location.pathname}?post=${id}`;navigator.clipboard?.writeText(url);showToast('Link copiado! 🔗','success');}
 function savePost(id){if(!CU)return;db.from('saved_posts').upsert({user_id:CU.id,post_id:id}).then(()=>showToast('Salvo! 🔖','success'));}
 function reportPost(id){showToast('Post reportado para análise.','success');}
 
 // ===== EMOJI =====
 const EMOJIS=['😀','😂','🥹','😍','🤩','😎','🤔','😅','😭','😤','🤪','😴','🥳','🥺','😈','👾','🤖','👻','💀','🔥','✨','💯','❤️','💔','🎉','🎊','🎮','🎵','🌈','⚡','💫','🌟','👑','🏆','💎','🚀','🌙','☀️','⭐','🎭','🕹️','📱','💻','🎧','🎤','🎸','🎹','🍕','🍔','🎂','🦄'];
-function fillEmojiGrid(){document.getElementById('emoji-grid').innerHTML=EMOJIS.map(e=>`<button style="background:none;border:none;font-size:22px;cursor:pointer;padding:4px;border-radius:6px;transition:transform .1s;" onmouseover="this.style.transform='scale(1.3)'" onmouseout="this.style.transform='scale(1)'" onclick="insertEmoji('${e}')">${e}</button>`).join('');}
 function openEmoji(){openM('m-emoji');}
-function insertEmoji(e){const ta=document.getElementById('post-txt');const p=ta.selectionStart;ta.value=ta.value.slice(0,p)+e+ta.value.slice(p);updateChar();closeM('m-emoji');}
-
-// ===== AVATAR PICKER =====
-const RETRO_ICONS=['🤖','👾','🦄','🐉','🦊','🐺','🦁','🐯','🐻','🐼','🐨','🦋','👺','👹','💀','☠️','🧙','🧚','🧜','🧝','🧛','👽','🎭','🎪','🃏','🎮','🕹️','⚔️','🛡️','🎯','🔮','💎','👑','🌟','⚡','🔥','❄️','🌊','🌌','🎆','🎇','🎨','🎵','🎸','🎹','🎺','🥁','🎻'];
 function buildRetroGrid(){
   const grid=document.getElementById('av-retro-grid');
   if(!grid){ console.warn('av-retro-grid not found'); return; }
@@ -2046,15 +2083,28 @@ async function saveSettings(){
   let avatarUrl=CP?.avatar_url;let avatarType='upload';let retroIcon=null;
   if(retroIconSelected){avatarType='retro_icon';retroIcon=retroIconSelected;avatarUrl=retroIconSelected;}
   else if(avatarFile){
-    const path=`${CU.id}/avatar-${Date.now()}`;
-    const{data,error}=await db.storage.from('avatars').upload(path,avatarFile,{upsert:true,contentType:avatarFile.type});
-    if(data){
-      const{data:u}=db.storage.from('avatars').getPublicUrl(path);
-      avatarUrl=u.publicUrl;
-    } else if(error){
-      console.warn('Avatar upload error:',error.message);
-      showToast('Foto não enviada: crie o bucket "avatars" no Supabase Storage','error');
-    }
+    try{
+      const ext=avatarFile.name.split('.').pop()||'jpg';
+      const path=CU.id+'/av-'+Date.now()+'.'+ext;
+      // Try upload to avatars bucket
+      const{data:upData,error:upErr}=await db.storage.from('avatars').upload(path,avatarFile,{upsert:true,cacheControl:'3600',contentType:avatarFile.type});
+      if(upData){
+        const{data:urlData}=db.storage.from('avatars').getPublicUrl(path);
+        avatarUrl=urlData.publicUrl;
+      } else if(upErr){
+        console.warn('avatars bucket error:',upErr.message);
+        // Fallback: try media bucket
+        const path2=CU.id+'/av-'+Date.now()+'.'+ext;
+        const{data:upData2,error:upErr2}=await db.storage.from('media').upload(path2,avatarFile,{upsert:true,cacheControl:'3600',contentType:avatarFile.type});
+        if(upData2){
+          const{data:urlData2}=db.storage.from('media').getPublicUrl(path2);
+          avatarUrl=urlData2.publicUrl;
+          showToast('Foto salva no bucket media (adicione policy ao bucket avatars)','success');
+        } else {
+          showToast('Erro upload: '+upErr.message,'error');
+        }
+      }
+    }catch(e){ showToast('Erro inesperado no upload: '+e.message,'error'); }
   }
   // Monta updates com campos básicos sempre presentes
   // Após a migração, todas as colunas existem
@@ -2798,13 +2848,19 @@ function switchHomeTab(btn){
 
 function switchHomeSubTab(tabsId, btn){
   const tabId = btn.dataset.tab;
+  // Update tab button active state
   const tabsEl = document.getElementById(tabsId);
   if(tabsEl) tabsEl.querySelectorAll('.ptab').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
-  const parent = btn.closest('.tab-panel')||btn.closest('.page');
-  if(parent) parent.querySelectorAll(':scope > .tab-panel').forEach(p=>p.classList.remove('active'));
+  // Hide all panels in the same group (find siblings by same parent)
   const panel = document.getElementById(tabId);
-  if(panel) panel.classList.add('active');
+  if(panel){
+    // Hide all sibling tab-panels in the same parent
+    const parentEl = panel.parentElement;
+    parentEl.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+    panel.classList.add('active');
+  }
+  // Load data
   if(tabId==='hfl-friends') loadHomeFriendsList('friends');
   else if(tabId==='hfl-requests') loadHomeFriendsList('requests');
   else if(tabId==='hfl-following') loadHomeFriendsList('following');
@@ -3231,6 +3287,149 @@ async function showPostAuthorProfile(userId, triggerEl){
   document.body.appendChild(overlay);
   document.body.appendChild(popup);
 }
+
+
+function sharePost(postId, authorName, preview){
+  const url = window.location.origin + window.location.pathname + '?post=' + postId;
+  const text = (authorName ? authorName + ': ' : '') + (preview || 'Veja este post no EuAqui');
+  if(navigator.share){
+    navigator.share({title:'EuAqui', text: text, url: url})
+      .catch(()=>{ copyShareLink(url); });
+  } else {
+    copyShareLink(url);
+  }
+}
+
+function copyShareLink(url){
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(url).then(()=>showToast('🔗 Link copiado!','success'));
+  } else {
+    // Fallback for older browsers
+    const el=document.createElement('textarea');
+    el.value=url; el.style.position='fixed'; el.style.opacity='0';
+    document.body.appendChild(el); el.select();
+    document.execCommand('copy'); document.body.removeChild(el);
+    showToast('🔗 Link copiado!','success');
+  }
+}
+
+
+// ===== EMOJI PICKER =====
+const EMOJI_CATS = {
+  '😊': ['😀','😁','😂','🤣','😃','😄','😅','😆','😇','😈','😉','😊','😋','😌','😍','🥰','😎','😏','😐','😑','😒','😓','😔','😕','😖','😗','😘','😙','😚','😛','😜','😝','😞','😟','😠','😡','😢','😣','😤','😥','😦','😧','😨','😩','😪','😫','😬','😭','😮','😯','😰','😱','😲','😳','😴','😵','😶','😷','🤒','🤔','🤕','🤗','🤢','🤧','🤩','🤪','🤫','🤬','🤭','🤮','🤯','🥱','🥳','🥴','🥵','🥶'],
+  '❤️': ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','☮️','✌️','🤞','🤟','🤘','👍','👎','👏','🙌','🤝','🤜','🤛','✊','👊','🤚','🖐','✋','👋','🤙','💪','🦾','🖖'],
+  '🎉': ['🎉','🎊','🎈','🎁','🎀','🎗','🎟','🎫','🏆','🥇','🥈','🥉','🏅','🎖','🌟','⭐','✨','💫','🔥','🌈','☀️','🌙','⚡','❄️','🌊','💧','🌺','🌸','🌹','🌻','🌼','🍀','🍁','🍂','🍃','🎵','🎶','🎸','🎹','🎺','🎻','🥁'],
+  '😂': ['😂','💀','☠️','🤡','👻','👽','👾','🤖','💩','🎭','😴','🥱','🤤','😪','🤧','🤮','🤢','🤯','🥴','🤠','🥸','🤓','🧐','😒','🙄','😑','😶','😐','😏','😬','😌','😔','😕','🥺','😢','😭','😤','😠','😡','🤬'],
+  '🌍': ['🌍','🌎','🌏','🗺','🧭','🌋','⛰️','🏔️','🏕️','🏖️','🏜️','🏝️','🏞️','🏟️','🏛️','🏗️','🏘️','🏙️','🏚️','🏠','🏡','🏢','🏣','🏤','🏥','🏦','🏧','🏨','🏩','🏪','🏫','🏬','🏭','🏯','🏰','💒','🗼','🗽','⛪','🕌','🛕','⛩️','🕍','⛲','⛺','🌁','🌃','🌄','🌅','🌆','🌇','🌉','🌌'],
+  '🍕': ['🍕','🍔','🍟','🌭','🌮','🌯','🫔','🧆','🥙','🥪','🫕','🍿','🧂','🥚','🍳','🥞','🧇','🥓','🥩','🍗','🍖','🦴','🌽','🥕','🫛','🥑','🍆','🥦','🥗','🥣','🧄','🧅','🥔','🍠','🥐','🥖','🍞','🥨','🥯','🧀','🍜','🍝','🍲','🍛','🍣','🍱','🥟','🦪','🍤','🍙','🍚','🍘','🍥','🥮','🍡','🧁','🍰','🎂','🍮','🍭','🍬','🍫','🍿','🍩','🍪','🌰','🥜','🍯','🧃','🥤','🧋','☕','🍵','🍶','🍾','🍷','🍸','🍹','🍺','🍻'],
+};
+
+let _emojiTarget = null;
+
+function toggleEmojiPicker(pickerId, inputId){
+  const picker = document.getElementById(pickerId);
+  if(!picker) return;
+  _emojiTarget = inputId;
+
+  if(picker.classList.contains('open')){
+    picker.classList.remove('open');
+    return;
+  }
+
+  // Build picker if empty
+  if(!picker.innerHTML.trim()){
+    buildEmojiPicker(picker);
+  }
+
+  // Close all other pickers
+  document.querySelectorAll('.emoji-picker.open').forEach(p=>{
+    if(p.id!==pickerId) p.classList.remove('open');
+  });
+
+  picker.classList.add('open');
+  picker.querySelector('.emoji-search')?.focus();
+}
+
+function buildEmojiPicker(picker){
+  const pid = picker.id;
+  const cats = Object.keys(EMOJI_CATS);
+  const activeCat = cats[0];
+
+  // Search input
+  const searchEl = document.createElement('input');
+  searchEl.className='emoji-search'; searchEl.placeholder='🔍 Buscar emoji...'; searchEl.autocomplete='off';
+  searchEl.oninput = function(){ filterEmojis(this, pid); };
+  picker.appendChild(searchEl);
+
+  // Category buttons
+  const catsEl = document.createElement('div'); catsEl.className='emoji-cats';
+  cats.forEach(cat=>{
+    const btn=document.createElement('button'); btn.className='emoji-cat-btn'+(cat===activeCat?' active':'');
+    btn.textContent=cat; btn.title=cat;
+    btn.onclick=function(){ showEmojiCat(this, cat, pid); };
+    catsEl.appendChild(btn);
+  });
+  picker.appendChild(catsEl);
+
+  // Emoji grid
+  const grid=document.createElement('div'); grid.className='emoji-grid'; grid.id=pid+'-grid';
+  EMOJI_CATS[activeCat].forEach(e=>{
+    const span=document.createElement('span'); span.className='emoji-item'; span.textContent=e;
+    span.onclick=function(){ insertEmoji(e, pid); };
+    grid.appendChild(span);
+  });
+  picker.appendChild(grid);
+}
+
+function showEmojiCat(btn, cat, pickerId){
+  const picker = document.getElementById(pickerId);
+  if(!picker) return;
+  picker.querySelectorAll('.emoji-cat-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  fillEmojiGrid(pickerId+'-grid', EMOJI_CATS[cat]||[], pickerId);
+}
+
+function filterEmojis(input, pickerId){
+  const q = input.value.trim();
+  if(!q){
+    const firstCat = Object.keys(EMOJI_CATS)[0];
+    fillEmojiGrid(pickerId+'-grid', EMOJI_CATS[firstCat]||[], pickerId);
+    return;
+  }
+  const all = Object.values(EMOJI_CATS).flat();
+  fillEmojiGrid(pickerId+'-grid', all.slice(0,60), pickerId);
+}
+
+function fillEmojiGrid(gridId, emojis, pickerId){
+  const grid = document.getElementById(gridId);
+  if(!grid) return;
+  grid.innerHTML='';
+  emojis.forEach(e=>{
+    const span=document.createElement('span');
+    span.className='emoji-item'; span.textContent=e;
+    span.onclick=function(){ insertEmoji(e, pickerId); };
+    grid.appendChild(span);
+  });
+}
+
+function insertEmoji(emoji, pickerId){
+  const inputId = _emojiTarget;
+  const el = inputId ? document.getElementById(inputId) : null;
+  if(!el) return;
+  const start = el.selectionStart||el.value.length;
+  const end = el.selectionEnd||el.value.length;
+  el.value = el.value.slice(0,start) + emoji + el.value.slice(end);
+  el.selectionStart = el.selectionEnd = start + emoji.length;
+  el.focus();
+  // Don't close picker so user can add multiple emojis
+}
+
+// Close emoji picker when clicking outside
+document.addEventListener('click', function(e){
+  if(!e.target.closest('.emoji-wrap') && !e.target.closest('.emoji-picker')){
+    document.querySelectorAll('.emoji-picker.open').forEach(p=>p.classList.remove('open'));
+  }
+});
 
 
 // ===== VALIDATION =====
