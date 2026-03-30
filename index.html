@@ -751,6 +751,118 @@ body{
   .emoji-picker{width:240px;max-height:190px;right:-10px;}
   .emoji-grid{grid-template-columns:repeat(7,1fr);}
   .emoji-item{font-size:18px;}
+
+  /* === chat mobile === */
+  /* page-messages: sidebar IS the main view on mobile */
+    .chat-page-wrap{
+      display:block !important;
+      height:calc(100vh - 52px - 68px);
+      overflow:hidden;
+      position:relative;
+    }
+    
+    /* Sidebar = full screen conversation list */
+    .chat-sidebar{
+      display:flex !important;
+      position:absolute;
+      inset:0;
+      width:100%;
+      height:100%;
+      z-index:10;
+      transform:translateX(0);
+      transition:transform .28s cubic-bezier(.4,0,.2,1);
+    }
+    .chat-sidebar.chat-hidden{
+      transform:translateX(-100%);
+      pointer-events:none;
+    }
+    
+    /* Chat window = full screen, slides in from right */
+    .chat-window{
+      position:absolute;
+      inset:0;
+      width:100%;
+      height:100%;
+      z-index:11;
+      transform:translateX(100%);
+      transition:transform .28s cubic-bezier(.4,0,.2,1);
+      display:flex !important;
+    }
+    .chat-window.chat-open{
+      transform:translateX(0);
+    }
+  
+    /* Sidebar header */
+    .chat-sb-hdr{
+      padding:14px 16px;
+      background:rgba(10,10,42,.95);
+    }
+    .chat-sb-title{
+      font-size:14px;
+    }
+  
+    /* Conversation items — bigger touch targets */
+    .ci{
+      padding:14px 16px;
+      gap:12px;
+    }
+    .ci-av{
+      width:46px;
+      height:46px;
+      font-size:22px;
+      flex-shrink:0;
+    }
+    .ci-name{font-size:12px;}
+    .ci-last{font-size:11px;}
+    
+    /* Chat window header */
+    .chat-win-hdr{
+      padding:10px 14px;
+      min-height:56px;
+      gap:10px;
+    }
+    #chat-back-btn{
+      display:flex !important;
+      align-items:center;
+      gap:4px;
+      padding:8px 10px;
+      font-size:12px;
+    }
+    .chat-win-name{font-size:12px;}
+    
+    /* Messages area */
+    .msgs-area{
+      padding:12px;
+      gap:8px;
+    }
+    
+    /* Message bubbles */
+    .mb-bubble{
+      font-size:13px;
+      padding:9px 13px;
+      max-width:82vw;
+    }
+    .mb{max-width:85%;}
+    
+    /* Input bar */
+    .msg-in-bar{
+      padding:8px 12px;
+      gap:6px;
+    }
+    .msg-attach-btn{
+      width:38px;
+      height:38px;
+      font-size:18px;
+    }
+    .msg-in{
+      font-size:13px;
+      padding:9px 13px;
+    }
+    .msg-snd{
+      width:40px;
+      height:40px;
+    }
+  #ht-msgs-area{max-height:calc(100vh - 320px);min-height:200px;}
 }
 
 /* Very small phones */
@@ -813,6 +925,60 @@ body{
 
 /* Retro icon grid — ensure visible on mobile */
 .av-pick-item{min-height:44px;min-width:44px;}
+
+/* ===== MOBILE CHAT REDESIGN ===== */
+
+
+/* ===== HOME CHAT TAB — mobile friendly ===== */
+#ht-chat-list .ci{
+  border-radius:10px;
+  margin-bottom:6px;
+  background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.06);
+}
+#ht-chat-list .ci:hover,
+#ht-chat-list .ci:active{
+  background:rgba(0,255,204,.07);
+  border-color:rgba(0,255,204,.15);
+}
+#ht-chat-window{
+  background:var(--bg-card);
+  border-radius:12px;
+  border:1px solid var(--border-glow);
+  overflow:hidden;
+}
+.ht-chat-back-row{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:12px 14px;
+  border-bottom:1px solid var(--border-glow);
+  background:rgba(10,10,42,.7);
+}
+
+
+/* ===== EMPTY STATE ===== */
+.chat-empty-state{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  padding:48px 24px;
+  text-align:center;
+  gap:14px;
+}
+.chat-empty-state .icon{font-size:56px;opacity:.4;}
+.chat-empty-state .title{
+  font-family:'VT323',monospace;
+  font-size:24px;
+  color:var(--text-muted);
+}
+.chat-empty-state .sub{
+  font-size:12px;
+  color:var(--text-muted);
+  line-height:1.6;
+  max-width:260px;
+}
 </style>
 </head>
 <body>
@@ -1001,9 +1167,9 @@ body{
         <div id="ht-chat-list" style="margin-bottom:12px;"></div>
         <!-- Mini chat window -->
         <div id="ht-chat-window" style="display:none;">
-          <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border-glow);margin-bottom:12px;">
-            <button onclick="document.getElementById('ht-chat-window').style.display='none';document.getElementById('ht-chat-list').style.display='block';" class="tbtn" style="padding:5px 10px;">← Voltar</button>
-            <div id="ht-chat-title" style="font-family:'Silkscreen',monospace;font-size:11px;color:var(--neon-cyan);"></div>
+          <div class="ht-chat-back-row">
+            <button onclick="closeHomeChatWindow()" class="tbtn" style="padding:8px 12px;font-size:12px;">← Voltar</button>
+            <div id="ht-chat-title" style="font-family:'Silkscreen',monospace;font-size:12px;color:var(--neon-cyan);flex:1;"></div>
           </div>
           <div id="ht-msgs-area" style="max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-bottom:8px;"></div>
           <div style="display:flex;gap:8px;margin-top:10px;align-items:center;position:relative;">
@@ -2590,27 +2756,62 @@ async function submitGb(profileId){
 
 // ===== MESSAGES =====
 async function loadConversations(){
-  if(!CU)return;
-  const{data:msgs}=await db.from('messages').select('sender_id,receiver_id,created_at').or(`sender_id.eq.${CU.id},receiver_id.eq.${CU.id}`).order('created_at',{ascending:false});
-  const seen=new Set(),userIds=[];
-  (msgs||[]).forEach(m=>{const other=m.sender_id===CU.id?m.receiver_id:m.sender_id;if(!seen.has(other)){seen.add(other);userIds.push(other);}});
-  // Also include friends who haven't messaged yet
-  // Tenta carregar amigos (tabela pode não existir ainda)
+  if(!CU) return;
+  const cl = document.getElementById('chat-list');
+  if(!cl) return;
+  cl.innerHTML = skeletons(3);
+
+  // Fetch recent message partners
+  const{data:msgs} = await db.from('messages')
+    .select('sender_id,receiver_id,content,created_at')
+    .or('sender_id.eq.'+CU.id+',receiver_id.eq.'+CU.id)
+    .order('created_at',{ascending:false}).limit(100);
+
+  const seen=new Set(), convos=[];
+  (msgs||[]).forEach(m=>{
+    const other = m.sender_id===CU.id ? m.receiver_id : m.sender_id;
+    if(!seen.has(other)){
+      seen.add(other);
+      convos.push({userId:other, lastMsg:m.content, lastTime:m.created_at});
+    }
+  });
+
+  // Add friends not yet messaged
   try{
-    const{data:friends}=await db.from('friends').select('friend_id').eq('user_id',CU.id);
-    (friends||[]).forEach(f=>{if(f.friend_id&&!seen.has(f.friend_id)){seen.add(f.friend_id);userIds.push(f.friend_id);}});
-  }catch(e){console.log('friends table not ready yet');}
-  // Adiciona quem o usuário segue também (sempre disponível)
-  const{data:follows}=await db.from('follows').select('following_id').eq('follower_id',CU.id);
-  (follows||[]).forEach(f=>{if(f.following_id&&!seen.has(f.following_id)){seen.add(f.following_id);userIds.push(f.following_id);}});
-  const cl=document.getElementById('chat-list');
-  if(!userIds.length){cl.innerHTML='<div style="padding:16px;color:var(--text-muted);font-size:11px;text-align:center;">Adicione amigos para conversar!</div>';return;}
-  const{data:profiles}=await db.from('profiles').select('id,username,full_name,avatar_url').in('id',userIds);
-  cl.innerHTML=(profiles||[]).map(p=>`
-    <div class="ci" id="ci-${p.id}" onclick="openChat('${p.id}','${p.username}','${getAvatar(p)}')">
-      ${renderAvatar(p,38,'ci-av')}
-      <div class="ci-info"><div class="ci-name">${xss(p.full_name||p.username)}</div><div class="ci-last">@${xss(p.username)}</div></div>
-    </div>`).join('');
+    const{data:frs}=await db.from('friends').select('friend_id').eq('user_id',CU.id);
+    (frs||[]).forEach(f=>{
+      if(f.friend_id && !seen.has(f.friend_id)){
+        seen.add(f.friend_id);
+        convos.push({userId:f.friend_id, lastMsg:null, lastTime:null});
+      }
+    });
+  }catch(e){}
+
+  if(!convos.length){
+    cl.innerHTML='<div class="chat-empty-state"><div class="icon">💬</div><div class="title">Sem conversas</div><div class="sub">Adicione amigos e comece a conversar!</div></div>';
+    return;
+  }
+
+  const{data:profiles}=await db.from('profiles')
+    .select('id,username,full_name,avatar_url')
+    .in('id', convos.map(c=>c.userId));
+  const pm={};(profiles||[]).forEach(p=>pm[p.id]=p);
+
+  cl.innerHTML='';
+  convos.forEach(conv=>{
+    const p = pm[conv.userId]||{username:'?',full_name:'?'};
+    const av = getAvatar(p);
+    const div = document.createElement('div');
+    div.className='ci'; div.id='ci-'+conv.userId;
+    div.innerHTML = renderAvatar(p,46,'ci-av')
+      +'<div class="ci-info">'
+        +'<div class="ci-name">'+xss(p.full_name||p.username||'?')+'</div>'
+        +'<div class="ci-last">'+(conv.lastMsg?xss(conv.lastMsg.slice(0,35)):'Toque para conversar')+'</div>'
+      +'</div>'
+      +(conv.lastTime?'<div class="ci-time">'+timeAgo(conv.lastTime)+'</div>':'');
+    div.onclick = ()=>openChat(conv.userId, p.username||'?', av);
+    cl.appendChild(div);
+  });
 }
 function filterChats(v){document.querySelectorAll('.ci').forEach(ci=>{ci.style.display=ci.textContent.toLowerCase().includes(v.toLowerCase())?'flex':'none';});}
 async function openChat(userId,username,avatarUrl){
@@ -2618,10 +2819,16 @@ async function openChat(userId,username,avatarUrl){
   document.getElementById('msg-badge')?.remove();
   document.querySelectorAll('.ci').forEach(c=>c.classList.remove('active'));
   document.getElementById('ci-'+userId)?.classList.add('active');
+
+  // Build chat window header
   const top=document.getElementById('chat-win-hdr');
-  const avH=renderAvatar({id:userId,username,avatar_url:avatarUrl},36,'');
-  top.innerHTML=avH+`<div><div style="font-family:'Silkscreen',monospace;font-size:11px;color:var(--neon-cyan);">@${xss(username)}</div></div>`;
+  const avH=renderAvatar({id:userId,username,avatar_url:avatarUrl},36,'chat-win-av');
+  const backBtn='<button id="chat-back-btn" onclick="showChatSidebar()" style="display:flex;align-items:center;gap:4px;padding:8px 10px;font-size:12px;" class="tbtn">← Voltar</button>';
+  top.innerHTML=backBtn+avH+'<div><div class="chat-win-name">@'+xss(username)+'</div></div>';
   document.getElementById('msg-in-area').style.display='flex';
+
+  // On mobile: slide to chat window
+  showChatWindow();
   await loadMsgs(userId);
 }
 async function loadMsgs(userId){
@@ -2979,35 +3186,71 @@ async function loadHomeComms(){
 
 
 async function loadHomeChat(){
-  const listEl=document.getElementById('ht-chat-list');
-  if(!listEl||!CU) return;
-  const{data:msgs}=await db.from('messages').select('sender_id,receiver_id,content,created_at')
-    .or('sender_id.eq.'+CU.id+',receiver_id.eq.'+CU.id).order('created_at',{ascending:false}).limit(60);
-  const seen=new Set(),convos=[];
+  const listEl = document.getElementById('ht-chat-list');
+  if(!listEl || !CU) return;
+  listEl.innerHTML = skeletons(3);
+
+  // Fetch messages
+  const{data:msgs} = await db.from('messages')
+    .select('sender_id,receiver_id,content,created_at')
+    .or('sender_id.eq.'+CU.id+',receiver_id.eq.'+CU.id)
+    .order('created_at',{ascending:false}).limit(60);
+
+  const seen=new Set(), convos=[];
   (msgs||[]).forEach(m=>{
-    const other=m.sender_id===CU.id?m.receiver_id:m.sender_id;
-    if(!seen.has(other)){seen.add(other);convos.push({userId:other,last:m.content,time:m.created_at});}
+    const other = m.sender_id===CU.id ? m.receiver_id : m.sender_id;
+    if(!seen.has(other)){
+      seen.add(other);
+      convos.push({userId:other, last:m.content, time:m.created_at});
+    }
   });
+
+  // Add friends not yet messaged
   try{
     const{data:frs}=await db.from('friends').select('friend_id').eq('user_id',CU.id);
-    (frs||[]).forEach(f=>{if(!seen.has(f.friend_id)){seen.add(f.friend_id);convos.push({userId:f.friend_id,last:null,time:null});}});
+    (frs||[]).forEach(f=>{
+      if(f.friend_id && !seen.has(f.friend_id)){
+        seen.add(f.friend_id);
+        convos.push({userId:f.friend_id, last:null, time:null});
+      }
+    });
   }catch(e){}
-  if(!convos.length){listEl.innerHTML='<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Adicione amigos para conversar!</div>';return;}
-  const{data:profiles}=await db.from('profiles').select('id,username,full_name,avatar_url').in('id',convos.map(c=>c.userId));
+
+  if(!convos.length){
+    listEl.innerHTML='<div class="chat-empty-state"><div class="icon">💬</div><div class="title">Sem conversas</div><div class="sub">Adicione amigos e comece a conversar!</div></div>';
+    return;
+  }
+
+  const{data:profiles}=await db.from('profiles')
+    .select('id,username,full_name,avatar_url')
+    .in('id', convos.map(c=>c.userId));
   const pm={};(profiles||[]).forEach(p=>pm[p.id]=p);
+
   listEl.innerHTML='';
-  convos.forEach(c=>{
-    const p=pm[c.userId]||{};
-    const div=document.createElement('div');div.className='ci';
-    div.innerHTML=renderAvatar(p,40,'ci-av')
-      +'<div class="ci-info"><div class="ci-name">'+xss(p.full_name||p.username||'?')+'</div>'
-      +'<div class="ci-last">'+(c.last?xss(c.last.slice(0,28)):'')+'</div></div>'
-      +(c.time?'<div class="ci-time">'+timeAgo(c.time)+'</div>':'');
-    div.onclick=()=>openHomeChatWith(c.userId,p.username||'',getAvatar(p));
+  convos.forEach(conv=>{
+    const p = pm[conv.userId]||{};
+    const av = getAvatar(p);
+    const div = document.createElement('div');
+    div.className = 'ci';
+    div.innerHTML = renderAvatar(p,46,'ci-av')
+      +'<div class="ci-info">'
+        +'<div class="ci-name">'+xss(p.full_name||p.username||'?')+'</div>'
+        +'<div class="ci-last">'+(conv.last?xss(conv.last.slice(0,32)):'Toque para conversar')+'</div>'
+      +'</div>'
+      +(conv.time?'<div class="ci-time">'+timeAgo(conv.time)+'</div>':'');
+    div.onclick = ()=>openHomeChatWith(conv.userId, p.username||'?', av);
     listEl.appendChild(div);
   });
 }
 
+
+function closeHomeChatWindow(){
+  const win=document.getElementById('ht-chat-window');
+  const list=document.getElementById('ht-chat-list');
+  if(win) win.style.display='none';
+  if(list) list.style.display='block';
+  homeChatUser=null;
+}
 
 async function openHomeChatWith(userId, username, avatarUrl){
   homeChatUser={id:userId,username,avatar:avatarUrl};
@@ -3017,8 +3260,10 @@ async function openHomeChatWith(userId, username, avatarUrl){
   if(chatTabBtn) switchHomeTab(chatTabBtn);
   const listEl=document.getElementById('ht-chat-list');
   const winEl=document.getElementById('ht-chat-window');
-  if(listEl) listEl.style.display='none';
-  if(winEl) winEl.style.display='block';
+  if(listEl){ listEl.style.display='none'; }
+  if(winEl){ winEl.style.display='block'; }
+  // Scroll to chat window
+  winEl?.scrollIntoView({behavior:'smooth',block:'start'});
   const title=document.getElementById('ht-chat-title');
   if(title){
     const p=username?'@'+xss(username):'Chat';
@@ -3749,7 +3994,24 @@ function autoResizeMsgIn(el){
 
 function showChatSidebar(){
   const sb = document.getElementById('chat-sidebar');
-  if(sb){ sb.classList.toggle('mob-open'); }
+  const win = document.getElementById('chat-window');
+  if(window.innerWidth <= 768){
+    // Mobile: slide chat-window out, show sidebar
+    if(win) win.classList.remove('chat-open');
+    if(sb) sb.classList.remove('chat-hidden');
+  } else {
+    if(sb) sb.classList.toggle('mob-open');
+  }
+}
+
+function showChatWindow(){
+  const sb = document.getElementById('chat-sidebar');
+  const win = document.getElementById('chat-window');
+  if(window.innerWidth <= 768){
+    // Mobile: hide sidebar, slide in chat window
+    if(sb) sb.classList.add('chat-hidden');
+    if(win) win.classList.add('chat-open');
+  }
 }
 
 
