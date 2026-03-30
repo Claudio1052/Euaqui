@@ -747,6 +747,10 @@ body{
   .user-mini{padding:12px;}
   .uma{width:52px;height:52px;}
   .umn{font-size:11px;}
+
+  .emoji-picker{width:240px;max-height:190px;right:-10px;}
+  .emoji-grid{grid-template-columns:repeat(7,1fr);}
+  .emoji-item{font-size:18px;}
 }
 
 /* Very small phones */
@@ -805,11 +809,10 @@ body{
 .emoji-search{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:var(--text-light);font-size:11px;padding:6px 10px;outline:none;width:100%;flex-shrink:0;}
 .emoji-search:focus{border-color:var(--border-glow);}
 .emoji-wrap{position:relative;}
-@media(max-width:768px){
-  .emoji-picker{width:240px;max-height:190px;right:-10px;}
-  .emoji-grid{grid-template-columns:repeat(7,1fr);}
-  .emoji-item{font-size:18px;}
-}
+
+
+/* Retro icon grid — ensure visible on mobile */
+.av-pick-item{min-height:44px;min-width:44px;}
 </style>
 </head>
 <body>
@@ -2662,6 +2665,8 @@ async function loadMsgs(userId){
 
 
 async function sendMsg(){
+  // Close any open emoji picker
+  document.querySelectorAll('.emoji-picker.open').forEach(p=>p.classList.remove('open'));
   if(!CU||!currentChatUser)return;
   const inp=document.getElementById('msg-in');const txt=inp.value.trim();if(!txt)return;
   const{error}=await db.from('messages').insert({sender_id:CU.id,receiver_id:currentChatUser.id,content:txt,read:false});
@@ -3044,6 +3049,7 @@ async function loadHomeMsgs(userId){
 }
 
 async function sendHomeMsg(){
+  document.querySelectorAll('.emoji-picker.open').forEach(p=>p.classList.remove('open'));
   if(!CU||!homeChatUser) return;
   const inp=document.getElementById('ht-msg-in');
   const txt=inp?.value.trim();
