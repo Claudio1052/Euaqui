@@ -2290,7 +2290,7 @@ async function testModerationAPI(){
     log.innerHTML += '<div style="color:'+color+'">'+msg+'</div>';
   }
   
-  addLog('⏳ Conectando à API da OpenAI...');
+  addLog('⏳ Conectando via Edge Function: '+SB_URL+'/functions/v1/moderate');
   
   // Test 1: Normal text - should PASS
   addLog('<br>📝 Teste 1: Texto normal...');
@@ -2338,7 +2338,7 @@ async function testModerationAPI(){
 }
 
 // ===== MODERAÇÃO DE CONTEÚDO (OpenAI Moderation API) =====
-const OPENAI_MOD_KEY = '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';
+// Chave OpenAI segura no Supabase Secrets (não exposta no cliente)
 
 // Categorias bloqueadas e seus nomes em português
 const MOD_BLOCKED = {
@@ -2358,31 +2358,28 @@ const MOD_BLOCKED = {
 async function moderateContent(text){
   if(!text || text.trim().length < 3) return { allowed: true };
   try{
-    const resp = await fetch('https://api.openai.com/v1/moderations', {
+    // Chama a Edge Function do Supabase (chave API fica segura no servidor)
+    const resp = await fetch(SB_URL + '/functions/v1/moderate', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + OPENAI_MOD_KEY
+        'Authorization': 'Bearer ' + SB_KEY
       },
-      body: JSON.stringify({ input: text })
+      body: JSON.stringify({ text })
     });
     if(!resp.ok){
-      console.warn('Moderation API error:', resp.status);
-      return { allowed: true }; // fail open - não bloqueia se API indisponível
+      console.warn('Edge Function error:', resp.status);
+      return { allowed: true }; // fail open
     }
     const data = await resp.json();
-    const result = data.results?.[0];
-    if(!result) return { allowed: true };
-
-    if(result.flagged){
-      // Find which categories were flagged
-      const flagged = Object.entries(result.categories||{})
-        .filter(([k,v]) => v && MOD_BLOCKED[k])
-        .map(([k]) => MOD_BLOCKED[k]);
+    if(data.error){
+      console.warn('Moderation error:', data.error);
+      return { allowed: true };
+    }
+    if(!data.allowed){
       return {
         allowed: false,
-        categories: flagged,
-        scores: result.category_scores
+        categories: data.categories || [],
       };
     }
     return { allowed: true };
