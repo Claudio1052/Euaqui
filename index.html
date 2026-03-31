@@ -3702,6 +3702,135 @@ CREATE POLICY "members_delete" ON community_members FOR DELETE USING (user_id = 
     +'<button onclick="diagCommunities()" style="margin-top:10px;background:none;border:none;color:var(--text-muted);font-size:10px;cursor:pointer;text-decoration:underline;">🔍 Diagnóstico técnico</button>'
     +'</div>';
 }
+
+// ===== RESTORED FUNCTIONS =====
+
+function loadEditForm(){
+  if(!CP) return;
+  const setName = document.getElementById('set-name');
+  const setBio = document.getElementById('set-bio');
+  const setStatus = document.getElementById('set-status');
+  const setIg = document.getElementById('set-ig');
+  const setTw = document.getElementById('set-tw');
+  const setGh = document.getElementById('set-gh');
+  if(setName) setName.value = CP.full_name||'';
+  if(setBio) setBio.value = CP.bio||'';
+  if(setStatus) setStatus.value = CP.status_message||'';
+  if(setIg) setIg.value = CP.instagram||'';
+  if(setTw) setTw.value = CP.twitter||'';
+  if(setGh) setGh.value = CP.github||'';
+  // Show current avatar
+  updateAvPreview();
+  // Build retro grid
+  buildRetroGrid();
+}
+
+function updateAvPreview(){
+  const prev = document.getElementById('av-current-preview');
+  if(!prev||!CP) return;
+  const av = getAvatar(CP);
+  const isEmoji = av && av.length<=4 && !av.startsWith('http');
+  if(isEmoji){ prev.innerHTML=''; prev.textContent=av; }
+  else{ prev.innerHTML=`<img src="${xss(av)}" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${CP.username||'u'}'">`; }
+}
+
+async function loadCommPosts(commId){
+  const el = document.getElementById('cd-posts-list');
+  if(!el) return;
+  const{data:cps} = await db.from('community_posts')
+    .select('posts(id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url))')
+    .eq('community_id',commId).order('created_at',{ascending:false}).limit(20);
+  const posts = (cps||[]).map(cp=>cp.posts).filter(Boolean);
+  // Load reactions
+  const postIds = posts.map(p=>p.id);
+  const[rxRes,myRxRes]=await Promise.all([
+    postIds.length?db.from('likes').select('post_id,reaction_type').in('post_id',postIds):{data:[]},
+    CU&&postIds.length?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id):{data:[]}
+  ]);
+  const rxMap={};(rxRes.data||[]).forEach(r=>{if(!rxMap[r.post_id])rxMap[r.post_id]={};rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1;});
+  const myRxMap={};(myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
+  el.innerHTML = posts.map(p=>renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||'')).join('') || '<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhum post ainda. Seja o primeiro!</div>';
+}
+
+async function loadCommMembers(commId){
+  const el = document.getElementById('cd-members-list');
+  if(!el) return;
+  const{data} = await db.from('community_members')
+    .select('user_id,role,joined_at,profiles(id,username,full_name,avatar_url)')
+    .eq('community_id',commId).limit(50);
+  el.innerHTML = `<div class="comm-members-grid">` + (data||[]).map(m=>`
+    <div class="cmember" onclick="loadProfilePage('${m.user_id}')">
+      ${renderAvatar(m.profiles,36,'cmember-av')}
+      <div>
+        <div class="cmember-name">${xss(m.profiles?.full_name||m.profiles?.username||'?')}</div>
+        <div class="cmember-role">${m.role==='owner'?'👑 Dono':m.role==='mod'?'🛡 Mod':'👤 Membro'}</div>
+      </div>
+    </div>`).join('') + '</div>';
+}
+
+// ===== NOTIFICATIONS TABS =====
+
+function switchCommDetailTab(tabId, btn){
+  const detail = document.getElementById('comm-detail-content');
+  detail.querySelectorAll('.ptab').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  detail.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById(tabId)?.classList.add('active');
+}
+
+function showChatSidebar(){
+  const sb = document.getElementById('chat-sidebar');
+  if(sb){ sb.classList.toggle('mob-open'); }
+}
+
+async function loadNotifTab(tabId){
+  if(!CU) return;
+  const typeMap = {
+    'nt-all': null,
+    'nt-mentions': 'mention',
+    'nt-social': ['follow','like','comment','friend_request','friend_accept'],
+    'nt-system': ['message','community_invite']
+  };
+  const filter = typeMap[tabId];
+  const listId = tabId.replace('nt-','notif-list-').replace('all','all');
+  const el = document.getElementById('notif-list-' + tabId.replace('nt-',''));
+  if(!el) return;
+  el.innerHTML = skeletons(3);
+  let q = db.from('notifications').select('id,type,content,read,created_at').eq('user_id',CU.id).order('created_at',{ascending:false}).limit(40);
+  if(Array.isArray(filter)) q = q.in('type', filter);
+  else if(filter) q = q.eq('type', filter);
+  const{data} = await q;
+  if(!data?.length){
+    el.innerHTML=`<div class="notif-empty"><div class="notif-empty-icon">🔔</div><div class="notif-empty-txt">Sem notificações</div></div>`;
+    return;
+  }
+  const icons={'follow':'👤','like':'❤️','comment':'💬','friend_request':'👥','friend_accept':'🎉','message':'💬','community_invite':'🏘','mention':'@'};
+  el.innerHTML = data.map(n=>`
+    <div class="ni ${n.read?'':'unrd'}" onclick="markRead('${n.id}',this)">
+      <div class="ni-icon">${icons[n.type]||'🔔'}</div>
+      <div class="ni-body">
+        <div class="ni-txt">${xss(n.content||'Nova notificação')}</div>
+        <div class="ni-time">${timeAgo(n.created_at)}</div>
+        ${n.type==='friend_request'?`<div class="ni-actions"><button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();acceptFriendFromNotif(this)">✓ Aceitar</button><button class="ni-act-btn ni-act-rej" onclick="event.stopPropagation();">✕ Recusar</button></div>`:''}
+      </div>
+    </div>`).join('');
+  // Mark all as read
+  try{ await db.from('notifications').update({read:true}).eq('user_id',CU.id).eq('read',false); }catch(e){}
+  document.getElementById('notif-badge').style.display='none';
+}
+
+// ===== CHAT MELHORADO =====
+let msgAttachFiles = [];
+
+function showChatWindow(){
+  const sb = document.getElementById('chat-sidebar');
+  const win = document.getElementById('chat-window');
+  if(window.innerWidth <= 768){
+    if(sb) sb.classList.add('chat-hidden');
+    if(win) win.classList.add('chat-open');
+  }
+}
+
 </script>
 </body>
 </html>
