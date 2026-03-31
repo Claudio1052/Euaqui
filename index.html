@@ -1802,6 +1802,36 @@ function _navBase(page){
   // page-specific loaders
   window.scrollTo(0,0);
 }
+function nav(page){
+  _navBase(page);
+  // Show/hide the home sub-tabs row in navbar
+  const navTabsRow = document.getElementById('nav-home-tabs');
+  const mainLayout = document.getElementById('main-layout');
+  if(page === 'home'){
+    navTabsRow?.classList.add('visible');
+    if(mainLayout) mainLayout.style.paddingTop = 'var(--nav-h-with-tabs)';
+  } else {
+    navTabsRow?.classList.remove('visible');
+    if(mainLayout) mainLayout.style.paddingTop = '';
+  }
+  // Scroll to top on every page change
+  window.scrollTo({top:0,behavior:'instant'});
+  document.querySelector('.fc')?.scrollTo(0,0);
+  setTimeout(()=>{
+    if(page==='home'){
+      loadFeed();
+    }
+    else if(page==='explore')        loadExploreFeed();
+    else if(page==='friends')        loadFriendsList('friends');
+    else if(page==='communities')    { loadCommGrid('all'); setTimeout(buildCommIconGrid,200); }
+    else if(page==='messages')       loadConversations();
+    else if(page==='notifications')  loadNotifTab('nt-all');
+    else if(page==='capsules')       loadCapsules();
+    else if(page==='profile')        loadProfilePage(CU?.id);
+  }, 0);
+}
+
+
 function toggleDrawer(){
   document.getElementById('mob-drawer').classList.toggle('open');
   document.getElementById('mob-overlay').classList.toggle('open');
