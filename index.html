@@ -1163,6 +1163,10 @@ body{
   <div class="slink" onclick="nav('capsules');toggleDrawer()"><span class="ic">⏳</span> Time Capsule</div>
   <div class="slink" onclick="showSettings();toggleDrawer()"><span class="ic">⚙️</span> Configurações</div>
   <div class="slink" onclick="handleLogout()"><span class="ic">🚪</span> Sair</div>
+    <div class="slbl" style="margin-top:10px;">Moderação</div>
+    <div class="slink" onclick="testModerationAPI()" style="color:var(--neon-cyan);border-color:rgba(0,255,204,.2);">
+      <span class="ic">🛡</span> Testar API IA
+    </div>
 </div>
 
 <!-- MAIN LAYOUT -->
@@ -1190,6 +1194,10 @@ body{
     <div class="slink" onclick="nav('capsules')"><span class="ic">⏳</span> Time Capsule</div>
     <div class="slink" onclick="showSettings()"><span class="ic">⚙️</span> Configurações</div>
     <div class="slink" onclick="handleLogout()"><span class="ic">🚪</span> Sair</div>
+    <div class="slbl" style="margin-top:10px;">Moderação</div>
+    <div class="slink" onclick="testModerationAPI()" style="color:var(--neon-cyan);border-color:rgba(0,255,204,.2);">
+      <span class="ic">🛡</span> Testar API IA
+    </div>
   </aside>
 
   <!-- FEED CENTER (pages) -->
@@ -2259,6 +2267,75 @@ function adjustCmtCount(btn,delta,vote){
 }
 
 // ===== CREATE POST =====
+
+
+// ===== MODERATION API TEST =====
+async function testModerationAPI(){
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  
+  const box = document.createElement('div');
+  box.style.cssText = 'background:var(--bg-mid);border:1px solid var(--border-glow);border-radius:16px;padding:24px;max-width:500px;width:100%;font-family:Space Mono,monospace;';
+  box.innerHTML = '<div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-cyan);margin-bottom:16px;">🛡 TESTE DA API DE MODERAÇÃO</div>'
+    + '<div id="mod-test-log" style="font-size:11px;line-height:1.8;color:var(--text-muted);"></div>'
+    + '<button id="mod-test-close" style="margin-top:16px;background:none;border:1px solid var(--border-glow);color:var(--neon-cyan);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:11px;font-family:Space Mono,monospace;">Fechar</button>';
+  
+  modal.appendChild(box);
+  document.body.appendChild(modal);
+  document.getElementById('mod-test-close').onclick = ()=>modal.remove();
+  
+  const log = document.getElementById('mod-test-log');
+  
+  function addLog(msg, color='var(--text-light)'){
+    log.innerHTML += '<div style="color:'+color+'">'+msg+'</div>';
+  }
+  
+  addLog('⏳ Conectando à API da OpenAI...');
+  
+  // Test 1: Normal text - should PASS
+  addLog('<br>📝 Teste 1: Texto normal...');
+  const t1 = await moderateContent('Oi, tudo bem? Vou compartilhar fotos da viagem!');
+  if(t1.allowed){
+    addLog('✅ APROVADO — texto normal liberado corretamente', 'var(--neon-cyan)');
+  } else {
+    addLog('⚠️ FALHOU — texto normal foi bloqueado incorretamente', 'var(--neon-yellow)');
+  }
+  
+  // Test 2: Hate speech - should BLOCK
+  addLog('<br>📝 Teste 2: Conteúdo de ódio (deve ser bloqueado)...');
+  const t2 = await moderateContent('I want to kill and hurt everyone I hate');
+  if(!t2.allowed){
+    addLog('✅ BLOQUEADO corretamente — categorias: ' + (t2.categories||[]).join(', '), 'var(--neon-cyan)');
+  } else {
+    addLog('⚠️ NÃO bloqueou — verifique a chave API', 'var(--neon-yellow)');
+  }
+  
+  // Test 3: Sexual content - should BLOCK
+  addLog('<br>📝 Teste 3: Conteúdo sexual explícito...');
+  const t3 = await moderateContent('explicit sexual content with graphic description');
+  if(!t3.allowed){
+    addLog('✅ BLOQUEADO corretamente — categorias: ' + (t3.categories||[]).join(', '), 'var(--neon-cyan)');
+  } else {
+    addLog('⚠️ NÃO bloqueou — pode ser falso negativo', 'var(--neon-yellow)');
+  }
+
+  // Test 4: Violence - should BLOCK  
+  addLog('<br>📝 Teste 4: Violência gráfica...');
+  const t4 = await moderateContent('graphic torture and violence instructions');
+  if(!t4.allowed){
+    addLog('✅ BLOQUEADO corretamente — categorias: ' + (t4.categories||[]).join(', '), 'var(--neon-cyan)');
+  } else {
+    addLog('⚠️ NÃO bloqueou', 'var(--neon-yellow)');
+  }
+  
+  addLog('<br>──────────────────────────────');
+  const passCount = [t1.allowed, !t2.allowed, !t3.allowed, !t4.allowed].filter(Boolean).length;
+  if(passCount === 4){
+    addLog('🎉 API funcionando perfeitamente! 4/4 testes passaram.', 'var(--neon-cyan)');
+  } else {
+    addLog(`⚠️ ${passCount}/4 testes passaram. Verifique a chave API ou conexão.`, 'var(--neon-yellow)');
+  }
+}
 
 // ===== MODERAÇÃO DE CONTEÚDO (OpenAI Moderation API) =====
 const OPENAI_MOD_KEY = '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';
