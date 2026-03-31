@@ -1587,23 +1587,26 @@ function hideLS(){
   if(ls){ ls.style.opacity='0'; ls.style.transition='opacity .4s'; setTimeout(()=>ls.style.display='none',400); }
 }
 function showApp(){
-  hideLS();
-  document.getElementById('auth-screen').style.display='none';
-  document.getElementById('app').style.display='block';
-  refreshUI();
-  // Show home tabs in navbar by default (app starts on home)
-  const navTabsRow = document.getElementById('nav-home-tabs');
-  const mainLayout = document.getElementById('main-layout');
-  if(navTabsRow) navTabsRow.classList.add('visible');
-  if(mainLayout) mainLayout.style.paddingTop = 'var(--nav-h-with-tabs)';
-  loadFeed();
-  loadNotifCount();
-  setTimeout(checkMigration, 2000);
-  loadBlast();
-  fillEmojiGrid();
-  setupRealtime();
-  updateVisitCounter();
-  updateLevel();
+  try{ hideLS(); }catch(e){}
+  try{ document.getElementById('auth-screen').style.display='none'; }catch(e){}
+  try{ document.getElementById('app').style.display='block'; }catch(e){}
+  try{ refreshUI(); }catch(e){ console.warn('refreshUI:',e); }
+  // Show home tabs in navbar
+  try{
+    const navTabsRow = document.getElementById('nav-home-tabs');
+    const mainLayout = document.getElementById('main-layout');
+    if(navTabsRow) navTabsRow.classList.add('visible');
+    if(mainLayout) mainLayout.style.paddingTop = 'var(--nav-h-with-tabs)';
+  }catch(e){}
+  // Load page data — each wrapped so one failure doesn't block the rest
+  setTimeout(()=>{ try{ loadFeed(); }catch(e){ console.warn('loadFeed:',e); } }, 0);
+  setTimeout(()=>{ try{ loadNotifCount(); }catch(e){} }, 100);
+  setTimeout(()=>{ try{ checkMigration(); }catch(e){} }, 2000);
+  setTimeout(()=>{ try{ loadBlast(); }catch(e){} }, 200);
+  setTimeout(()=>{ try{ fillEmojiGrid(); }catch(e){} }, 300);
+  setTimeout(()=>{ try{ setupRealtime(); }catch(e){ console.warn('realtime:',e); } }, 400);
+  setTimeout(()=>{ try{ updateVisitCounter(); }catch(e){} }, 500);
+  setTimeout(()=>{ try{ updateLevel(); }catch(e){} }, 600);
 }
 function showAuth(){
   hideLS();
@@ -1624,26 +1627,32 @@ document.addEventListener('error', function(e){
 }, true);
 
 document.addEventListener('DOMContentLoaded', async()=>{
-  // Animação mínima de 1.5s para não piscar
-  const minWait = new Promise(r=>setTimeout(r,1500));
+  const minWait = new Promise(r=>setTimeout(r,1200));
   try{
     const [{data:{session}}] = await Promise.all([db.auth.getSession(), minWait]);
-    if(session){ CU=session.user; await loadProfile(); showApp(); }
-    else showAuth();
+    if(session && session.user){
+      CU = session.user;
+      try{ await loadProfile(); }catch(e){ console.warn('Profile load failed:',e); }
+      try{ showApp(); }catch(e){ console.error('showApp failed:',e); showAuth(); }
+    } else {
+      showAuth();
+    }
   }catch(e){
     console.error('Boot error:',e);
     showAuth();
   }
-  // Escuta mudanças de sessão (login/logout/OAuth callback)
   db.auth.onAuthStateChange(async(ev,sess)=>{
-    if(ev==='SIGNED_IN'&&sess&&!CU){
-      CU=sess.user;
-      await loadProfile();
-      showApp();
-    } else if(ev==='TOKEN_REFRESHED'&&sess){
-      CU=sess.user;
+    if(ev==='SIGNED_IN' && sess && sess.user){
+      if(!CU){ // Prevent double-login
+        CU = sess.user;
+        try{ await loadProfile(); }catch(e){ console.warn('Profile load on signin:',e); }
+        try{ showApp(); }catch(e){ console.error('showApp on signin failed:',e); }
+      }
+    } else if(ev==='TOKEN_REFRESHED' && sess){
+      CU = sess.user;
     } else if(ev==='SIGNED_OUT'){
-      CU=null; CP=null; showAuth();
+      CU=null; CP=null;
+      try{ showAuth(); }catch(e){ window.location.reload(); }
     }
   });
 });
@@ -1670,10 +1679,19 @@ async function handleLogin(){
         'Email not confirmed':'Confirme seu email primeiro. Verifique sua caixa de entrada.',
         'Too many requests':'Muitas tentativas. Aguarde alguns minutos.',
         'Invalid API key':'Chave Supabase inválida. Verifique a configuração.',
+        'User not found':'Usuário não encontrado. Verifique o email.',
       };
       showAErr(m[error.message]||error.message);
+      btn.textContent='▶ ENTRAR NO SISTEMA';btn.disabled=false;
+      return;
     }
     // onAuthStateChange vai chamar showApp() automaticamente ao logar
+    // Se demorar mais de 5s, força o showApp
+    if(data?.session){
+      CU = data.session.user;
+      try{ await loadProfile(); }catch(e){}
+      showApp();
+    }
   }catch(e){
     showAErr('Erro de conexão: '+e.message);
   }
@@ -2648,13 +2666,14 @@ async function createCommunity(){
   // Clear form
   ['cm-name','cm-slug','cm-desc','cm-icon'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('comm-create-error')?.remove();
-  showToast('Comunidade criada! 🏘 Aparecerá na aba "Minhas"','success');
-  // Always reload both grids to show the new community
-  await loadCommGrid('mine');
-  await loadCommGrid('all');
-  // Switch to "Minhas" tab to show the user their community
+  showToast('Comunidade criada! 🏘','success');
+  // Only reload 'mine' tab (uses owner_id - safe from RLS recursion)
+  // Switch to 'Minhas' tab first, then load
   const myTab=document.querySelector('#comm-page-tabs .ptab[data-tab="cm-mine"]');
   if(myTab) myTab.click();
+  else {
+    await loadCommGrid('mine');
+  }
 }
 async function toggleJoinComm(commId,isMember,btn){
   if(!CU)return showToast('Faça login primeiro','error');
@@ -4130,9 +4149,12 @@ async function loadCommGrid(mode){
   if(!comms.length){
     // Show RLS fix card if ANY error occurred (not just recursion errors)
     const hasError = errors.length > 0;
-    grid.innerHTML = hasError
-      ? showRLSFixCard(errors)
-      : '<div style="grid-column:1/-1;text-align:center;padding:40px 20px;">'
+    // Only show RLS card on 'all' tab - 'mine' tab uses owner_id which always works
+    if(hasError && mode !== 'mine'){
+      grid.innerHTML = showRLSFixCard(errors);
+      return;
+    }
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px 20px;">'
         +'<div style="font-size:48px;opacity:.3;margin-bottom:12px;">🏘</div>'
         +'<div style="font-family:VT323,monospace;font-size:22px;color:var(--text-muted);">Nenhuma comunidade ainda</div>'
         +'<div style="font-size:12px;color:var(--text-muted);margin-top:6px;">Seja o primeiro a criar uma!</div>'
