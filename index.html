@@ -4098,9 +4098,10 @@ async function loadCommGrid(mode){
   }
 
   if(!comms.length){
-    const rlsHint = errors.some(e=>e.includes('recursion')||e.includes('infinite'));
-    grid.innerHTML = rlsHint
-      ? showRLSFixCard()
+    // Show RLS fix card if ANY error occurred (not just recursion errors)
+    const hasError = errors.length > 0;
+    grid.innerHTML = hasError
+      ? showRLSFixCard(errors)
       : '<div style="grid-column:1/-1;text-align:center;padding:40px 20px;">'
         +'<div style="font-size:48px;opacity:.3;margin-bottom:12px;">🏘</div>'
         +'<div style="font-family:VT323,monospace;font-size:22px;color:var(--text-muted);">Nenhuma comunidade ainda</div>'
@@ -4133,278 +4134,62 @@ async function loadCommGrid(mode){
 }
 
 function copySQLFix(el){
-  const txt=el.textContent;
-  if(navigator.clipboard){ navigator.clipboard.writeText(txt).then(()=>showToast('SQL copiado! Cole no Supabase SQL Editor','success')); }
-  else { showToast('Copie o SQL manualmente','success'); }
+  const txt=el.textContent||el.innerText;
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(txt).then(()=>{
+      showToast('✅ SQL copiado! Agora cole no Supabase → SQL Editor → Run','success');
+    }).catch(()=>{
+      // Fallback
+      const ta=document.createElement('textarea');
+      ta.value=txt; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+      document.body.removeChild(ta);
+      showToast('SQL copiado!','success');
+    });
+  } else {
+    showToast('Selecione e copie o SQL manualmente (Ctrl+C)','success');
+  }
 }
 
-function showRLSFixCard(){
-  const sql='DROP POLICY IF EXISTS "comm_sel" ON communities;\nCREATE POLICY "comm_sel" ON communities FOR SELECT USING (visibility = \'public\' OR owner_id = auth.uid());\n\nDROP POLICY IF EXISTS "cm_select" ON community_members;\nCREATE POLICY "cm_select" ON community_members FOR SELECT USING (true);';
+async function diagCommunities(){
+  const results = [];
+  try{
+    const{data,error} = await db.from('communities').select('id,name').limit(1);
+    results.push('communities query: '+(error?'ERROR: '+error.message:'OK, rows: '+(data?.length||0)));
+  }catch(e){ results.push('communities exception: '+e.message); }
+  try{
+    const{data,error} = await db.from('community_members').select('community_id').limit(1);
+    results.push('community_members query: '+(error?'ERROR: '+error.message:'OK, rows: '+(data?.length||0)));
+  }catch(e){ results.push('community_members exception: '+e.message); }
+  alert('Diagnóstico:\n'+results.join('\n'));
+}
+
+function showRLSFixCard(errors){
+  const sql=`-- Execute TODO no Supabase SQL Editor (clique para copiar):
+DO $$ DECLARE pol RECORD; BEGIN FOR pol IN SELECT policyname FROM pg_policies WHERE tablename = 'communities' LOOP EXECUTE 'DROP POLICY IF EXISTS "' || pol.policyname || '" ON communities'; END LOOP; END $$;
+DO $$ DECLARE pol RECORD; BEGIN FOR pol IN SELECT policyname FROM pg_policies WHERE tablename = 'community_members' LOOP EXECUTE 'DROP POLICY IF EXISTS "' || pol.policyname || '" ON community_members'; END LOOP; END $$;
+CREATE POLICY "read_public_or_own" ON communities FOR SELECT USING (visibility = 'public' OR owner_id = auth.uid());
+CREATE POLICY "insert_auth" ON communities FOR INSERT WITH CHECK (auth.uid() IS NOT NULL AND owner_id = auth.uid());
+CREATE POLICY "modify_own" ON communities FOR ALL USING (owner_id = auth.uid());
+CREATE POLICY "members_read" ON community_members FOR SELECT USING (true);
+CREATE POLICY "members_insert" ON community_members FOR INSERT WITH CHECK (user_id = auth.uid());
+CREATE POLICY "members_delete" ON community_members FOR DELETE USING (user_id = auth.uid());`;
+  const errDetail = (errors||[]).join(' | ') || 'Sem detalhes';
   return '<div style="grid-column:1/-1;background:rgba(255,51,102,.06);border:2px solid rgba(255,51,102,.4);border-radius:14px;padding:24px;text-align:center;">'
     +'<div style="font-size:40px;margin-bottom:10px;">🔒</div>'
     +'<div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-pink);margin-bottom:8px;letter-spacing:2px;">PERMISSÃO RLS BLOQUEANDO</div>'
-    +'<div style="font-size:12px;color:var(--text-light);margin-bottom:6px;line-height:1.6;">As comunidades existem no banco mas a <strong>política de segurança</strong><br>está impedindo a leitura.</div>'
-    +'<div style="font-size:11px;color:var(--neon-cyan);margin-bottom:14px;">👇 Copie o SQL abaixo e cole no <strong>Supabase → SQL Editor → Run</strong></div>'
-    +'<pre id="rls-sql-block" style="background:rgba(0,0,0,.5);border:1px solid rgba(0,255,204,.3);border-radius:10px;padding:14px;font-size:11px;color:var(--neon-cyan);text-align:left;overflow-x:auto;cursor:pointer;white-space:pre-wrap;font-family:monospace;line-height:1.5;" onclick="copySQLFix(this)" title="Clique para copiar">'+sql+'</pre>'
+    +'<div style="font-size:12px;color:var(--text-light);margin-bottom:6px;line-height:1.6;">As comunidades existem mas a <strong>política de segurança</strong> bloqueia a leitura.</div>'
+    +'<div style="font-size:10px;color:var(--text-muted);margin-bottom:10px;font-family:monospace;">Erro: '+errDetail+'</div>'
+    +'<div style="font-size:11px;color:var(--neon-cyan);margin-bottom:12px;">👇 Copie e execute no <strong>Supabase → SQL Editor → Run</strong></div>'
+    +'<pre id="rls-sql-block" style="background:rgba(0,0,0,.5);border:1px solid rgba(0,255,204,.3);border-radius:10px;padding:14px;font-size:10px;color:var(--neon-cyan);text-align:left;overflow-x:auto;cursor:pointer;white-space:pre-wrap;font-family:monospace;line-height:1.5;" onclick="copySQLFix(this)" title="Clique para copiar">'+sql+'</pre>'
     +'<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap;">'
       +'<button class="post-btn" id="copy-sql-btn" onclick="copySQLFix(document.getElementById(this.dataset.target))" data-target="rls-sql-block" style="background:none;border:1px solid var(--neon-cyan);color:var(--neon-cyan);">📋 Copiar SQL</button>'
       +'<button class="post-btn" onclick="loadCommGrid(this.dataset.m)" data-m="all">🔄 Tentar Novamente</button>'
     +'</div>'
     +'<div style="margin-top:14px;font-size:10px;color:var(--text-muted);">Após executar o SQL, clique em "Tentar Novamente"</div>'
+    +'<button onclick="diagCommunities()" style="margin-top:10px;background:none;border:none;color:var(--text-muted);font-size:10px;cursor:pointer;text-decoration:underline;">🔍 Diagnóstico técnico</button>'
     +'</div>';
 }
-
-// Community detail — tabs: Posts / Membros / Sobre
-
-function switchCommDetailTab(tabId, btn){
-  const detail = document.getElementById('comm-detail-content');
-  detail.querySelectorAll('.ptab').forEach(t=>t.classList.remove('active'));
-  btn.classList.add('active');
-  detail.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
-  document.getElementById(tabId)?.classList.add('active');
-}
-
-async function loadCommPosts(commId){
-  const el = document.getElementById('cd-posts-list');
-  if(!el) return;
-  const{data:cps} = await db.from('community_posts')
-    .select('posts(id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url))')
-    .eq('community_id',commId).order('created_at',{ascending:false}).limit(20);
-  const posts = (cps||[]).map(cp=>cp.posts).filter(Boolean);
-  // Load reactions
-  const postIds = posts.map(p=>p.id);
-  const[rxRes,myRxRes]=await Promise.all([
-    postIds.length?db.from('likes').select('post_id,reaction_type').in('post_id',postIds):{data:[]},
-    CU&&postIds.length?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id):{data:[]}
-  ]);
-  const rxMap={};(rxRes.data||[]).forEach(r=>{if(!rxMap[r.post_id])rxMap[r.post_id]={};rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1;});
-  const myRxMap={};(myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
-  el.innerHTML = posts.map(p=>renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||'')).join('') || '<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhum post ainda. Seja o primeiro!</div>';
-}
-
-async function loadCommMembers(commId){
-  const el = document.getElementById('cd-members-list');
-  if(!el) return;
-  const{data} = await db.from('community_members')
-    .select('user_id,role,joined_at,profiles(id,username,full_name,avatar_url)')
-    .eq('community_id',commId).limit(50);
-  el.innerHTML = `<div class="comm-members-grid">` + (data||[]).map(m=>`
-    <div class="cmember" onclick="loadProfilePage('${m.user_id}')">
-      ${renderAvatar(m.profiles,36,'cmember-av')}
-      <div>
-        <div class="cmember-name">${xss(m.profiles?.full_name||m.profiles?.username||'?')}</div>
-        <div class="cmember-role">${m.role==='owner'?'👑 Dono':m.role==='mod'?'🛡 Mod':'👤 Membro'}</div>
-      </div>
-    </div>`).join('') + '</div>';
-}
-
-// ===== NOTIFICATIONS TABS =====
-async function loadNotifTab(tabId){
-  if(!CU) return;
-  const typeMap = {
-    'nt-all': null,
-    'nt-mentions': 'mention',
-    'nt-social': ['follow','like','comment','friend_request','friend_accept'],
-    'nt-system': ['message','community_invite']
-  };
-  const filter = typeMap[tabId];
-  const listId = tabId.replace('nt-','notif-list-').replace('all','all');
-  const el = document.getElementById('notif-list-' + tabId.replace('nt-',''));
-  if(!el) return;
-  el.innerHTML = skeletons(3);
-  let q = db.from('notifications').select('id,type,content,read,created_at').eq('user_id',CU.id).eq('read',false).order('created_at',{ascending:false}).limit(40);
-  if(Array.isArray(filter)) q = q.in('type', filter);
-  else if(filter) q = q.eq('type', filter);
-  const{data} = await q;
-  if(!data?.length){
-    el.innerHTML=`<div class="notif-empty"><div class="notif-empty-icon">🔔</div><div class="notif-empty-txt">Sem notificações</div></div>`;
-    return;
-  }
-  const icons={'follow':'👤','like':'❤️','comment':'💬','friend_request':'👥','friend_accept':'🎉','message':'💬','community_invite':'🏘','mention':'@'};
-  el.innerHTML = data.map(n=>`
-    <div class="ni ${n.read?'':'unrd'}" onclick="markRead('${n.id}',this)">
-      <div class="ni-icon">${icons[n.type]||'🔔'}</div>
-      <div class="ni-body">
-        <div class="ni-txt">${xss(n.content||'Nova notificação')}</div>
-        <div class="ni-time">${timeAgo(n.created_at)}</div>
-        ${n.type==='friend_request'&&!n.read?`<div class="ni-actions"><button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();acceptFriendFromNotif(this)">✓ Aceitar</button><button class="ni-act-btn ni-act-rej" onclick="event.stopPropagation();">✕ Recusar</button></div>`:''}
-      </div>
-    </div>`).join('');
-  // Mark all as read
-  try{ await db.from('notifications').update({read:true}).eq('user_id',CU.id).eq('read',false); }catch(e){}
-  document.getElementById('notif-badge').style.display='none';
-}
-
-// ===== CHAT MELHORADO =====
-let msgAttachFiles = [];
-
-function trigMsgFile(){ document.getElementById('msg-file-input').click(); }
-function trigMsgPhoto(){ document.getElementById('msg-photo-input').click(); }
-
-function handleMsgFile(inp){
-  const files = Array.from(inp.files);
-  files.forEach(f=>{ msgAttachFiles.push(f); });
-  renderMsgAttachPrev();
-  inp.value='';
-}
-
-function renderMsgAttachPrev(){
-  const prev = document.getElementById('msg-attach-prev');
-  if(!prev) return;
-  if(!msgAttachFiles.length){ prev.style.display='none'; return; }
-  prev.style.display='flex';
-  prev.innerHTML = msgAttachFiles.map((f,i)=>{
-    const url = URL.createObjectURL(f);
-    const isVid = f.type.startsWith('video');
-    const isImg = f.type.startsWith('image');
-    return `<div class="map">
-      ${isImg?`<img src="${url}" alt="preview">`:`${isVid?`<video src="${url}"></video>`:`<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:22px;">📄</div>`}`}
-      <button class="map-rm" onclick="removeMsgAttach(${i})">×</button>
-    </div>`;
-  }).join('');
-}
-
-function removeMsgAttach(i){ msgAttachFiles.splice(i,1); renderMsgAttachPrev(); }
-
-function handleMsgKey(e){
-  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendMsg(); }
-}
-
-function autoResizeMsgIn(el){
-  el.style.height='auto';
-  el.style.height = Math.min(el.scrollHeight,100)+'px';
-}
-
-function showChatSidebar(){
-  const sb = document.getElementById('chat-sidebar');
-  const win = document.getElementById('chat-window');
-  if(window.innerWidth <= 768){
-    // Mobile: slide chat-window out, show sidebar
-    if(win) win.classList.remove('chat-open');
-    if(sb) sb.classList.remove('chat-hidden');
-  } else {
-    if(sb) sb.classList.toggle('mob-open');
-  }
-}
-
-function showChatWindow(){
-  const sb = document.getElementById('chat-sidebar');
-  const win = document.getElementById('chat-window');
-  if(window.innerWidth <= 768){
-    // Mobile: hide sidebar, slide in chat window
-    if(sb) sb.classList.add('chat-hidden');
-    if(win) win.classList.add('chat-open');
-  }
-}
-
-
-
-
-function switchProfileTab(btn){
-  const tabId = btn.dataset.tab;
-  document.querySelectorAll('.pptab').forEach(t=>t.classList.remove('active'));
-  btn.classList.add('active');
-  document.querySelectorAll('.profile-tab-panel').forEach(p=>p.classList.remove('active'));
-  const panel = document.getElementById(tabId);
-  if(panel) panel.classList.add('active');
-  if(tabId==='pp-edit'){
-    // Ensure profile is loaded before showing edit form
-    if(CP) loadEditForm();
-    else if(CU) loadProfilePage(CU.id).then(()=>loadEditForm());
-  }
-}
-
-function loadEditForm(){
-  window.scrollTo(0,0);
-  document.getElementById('page-profile')?.scrollTo(0,0);
-  if(!CP) return;
-  const setName = document.getElementById('set-name');
-  const setBio = document.getElementById('set-bio');
-  const setStatus = document.getElementById('set-status');
-  const setIg = document.getElementById('set-ig');
-  const setTw = document.getElementById('set-tw');
-  const setGh = document.getElementById('set-gh');
-  if(setName) setName.value = CP.full_name||'';
-  if(setBio) setBio.value = CP.bio||'';
-  if(setStatus) setStatus.value = CP.status_message||'';
-  if(setIg) setIg.value = CP.instagram||'';
-  if(setTw) setTw.value = CP.twitter||'';
-  if(setGh) setGh.value = CP.github||'';
-  // Show current avatar
-  updateAvPreview();
-  // Build retro grid
-  buildRetroGrid();
-}
-
-function updateAvPreview(){
-  const prev = document.getElementById('av-current-preview');
-  if(!prev||!CP) return;
-  const av = getAvatar(CP);
-  const isEmoji = av && av.length<=4 && !av.startsWith('http');
-  if(isEmoji){ prev.innerHTML=''; prev.textContent=av; }
-  else{ prev.innerHTML=`<img src="${xss(av)}" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${CP.username||'u'}'">`; }
-}
-
-
-function nav(page){
-  _navBase(page);
-  // Show/hide the home sub-tabs row in navbar
-  const navTabsRow = document.getElementById('nav-home-tabs');
-  const mainLayout = document.getElementById('main-layout');
-  if(page === 'home'){
-    navTabsRow?.classList.add('visible');
-    if(mainLayout) mainLayout.style.paddingTop = 'var(--nav-h-with-tabs)';
-  } else {
-    navTabsRow?.classList.remove('visible');
-    if(mainLayout) mainLayout.style.paddingTop = '';
-  }
-  // Scroll to top on every page change
-  window.scrollTo({top:0,behavior:'instant'});
-  document.querySelector('.fc')?.scrollTo(0,0);
-  setTimeout(()=>{
-    if(page==='home'){
-      // Always reload feed on nav to ensure correct tab/filter is shown
-      loadFeed();
-    }
-    else if(page==='explore')        loadExploreFeed();
-    else if(page==='friends')        loadFriendsList('friends');
-    else if(page==='communities')    { loadCommGrid('all'); setTimeout(buildCommIconGrid,200); }
-    else if(page==='messages')       loadConversations();
-    else if(page==='notifications')  loadNotifTab('nt-all');
-    else if(page==='capsules')       loadCapsules();
-    else if(page==='profile')        loadProfilePage(CU?.id);
-  }, 0);
-}
-
-
-async function checkMigration(){
-  // Verifica se colunas da migração existem testando um post
-  const{error}=await db.from('posts').select('media_types,visibility,likes_count').limit(1);
-  if(error&&error.message.includes('column')){
-    const col=error.message.match(/'([^']+)' column/)?.[1]||'desconhecida';
-    const div=document.createElement('div');
-    div.id='migration-warn';
-    div.style.cssText='position:fixed;top:65px;left:0;right:0;background:rgba(255,51,102,.95);color:#fff;text-align:center;padding:10px 16px;z-index:9999;font-size:12px;font-family:Space Mono,monospace;display:flex;align-items:center;justify-content:center;gap:12px;';
-    div.innerHTML=`⚠️ Coluna <strong>${col}</strong> não encontrada. Execute <strong>02_migration_colunas.sql</strong> no Supabase SQL Editor. <button onclick="document.getElementById('migration-warn').remove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:3px 10px;border-radius:4px;cursor:pointer;font-family:inherit;">✕</button>`;
-    document.body.prepend(div);
-  }
-}
-// Verifica se as tabelas básicas existem e mostra aviso se não
-async function checkSetup(){
-  const{error}=await db.from('posts').select('id').limit(1);
-  if(error&&(error.message.includes('does not exist')||error.message.includes('relation'))){
-    const warn=document.createElement('div');
-    warn.style.cssText='position:fixed;top:70px;left:50%;transform:translateX(-50%);background:rgba(255,51,102,.15);border:1px solid rgba(255,51,102,.4);border-radius:10px;padding:14px 20px;z-index:5000;font-size:12px;max-width:500px;text-align:center;backdrop-filter:blur(10px);color:var(--text-light);';
-    warn.innerHTML='⚠️ <strong>Tabelas não encontradas!</strong><br>Execute o arquivo <code>schema_completo.sql</code> no <strong>Supabase → SQL Editor</strong> para criar as tabelas.<br><button onclick="this.parentElement.remove()" style="margin-top:8px;background:var(--neon-pink);border:none;color:#fff;padding:4px 12px;border-radius:5px;cursor:pointer;font-size:10px;">Fechar</button>';
-    document.body.appendChild(warn);
-  }
-}
-setTimeout(()=>{if(CU)checkSetup();},3000);
-
-// Close modals on overlay click
-document.querySelectorAll('.movl').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));
-// Responsive profile grid
-window.addEventListener('resize',()=>{const pg=document.querySelector('.prof-grid');if(pg)pg.style.gridTemplateColumns=window.innerWidth<640?'1fr':'1fr 280px';});
 </script>
 </body>
 </html>
