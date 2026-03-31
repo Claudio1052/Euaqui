@@ -4139,13 +4139,18 @@ function copySQLFix(el){
 }
 
 function showRLSFixCard(){
-  const sql=`-- Execute no Supabase SQL Editor:\nDROP POLICY IF EXISTS "comm_sel" ON communities;\nCREATE POLICY "comm_sel" ON communities FOR SELECT USING (visibility='public' OR owner_id=auth.uid());`;
-  return '<div style="grid-column:1/-1;background:rgba(255,51,102,.08);border:1px solid rgba(255,51,102,.3);border-radius:12px;padding:20px;text-align:center;">'
-    +'<div style="font-size:32px;margin-bottom:8px;">⚠️</div>'
-    +'<div style="font-family:Silkscreen,monospace;font-size:12px;color:var(--neon-pink);margin-bottom:8px;">PERMISSÃO RLS BLOQUEANDO LEITURA</div>'
-    +'<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">Execute este SQL no Supabase → SQL Editor:</div>'
-    +'<pre style="background:rgba(0,0,0,.4);border:1px solid rgba(0,255,204,.2);border-radius:8px;padding:12px;font-size:10px;color:var(--neon-cyan);text-align:left;overflow-x:auto;cursor:pointer;" onclick="copySQLFix(this)">'+sql+'</pre>'
-    +'<button class="post-btn" style="margin-top:12px;" onclick="loadCommGrid(this.dataset.mode)" data-mode="all">🔄 Tentar novamente</button>'
+  const sql='DROP POLICY IF EXISTS "comm_sel" ON communities;\nCREATE POLICY "comm_sel" ON communities FOR SELECT USING (visibility = \'public\' OR owner_id = auth.uid());\n\nDROP POLICY IF EXISTS "cm_select" ON community_members;\nCREATE POLICY "cm_select" ON community_members FOR SELECT USING (true);';
+  return '<div style="grid-column:1/-1;background:rgba(255,51,102,.06);border:2px solid rgba(255,51,102,.4);border-radius:14px;padding:24px;text-align:center;">'
+    +'<div style="font-size:40px;margin-bottom:10px;">🔒</div>'
+    +'<div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-pink);margin-bottom:8px;letter-spacing:2px;">PERMISSÃO RLS BLOQUEANDO</div>'
+    +'<div style="font-size:12px;color:var(--text-light);margin-bottom:6px;line-height:1.6;">As comunidades existem no banco mas a <strong>política de segurança</strong><br>está impedindo a leitura.</div>'
+    +'<div style="font-size:11px;color:var(--neon-cyan);margin-bottom:14px;">👇 Copie o SQL abaixo e cole no <strong>Supabase → SQL Editor → Run</strong></div>'
+    +'<pre id="rls-sql-block" style="background:rgba(0,0,0,.5);border:1px solid rgba(0,255,204,.3);border-radius:10px;padding:14px;font-size:11px;color:var(--neon-cyan);text-align:left;overflow-x:auto;cursor:pointer;white-space:pre-wrap;font-family:monospace;line-height:1.5;" onclick="copySQLFix(this)" title="Clique para copiar">'+sql+'</pre>'
+    +'<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap;">'
+      +'<button class="post-btn" id="copy-sql-btn" onclick="copySQLFix(document.getElementById(this.dataset.target))" data-target="rls-sql-block" style="background:none;border:1px solid var(--neon-cyan);color:var(--neon-cyan);">📋 Copiar SQL</button>'
+      +'<button class="post-btn" onclick="loadCommGrid(this.dataset.m)" data-m="all">🔄 Tentar Novamente</button>'
+    +'</div>'
+    +'<div style="margin-top:14px;font-size:10px;color:var(--text-muted);">Após executar o SQL, clique em "Tentar Novamente"</div>'
     +'</div>';
 }
 
