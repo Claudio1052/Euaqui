@@ -2290,7 +2290,7 @@ async function testModerationAPI(){
     log.innerHTML += '<div style="color:'+color+'">'+msg+'</div>';
   }
   
-  addLog('⏳ Conectando via Edge Function: '+SB_URL+'/functions/v1/moderate');
+  addLog('⏳ Conectando via Edge Function: '+SB_URL+'/functions/v1/swift-service');
   
   // Test 1: Normal text - should PASS
   addLog('<br>📝 Teste 1: Texto normal...');
@@ -2359,7 +2359,7 @@ async function moderateContent(text){
   if(!text || text.trim().length < 3) return { allowed: true };
   try{
     // Chama a Edge Function do Supabase (chave API fica segura no servidor)
-    const resp = await fetch(SB_URL + '/functions/v1/moderate', {
+    const resp = await fetch(SB_URL + '/functions/v1/swift-service', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
