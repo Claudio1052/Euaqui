@@ -2391,7 +2391,21 @@ async function moderateContent(text){
 
 function showModerationError(categories){
   const list = categories.length > 0 ? categories.join(', ') : 'Conteúdo inadequado';
-  showToast('🚫 Conteúdo bloqueado: ' + list, 'error');
+  // Show persistent error modal instead of fleeting toast
+  const existing = document.getElementById('mod-block-banner');
+  if(existing) existing.remove();
+  const banner = document.createElement('div');
+  banner.id = 'mod-block-banner';
+  banner.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);'
+    +'background:rgba(255,51,102,.15);border:2px solid var(--neon-pink);border-radius:12px;'
+    +'padding:14px 20px;z-index:8000;max-width:420px;width:90%;text-align:center;'
+    +'backdrop-filter:blur(10px);animation:stir .3s ease;';
+  banner.innerHTML = '<div style="font-size:22px;margin-bottom:6px;">🚫</div>'
+    +'<div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-pink);letter-spacing:1px;margin-bottom:6px;">CONTEÚDO BLOQUEADO</div>'
+    +'<div style="font-size:11px;color:var(--text-light);margin-bottom:8px;">Violação das políticas da rede: <strong style="color:var(--neon-pink);">'+list+'</strong></div>'
+    +'<div style="font-size:10px;color:var(--text-muted);">Por favor revise seu conteúdo antes de publicar.</div>';
+  document.body.appendChild(banner);
+  setTimeout(()=>banner.remove(), 5000);
 }
 
 async function createPost(){
@@ -2411,6 +2425,22 @@ async function createPost(){
   }
   btn.textContent='⏳...';
   let urls=[],mTypes=[];
+  // ── Validação de mídia ──
+  const ALLOWED_MIME = ['image/jpeg','image/jpg','image/png','image/gif','image/webp',
+                        'video/mp4','video/webm','video/ogg','video/quicktime'];
+  for(const f of mediaFiles){
+    if(!ALLOWED_MIME.includes(f.type)){
+      showToast('🚫 Tipo de arquivo não permitido: '+f.type,'error');
+      btn.textContent='POSTAR ▶';btn.disabled=false;
+      return;
+    }
+    if(f.size > 50*1024*1024){
+      showToast('🚫 Arquivo muito grande (máx. 50MB): '+f.name,'error');
+      btn.textContent='POSTAR ▶';btn.disabled=false;
+      return;
+    }
+  }
+
   // Upload de mídia (tenta Storage, falha silenciosamente se bucket não existir)
   for(let i=0;i<mediaFiles.length;i++){
     const f=mediaFiles[i];const t=mediaTypes[i];
@@ -2589,6 +2619,19 @@ function switchProfileTab(btn){
 
 async function saveSettings(){
   if(!CU)return;
+  // ── Moderação do bio e status ──
+  const bioVal = document.getElementById('set-bio')?.value.trim()||'';
+  const statusVal = document.getElementById('set-status')?.value.trim()||'';
+  const nameVal = document.getElementById('set-name')?.value.trim()||'';
+  for(const [field, val] of [['Bio',bioVal],['Status',statusVal],['Nome',nameVal]]){
+    if(val.length > 3){
+      const mod = await moderateContent(val);
+      if(!mod.allowed){
+        showToast('🚫 '+field+' bloqueado: '+(mod.categories||[]).join(', '),'error');
+        return;
+      }
+    }
+  }
   let avatarUrl=CP?.avatar_url;let avatarType='upload';let retroIcon=null;
   if(retroIconSelected){avatarType='retro_icon';retroIcon=retroIconSelected;avatarUrl=retroIconSelected;}
   else if(avatarFile){
@@ -2658,6 +2701,9 @@ async function createCapsule(){
   const date=document.getElementById('caps-date').value;
   if(!content||!date)return showToast('Preencha todos os campos','error');
   if(new Date(date)<=new Date())return showToast('Data deve ser no futuro','error');
+  // ── Moderação da cápsula ──
+  const mod=await moderateContent(content);
+  if(!mod.allowed){ showModerationError(mod.categories||[]); return; }
   await db.from('time_capsules').insert({user_id:CU.id,content,open_date:date});
   closeM('m-caps');document.getElementById('caps-txt').value='';
   showToast('Cápsula selada! 🔒 Abre em '+new Date(date).toLocaleDateString('pt-BR'),'success');
@@ -3195,6 +3241,9 @@ async function toggleFollow(userId,btn){
 async function submitGb(profileId){
   if(!CU)return showToast('Faça login primeiro','error');
   const msg=document.getElementById('gb-in')?.value.trim();if(!msg)return;
+  // ── Moderação do guestbook ──
+  const mod=await moderateContent(msg);
+  if(!mod.allowed){ showModerationError(mod.categories||[]); return; }
   await db.from('guestbook_entries').insert({profile_id:profileId,visitor_id:CU.id,message:msg});
   showToast('Mensagem deixada! 📖','success');loadProfilePage(profileId);
 }
@@ -3330,6 +3379,11 @@ async function sendMsg(){
   document.querySelectorAll('.emoji-picker.open').forEach(p=>p.classList.remove('open'));
   if(!CU||!currentChatUser)return;
   const inp=document.getElementById('msg-in');const txt=inp.value.trim();if(!txt)return;
+  // ── Moderação da mensagem ──
+  if(txt){
+    const mod=await moderateContent(txt);
+    if(!mod.allowed){ showModerationError(mod.categories||[]); return; }
+  }
   const{error}=await db.from('messages').insert({sender_id:CU.id,receiver_id:currentChatUser.id,content:txt,read:false});
   if(error)return showToast('Erro ao enviar: '+error.message,'error');
   inp.value='';await loadMsgs(currentChatUser.id);
@@ -3805,6 +3859,11 @@ async function sendHomeMsg(){
   const inp=document.getElementById('ht-msg-in');
   const txt=inp?.value.trim();
   if(!txt&&!msgAttachFiles.length) return;
+  // ── Moderação da mensagem ──
+  if(txt){
+    const mod=await moderateContent(txt);
+    if(!mod.allowed){ showModerationError(mod.categories||[]); return; }
+  }
   let mediaUrl=null,mediaType=null;
   if(msgAttachFiles.length){
     const f=msgAttachFiles[0];
