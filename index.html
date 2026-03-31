@@ -1802,36 +1802,6 @@ function _navBase(page){
   // page-specific loaders
   window.scrollTo(0,0);
 }
-function nav(page){
-  _navBase(page);
-  // Show/hide the home sub-tabs row in navbar
-  const navTabsRow = document.getElementById('nav-home-tabs');
-  const mainLayout = document.getElementById('main-layout');
-  if(page === 'home'){
-    navTabsRow?.classList.add('visible');
-    if(mainLayout) mainLayout.style.paddingTop = 'var(--nav-h-with-tabs)';
-  } else {
-    navTabsRow?.classList.remove('visible');
-    if(mainLayout) mainLayout.style.paddingTop = '';
-  }
-  // Scroll to top on every page change
-  window.scrollTo({top:0,behavior:'instant'});
-  document.querySelector('.fc')?.scrollTo(0,0);
-  setTimeout(()=>{
-    if(page==='home'){
-      loadFeed();
-    }
-    else if(page==='explore')        loadExploreFeed();
-    else if(page==='friends')        loadFriendsList('friends');
-    else if(page==='communities')    { loadCommGrid('all'); setTimeout(buildCommIconGrid,200); }
-    else if(page==='messages')       loadConversations();
-    else if(page==='notifications')  loadNotifTab('nt-all');
-    else if(page==='capsules')       loadCapsules();
-    else if(page==='profile')        loadProfilePage(CU?.id);
-  }, 0);
-}
-
-
 function toggleDrawer(){
   document.getElementById('mob-drawer').classList.toggle('open');
   document.getElementById('mob-overlay').classList.toggle('open');
@@ -2648,14 +2618,13 @@ async function createCommunity(){
   // Clear form
   ['cm-name','cm-slug','cm-desc','cm-icon'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('comm-create-error')?.remove();
-  showToast('Comunidade criada! 🏘','success');
-  // Only reload 'mine' tab (uses owner_id - safe from RLS recursion)
-  // Switch to 'Minhas' tab first, then load
+  showToast('Comunidade criada! 🏘 Aparecerá na aba "Minhas"','success');
+  // Always reload both grids to show the new community
+  await loadCommGrid('mine');
+  await loadCommGrid('all');
+  // Switch to "Minhas" tab to show the user their community
   const myTab=document.querySelector('#comm-page-tabs .ptab[data-tab="cm-mine"]');
   if(myTab) myTab.click();
-  else {
-    await loadCommGrid('mine');
-  }
 }
 async function toggleJoinComm(commId,isMember,btn){
   if(!CU)return showToast('Faça login primeiro','error');
@@ -4131,12 +4100,9 @@ async function loadCommGrid(mode){
   if(!comms.length){
     // Show RLS fix card if ANY error occurred (not just recursion errors)
     const hasError = errors.length > 0;
-    // Only show RLS card on 'all' tab - 'mine' tab uses owner_id which always works
-    if(hasError && mode !== 'mine'){
-      grid.innerHTML = showRLSFixCard(errors);
-      return;
-    }
-    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px 20px;">'
+    grid.innerHTML = hasError
+      ? showRLSFixCard(errors)
+      : '<div style="grid-column:1/-1;text-align:center;padding:40px 20px;">'
         +'<div style="font-size:48px;opacity:.3;margin-bottom:12px;">🏘</div>'
         +'<div style="font-family:VT323,monospace;font-size:22px;color:var(--text-muted);">Nenhuma comunidade ainda</div>'
         +'<div style="font-size:12px;color:var(--text-muted);margin-top:6px;">Seja o primeiro a criar uma!</div>'
