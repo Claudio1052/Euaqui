@@ -581,7 +581,15 @@ nav{position:fixed;top:0;left:0;right:0;background:#0a0a2a;border-bottom:1px sol
 
     <!-- HOME -->
     <div class="page active" id="page-home">
-      <!-- Home tabs moved to navbar (nav-home-tabs) -->
+      <!-- ABAS PRINCIPAIS DO FEED -->
+      <div class="page-tabs" id="home-page-tabs" style="margin:-16px -20px 0;position:sticky;top:var(--nav-h);z-index:99;">
+        <button class="ptab active" data-tab="ht-feed"    onclick="switchHomeTab(this)">🏠 Feed</button>
+        <button class="ptab"        data-tab="ht-friends" onclick="switchHomeTab(this)">👥 Amigos</button>
+        <button class="ptab"        data-tab="ht-comms"   onclick="switchHomeTab(this)">🏘 Grupos</button>
+        <button class="ptab"        data-tab="ht-chat"    onclick="switchHomeTab(this)">💬 Chat</button>
+        <button class="ptab"        data-tab="ht-profile" onclick="switchHomeTab(this)">👤 Perfil</button>
+        <button class="ptab"        data-tab="ht-alerts"  onclick="switchHomeTab(this)">🔔 Alertas <span id="home-notif-dot" style="display:none;width:7px;height:7px;background:var(--neon-pink);border-radius:50%;display:inline-block;margin-left:3px;vertical-align:middle;"></span></button>
+      </div>
 
       <!-- TAB: FEED -->
       <div class="tab-panel active" id="ht-feed" style="padding-top:16px;">
@@ -1034,12 +1042,10 @@ function showApp(){
   try{ document.getElementById('auth-screen').style.display='none'; }catch(e){}
   try{ document.getElementById('app').style.display='block'; }catch(e){}
   try{ refreshUI(); }catch(e){ console.warn('refreshUI:',e); }
-  // Show home tabs in navbar
+  // Keep layout clean - tabs are inside page content
   try{
     const navTabsRow = document.getElementById('nav-home-tabs');
-    const mainLayout = document.getElementById('main-layout');
-    if(navTabsRow) navTabsRow.classList.add('visible');
-    if(mainLayout) mainLayout.style.paddingTop = 'var(--nav-h-with-tabs)';
+    if(navTabsRow) navTabsRow.classList.remove('visible');
   }catch(e){}
   // Load page data — each wrapped so one failure doesn't block the rest
   setTimeout(()=>{ try{ loadFeed(); }catch(e){ console.warn('loadFeed:',e); } }, 0);
@@ -1268,13 +1274,9 @@ function nav(page){
   // Show/hide the home sub-tabs row in navbar
   const navTabsRow = document.getElementById('nav-home-tabs');
   const mainLayout = document.getElementById('main-layout');
-  if(page === 'home'){
-    navTabsRow?.classList.add('visible');
-    if(mainLayout) mainLayout.style.paddingTop = 'var(--nav-h-with-tabs)';
-  } else {
-    navTabsRow?.classList.remove('visible');
-    if(mainLayout) mainLayout.style.paddingTop = '';
-  }
+  // Keep nav-home-tabs hidden - use in-page tabs instead
+  if(navTabsRow) navTabsRow.classList.remove('visible');
+  if(mainLayout) mainLayout.style.paddingTop = '';
   // Scroll to top on every page change
   window.scrollTo({top:0,behavior:'instant'});
   document.querySelector('.fc')?.scrollTo(0,0);
@@ -2718,13 +2720,11 @@ let homeChatUser = null;
 function switchHomeTab(btn){
   const tabId = btn.dataset.tab;
   homeTab = tabId;
-  // Update active state on nav tabs (in navbar)
-  document.querySelectorAll('#nav-home-tabs .nav-tab').forEach(t=>t.classList.remove('active'));
-  // Find the matching tab button in navbar and activate it
-  const navBtn = document.querySelector('#nav-home-tabs .nav-tab[data-tab="'+tabId+'"]');
-  if(navBtn) navBtn.classList.add('active');
-  // Also update if called from a ptab inside page
-  if(btn.classList.contains('ptab') || btn.classList.contains('nav-tab')) btn.classList.add('active');
+  // Update active state on home-page-tabs
+  document.querySelectorAll('#home-page-tabs .ptab').forEach(t=>t.classList.remove('active'));
+  const homeTabBtn = document.querySelector('#home-page-tabs .ptab[data-tab="'+tabId+'"]');
+  if(homeTabBtn) homeTabBtn.classList.add('active');
+  else btn.classList.add('active');
   // Show correct panel
   document.querySelectorAll('#page-home > .tab-panel').forEach(p=>p.classList.remove('active'));
   const panel = document.getElementById(tabId);
