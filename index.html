@@ -880,6 +880,48 @@ body{
     .chat-page-wrap{
       height:calc(100vh - 52px - 68px);
     }
+
+  #ht-chat{margin:0 -10px;}
+    #ht-chat .chat-page-wrap{
+      height:calc(100vh - 52px - 46px - 68px);
+      display:block !important;
+      position:relative;
+      overflow:hidden;
+    }
+    #ht-chat .chat-sidebar{
+      display:flex !important;
+      position:absolute;
+      inset:0;
+      width:100%;
+      height:100%;
+      z-index:10;
+      transform:translateX(0);
+      transition:transform .28s cubic-bezier(.4,0,.2,1);
+      background:var(--bg-mid);
+    }
+    #ht-chat .chat-sidebar.chat-hidden{
+      transform:translateX(-100%);
+      pointer-events:none;
+    }
+    #ht-chat .chat-window{
+      position:absolute;
+      inset:0;
+      width:100%;
+      height:100%;
+      z-index:11;
+      transform:translateX(100%);
+      transition:transform .28s cubic-bezier(.4,0,.2,1);
+      display:flex !important;
+    }
+    #ht-chat .chat-window.chat-open{
+      transform:translateX(0);
+    }
+    /* page-messages same fix */
+    #page-messages .chat-page-wrap{
+      height:calc(100vh - 52px - 68px);
+    }
+
+  
 }
 
 /* Very small phones */
@@ -1077,47 +1119,7 @@ body{
   height:calc(100vh - var(--nav-h) - 48px);
   margin:0;
 }
-@media(max-width:768px){
-  #ht-chat{margin:0 -10px;}
-  #ht-chat .chat-page-wrap{
-    height:calc(100vh - 52px - 46px - 68px);
-    display:block !important;
-    position:relative;
-    overflow:hidden;
-  }
-  #ht-chat .chat-sidebar{
-    display:flex !important;
-    position:absolute;
-    inset:0;
-    width:100%;
-    height:100%;
-    z-index:10;
-    transform:translateX(0);
-    transition:transform .28s cubic-bezier(.4,0,.2,1);
-    background:var(--bg-mid);
-  }
-  #ht-chat .chat-sidebar.chat-hidden{
-    transform:translateX(-100%);
-    pointer-events:none;
-  }
-  #ht-chat .chat-window{
-    position:absolute;
-    inset:0;
-    width:100%;
-    height:100%;
-    z-index:11;
-    transform:translateX(100%);
-    transition:transform .28s cubic-bezier(.4,0,.2,1);
-    display:flex !important;
-  }
-  #ht-chat .chat-window.chat-open{
-    transform:translateX(0);
-  }
-  /* page-messages same fix */
-  #page-messages .chat-page-wrap{
-    height:calc(100vh - 52px - 68px);
-  }
-}
+
 
 /* ===== PROFILE NAME FIX ===== */
 .pname{
@@ -1139,39 +1141,254 @@ body{
 /* When name is long, allow wrapping */
 .pbar .pdet .pname{
   white-space:normal;
-  word-break:break-word;
-  font-size:clamp(14px,2.5vw,20px);
-}
-@media(max-width:768px){
-  .pbar .pdet .pname{
-    font-size:14px;
-    white-space:normal;
+  word-breakhite-space:normal;
     word-break:break-word;
   }
 }
 
 /* ===== DAY / NIGHT THEME ===== */
+/* Paleta tecnológica clara: fundo azul-gelo + acentos ciano/elétrico */
 body.day-mode{
-  --bg-deep:#f0f2f8;
-  --bg-mid:#e4e8f4;
-  --bg-card:rgba(255,255,255,0.95);
-  --text-light:#1a1a3e;
-  --text-muted:#5566aa;
-  --border-glow:rgba(0,100,200,0.25);
-  --glass:rgba(0,0,0,0.04);
-  --neon-cyan:#0066cc;
-  --neon-pink:#cc0055;
-  --neon-yellow:#bb7700;
-  --neon-purple:#7722cc;
+  --bg-deep:#e8eef8;
+  --bg-mid:#dde5f5;
+  --bg-card:rgba(255,255,255,0.92);
+  --text-light:#0d1b3e;
+  --text-muted:#4a5a8a;
+  --border-glow:rgba(0,160,220,0.35);
+  --glass:rgba(0,100,200,0.06);
+  --neon-cyan:#007acc;
+  --neon-pink:#e0005a;
+  --neon-yellow:#c47b00;
+  --neon-purple:#6600cc;
+  background:#e8eef8;
 }
-body.day-mode nav{background:#ffffff;}
-body.day-mode .sl,body.day-mode .sr{background:rgba(230,235,250,.9);}
-body.day-mode .post-card{background:rgba(255,255,255,.98);}
-body.day-mode .composer{background:rgba(255,255,255,.98);}
-body.day-mode .mb.sent .mb-bubble{background:#0055bb;border-color:#0055bb;}
-body.day-mode .mb.recv .mb-bubble{background:#e8eaf6;border-color:#c5cae9;color:#1a1a3e;}
-body.day-mode .chat-sidebar{background:#f5f7ff;}
-body.day-mode #home-page-tabs,body.day-mode .page-tabs{background:rgba(255,255,255,.97);}
+
+/* Body background — grade tecnológica sutil */
+body.day-mode::before{
+  content:'';
+  position:fixed;
+  inset:0;
+  z-index:-1;
+  background:
+    linear-gradient(135deg,#e8eef8 0%,#dce8f8 50%,#e4edf8 100%);
+  background-image:
+    radial-gradient(circle at 20% 20%, rgba(0,140,255,.06) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(0,200,180,.04) 0%, transparent 50%),
+    radial-gradient(circle at 60% 10%, rgba(100,0,255,.03) 0%, transparent 40%);
+}
+
+/* Navbar — vidro tecnológico */
+body.day-mode nav{
+  background:rgba(240,248,255,.95);
+  border-bottom:1px solid rgba(0,160,220,.2);
+  box-shadow:0 2px 20px rgba(0,100,200,.08);
+  backdrop-filter:blur(20px);
+}
+body.day-mode .nav-logo{
+  color:#007acc;
+  text-shadow:0 0 12px rgba(0,120,200,.3);
+}
+body.day-mode .nav-logo span{color:#e0005a;}
+body.day-mode .nbtn{color:#4a5a8a;}
+body.day-mode .nbtn:hover,body.day-mode .nbtn.active{
+  color:#007acc;
+  background:rgba(0,120,200,.08);
+  border-color:rgba(0,160,220,.3);
+}
+body.day-mode #nav-search{
+  background:rgba(255,255,255,.8);
+  border-color:rgba(0,160,220,.2);
+  color:#0d1b3e;
+}
+
+/* Sidebar esquerda/direita */
+body.day-mode .sl,body.day-mode .sr{
+  background:rgba(240,246,255,.85);
+  border-color:rgba(0,160,220,.15);
+}
+body.day-mode .user-mini{
+  background:rgba(255,255,255,.7);
+  border-color:rgba(0,160,220,.2);
+}
+body.day-mode .slink{color:#4a5a8a;}
+body.day-mode .slink:hover,body.day-mode .slink.active{
+  color:#007acc;
+  background:rgba(0,120,200,.07);
+  border-color:rgba(0,160,220,.2);
+}
+body.day-mode .umn{color:#0d1b3e;}
+body.day-mode .ums{color:#c47b00;}
+body.day-mode .stn{color:#007acc;}
+
+/* Feed center — cards modernos */
+body.day-mode .post-card{
+  background:rgba(255,255,255,.9);
+  border:1px solid rgba(0,160,220,.12);
+  box-shadow:0 2px 12px rgba(0,80,160,.06);
+}
+body.day-mode .post-card:hover{
+  border-color:rgba(0,160,220,.28);
+  box-shadow:0 4px 20px rgba(0,80,160,.1);
+}
+body.day-mode .composer{
+  background:rgba(255,255,255,.92);
+  border:1px solid rgba(0,160,220,.15);
+  box-shadow:0 2px 12px rgba(0,80,160,.06);
+}
+body.day-mode .ctxt{
+  background:rgba(240,248,255,.6);
+  border-color:rgba(0,160,220,.15);
+  color:#0d1b3e;
+}
+body.day-mode .ctxt:focus{border-color:rgba(0,160,220,.4);}
+body.day-mode .pun{color:#007acc;}
+body.day-mode .pcontent{color:#1a2a4e;}
+body.day-mode .pt{color:#4a5a8a;}
+body.day-mode .abtn{color:#4a5a8a;}
+body.day-mode .abtn:hover{color:#007acc;background:rgba(0,120,200,.07);}
+body.day-mode .tbtn{
+  color:#4a5a8a;
+  border-color:rgba(0,160,220,.15);
+}
+body.day-mode .tbtn:hover{color:#007acc;border-color:rgba(0,160,220,.3);}
+
+/* Abas */
+body.day-mode #home-page-tabs,body.day-mode .page-tabs{
+  background:rgba(240,248,255,.97);
+  border-bottom:2px solid rgba(0,160,220,.2);
+}
+body.day-mode .ptab{color:#4a5a8a;}
+body.day-mode .ptab.active{color:#007acc;border-bottom-color:#007acc;}
+body.day-mode .nav-tab.active{color:#007acc;border-bottom-color:#007acc;}
+
+/* Feed tabs */
+body.day-mode .ftabs{
+  background:rgba(255,255,255,.7);
+  border-color:rgba(0,160,220,.15);
+}
+body.day-mode .ftab.active{
+  background:linear-gradient(135deg,rgba(0,120,200,.12),rgba(0,80,160,.08));
+  color:#007acc;
+}
+
+/* Cards do sidebar direito */
+body.day-mode .wcard{
+  background:rgba(255,255,255,.8);
+  border-color:rgba(0,160,220,.12);
+}
+body.day-mode .wtitle{color:#007acc;}
+body.day-mode .blast{
+  background:linear-gradient(135deg,rgba(0,120,200,.06),rgba(200,100,0,.04));
+  border-color:rgba(0,120,200,.15);
+}
+body.day-mode .blast-yr{color:#c47b00;}
+
+/* Chat */
+body.day-mode .chat-sidebar,body.day-mode #ht-chat-sidebar{
+  background:rgba(240,248,255,.9);
+  border-color:rgba(0,160,220,.15);
+}
+body.day-mode .chat-win-hdr{
+  background:rgba(240,248,255,.97);
+  border-color:rgba(0,160,220,.12);
+}
+body.day-mode .msgs-area{background:#edf3fc;}
+body.day-mode .ci:hover{background:rgba(0,120,200,.06);}
+body.day-mode .ci.active{background:rgba(0,120,200,.1);}
+body.day-mode .ci-name{color:#0d1b3e;}
+body.day-mode .ci-last{color:#4a5a8a;}
+
+/* Bolhas de mensagem */
+body.day-mode .mb.sent .mb-bubble{
+  background:linear-gradient(135deg,#007acc,#0055a0);
+  border:none;
+  color:#fff;
+  box-shadow:0 2px 8px rgba(0,80,160,.25);
+}
+body.day-mode .mb.sent .mb-time{color:#007acc;}
+body.day-mode .mb.recv .mb-bubble{
+  background:rgba(255,255,255,.95);
+  border:1px solid rgba(0,160,220,.2);
+  color:#0d1b3e;
+  box-shadow:0 1px 4px rgba(0,80,160,.08);
+}
+body.day-mode .msg-in-bar{
+  background:rgba(240,248,255,.98);
+  border-color:rgba(0,160,220,.15);
+}
+body.day-mode .msg-in{
+  background:rgba(255,255,255,.9);
+  border-color:rgba(0,160,220,.2);
+  color:#0d1b3e;
+}
+
+/* Modais */
+body.day-mode .modal{
+  background:#f0f6ff;
+  border-color:rgba(0,160,220,.2);
+}
+body.day-mode .movl{background:rgba(200,220,255,.5);}
+
+/* Notificações */
+body.day-mode .ni{
+  background:rgba(255,255,255,.8);
+  border-color:rgba(0,160,220,.12);
+}
+body.day-mode .ni.unrd{
+  background:rgba(0,140,220,.06);
+  border-color:rgba(0,160,220,.25);
+}
+
+/* Auth screen */
+body.day-mode #auth-screen{background:#e8eef8;}
+body.day-mode .auth-card{
+  background:rgba(255,255,255,.95);
+  border-color:rgba(0,160,220,.2);
+}
+
+/* Inputs globais no modo dia */
+body.day-mode .ainput{
+  background:rgba(255,255,255,.9);
+  border-color:rgba(0,160,220,.2);
+  color:#0d1b3e;
+}
+body.day-mode .ainput:focus{border-color:rgba(0,160,220,.5);}
+
+/* Level / XP */
+body.day-mode .lvl-badge{
+  background:linear-gradient(135deg,rgba(100,0,200,.06),rgba(0,120,200,.06));
+  border-color:rgba(100,0,200,.15);
+}
+
+/* Scrollbar */
+body.day-mode ::-webkit-scrollbar-track{background:#dde5f5;}
+body.day-mode ::-webkit-scrollbar-thumb{background:#7ab4d8;}
+
+/* Posts de reação */
+body.day-mode .rxbtn{
+  background:rgba(0,120,200,.06);
+  border-color:rgba(0,160,220,.12);
+  color:#4a5a8a;
+}
+body.day-mode .rxbtn.active{
+  background:rgba(0,120,200,.12);
+  border-color:rgba(0,160,220,.35);
+  color:#007acc;
+}
+
+/* Profile */
+body.day-mode .profile-page-tabs{
+  border-color:rgba(0,160,220,.2);
+  background:rgba(240,248,255,.97);
+}
+body.day-mode .pptab.active{color:#007acc;border-bottom-color:#007acc;}
+body.day-mode .edit-section{
+  background:rgba(255,255,255,.8);
+  border-color:rgba(0,160,220,.15);
+}
+body.day-mode .edit-section-title{color:#c47b00;}
+body.day-mode .pname{color:#0d1b3e;}
+body.day-mode .phandle{color:#007acc;}
 
 /* Toggle button */
 .theme-toggle{
