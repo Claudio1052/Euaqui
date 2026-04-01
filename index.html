@@ -928,12 +928,7 @@ body{
   .bottom-nav{display:block !important;}
 
   /* merged */
-  .emoji-picker{
-    width:260px;
-    left:auto;
-    right:-10px;
-    transform:none;
-  }
+  
   .emoji-grid{
     grid-template-columns:repeat(6,1fr);
   }
@@ -968,18 +963,76 @@ body{
 }
 
 /* ===== EMOJI PICKER ===== */
+.emoji-wrap{ position:relative; }
 
 
+.emoji-picker.open{ display:flex; }
 
+.emoji-search{
+  margin:8px 8px 4px;
+  width:calc(100% - 16px);
+  background:rgba(255,255,255,.06);
+  border:1px solid var(--border-glow);
+  border-radius:8px;
+  padding:7px 10px;
+  color:var(--text-light);
+  font-size:11px;
+  font-family:'Space Mono',monospace;
+  outline:none;
+  flex-shrink:0;
+}
+.emoji-search::placeholder{ color:var(--text-muted); }
+.emoji-search:focus{ border-color:var(--neon-cyan); }
 
+.emoji-cats{
+  display:flex;
+  gap:2px;
+  padding:6px 8px;
+  border-bottom:1px solid var(--border-glow);
+  flex-shrink:0;
+  overflow-x:auto;
+  scrollbar-width:none;
+}
+.emoji-cats::-webkit-scrollbar{ display:none; }
 
+.emoji-cat-btn{
+  background:none; border:none;
+  font-size:18px;
+  padding:4px 7px;
+  border-radius:6px;
+  cursor:pointer;
+  flex-shrink:0;
+  opacity:.5;
+  transition:opacity .15s, background .15s;
+}
+.emoji-cat-btn.active{ opacity:1; background:rgba(0,255,204,.12); }
+.emoji-cat-btn:hover{ opacity:.85; }
 
+.emoji-grid{
+  display:grid;
+  grid-template-columns:repeat(8,1fr);
+  gap:1px;
+  padding:6px 8px;
+  overflow-y:auto;
+  flex:1;
+}
+.emoji-grid::-webkit-scrollbar{ width:3px; }
+.emoji-grid::-webkit-scrollbar-thumb{ background:var(--neon-cyan); border-radius:3px; }
 
-.emoji-item{font-size:20px;text-align:center;cursor:pointer;padding:4px;border-radius:6px;transition:background .1s;line-height:1.3;}
-.emoji-item:hover{background:rgba(255,255,255,.1);}
-.emoji-search{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:var(--text-light);font-size:11px;padding:6px 10px;outline:none;width:100%;flex-shrink:0;}
-.emoji-search:focus{border-color:var(--border-glow);}
-
+.emoji-btn{
+  background:none; border:none;
+  font-size:22px;
+  padding:3px;
+  border-radius:6px;
+  cursor:pointer;
+  text-align:center;
+  line-height:1;
+  transition:background .12s, transform .1s;
+}
+.emoji-btn:hover{
+  background:rgba(0,255,204,.1);
+  transform:scale(1.25);
+}
 
 
 /* Retro icon grid — ensure visible on mobile */
@@ -1552,22 +1605,7 @@ body.day-mode .bnav-btn.active .bni{
 .emoji-wrap{
   position:relative;
 }
-.emoji-picker{
-  display:none;
-  position:absolute;
-  bottom:calc(100% + 8px);
-  left:50%;
-  transform:translateX(-50%);
-  width:300px;
-  max-height:260px;
-  background:var(--bg-mid);
-  border:1px solid var(--border-glow);
-  border-radius:14px;
-  box-shadow:0 -4px 24px rgba(0,0,0,.4);
-  flex-direction:column;
-  overflow:hidden;
-  z-index:500;
-}
+
 .emoji-picker.open{
   display:flex;
 }
@@ -1647,6 +1685,21 @@ body.day-mode .bnav-btn.active .bni{
 }
 .emoji-search::placeholder{color:var(--text-muted);}
 .emoji-search:focus{border-color:var(--neon-cyan);}
+
+.emoji-picker{
+  display:none;
+  position:fixed; /* fixed so it never gets clipped */
+  width:300px;
+  max-height:300px;
+  background:var(--bg-mid);
+  border:1px solid var(--border-glow);
+  border-radius:14px;
+  box-shadow:0 -4px 28px rgba(0,0,0,.6);
+  flex-direction:column;
+  overflow:hidden;
+  z-index:9000;
+}
+.emoji-picker.open{display:flex;}
 </style>
 </head>
 <body>
@@ -4763,17 +4816,42 @@ function toggleEmojiPicker(pickerId, inputId){
   }
 
   // Build picker if empty
-  if(!picker.innerHTML.trim()){
-    buildEmojiPicker(picker);
-  }
+  if(!picker.innerHTML.trim()) buildEmojiPicker(picker);
 
   // Close all other pickers
   document.querySelectorAll('.emoji-picker.open').forEach(p=>{
     if(p.id!==pickerId) p.classList.remove('open');
   });
 
+  // Position the picker above the button using fixed coords
+  const btn = picker.previousElementSibling; // the 😊 button
+  const rect = btn ? btn.getBoundingClientRect() : null;
+  if(rect){
+    const pickerW = 300;
+    const margin = 8;
+    // Center above button, clamp to viewport
+    let left = rect.left + rect.width/2 - pickerW/2;
+    left = Math.max(margin, Math.min(left, window.innerWidth - pickerW - margin));
+    const bottom = window.innerHeight - rect.top + margin;
+    picker.style.left   = left + 'px';
+    picker.style.bottom = bottom + 'px';
+    picker.style.top    = 'auto';
+    picker.style.right  = 'auto';
+  }
+
   picker.classList.add('open');
   picker.querySelector('.emoji-search')?.focus();
+
+  // Close when clicking outside
+  setTimeout(()=>{
+    function outsideClick(e){
+      if(!picker.contains(e.target) && e.target !== btn){
+        picker.classList.remove('open');
+        document.removeEventListener('click', outsideClick);
+      }
+    }
+    document.addEventListener('click', outsideClick);
+  }, 10);
 }
 
 function buildEmojiPicker(picker){
