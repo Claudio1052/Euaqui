@@ -1070,6 +1070,123 @@ body{
   margin:12px 0;
   letter-spacing:1px;
 }
+
+/* ===== HT-CHAT TAB MOBILE ===== */
+#ht-chat{padding:0;margin:0 -20px;}
+#ht-chat .chat-page-wrap{
+  height:calc(100vh - var(--nav-h) - 48px);
+  margin:0;
+}
+@media(max-width:768px){
+  #ht-chat{margin:0 -10px;}
+  #ht-chat .chat-page-wrap{
+    height:calc(100vh - 52px - 46px - 68px);
+    display:block !important;
+    position:relative;
+    overflow:hidden;
+  }
+  #ht-chat .chat-sidebar{
+    display:flex !important;
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    z-index:10;
+    transform:translateX(0);
+    transition:transform .28s cubic-bezier(.4,0,.2,1);
+    background:var(--bg-mid);
+  }
+  #ht-chat .chat-sidebar.chat-hidden{
+    transform:translateX(-100%);
+    pointer-events:none;
+  }
+  #ht-chat .chat-window{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    z-index:11;
+    transform:translateX(100%);
+    transition:transform .28s cubic-bezier(.4,0,.2,1);
+    display:flex !important;
+  }
+  #ht-chat .chat-window.chat-open{
+    transform:translateX(0);
+  }
+  /* page-messages same fix */
+  #page-messages .chat-page-wrap{
+    height:calc(100vh - 52px - 68px);
+  }
+}
+
+/* ===== PROFILE NAME FIX ===== */
+.pname{
+  font-family:'Syne',sans-serif;
+  font-size:20px;
+  font-weight:800;
+  color:var(--text-light);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  max-width:100%;
+  line-height:1.2;
+}
+.pdet{
+  flex:1;
+  min-width:0;
+  overflow:hidden;
+}
+/* When name is long, allow wrapping */
+.pbar .pdet .pname{
+  white-space:normal;
+  word-break:break-word;
+  font-size:clamp(14px,2.5vw,20px);
+}
+@media(max-width:768px){
+  .pbar .pdet .pname{
+    font-size:14px;
+    white-space:normal;
+    word-break:break-word;
+  }
+}
+
+/* ===== DAY / NIGHT THEME ===== */
+body.day-mode{
+  --bg-deep:#f0f2f8;
+  --bg-mid:#e4e8f4;
+  --bg-card:rgba(255,255,255,0.95);
+  --text-light:#1a1a3e;
+  --text-muted:#5566aa;
+  --border-glow:rgba(0,100,200,0.25);
+  --glass:rgba(0,0,0,0.04);
+  --neon-cyan:#0066cc;
+  --neon-pink:#cc0055;
+  --neon-yellow:#bb7700;
+  --neon-purple:#7722cc;
+}
+body.day-mode nav{background:#ffffff;}
+body.day-mode .sl,body.day-mode .sr{background:rgba(230,235,250,.9);}
+body.day-mode .post-card{background:rgba(255,255,255,.98);}
+body.day-mode .composer{background:rgba(255,255,255,.98);}
+body.day-mode .mb.sent .mb-bubble{background:#0055bb;border-color:#0055bb;}
+body.day-mode .mb.recv .mb-bubble{background:#e8eaf6;border-color:#c5cae9;color:#1a1a3e;}
+body.day-mode .chat-sidebar{background:#f5f7ff;}
+body.day-mode #home-page-tabs,body.day-mode .page-tabs{background:rgba(255,255,255,.97);}
+
+/* Toggle button */
+.theme-toggle{
+  background:none;
+  border:1px solid var(--border-glow);
+  color:var(--text-muted);
+  width:32px;height:32px;
+  border-radius:50%;
+  cursor:pointer;
+  font-size:16px;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .2s;
+  flex-shrink:0;
+}
+.theme-toggle:hover{color:var(--neon-cyan);border-color:var(--neon-cyan);}
 </style>
 </head>
 <body>
@@ -1131,6 +1248,7 @@ body{
     </div>
     <div class="nav-right">
       <input type="text" id="nav-search" placeholder="🔍 Buscar..." oninput="quickSearch()" onclick="nav('explore')">
+      <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()" title="Alternar Dia/Noite">🌙</button>
       <img class="nav-av" id="nav-av" src="https://api.dicebear.com/7.x/pixel-art/svg?seed=default" onclick="nav('profile')">
       <button class="hamburger" onclick="toggleDrawer()">☰</button>
     </div>
@@ -1266,10 +1384,10 @@ body{
       </div>
 
             <!-- TAB: CHAT -->
-      <div class="tab-panel" id="ht-chat" style="padding-top:0;">
-        <div style="display:grid;grid-template-columns:280px 1fr;height:calc(100vh - var(--nav-h) - 48px);overflow:hidden;margin:-16px -20px 0;">
+      <div class="tab-panel" id="ht-chat" style="padding:0;margin:0 -20px;">
+        <div class="chat-page-wrap" id="ht-chat-wrap" style="height:calc(100vh - var(--nav-h) - 48px);">
           <!-- Sidebar: conversation list -->
-          <div style="background:rgba(10,10,42,.8);border-right:1px solid var(--border-glow);display:flex;flex-direction:column;overflow:hidden;" id="ht-chat-sidebar">
+          <div class="chat-sidebar" id="ht-chat-sidebar">
             <div class="chat-sb-hdr">
               <span class="chat-sb-title">💬 Mensagens</span>
               <button class="tbtn" onclick="openFindFriends()" style="font-size:11px;">+ Nova</button>
@@ -1280,7 +1398,7 @@ body{
             <div class="chat-sb-list" id="ht-chat-list"></div>
           </div>
           <!-- Chat window -->
-          <div style="display:flex;flex-direction:column;overflow:hidden;" id="ht-chat-window">
+          <div class="chat-window" id="ht-chat-window">
             <div class="chat-win-hdr" id="ht-chat-win-hdr">
               <div style="color:var(--text-muted);font-size:12px;margin:auto;">Selecione uma conversa</div>
             </div>
@@ -1687,6 +1805,7 @@ function showApp(){
   setTimeout(()=>{ try{ setupRealtime(); }catch(e){ console.warn('realtime:',e); } }, 400);
   setTimeout(()=>{ try{ updateVisitCounter(); }catch(e){} }, 500);
   setTimeout(()=>{ try{ updateLevel(); }catch(e){} }, 600);
+  setTimeout(()=>{ try{ initTheme(); }catch(e){} }, 50);
 }
 function showAuth(){
   hideLS();
@@ -3792,12 +3911,10 @@ async function loadHomeChat(){
 
 
 function closeHomeChatWindow(){
-  if(window.innerWidth<=768){
-    const sb=document.getElementById('ht-chat-sidebar');
-    const win=document.getElementById('ht-chat-window');
-    if(win) win.classList.remove('chat-open');
-    if(sb) sb.classList.remove('chat-hidden');
-  }
+  const sb=document.getElementById('ht-chat-sidebar');
+  const win=document.getElementById('ht-chat-window');
+  if(win) win.classList.remove('chat-open');
+  if(sb) sb.classList.remove('chat-hidden');
   const hdr=document.getElementById('ht-chat-win-hdr');
   if(hdr) hdr.innerHTML='<div style="color:var(--text-muted);font-size:12px;margin:auto;">Selecione uma conversa</div>';
   const inArea=document.getElementById('ht-msg-in-area');
@@ -3820,12 +3937,13 @@ async function openHomeChatWith(userId, username, avatarUrl){
     const backBtn = '<button class="tbtn" id="ht-chat-back-btn" onclick="closeHomeChatWindow()" style="display:flex;align-items:center;gap:4px;padding:8px 10px;font-size:12px;">← Voltar</button>';
     hdr.innerHTML = backBtn + avH + '<div><div class="chat-win-name">@'+xss(username)+'</div></div>';
   }
-  // Show input bar, hide on mobile: show window slide
+  // Show input bar
   const inArea = document.getElementById('ht-msg-in-area');
   if(inArea) inArea.style.display='flex';
+  // Mobile: slide sidebar out, chat window in
+  const sb=document.getElementById('ht-chat-sidebar');
+  const win=document.getElementById('ht-chat-window');
   if(window.innerWidth<=768){
-    const sb=document.getElementById('ht-chat-sidebar');
-    const win=document.getElementById('ht-chat-window');
     if(sb) sb.classList.add('chat-hidden');
     if(win) win.classList.add('chat-open');
   }
@@ -3938,6 +4056,7 @@ async function loadHomeAlerts(){
   const{data}=await db.from('notifications')
     .select('id,type,content,read,created_at')
     .eq('user_id',CU.id).eq('read',false)
+    .gte('created_at', new Date(Date.now()-24*60*60*1000).toISOString())
     .order('created_at',{ascending:false}).limit(40);
   el.innerHTML='';
   if(!data?.length){
@@ -4256,6 +4375,26 @@ document.addEventListener('click', function(e){
 });
 
 
+
+// ===== DAY / NIGHT THEME =====
+function toggleTheme(){
+  const isDark = !document.body.classList.contains('day-mode');
+  document.body.classList.toggle('day-mode', isDark);
+  const btn = document.getElementById('theme-btn');
+  if(btn) btn.textContent = isDark ? '☀️' : '🌙';
+  btn.title = isDark ? 'Modo Noite' : 'Modo Dia';
+  localStorage.setItem('euaqui_theme', isDark ? 'day' : 'night');
+}
+
+function initTheme(){
+  const saved = localStorage.getItem('euaqui_theme');
+  if(saved === 'day'){
+    document.body.classList.add('day-mode');
+    const btn = document.getElementById('theme-btn');
+    if(btn){ btn.textContent='☀️'; btn.title='Modo Noite'; }
+  }
+}
+
 // ===== VALIDATION =====
 function vName(){const v=document.getElementById('r-name').value;const el=document.getElementById('v-name');el.textContent=v.length>=2?'✓ OK!':'⚠ Mínimo 2 chars';el.className='vmsg '+(v.length>=2?'ok':'err');}
 function vUser(){const v=document.getElementById('r-user').value;const ok=/^[a-z0-9_]{3,20}$/.test(v);const el=document.getElementById('v-user');el.textContent=ok?'✓ OK!':'⚠ 3-20 chars: letras, números, _';el.className='vmsg '+(ok?'ok':'err');}
@@ -4308,9 +4447,18 @@ async function loadFriendsList(type){
   list.innerHTML = skeletons(3);
   try{
     if(type === 'requests'){
-      const{data} = await db.from('friend_requests')
+      const{data:rawReqs} = await db.from('friend_requests')
         .select('id,sender_id,status,created_at,profiles!friend_requests_sender_id_fkey(id,username,full_name,avatar_url)')
         .eq('receiver_id',CU.id).eq('status','pending');
+      // Cross-check: remove senders already in friends table
+      let alreadyFrSet=new Set();
+      if(rawReqs?.length){
+        try{
+          const{data:frCheck}=await db.from('friends').select('friend_id').eq('user_id',CU.id).in('friend_id',(rawReqs||[]).map(r=>r.sender_id));
+          (frCheck||[]).forEach(f=>alreadyFrSet.add(f.friend_id));
+        }catch(e){}
+      }
+      const data=(rawReqs||[]).filter(r=>!alreadyFrSet.has(r.sender_id));
       const count = (data||[]).length;
       const badge = document.getElementById('freq-badge');
       if(badge){ badge.textContent = count; badge.style.display = count > 0 ? 'inline-block' : 'none'; }
@@ -4667,7 +4815,8 @@ async function loadNotifTab(tabId){
   const el = document.getElementById('notif-list-' + tabId.replace('nt-',''));
   if(!el) return;
   el.innerHTML = skeletons(3);
-  let q = db.from('notifications').select('id,type,content,read,created_at').eq('user_id',CU.id).order('created_at',{ascending:false}).limit(40);
+  const _24h=new Date(Date.now()-24*60*60*1000).toISOString();
+  let q = db.from('notifications').select('id,type,content,read,created_at').eq('user_id',CU.id).gte('created_at',_24h).order('created_at',{ascending:false}).limit(40);
   if(Array.isArray(filter)) q = q.in('type', filter);
   else if(filter) q = q.eq('type', filter);
   const{data} = await q;
