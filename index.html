@@ -629,7 +629,7 @@ body{
   .fc{padding:8px 10px 80px;max-width:100%;}
 
   /* Nav */
-  .hamburger{display:flex;}
+  .hamburger{display:none;}
   .nav-center{display:none;}
   #nav-search{display:none;}
   .music-pl{display:none;}
@@ -874,7 +874,7 @@ body{
       letter-spacing:.3px;
     }
     .nav-tabs-row.visible{
-      padding:0 2px;
+      display:none !important;
     }
     /* When home tabs visible, adjust bottom-nav chat height */
     .chat-page-wrap{
@@ -1474,80 +1474,83 @@ body.day-mode ::-webkit-scrollbar-thumb:hover{ background:#008b9e; }
 .theme-toggle:hover{color:var(--neon-cyan);border-color:var(--neon-cyan);}
 
 /* =====================================================
-   BOTTOM NAV — Instagram Style (mobile only)
+   BOTTOM NAV — Ícones puros, estilo Instagram (só mobile)
    ===================================================== */
 .bottom-nav{
-  display:none; /* shown only on mobile via media query */
+  display:none;
   position:fixed;
   bottom:0; left:0; right:0;
-  background:rgba(10,10,42,.97);
-  border-top:1px solid var(--border-glow);
+  background:rgba(8,8,30,.98);
+  border-top:1px solid rgba(0,255,204,.15);
   z-index:1000;
   backdrop-filter:blur(20px);
-  padding-bottom:env(safe-area-inset-bottom);
+  -webkit-backdrop-filter:blur(20px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
 }
 .bnav-items{
   display:flex;
-  align-items:stretch;
+  align-items:center;
   justify-content:space-around;
-  height:56px;
+  height:58px;
+  padding:0 4px;
 }
 .bnav-btn{
   flex:1;
   display:flex;
-  flex-direction:column;
   align-items:center;
   justify-content:center;
-  gap:3px;
   background:none;
   border:none;
-  color:var(--text-muted);
+  color:#5a6a8a;
   cursor:pointer;
-  padding:6px 4px;
-  transition:color .18s;
+  padding:10px 0;
+  transition:color .18s, transform .15s;
   position:relative;
-  min-width:0;
 }
+.bn-label{ display:none; } /* sem texto — só ícone */
 .bni{
-  width:22px; height:22px;
+  width:26px; height:26px;
   stroke:currentColor;
-  flex-shrink:0;
-  transition:stroke .18s, transform .18s;
+  fill:none;
+  stroke-width:1.8;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+  transition:transform .15s;
 }
-.bn-label{
-  font-family:'Space Mono',monospace;
-  font-size:9px;
-  letter-spacing:.3px;
-  line-height:1;
-  white-space:nowrap;
-}
-.bnav-btn:hover .bni,
-.bnav-btn.active .bni{
-  transform:translateY(-1px);
-}
+/* Ativo */
 .bnav-btn.active{
   color:var(--neon-cyan);
 }
-/* Active indicator dot below icon */
-.bnav-btn.active::after{
-  content:'';
+.bnav-btn.active .bni{
+  stroke-width:2.2;
+  transform:scale(1.12);
+  filter:drop-shadow(0 0 4px var(--neon-cyan));
+}
+/* Notif badge */
+#bnav-notif-badge{
   position:absolute;
-  bottom:4px;
-  left:50%;
-  transform:translateX(-50%);
-  width:4px; height:4px;
-  border-radius:50%;
-  background:var(--neon-cyan);
-  box-shadow:0 0 6px var(--neon-cyan);
+  top:6px; right:calc(50% - 20px);
+  background:var(--neon-pink);
+  color:#fff;
+  font-size:8px;
+  min-width:14px; height:14px;
+  border-radius:7px;
+  line-height:14px;
+  text-align:center;
+  padding:0 3px;
+  font-family:'Space Mono',monospace;
 }
 /* Day mode */
 body.day-mode .bottom-nav{
-  background:rgba(255,255,255,.97);
+  background:rgba(255,255,255,.98);
   border-color:#e2e8f0;
+  box-shadow:0 -1px 8px rgba(0,0,0,.08);
 }
-body.day-mode .bnav-btn{ color:#6b7280; }
+body.day-mode .bnav-btn{ color:#9ca3af; }
 body.day-mode .bnav-btn.active{ color:#008b9e; }
-body.day-mode .bnav-btn.active::after{ background:#008b9e; box-shadow:none; }
+body.day-mode .bnav-btn.active .bni{
+  filter:none;
+}
 </style>
 </head>
 <body>
@@ -2061,28 +2064,22 @@ body.day-mode .bnav-btn.active::after{ background:#008b9e; box-shadow:none; }
   <div class="bnav-items">
     <button class="bnav-btn active" id="bn-home" onclick="nav('home')">
       <svg class="bni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-      <span class="bn-label">Feed</span>
     </button>
     <button class="bnav-btn" id="bn-explore" onclick="nav('explore')">
       <svg class="bni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <span class="bn-label">Explorar</span>
     </button>
     <button class="bnav-btn" id="bn-communities" onclick="nav('communities')">
       <svg class="bni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-      <span class="bn-label">Grupos</span>
     </button>
     <button class="bnav-btn" id="bn-messages" onclick="nav('messages')">
       <svg class="bni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-      <span class="bn-label">Chat</span>
     </button>
     <button class="bnav-btn" id="bn-notifications" onclick="nav('notifications')" style="position:relative;">
       <svg class="bni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
       <span class="nbadge" id="bnav-notif-badge" style="display:none;position:absolute;top:6px;right:10px;font-size:8px;min-width:14px;height:14px;line-height:14px;padding:0 3px;">0</span>
-      <span class="bn-label">Alertas</span>
     </button>
     <button class="bnav-btn" id="bn-profile" onclick="nav('profile')">
       <svg class="bni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-      <span class="bn-label">Perfil</span>
     </button>
   </div>
 </div>
