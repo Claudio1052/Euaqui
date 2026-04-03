@@ -921,6 +921,9 @@ body{
   .emoji-grid{
     grid-template-columns:repeat(6,1fr);
   }
+
+  .dash-grid{grid-template-columns:repeat(2,1fr);}
+    .biz-banner{height:70px;}
 }
 
 /* Very small phones */
@@ -1717,6 +1720,142 @@ body.day-mode .bnav-btn.active .bni{
 }
 .yt-link:hover{ color:var(--neon-cyan); }
 body.day-mode .yt-link{ color:#6b7280; }
+
+/* ================================================================
+   NEGÓCIOS — Lojas & Serviços
+   ================================================================ */
+.biz-card{
+  background:var(--bg-card);
+  border:1px solid var(--border-glow);
+  border-radius:16px;
+  overflow:hidden;
+  cursor:pointer;
+  transition:transform .2s, box-shadow .2s, border-color .2s;
+}
+.biz-card:hover{
+  transform:translateY(-3px);
+  box-shadow:0 8px 24px rgba(0,255,204,.12);
+  border-color:rgba(0,255,204,.4);
+}
+.biz-banner{
+  height:90px;
+  background:linear-gradient(135deg,#0f0f3a,#1a0a3a);
+  position:relative;
+  display:flex;align-items:center;justify-content:center;
+  font-size:36px;
+}
+.biz-logo{
+  width:56px;height:56px;
+  border-radius:12px;
+  border:3px solid var(--neon-cyan);
+  object-fit:cover;
+  background:var(--bg-mid);
+  display:flex;align-items:center;justify-content:center;
+  font-size:26px;
+  position:absolute;
+  bottom:-22px;left:14px;
+  overflow:hidden;
+}
+.biz-body{padding:28px 14px 14px;}
+.biz-name{
+  font-family:'Silkscreen',monospace;
+  font-size:13px;color:var(--text-light);
+  margin-bottom:3px;
+}
+.biz-segment{
+  font-size:10px;color:var(--neon-yellow);
+  margin-bottom:6px;
+}
+.biz-desc{
+  font-size:11px;color:var(--text-muted);
+  line-height:1.5;margin-bottom:10px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.biz-city{
+  font-size:10px;color:var(--text-muted);
+  margin-bottom:10px;
+}
+.biz-actions{display:flex;gap:8px;flex-wrap:wrap;}
+.biz-follow-btn{
+  flex:1;
+  padding:7px 10px;
+  border-radius:8px;
+  font-size:10px;
+  font-family:'Silkscreen',monospace;
+  cursor:pointer;
+  border:1px solid var(--border-glow);
+  background:transparent;
+  color:var(--text-muted);
+  transition:all .2s;
+}
+.biz-follow-btn.following{
+  background:rgba(0,255,204,.1);
+  color:var(--neon-cyan);
+  border-color:var(--neon-cyan);
+}
+.biz-follow-btn:hover{border-color:var(--neon-cyan);color:var(--neon-cyan);}
+.biz-chat-btn{
+  padding:7px 12px;
+  border-radius:8px;
+  font-size:11px;
+  cursor:pointer;
+  border:none;
+  background:linear-gradient(135deg,var(--neon-pink),var(--neon-purple));
+  color:#fff;
+  transition:all .2s;
+}
+.biz-chat-btn:hover{opacity:.85;}
+
+/* Dashboard cards */
+.dash-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(140px,1fr));
+  gap:12px;
+  margin-bottom:20px;
+}
+.dash-card{
+  background:var(--bg-card);
+  border:1px solid var(--border-glow);
+  border-radius:12px;
+  padding:14px;
+  text-align:center;
+}
+.dash-num{
+  font-family:'VT323',monospace;
+  font-size:36px;
+  color:var(--neon-cyan);
+  line-height:1;
+}
+.dash-lbl{font-size:10px;color:var(--text-muted);margin-top:4px;}
+
+/* Product cards */
+.prod-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+  gap:10px;
+  margin-top:12px;
+}
+.prod-card{
+  background:var(--bg-card);
+  border:1px solid var(--border-glow);
+  border-radius:10px;
+  padding:10px;
+  text-align:center;
+}
+.prod-img{width:100%;height:100px;object-fit:cover;border-radius:8px;margin-bottom:8px;background:var(--bg-mid);}
+.prod-name{font-size:11px;color:var(--text-light);margin-bottom:4px;}
+.prod-price{font-family:'VT323',monospace;font-size:20px;color:var(--neon-cyan);}
+
+/* Day mode */
+body.day-mode .biz-card{background:#fff;border-color:#e2e8f0;}
+body.day-mode .biz-banner{background:linear-gradient(135deg,#e0f7fa,#f0e6ff);}
+body.day-mode .biz-name{color:#111827;}
+body.day-mode .biz-segment{color:#d97706;}
+body.day-mode .dash-card{background:#fff;border-color:#e2e8f0;}
+body.day-mode .dash-num{color:#008b9e;}
+body.day-mode .prod-card{background:#fff;border-color:#e2e8f0;}
+
+
 </style>
 </head>
 <body>
@@ -1773,6 +1912,7 @@ body.day-mode .yt-link{ color:#6b7280; }
       <button class="nbtn" id="nb-explore" onclick="nav('explore')">🔍 Explorar</button>
       <button class="nbtn" id="nb-friends" onclick="nav('friends')">👥 Amigos</button>
       <button class="nbtn" id="nb-communities" onclick="nav('communities')">🏘 Comunidades</button>
+      <button class="nbtn" id="nb-businesses" onclick="nav('businesses')" style="color:var(--neon-yellow);">🏪 Lojas</button>
       <button class="nbtn" id="nb-messages" onclick="nav('messages')">💬 Chat</button>
       <button class="nbtn" id="nb-notifications" onclick="nav('notifications')">🔔 <span class="nbadge" id="notif-badge" style="display:none">0</span></button>
     </div>
@@ -1806,6 +1946,7 @@ body.day-mode .yt-link{ color:#6b7280; }
   <div class="slink" onclick="nav('profile');toggleDrawer()"><span class="ic">👤</span> Meu Perfil</div>
   <div class="slink" onclick="nav('friends');toggleDrawer()"><span class="ic">👥</span> Amigos</div>
   <div class="slink" onclick="nav('communities');toggleDrawer()"><span class="ic">🏘</span> Comunidades</div>
+  <div class="slink" onclick="nav('businesses');toggleDrawer()" style="color:var(--neon-yellow);"><span class="ic">🏪</span> Lojas & Serviços</div>
   <div class="slink" onclick="nav('messages');toggleDrawer()"><span class="ic">💬</span> Mensagens</div>
   <div class="slink" onclick="nav('notifications');toggleDrawer()"><span class="ic">🔔</span> Notificações</div>
   <div class="slink" onclick="nav('capsules');toggleDrawer()"><span class="ic">⏳</span> Time Capsule</div>
@@ -1836,6 +1977,7 @@ body.day-mode .yt-link{ color:#6b7280; }
     <div class="slink" id="sl-profile" onclick="nav('profile')"><span class="ic">👤</span> Perfil</div>
     <div class="slink" id="sl-friends" onclick="nav('friends')"><span class="ic">👥</span> Amigos</div>
     <div class="slink" id="sl-communities" onclick="nav('communities')"><span class="ic">🏘</span> Comunidades</div>
+    <div class="slink" id="sl-businesses" onclick="nav('businesses')" style="color:var(--neon-yellow);"><span class="ic">🏪</span> Lojas & Serviços</div>
     <div class="slink" id="sl-messages" onclick="nav('messages')"><span class="ic">💬</span> Chat</div>
     <div class="slink" id="sl-notifications" onclick="nav('notifications')"><span class="ic">🔔</span> Notificações</div>
     <div class="slbl">Especial</div>
@@ -2122,6 +2264,142 @@ body.day-mode .yt-link{ color:#6b7280; }
     </div>
 
     <!-- PROFILE -->
+    <!-- BUSINESSES PAGE -->
+    <div class="page" id="page-businesses">
+      <!-- ABAS -->
+      <div class="page-tabs" id="biz-page-tabs">
+        <button class="ptab active" data-tab="biz-browse" onclick="switchBizTab(this)">🏪 Lojas & Serviços</button>
+        <button class="ptab" data-tab="biz-mine" onclick="switchBizTab(this)">⚙️ Meu Negócio</button>
+        <button class="ptab" data-tab="biz-following" onclick="switchBizTab(this)">❤️ Seguindo</button>
+        <button class="ptab" data-tab="biz-chats" onclick="switchBizTab(this)">💬 Atendimento</button>
+        <button class="ptab" id="biz-dash-tab" data-tab="biz-dashboard" onclick="switchBizTab(this)" style="display:none;">📊 Dashboard</button>
+      </div>
+
+      <!-- TAB: EXPLORAR LOJAS -->
+      <div class="tab-panel active" id="biz-browse">
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+          <input class="ainput" id="biz-search" placeholder="🔍 Buscar loja ou serviço..." oninput="filterBiz()" style="flex:1;min-width:160px;">
+          <select class="ainput" id="biz-cat-filter" onchange="filterBiz()" style="width:140px;">
+            <option value="">Todos</option>
+            <option value="loja">🛍️ Lojas</option>
+            <option value="servico">🔧 Serviços</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+          <span style="font-size:10px;color:var(--text-muted);">📍</span>
+          <span id="biz-location-label" style="font-size:11px;color:var(--neon-cyan);">Detectando localização...</span>
+          <button class="tbtn" onclick="changeBizCity()" style="font-size:10px;">Alterar cidade</button>
+        </div>
+        <div id="biz-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;"></div>
+      </div>
+
+      <!-- TAB: MEU NEGÓCIO -->
+      <div class="tab-panel" id="biz-mine">
+        <div id="biz-mine-content"></div>
+      </div>
+
+      <!-- TAB: SEGUINDO -->
+      <div class="tab-panel" id="biz-following">
+        <div id="biz-following-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;"></div>
+      </div>
+
+      <!-- TAB: ATENDIMENTO (chat) -->
+      <div class="tab-panel" id="biz-chats" style="padding:0;margin:0 -20px;">
+        <div class="chat-page-wrap" id="biz-chat-wrap" style="height:calc(100vh - var(--nav-h) - 48px);">
+          <div class="chat-sidebar" id="biz-chat-sidebar">
+            <div class="chat-sb-hdr">
+              <span class="chat-sb-title">💬 Atendimentos</span>
+            </div>
+            <div class="chat-sb-list" id="biz-chat-list"></div>
+          </div>
+          <div class="chat-window" id="biz-chat-window">
+            <div class="chat-win-hdr" id="biz-chat-win-hdr">
+              <div style="color:var(--text-muted);font-size:12px;margin:auto;">Selecione um atendimento</div>
+            </div>
+            <div class="msgs-area" id="biz-msgs-area"></div>
+            <div class="msg-in-bar" id="biz-msg-in-area" style="display:none;">
+              <input class="msg-in" id="biz-msg-in" placeholder="Responda o cliente..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendBizMsg()}">
+              <button class="msg-snd" onclick="sendBizMsg()">➤</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: DASHBOARD -->
+      <div class="tab-panel" id="biz-dashboard">
+        <div id="biz-dash-content"></div>
+      </div>
+    </div>
+
+    <!-- MODAL: Cadastro/Edição de Negócio -->
+    <div class="movl" id="biz-form-overlay" style="display:none;" onclick="if(event.target===this)closeBizForm()"></div>
+    <div class="modal" id="biz-form-modal" style="display:none;max-width:520px;max-height:90vh;overflow-y:auto;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:3000;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+        <div class="mtitle" id="biz-form-title">🏪 Cadastrar Negócio</div>
+        <button class="mclose" onclick="closeBizForm()">✕</button>
+      </div>
+      <form onsubmit="return false;">
+        <input type="hidden" id="biz-edit-id">
+        <div class="igrp"><label class="ilbl">Tipo *</label>
+          <select class="ainput" id="biz-type">
+            <option value="loja">🛍️ Loja (venda de produtos)</option>
+            <option value="servico">🔧 Serviço (prestação de serviços)</option>
+          </select>
+        </div>
+        <div class="igrp"><label class="ilbl">Nome do Negócio *</label>
+          <input class="ainput" id="biz-name" placeholder="Ex: Boutique da Ana" maxlength="60">
+        </div>
+        <div class="igrp"><label class="ilbl">Segmento *</label>
+          <select class="ainput" id="biz-segment">
+            <option value="Alimentação">🍕 Alimentação</option>
+            <option value="Moda">👗 Moda & Vestuário</option>
+            <option value="Eletrônicos">📱 Eletrônicos</option>
+            <option value="Beleza">💄 Beleza & Estética</option>
+            <option value="Saúde">🏥 Saúde</option>
+            <option value="Educação">📚 Educação</option>
+            <option value="Tecnologia">💻 Tecnologia</option>
+            <option value="Construção">🏗️ Construção & Reforma</option>
+            <option value="Transporte">🚗 Transporte</option>
+            <option value="Turismo">✈️ Turismo & Hospedagem</option>
+            <option value="Pets">🐾 Pets</option>
+            <option value="Esporte">⚽ Esporte & Lazer</option>
+            <option value="Jurídico">⚖️ Jurídico</option>
+            <option value="Finanças">💰 Finanças</option>
+            <option value="Outros">📦 Outros</option>
+          </select>
+        </div>
+        <div class="igrp"><label class="ilbl">Descrição</label>
+          <textarea class="ainput" id="biz-desc" rows="3" placeholder="Descreva seu negócio..." style="resize:none;"></textarea>
+        </div>
+        <div class="igrp"><label class="ilbl">WhatsApp</label>
+          <input class="ainput" id="biz-whatsapp" placeholder="(11) 99999-9999">
+        </div>
+        <div class="igrp"><label class="ilbl">E-mail</label>
+          <input class="ainput" id="biz-email" type="email" placeholder="contato@seusite.com">
+        </div>
+        <div class="igrp"><label class="ilbl">Site</label>
+          <input class="ainput" id="biz-website" placeholder="https://...">
+        </div>
+        <div style="background:rgba(0,255,204,.05);border:1px solid var(--border-glow);border-radius:10px;padding:12px;margin-bottom:12px;">
+          <div style="font-size:11px;color:var(--neon-cyan);margin-bottom:8px;">📍 Localização</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;" id="biz-geo-status">Detectando automaticamente...</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div class="igrp" style="margin:0;"><label class="ilbl">Cidade *</label>
+              <input class="ainput" id="biz-city" placeholder="Sua cidade">
+            </div>
+            <div class="igrp" style="margin:0;"><label class="ilbl">Estado</label>
+              <input class="ainput" id="biz-state" placeholder="UF" maxlength="2">
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px;">
+          <button class="tbtn" onclick="closeBizForm()">Cancelar</button>
+          <button class="post-btn" onclick="saveBusiness()">💾 Salvar Negócio</button>
+        </div>
+      </form>
+    </div>
+
+
     <div class="page" id="page-profile">
       <div id="profile-cover-bar"></div>
       <div class="profile-page-tabs" id="profile-page-tabs" style="display:none;">
@@ -2551,7 +2829,7 @@ async function loadUserStats(){
 // ===== NAVIGATION =====
 function _navBase(page){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  ['home','explore','friends','communities','messages','notifications','capsules','profile','comm-detail'].forEach(p=>{
+  ['home','explore','friends','communities','businesses','messages','notifications','capsules','profile','comm-detail'].forEach(p=>{
     const slEl=document.getElementById('sl-'+p);if(slEl)slEl.classList.remove('active');
     const nbEl=document.getElementById('nb-'+p);if(nbEl)nbEl.classList.remove('active');
     const bnEl=document.getElementById('bn-'+p);if(bnEl)bnEl.classList.remove('active');
@@ -2566,8 +2844,8 @@ function _navBase(page){
   try{
     document.querySelectorAll('.bnav-btn').forEach(b=>b.classList.remove('active'));
     const bnMap={'home':'bn-home','explore':'bn-explore','friends':'bn-friends',
-      'communities':'bn-communities','messages':'bn-messages',
-      'notifications':'bn-notifications','profile':'bn-profile'};
+      'communities':'bn-communities','businesses':'bn-businesses',
+      'messages':'bn-messages','notifications':'bn-notifications','profile':'bn-profile'};
     const bnId=bnMap[page];
     if(bnId){ const b=document.getElementById(bnId); if(b)b.classList.add('active'); }
   }catch(e){}
@@ -2594,6 +2872,7 @@ function nav(page){
     else if(page==='explore')        loadExploreFeed();
     else if(page==='friends')        loadFriendsList('friends');
     else if(page==='communities')    { loadCommGrid('all'); setTimeout(buildCommIconGrid,200); }
+    else if(page==='businesses')     initBusinessPage();
     else if(page==='messages')       loadConversations();
     else if(page==='notifications')  loadNotifTab('nt-all');
     else if(page==='capsules')       loadCapsules();
@@ -5478,6 +5757,573 @@ function showChatWindow(){
     // Show back button
     const backBtn = document.getElementById('chat-back-btn');
     if(backBtn) backBtn.style.display = 'flex';
+  }
+}
+
+
+
+// ================================================================
+// NEGÓCIOS — Lojas & Serviços
+// ================================================================
+let bizCity = '', bizState = '', bizLat = null, bizLng = null;
+let myBusiness = null, currentBizChat = null;
+
+// ── Nav ──────────────────────────────────────────────────────────
+function switchBizTab(btn){
+  const tabId = btn.dataset.tab;
+  document.querySelectorAll('#biz-page-tabs .ptab').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('#page-businesses .tab-panel').forEach(p=>p.classList.remove('active'));
+  const panel = document.getElementById(tabId);
+  if(panel) panel.classList.add('active');
+  if(tabId==='biz-browse')    loadBizBrowse();
+  if(tabId==='biz-mine')      loadMyBusiness();
+  if(tabId==='biz-following') loadBizFollowing();
+  if(tabId==='biz-chats')     loadBizChats();
+  if(tabId==='biz-dashboard') loadBizDashboard();
+}
+
+// ── Geolocalização ───────────────────────────────────────────────
+async function detectBizLocation(){
+  const label = document.getElementById('biz-location-label');
+  if(label) label.textContent = '📍 Detectando...';
+  if(!navigator.geolocation){ setBizCity('',''); return; }
+  navigator.geolocation.getCurrentPosition(
+    async pos => {
+      bizLat = pos.coords.latitude;
+      bizLng = pos.coords.longitude;
+      try{
+        const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${bizLat}&lon=${bizLng}&format=json`);
+        const d = await r.json();
+        const city  = d.address?.city || d.address?.town || d.address?.village || '';
+        const state = d.address?.state_code || d.address?.state || '';
+        setBizCity(city, state);
+      }catch(e){ setBizCity('',''); }
+    },
+    ()=>{ setBizCity('',''); }
+  );
+}
+
+function setBizCity(city, state){
+  bizCity = city; bizState = state;
+  const label = document.getElementById('biz-location-label');
+  if(label) label.textContent = city ? `📍 ${city}${state?', '+state:''}` : '📍 Localização não detectada';
+  loadBizBrowse();
+}
+
+function changeBizCity(){
+  const c = prompt('Digite sua cidade:');
+  if(c) setBizCity(c.trim(), '');
+}
+
+// ── Explorar lojas ────────────────────────────────────────────────
+async function loadBizBrowse(){
+  const grid = document.getElementById('biz-grid');
+  if(!grid) return;
+  grid.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">⏳ Carregando...</div>';
+
+  let q = db.from('businesses')
+    .select('*')
+    .eq('active', true)
+    .order('followers_count', {ascending:false})
+    .limit(40);
+
+  if(bizCity) q = q.ilike('city', `%${bizCity}%`);
+
+  const cat = document.getElementById('biz-cat-filter')?.value;
+  if(cat) q = q.eq('category', cat);
+
+  const search = document.getElementById('biz-search')?.value.trim();
+  if(search) q = q.ilike('name', `%${search}%`);
+
+  const {data, error} = await q;
+  if(error || !data?.length){
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;">
+      <div style="font-size:40px;opacity:.3;margin-bottom:12px;">🏪</div>
+      <div style="font-family:VT323,monospace;font-size:20px;color:var(--text-muted);">
+        ${bizCity ? `Nenhum negócio encontrado em ${bizCity}` : 'Nenhum negócio cadastrado ainda'}
+      </div>
+      <button class="post-btn" onclick="openBizForm()" style="margin-top:14px;">+ Cadastrar meu negócio</button>
+    </div>`;
+    return;
+  }
+
+  // Get user's followed businesses
+  let followed = new Set();
+  if(CU){
+    const {data:fl} = await db.from('business_followers').select('business_id').eq('user_id',CU.id);
+    (fl||[]).forEach(f=>followed.add(f.business_id));
+  }
+
+  grid.innerHTML = '';
+  data.forEach(biz => grid.appendChild(buildBizCard(biz, followed.has(biz.id))));
+}
+
+function filterBiz(){ loadBizBrowse(); }
+
+function buildBizCard(biz, isFollowing){
+  const div = document.createElement('div');
+  div.className = 'biz-card';
+  const logo = biz.logo_url
+    ? `<img src="${xss(biz.logo_url)}" style="width:100%;height:100%;object-fit:cover;">`
+    : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">${biz.category==='loja'?'🛍️':'🔧'}</div>`;
+  div.innerHTML = `
+    <div class="biz-banner">
+      ${biz.banner_url?`<img src="${xss(biz.banner_url)}" style="width:100%;height:100%;object-fit:cover;">`:''}
+      <div class="biz-logo">${logo}</div>
+    </div>
+    <div class="biz-body">
+      <div class="biz-name">${xss(biz.name)}</div>
+      <div class="biz-segment">${xss(biz.segment)} · ${biz.category==='loja'?'🛍️ Loja':'🔧 Serviço'}</div>
+      ${biz.description?`<div class="biz-desc">${xss(biz.description)}</div>`:''}
+      <div class="biz-city">📍 ${xss(biz.city||'—')}${biz.state?', '+xss(biz.state):''} · 👥 ${biz.followers_count||0} seguidores</div>
+      <div class="biz-actions">
+        <button class="biz-follow-btn ${isFollowing?'following':''}" onclick="toggleBizFollow('${biz.id}',this)">
+          ${isFollowing?'✓ Seguindo':'+ Seguir'}
+        </button>
+        <button class="biz-chat-btn" onclick="openBizChatCustomer('${biz.id}','${xss(biz.name)}')">💬 Chat</button>
+      </div>
+    </div>`;
+  div.querySelector('.biz-body').addEventListener('click', e=>{
+    if(!e.target.closest('button')) openBizDetail(biz);
+  });
+  return div;
+}
+
+// ── Seguir/Deixar de seguir ──────────────────────────────────────
+async function toggleBizFollow(bizId, btn){
+  if(!CU) return showToast('Faça login para seguir','error');
+  const isFollowing = btn.classList.contains('following');
+  if(isFollowing){
+    await db.from('business_followers').delete().eq('business_id',bizId).eq('user_id',CU.id);
+    btn.classList.remove('following'); btn.textContent = '+ Seguir';
+    showToast('Deixou de seguir','');
+  } else {
+    await db.from('business_followers').insert({business_id:bizId,user_id:CU.id});
+    btn.classList.add('following'); btn.textContent = '✓ Seguindo';
+    showToast('Seguindo! Você receberá promoções 🎉','success');
+  }
+}
+
+// ── Seguindo ─────────────────────────────────────────────────────
+async function loadBizFollowing(){
+  const grid = document.getElementById('biz-following-grid');
+  if(!grid||!CU) return;
+  grid.innerHTML = '<div style="color:var(--text-muted);">⏳</div>';
+  const {data} = await db.from('business_followers')
+    .select('business_id, businesses(*)')
+    .eq('user_id',CU.id);
+  if(!data?.length){
+    grid.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">Você não segue nenhum negócio ainda.</div>';
+    return;
+  }
+  grid.innerHTML = '';
+  data.forEach(f=>{ if(f.businesses) grid.appendChild(buildBizCard(f.businesses,true)); });
+}
+
+// ── Meu negócio ──────────────────────────────────────────────────
+async function loadMyBusiness(){
+  const el = document.getElementById('biz-mine-content');
+  if(!el||!CU) return;
+  el.innerHTML = '<div style="color:var(--text-muted);">⏳ Carregando...</div>';
+  const {data} = await db.from('businesses').select('*').eq('owner_id',CU.id).maybeSingle();
+  myBusiness = data;
+
+  if(!data){
+    el.innerHTML = `<div style="text-align:center;padding:40px;">
+      <div style="font-size:50px;margin-bottom:12px;">🏪</div>
+      <div style="font-family:VT323,monospace;font-size:22px;color:var(--neon-cyan);margin-bottom:8px;">Você ainda não tem um negócio cadastrado</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:18px;">Crie sua loja ou serviço gratuitamente e alcance clientes na sua cidade!</div>
+      <button class="post-btn" onclick="openBizForm()">🏪 Criar meu negócio</button>
+    </div>`;
+    return;
+  }
+
+  // Show dashboard tab
+  const dashTab = document.getElementById('biz-dash-tab');
+  if(dashTab) dashTab.style.display = '';
+
+  // Load products
+  const {data:prods} = await db.from('business_products').select('*').eq('business_id',data.id).eq('available',true);
+
+  el.innerHTML = `
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+      <div style="font-family:Silkscreen,monospace;font-size:16px;color:var(--neon-cyan);">🏪 ${xss(data.name)}</div>
+      <span style="font-size:10px;color:var(--neon-yellow);">${xss(data.segment)}</span>
+      <button class="tbtn" onclick="openBizForm(true)" style="margin-left:auto;">✏️ Editar</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px;">
+      <div class="dash-card"><div class="dash-num">${data.followers_count||0}</div><div class="dash-lbl">Seguidores</div></div>
+      <div class="dash-card"><div class="dash-num">${data.deals_closed||0}</div><div class="dash-lbl">Negócios Fechados</div></div>
+      <div class="dash-card"><div class="dash-num">${data.sales_done||0}</div><div class="dash-lbl">Vendas Concluídas</div></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);">📦 Produtos / Serviços</div>
+      <button class="tbtn" onclick="openAddProduct('${data.id}')">+ Adicionar</button>
+    </div>
+    <div class="prod-grid" id="my-prod-grid"></div>`;
+
+  const pg = document.getElementById('my-prod-grid');
+  if(!prods?.length){
+    pg.innerHTML = '<div style="color:var(--text-muted);font-size:12px;grid-column:1/-1;">Nenhum produto/serviço cadastrado.</div>';
+  } else {
+    prods.forEach(p=>{
+      const pc = document.createElement('div'); pc.className='prod-card';
+      pc.innerHTML = `
+        ${p.image_url?`<img class="prod-img" src="${xss(p.image_url)}">`:'<div class="prod-img" style="display:flex;align-items:center;justify-content:center;font-size:30px;">📦</div>'}
+        <div class="prod-name">${xss(p.name)}</div>
+        <div class="prod-price">${p.price?'R$ '+Number(p.price).toFixed(2):xss(p.price_label||'Sob consulta')}</div>
+        <button class="tbtn" style="margin-top:6px;width:100%;font-size:9px;" onclick="deleteProduct('${p.id}')">🗑 Remover</button>`;
+      pg.appendChild(pc);
+    });
+  }
+}
+
+// ── Formulário de negócio ────────────────────────────────────────
+function openBizForm(edit=false){
+  document.getElementById('biz-form-overlay').style.display='flex';
+  document.getElementById('biz-form-modal').style.display='block';
+  document.getElementById('biz-form-title').textContent = edit ? '✏️ Editar Negócio' : '🏪 Cadastrar Negócio';
+  if(edit && myBusiness){
+    const b = myBusiness;
+    document.getElementById('biz-edit-id').value = b.id;
+    document.getElementById('biz-type').value = b.category;
+    document.getElementById('biz-name').value = b.name;
+    document.getElementById('biz-segment').value = b.segment;
+    document.getElementById('biz-desc').value = b.description||'';
+    document.getElementById('biz-whatsapp').value = b.whatsapp||'';
+    document.getElementById('biz-email').value = b.email||'';
+    document.getElementById('biz-website').value = b.website||'';
+    document.getElementById('biz-city').value = b.city||'';
+    document.getElementById('biz-state').value = b.state||'';
+  } else {
+    document.getElementById('biz-edit-id').value = '';
+    document.getElementById('biz-city').value = bizCity;
+    document.getElementById('biz-state').value = bizState;
+    detectFormLocation();
+  }
+}
+
+async function detectFormLocation(){
+  const status = document.getElementById('biz-geo-status');
+  if(!status) return;
+  if(bizCity){ status.textContent = `✅ Detectado: ${bizCity}${bizState?', '+bizState:''}`; return; }
+  status.textContent = '📍 Detectando localização...';
+  if(!navigator.geolocation){ status.textContent = '⚠️ GPS não disponível — preencha manualmente'; return; }
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    try{
+      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json`);
+      const d = await r.json();
+      const city  = d.address?.city||d.address?.town||d.address?.village||'';
+      const state = d.address?.state_code||'';
+      bizCity=city; bizState=state;
+      document.getElementById('biz-city').value  = city;
+      document.getElementById('biz-state').value = state;
+      status.textContent = `✅ Detectado: ${city}${state?', '+state:''}`;
+    }catch(e){ status.textContent='⚠️ Erro ao detectar — preencha manualmente'; }
+  }, ()=>{ status.textContent='⚠️ Permissão negada — preencha manualmente'; });
+}
+
+function closeBizForm(){
+  document.getElementById('biz-form-overlay').style.display='none';
+  document.getElementById('biz-form-modal').style.display='none';
+}
+
+async function saveBusiness(){
+  if(!CU) return showToast('Faça login','error');
+  const name = document.getElementById('biz-name').value.trim();
+  const city = document.getElementById('biz-city').value.trim();
+  if(!name) return showToast('Digite o nome do negócio','error');
+  if(!city) return showToast('Digite a cidade','error');
+
+  // Moderation check
+  const desc = document.getElementById('biz-desc').value.trim();
+  if(desc){ const mod=await moderateContent(name+' '+desc); if(!mod.allowed){showModerationError(mod.categories);return;} }
+
+  const payload = {
+    owner_id:  CU.id,
+    category:  document.getElementById('biz-type').value,
+    name,
+    segment:   document.getElementById('biz-segment').value,
+    description: desc,
+    whatsapp:  document.getElementById('biz-whatsapp').value.trim(),
+    email:     document.getElementById('biz-email').value.trim(),
+    website:   document.getElementById('biz-website').value.trim(),
+    city,
+    state:     document.getElementById('biz-state').value.trim().toUpperCase().slice(0,2),
+    lat: bizLat, lng: bizLng,
+  };
+
+  const editId = document.getElementById('biz-edit-id').value;
+  let error;
+  if(editId){
+    ({error} = await db.from('businesses').update({...payload, updated_at:new Date().toISOString()}).eq('id',editId));
+  } else {
+    ({error} = await db.from('businesses').insert(payload));
+  }
+  if(error) return showToast('Erro: '+error.message,'error');
+  showToast('✅ Negócio salvo com sucesso!','success');
+  closeBizForm();
+  loadMyBusiness();
+}
+
+// ── Produto ───────────────────────────────────────────────────────
+function openAddProduct(bizId){
+  const name  = prompt('Nome do produto/serviço:');
+  if(!name) return;
+  const price = prompt('Preço (ex: 49.90) ou deixe vazio para "Sob consulta":');
+  db.from('business_products').insert({
+    business_id: bizId,
+    name: name.trim(),
+    price: price ? parseFloat(price) : null,
+    price_label: price ? null : 'Sob consulta'
+  }).then(({error})=>{
+    if(error) showToast('Erro: '+error.message,'error');
+    else { showToast('Produto adicionado!','success'); loadMyBusiness(); }
+  });
+}
+
+async function deleteProduct(prodId){
+  if(!confirm('Remover produto?')) return;
+  const {error} = await db.from('business_products').delete().eq('id',prodId);
+  if(!error){ showToast('Removido','success'); loadMyBusiness(); }
+}
+
+// ── Chat cliente → negócio ────────────────────────────────────────
+async function openBizChatCustomer(bizId, bizName){
+  if(!CU) return showToast('Faça login para enviar mensagem','error');
+  nav('businesses');
+  // Switch to chats tab
+  setTimeout(async ()=>{
+    const chatsTab = document.querySelector('#biz-page-tabs .ptab[data-tab="biz-chats"]');
+    if(chatsTab) switchBizTab(chatsTab);
+    // Create or get chat
+    let {data:chat} = await db.from('business_chats')
+      .select('*').eq('business_id',bizId).eq('customer_id',CU.id).maybeSingle();
+    if(!chat){
+      const {data:nc} = await db.from('business_chats')
+        .insert({business_id:bizId,customer_id:CU.id}).select().single();
+      chat = nc;
+    }
+    if(chat) setTimeout(()=>openBizChat(chat.id, bizName), 400);
+  }, 300);
+}
+
+async function loadBizChats(){
+  const list = document.getElementById('biz-chat-list');
+  if(!list||!CU) return;
+  list.innerHTML = '<div style="color:var(--text-muted);padding:12px;font-size:11px;">⏳</div>';
+
+  // As owner: get chats for my business
+  // As customer: get my chats
+  let chats = [];
+  if(myBusiness){
+    const {data} = await db.from('business_chats')
+      .select('*, profiles!business_chats_customer_id_fkey(id,username,avatar_url)')
+      .eq('business_id',myBusiness.id)
+      .order('updated_at',{ascending:false});
+    chats = data||[];
+  }
+  // Also as customer
+  const {data:custChats} = await db.from('business_chats')
+    .select('*, businesses(id,name,logo_url)')
+    .eq('customer_id',CU.id)
+    .order('updated_at',{ascending:false});
+  if(custChats?.length) chats = [...chats, ...(custChats.filter(cc=>!chats.find(ch=>ch.id===cc.id)))];
+
+  if(!chats.length){
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:11px;">Nenhum atendimento ainda</div>';
+    return;
+  }
+  list.innerHTML = '';
+  chats.forEach(chat=>{
+    const isOwner = myBusiness && chat.business_id === myBusiness.id;
+    const label = isOwner
+      ? (chat.profiles?.username||'Cliente')
+      : (chat.businesses?.name||'Negócio');
+    const ci = document.createElement('div');
+    ci.className = 'ci'; ci.id = 'biz-ci-'+chat.id;
+    ci.innerHTML = `<div class="ci-av">${isOwner?'👤':'🏪'}</div>
+      <div class="ci-info"><div class="ci-name">${xss(label)}</div>
+      <div class="ci-last">${chat.status==='deal_closed'?'✅ Negócio fechado':'Em atendimento'}</div></div>`;
+    ci.onclick = ()=>openBizChat(chat.id, label);
+    list.appendChild(ci);
+  });
+}
+
+async function openBizChat(chatId, label){
+  currentBizChat = chatId;
+  document.querySelectorAll('#biz-chat-list .ci').forEach(c=>c.classList.remove('active'));
+  const ci = document.getElementById('biz-ci-'+chatId);
+  if(ci) ci.classList.add('active');
+  // Mobile slide
+  if(window.innerWidth<=768){
+    document.getElementById('biz-chat-sidebar')?.classList.add('chat-hidden');
+    document.getElementById('biz-chat-window')?.classList.add('chat-open');
+  }
+  // Header
+  const hdr = document.getElementById('biz-chat-win-hdr');
+  if(hdr){
+    const backBtn = window.innerWidth<=768 ? '<button class="tbtn" onclick="closeBizChat()" style="padding:6px 10px;font-size:12px;">← Voltar</button>' : '';
+    hdr.innerHTML = backBtn + `<div style="font-size:13px;color:var(--neon-cyan);font-family:Silkscreen,monospace;margin-left:8px;">${xss(label)}</div>`;
+    if(myBusiness){
+      hdr.innerHTML += `<button class="tbtn" onclick="closeDeal('${chatId}')" style="margin-left:auto;font-size:10px;color:var(--neon-cyan);">✅ Negócio Fechado</button>`;
+    }
+  }
+  document.getElementById('biz-msg-in-area').style.display='flex';
+  await loadBizMsgs(chatId);
+}
+
+function closeBizChat(){
+  currentBizChat=null;
+  document.getElementById('biz-chat-sidebar')?.classList.remove('chat-hidden');
+  document.getElementById('biz-chat-window')?.classList.remove('chat-open');
+  const area=document.getElementById('biz-msgs-area');
+  if(area) area.innerHTML='';
+  const hdr=document.getElementById('biz-chat-win-hdr');
+  if(hdr) hdr.innerHTML='<div style="color:var(--text-muted);font-size:12px;margin:auto;">Selecione um atendimento</div>';
+  document.getElementById('biz-msg-in-area').style.display='none';
+}
+
+async function loadBizMsgs(chatId){
+  const area=document.getElementById('biz-msgs-area');
+  if(!area) return;
+  const {data}=await db.from('business_messages')
+    .select('*').eq('chat_id',chatId).order('created_at',{ascending:true});
+  if(!data?.length){ area.innerHTML='<div class="chat-empty-txt">Início do atendimento</div>'; return; }
+  area.innerHTML='';
+  data.forEach(m=>{
+    const isMine=m.sender_id===CU.id;
+    const div=document.createElement('div');
+    div.className='mb '+(isMine?'sent':'recv');
+    const t=new Date(m.created_at);
+    const time=t.getHours().toString().padStart(2,'0')+':'+t.getMinutes().toString().padStart(2,'0');
+    div.innerHTML=`<div class="mb-bubble">${linkify(m.content)}</div><div class="mb-time">${time}</div>`;
+    area.appendChild(div);
+  });
+  area.scrollTop=area.scrollHeight;
+}
+
+async function sendBizMsg(){
+  if(!CU||!currentBizChat) return;
+  const inp=document.getElementById('biz-msg-in');
+  const txt=inp?.value.trim(); if(!txt) return;
+  // Moderation
+  const mod=await moderateContent(txt);
+  if(!mod.allowed){showModerationError(mod.categories);return;}
+  inp.value='';
+  const {error}=await db.from('business_messages').insert({chat_id:currentBizChat,sender_id:CU.id,content:txt});
+  if(error) return showToast('Erro ao enviar','error');
+  // Update chat timestamp
+  await db.from('business_chats').update({updated_at:new Date().toISOString()}).eq('id',currentBizChat);
+  await loadBizMsgs(currentBizChat);
+}
+
+async function closeDeal(chatId){
+  if(!confirm('Marcar este atendimento como negócio fechado?')) return;
+  await db.from('business_chats').update({status:'deal_closed'}).eq('id',chatId);
+  if(myBusiness){
+    await db.from('businesses').update({
+      deals_closed: (myBusiness.deals_closed||0)+1,
+      sales_done: (myBusiness.sales_done||0)+1
+    }).eq('id',myBusiness.id);
+  }
+  showToast('✅ Negócio fechado registrado!','success');
+  loadBizChats();
+  loadBizDashboard();
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────
+async function loadBizDashboard(){
+  const el=document.getElementById('biz-dash-content');
+  if(!el||!myBusiness) return;
+  const b=myBusiness;
+  // Load deals
+  const {data:deals}=await db.from('business_deals')
+    .select('*').eq('business_id',b.id).order('created_at',{ascending:false}).limit(20);
+  // Refresh business data
+  const {data:fresh}=await db.from('businesses').select('*').eq('id',b.id).maybeSingle();
+  if(fresh) myBusiness=fresh;
+  const bd=fresh||b;
+  el.innerHTML=`
+    <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);margin-bottom:14px;">📊 Dashboard — ${xss(bd.name)}</div>
+    <div class="dash-grid">
+      <div class="dash-card"><div class="dash-num">${bd.followers_count||0}</div><div class="dash-lbl">👥 Seguidores</div></div>
+      <div class="dash-card"><div class="dash-num">${bd.deals_closed||0}</div><div class="dash-lbl">🤝 Neg. Fechados</div></div>
+      <div class="dash-card"><div class="dash-num">${bd.sales_done||0}</div><div class="dash-lbl">✅ Vendas</div></div>
+      <div class="dash-card"><div class="dash-num">${bd.rating?Number(bd.rating).toFixed(1):'—'}</div><div class="dash-lbl">⭐ Avaliação</div></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);">📋 Histórico de Negócios</div>
+      <button class="tbtn" onclick="openAddDeal()" style="font-size:10px;">+ Registrar venda</button>
+    </div>
+    <div id="deals-list">${!deals?.length?'<div style="color:var(--text-muted);font-size:12px;">Nenhuma venda registrada ainda.</div>':
+      deals.map(d=>`<div style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+        <div><div style="font-size:12px;color:var(--text-light);">${xss(d.title||'Venda')}</div>
+        <div style="font-size:10px;color:var(--text-muted);">${new Date(d.created_at).toLocaleDateString('pt-BR')}</div></div>
+        <div style="text-align:right;">
+          ${d.value?`<div style="font-family:VT323,monospace;font-size:18px;color:var(--neon-cyan);">R$ ${Number(d.value).toFixed(2)}</div>`:''}
+          <div style="font-size:10px;color:${d.status==='closed'?'var(--neon-cyan)':'var(--neon-yellow)'};">${d.status==='closed'?'✅ Fechado':'⏳ Pendente'}</div>
+        </div></div>`).join('')
+    }</div>`;
+}
+
+function openAddDeal(){
+  if(!myBusiness) return;
+  const title=prompt('Título da venda/serviço:');
+  if(!title) return;
+  const value=prompt('Valor (R$):');
+  db.from('business_deals').insert({
+    business_id:myBusiness.id,
+    title:title.trim(),
+    value:value?parseFloat(value):null,
+    status:'closed'
+  }).then(async ({error})=>{
+    if(error) return showToast('Erro: '+error.message,'error');
+    await db.from('businesses').update({sales_done:(myBusiness.sales_done||0)+1}).eq('id',myBusiness.id);
+    showToast('✅ Venda registrada!','success');
+    loadBizDashboard();
+  });
+}
+
+// ── Detalhe do negócio ────────────────────────────────────────────
+function openBizDetail(biz){
+  const overlay=document.createElement('div');
+  overlay.className='movl';
+  overlay.style.cssText='display:flex;align-items:center;justify-content:center;padding:20px;z-index:2000;';
+  const modal=document.createElement('div');
+  modal.className='modal';
+  modal.style.cssText='max-width:480px;width:100%;max-height:85vh;overflow-y:auto;';
+  modal.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-cyan);">${xss(biz.name)}</div>
+      <button class="mclose" onclick="this.closest('.movl').remove()">✕</button>
+    </div>
+    <div style="font-size:11px;color:var(--neon-yellow);margin-bottom:6px;">${xss(biz.segment)} · ${biz.category==='loja'?'🛍️ Loja':'🔧 Serviço'}</div>
+    ${biz.description?`<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.6;">${xss(biz.description)}</div>`:''}
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">📍 ${xss(biz.city||'—')}${biz.state?', '+xss(biz.state):''}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+      ${biz.whatsapp?`<a href="https://wa.me/55${biz.whatsapp.replace(/\D/g,'')}" target="_blank" class="post-btn" style="text-decoration:none;font-size:10px;padding:8px 14px;">📱 WhatsApp</a>`:''}
+      ${biz.email?`<a href="mailto:${xss(biz.email)}" class="tbtn" style="text-decoration:none;">✉️ E-mail</a>`:''}
+      ${biz.website?`<a href="${xss(biz.website)}" target="_blank" class="tbtn" style="text-decoration:none;">🌐 Site</a>`:''}
+      <button class="biz-chat-btn" onclick="this.closest('.movl').remove();openBizChatCustomer('${biz.id}','${xss(biz.name)}')">💬 Chat</button>
+    </div>`;
+  overlay.appendChild(modal);
+  overlay.onclick=e=>{ if(e.target===overlay) overlay.remove(); };
+  document.body.appendChild(overlay);
+}
+
+// ── Init on nav ───────────────────────────────────────────────────
+async function initBusinessPage(){
+  await detectBizLocation();
+  loadBizBrowse();
+  if(CU){
+    const {data}=await db.from('businesses').select('*').eq('owner_id',CU.id).maybeSingle();
+    myBusiness=data;
+    if(data){
+      const dashTab=document.getElementById('biz-dash-tab');
+      if(dashTab) dashTab.style.display='';
+    }
   }
 }
 
