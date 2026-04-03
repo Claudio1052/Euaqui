@@ -1856,6 +1856,37 @@ body.day-mode .dash-num{color:#008b9e;}
 body.day-mode .prod-card{background:#fff;border-color:#e2e8f0;}
 
 
+
+/* ===== BIZ CARD STATS ===== */
+.biz-stats{
+  display:flex;
+  gap:8px;
+  margin:8px 0 10px;
+  padding:8px;
+  background:rgba(0,255,204,.04);
+  border-radius:8px;
+  border:1px solid rgba(0,255,204,.1);
+}
+.biz-stat{
+  flex:1;
+  text-align:center;
+}
+.biz-stat-n{
+  display:block;
+  font-family:'VT323',monospace;
+  font-size:22px;
+  color:var(--neon-cyan);
+  line-height:1;
+}
+.biz-stat-l{
+  font-size:9px;
+  color:var(--text-muted);
+  letter-spacing:.5px;
+}
+/* Day mode */
+body.day-mode .biz-stats{background:rgba(0,139,158,.05);border-color:rgba(0,139,158,.15);}
+body.day-mode .biz-stat-n{color:#008b9e;}
+body.day-mode .biz-stat-l{color:#9ca3af;}
 </style>
 </head>
 <body>
@@ -5867,6 +5898,22 @@ function buildBizCard(biz, isFollowing){
   const logo = biz.logo_url
     ? `<img src="${xss(biz.logo_url)}" style="width:100%;height:100%;object-fit:cover;">`
     : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">${biz.category==='loja'?'🛍️':'🔧'}</div>`;
+  // Rating stars
+  const rating = biz.rating ? Number(biz.rating).toFixed(1) : null;
+  const starsDisp = rating
+    ? `<span style="font-size:13px;">${'⭐'.repeat(Math.round(Number(rating)))}</span><span style="font-size:10px;color:var(--text-muted);"> ${rating}</span>`
+    : `<span style="font-size:10px;color:var(--text-muted);">Sem avaliações</span>`;
+  // Stats (only for loja)
+  const statsHtml = biz.category === 'loja'
+    ? `<div class="biz-stats">
+        <div class="biz-stat"><span class="biz-stat-n">${biz.sales_done||0}</span><span class="biz-stat-l">Vendas</span></div>
+        <div class="biz-stat"><span class="biz-stat-n">${biz.deals_closed||0}</span><span class="biz-stat-l">Fechados</span></div>
+        <div class="biz-stat"><span class="biz-stat-n">${biz.followers_count||0}</span><span class="biz-stat-l">Seguidores</span></div>
+       </div>`
+    : `<div class="biz-stats">
+        <div class="biz-stat"><span class="biz-stat-n">${biz.deals_closed||0}</span><span class="biz-stat-l">Agendados</span></div>
+        <div class="biz-stat"><span class="biz-stat-n">${biz.followers_count||0}</span><span class="biz-stat-l">Seguidores</span></div>
+       </div>`;
   div.innerHTML = `
     <div class="biz-banner">
       ${biz.banner_url?`<img src="${xss(biz.banner_url)}" style="width:100%;height:100%;object-fit:cover;">`:''}
@@ -5875,13 +5922,15 @@ function buildBizCard(biz, isFollowing){
     <div class="biz-body">
       <div class="biz-name">${xss(biz.name)}</div>
       <div class="biz-segment">${xss(biz.segment)} · ${biz.category==='loja'?'🛍️ Loja':'🔧 Serviço'}</div>
+      <div style="margin-bottom:6px;">${starsDisp}</div>
       ${biz.description?`<div class="biz-desc">${xss(biz.description)}</div>`:''}
-      <div class="biz-city">📍 ${xss(biz.city||'—')}${biz.state?', '+xss(biz.state):''} · 👥 ${biz.followers_count||0} seguidores</div>
+      <div class="biz-city">📍 ${xss(biz.city||'—')}${biz.state?', '+xss(biz.state):''}</div>
+      ${statsHtml}
       <div class="biz-actions">
         <button class="biz-follow-btn ${isFollowing?'following':''}" onclick="toggleBizFollow('${biz.id}',this)">
           ${isFollowing?'✓ Seguindo':'+ Seguir'}
         </button>
-        <button class="biz-chat-btn" onclick="openBizChatCustomer('${biz.id}','${xss(biz.name)}')">💬 Chat</button>
+        <button class="biz-chat-btn" onclick="openBizDetail(${JSON.stringify(biz).replace(/`/g,"'")})">🛍️ Ver loja</button>
       </div>
     </div>`;
   div.querySelector('.biz-body').addEventListener('click', e=>{
@@ -6274,84 +6323,120 @@ async function loadBizDashboard(){
 
 // ── Detalhe do negócio ────────────────────────────────────────────
 async function openBizDetail(biz){
-  // Load products and reviews
-  const {data:prods} = await db.from('business_products')
-    .select('*').eq('business_id',biz.id).eq('available',true).order('created_at');
-  const {data:reviews} = await db.from('business_reviews')
-    .select('*, profiles(username,avatar_url)').eq('business_id',biz.id)
-    .order('created_at',{ascending:false}).limit(10);
-  let myReview = null;
-  if(CU){
-    const {data:mr}=await db.from('business_reviews').select('*')
-      .eq('business_id',biz.id).eq('user_id',CU.id).maybeSingle();
-    myReview=mr;
-  }
-  const avgRating = biz.rating ? Number(biz.rating).toFixed(1) : null;
-  const starsHtml = avgRating
-    ? '⭐'.repeat(Math.round(Number(avgRating)))+` <span style="font-size:11px;color:var(--text-muted);">(${avgRating} · ${biz.rating_count||0} avaliações)</span>`
-    : '<span style="font-size:11px;color:var(--text-muted);">Sem avaliações ainda</span>';
-
-  const prodsHtml = prods?.length ? `
-    <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);margin:14px 0 10px;">📦 Produtos / Serviços</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:16px;">
-      ${prods.map(p=>`
-        <div style="background:var(--bg-mid);border:1px solid var(--border-glow);border-radius:10px;padding:10px;text-align:center;">
-          <div style="font-size:28px;margin-bottom:6px;">${p.image_url?`<img src="${xss(p.image_url)}" style="width:100%;height:70px;object-fit:cover;border-radius:7px;">`:`📦`}</div>
-          <div style="font-size:11px;color:var(--text-light);margin-bottom:4px;font-weight:600;">${xss(p.name)}</div>
-          <div style="font-family:VT323,monospace;font-size:18px;color:var(--neon-cyan);">${p.price?'R$ '+Number(p.price).toFixed(2).replace('.',','):xss(p.price_label||'Sob consulta')}</div>
-        </div>`).join('')}
-    </div>` : '';
-
-  const reviewsHtml = reviews?.length ? reviews.map(r=>`
-    <div style="background:var(--bg-mid);border:1px solid var(--border-glow);border-radius:10px;padding:10px 12px;margin-bottom:8px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-        <div style="font-size:11px;color:var(--neon-cyan);">@${xss(r.profiles?.username||'—')}</div>
-        <div style="font-size:14px;">${'⭐'.repeat(r.rating||0)}</div>
-      </div>
-      ${r.comment?`<div style="font-size:11px;color:var(--text-muted);line-height:1.5;">${xss(r.comment)}</div>`:''} 
-    </div>`).join('') : '<div style="font-size:11px;color:var(--text-muted);">Nenhuma avaliação ainda.</div>';
-
-  const myReviewHtml = CU ? `
-    <div style="background:rgba(0,255,204,.04);border:1px solid var(--border-glow);border-radius:10px;padding:12px;margin-top:14px;">
-      <div style="font-size:11px;color:var(--neon-cyan);margin-bottom:8px;font-family:Silkscreen,monospace;">${myReview?'✏️ Sua avaliação':'⭐ Avaliar'}</div>
-      <div style="display:flex;gap:4px;margin-bottom:8px;">
-        ${[1,2,3,4,5].map(n=>`<button data-star="${n}" onclick="setBizStar('${biz.id}',${n})" style="background:none;border:none;font-size:24px;cursor:pointer;opacity:${myReview&&myReview.rating>=n?1:.3};transition:opacity .15s;" id="biz-star-${biz.id}-${n}">⭐</button>`).join('')}
-      </div>
-      <textarea id="biz-rev-txt-${biz.id}" class="ainput" rows="2" placeholder="Comentário (opcional)..." style="font-size:11px;margin-bottom:8px;resize:none;">${myReview?.comment||''}</textarea>
-      <input type="hidden" id="biz-rev-stars-${biz.id}" value="${myReview?.rating||0}">
-      <button class="post-btn" onclick="submitBizReview('${biz.id}')" style="font-size:10px;padding:8px 16px;">${myReview?'✏️ Atualizar':'✅ Enviar'}</button>
-    </div>` : '';
-
+  // Show modal immediately with skeleton, then fill data
   const overlay=document.createElement('div');
   overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);z-index:3000;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;';
   const modal=document.createElement('div');
   modal.className='modal';
   modal.style.cssText='max-width:500px;width:100%;margin:auto;';
+  const rating = biz.rating ? Number(biz.rating).toFixed(1) : null;
+  const starsLine = rating
+    ? '⭐'.repeat(Math.round(Number(rating)))+` <span style="font-size:11px;color:var(--text-muted);">(${rating} · ${biz.rating_count||0} avaliações)</span>`
+    : '<span style="font-size:11px;color:var(--text-muted);">Sem avaliações ainda</span>';
+  // Stats section
+  const statsSection = biz.category==='loja'
+    ? `<div style="display:flex;gap:14px;margin-bottom:14px;">
+        <div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${biz.sales_done||0}</div><div class="dash-lbl">🛍️ Vendas</div></div>
+        <div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${biz.deals_closed||0}</div><div class="dash-lbl">🤝 Fechados</div></div>
+        <div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${biz.followers_count||0}</div><div class="dash-lbl">👥 Seguidores</div></div>
+       </div>`
+    : `<div style="display:flex;gap:14px;margin-bottom:14px;">
+        <div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${biz.deals_closed||0}</div><div class="dash-lbl">📅 Agendamentos</div></div>
+        <div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${biz.followers_count||0}</div><div class="dash-lbl">👥 Seguidores</div></div>
+       </div>`;
   modal.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
       <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-cyan);">${xss(biz.name)}</div>
       <button style="background:none;border:1px solid var(--border-glow);color:var(--text-muted);width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;" onclick="this.closest('[data-biz-overlay]').remove()">✕</button>
     </div>
     <div style="font-size:11px;color:var(--neon-yellow);margin-bottom:6px;">${xss(biz.segment)} · ${biz.category==='loja'?'🛍️ Loja':'🔧 Serviço'}</div>
-    <div style="margin-bottom:10px;">${starsHtml}</div>
+    <div style="margin-bottom:10px;">${starsLine}</div>
     ${biz.description?`<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.6;">${xss(biz.description)}</div>`:''}
-    <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;">📍 ${xss(biz.city||'—')}${biz.state?', '+xss(biz.state):''} · 👥 ${biz.followers_count||0} seguidores</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">📍 ${xss(biz.city||'—')}${biz.state?', '+xss(biz.state):''}</div>
+    ${statsSection}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
       ${biz.whatsapp?`<a href="https://wa.me/55${biz.whatsapp.replace(/\D/g,'')}" target="_blank" class="post-btn" style="text-decoration:none;font-size:10px;padding:8px 14px;">📱 WhatsApp</a>`:''}
       ${biz.email?`<a href="mailto:${xss(biz.email)}" class="tbtn" style="text-decoration:none;">✉️ E-mail</a>`:''}
       ${biz.website?`<a href="${xss(biz.website)}" target="_blank" class="tbtn" style="text-decoration:none;">🌐 Site</a>`:''}
-      <button class="biz-chat-btn" onclick="this.closest('[data-biz-overlay]').remove();openBizChatCustomer('${biz.id}','${xss(biz.name)}')">💬 Chat</button>
+      <button class="tbtn" onclick="toggleBizFollow('${biz.id}',this)" style="color:var(--neon-cyan);">❤️ Seguir</button>
     </div>
-    ${prodsHtml}
-    <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);margin-bottom:10px;">💬 Avaliações dos clientes</div>
-    <div>${reviewsHtml}</div>
-    ${myReviewHtml}
+    <div id="biz-prods-section-${biz.id}"><div style="color:var(--text-muted);font-size:11px;">⏳ Carregando produtos...</div></div>
+    <div id="biz-reviews-section-${biz.id}"><div style="color:var(--text-muted);font-size:11px;">⏳ Carregando avaliações...</div></div>
   `;
   overlay.dataset.bizOverlay='1';
   overlay.appendChild(modal);
   overlay.onclick=e=>{ if(e.target===overlay) overlay.remove(); };
   document.body.appendChild(overlay);
+
+  // NOW load data in parallel (non-blocking)
+  const [prodsRes, reviewsRes, myRevRes] = await Promise.all([
+    db.from('business_products').select('*').eq('business_id',biz.id).eq('available',true).order('created_at'),
+    db.from('business_reviews').select('*, profiles(username,avatar_url)').eq('business_id',biz.id).order('created_at',{ascending:false}).limit(10),
+    CU ? db.from('business_reviews').select('*').eq('business_id',biz.id).eq('user_id',CU.id).maybeSingle() : Promise.resolve({data:null})
+  ]);
+  const prods = prodsRes.data;
+  const reviews = reviewsRes.data;
+  const myReview = myRevRes.data;
+
+  // Fill products section
+  const prodsEl = document.getElementById('biz-prods-section-'+biz.id);
+  if(prodsEl){
+    if(!prods?.length){
+      prodsEl.innerHTML='';
+    } else {
+      prodsEl.innerHTML=`
+        <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);margin-bottom:10px;">📦 ${biz.category==='loja'?'Produtos — selecione para comprar':'Serviços — selecione para agendar'}</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:16px;">
+          ${prods.map(p=>`
+            <div onclick="selectBizProduct('${biz.id}','${xss(biz.name)}','${xss(p.name)}',${p.price||0},'${p.price_label||''}','${biz.category}')" 
+              style="background:var(--bg-mid);border:2px solid var(--border-glow);border-radius:10px;padding:10px;text-align:center;cursor:pointer;transition:all .2s;" 
+              onmouseover="this.style.borderColor='var(--neon-cyan)'" onmouseout="this.style.borderColor='var(--border-glow)'"
+              title="Clique para selecionar">
+              <div style="font-size:28px;margin-bottom:6px;">${p.image_url?`<img src="${xss(p.image_url)}" style="width:100%;height:70px;object-fit:cover;border-radius:7px;">`:`${biz.category==='loja'?'📦':'🔧'}`}</div>
+              <div style="font-size:11px;color:var(--text-light);margin-bottom:4px;font-weight:600;">${xss(p.name)}</div>
+              <div style="font-family:VT323,monospace;font-size:18px;color:var(--neon-cyan);">${p.price?'R$ '+Number(p.price).toFixed(2).replace('.',','):xss(p.price_label||'Sob consulta')}</div>
+              <div style="margin-top:6px;font-size:9px;color:var(--neon-pink);font-family:Silkscreen,monospace;">SELECIONAR →</div>
+            </div>`).join('')}
+        </div>`;
+    }
+  }
+
+  // Fill reviews section  
+  const revEl = document.getElementById('biz-reviews-section-'+biz.id);
+  if(revEl){
+    const reviewsHtml = reviews?.length ? reviews.map(r=>`
+      <div style="background:var(--bg-mid);border:1px solid var(--border-glow);border-radius:10px;padding:10px 12px;margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <div style="font-size:11px;color:var(--neon-cyan);">@${xss(r.profiles?.username||'—')}</div>
+          <div style="font-size:14px;">${'⭐'.repeat(r.rating||0)}</div>
+        </div>
+        ${r.comment?`<div style="font-size:11px;color:var(--text-muted);line-height:1.5;">${xss(r.comment)}</div>`:''}
+      </div>`).join('') : '<div style="font-size:11px;color:var(--text-muted);padding:8px 0;">Nenhuma avaliação ainda. Seja o primeiro!</div>';
+
+    const myReviewHtml = CU ? `
+      <div style="background:rgba(0,255,204,.04);border:1px solid var(--border-glow);border-radius:10px;padding:12px;margin-top:12px;">
+        <div style="font-size:11px;color:var(--neon-cyan);margin-bottom:8px;font-family:Silkscreen,monospace;">${myReview?'✏️ Sua avaliação':'⭐ Avaliar este negócio'}</div>
+        <div style="display:flex;gap:4px;margin-bottom:8px;">
+          ${[1,2,3,4,5].map(n=>`<button data-star="${n}" onclick="setBizStar('${biz.id}',${n})" style="background:none;border:none;font-size:24px;cursor:pointer;opacity:${myReview&&myReview.rating>=n?1:.3};transition:opacity .15s;" id="biz-star-${biz.id}-${n}">⭐</button>`).join('')}
+        </div>
+        <textarea id="biz-rev-txt-${biz.id}" class="ainput" rows="2" placeholder="Comentário (opcional)..." style="font-size:11px;margin-bottom:8px;resize:none;">${myReview?.comment||''}</textarea>
+        <input type="hidden" id="biz-rev-stars-${biz.id}" value="${myReview?.rating||0}">
+        <button class="post-btn" onclick="submitBizReview('${biz.id}')" style="font-size:10px;padding:8px 16px;">${myReview?'✏️ Atualizar':'✅ Enviar avaliação'}</button>
+      </div>` : '';
+
+    revEl.innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);">💬 Avaliações</div>
+        <button class="tbtn" style="font-size:9px;" id="toggle-rev-btn-${biz.id}"
+          onclick="const d=document.getElementById('rev-list-${biz.id}');const show=d.style.display==='none';d.style.display=show?'block':'none';document.getElementById('toggle-rev-btn-${biz.id}').textContent=show?'▲ Ocultar':'👁 Ver comentários';">
+          👁 Ver comentários
+        </button>
+      </div>
+      <div id="rev-list-${biz.id}" style="display:none;">${reviewsHtml}</div>
+      ${myReviewHtml}`;
+  }
 }
+
 
 // ── Init on nav ───────────────────────────────────────────────────
 async function initBusinessPage(){
@@ -6503,6 +6588,71 @@ async function confirmCloseDeal(chatId, btn){
   btn.closest('[style*=fixed]').remove();
   loadBizChats();
   loadBizDashboard();
+}
+
+
+// ── Seleção de produto antes de iniciar negociação ───────────────
+function selectBizProduct(bizId, bizName, prodName, prodPrice, priceLabel, category){
+  const isLoja = category === 'loja';
+  const priceDisplay = prodPrice > 0
+    ? 'R$ '+Number(prodPrice).toFixed(2).replace('.',',')
+    : (priceLabel || 'Sob consulta');
+  const overlay = document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);backdrop-filter:blur(8px);z-index:4000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.innerHTML=`
+    <div class="modal" style="max-width:400px;width:100%;text-align:center;">
+      <div style="font-size:40px;margin-bottom:12px;">${isLoja?'🛍️':'🔧'}</div>
+      <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);margin-bottom:6px;">${xss(prodName)}</div>
+      <div style="font-family:VT323,monospace;font-size:28px;color:var(--neon-yellow);margin-bottom:6px;">${priceDisplay}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:20px;">
+        ${isLoja?'Você deseja comprar este produto?':'Você deseja agendar este serviço?'}<br>
+        <span style="color:var(--text-light);">${xss(bizName)}</span>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+        <button class="tbtn" onclick="this.closest('[style*=fixed]').remove()" style="padding:10px 20px;">Cancelar</button>
+        <button class="post-btn" onclick="confirmBizNegotiation('${bizId}','${xss(bizName)}','${xss(prodName)}',${prodPrice},'${xss(priceLabel||'')}','${category}',this)" 
+          style="padding:10px 24px;font-size:11px;background:linear-gradient(135deg,var(--neon-cyan),#0077cc);">
+          ${isLoja?'🛍️ Quero comprar!':'📅 Quero agendar!'}
+        </button>
+      </div>
+    </div>`;
+  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+  document.body.appendChild(overlay);
+}
+
+async function confirmBizNegotiation(bizId, bizName, prodName, prodPrice, priceLabel, category, btn){
+  if(!CU){overlay.remove();return showToast('Faça login para negociar','error');}
+  btn.disabled=true; btn.textContent='⏳...';
+  // Create or open chat
+  let {data:chat} = await db.from('business_chats')
+    .select('*').eq('business_id',bizId).eq('customer_id',CU.id).maybeSingle();
+  if(!chat){
+    const {data:nc,error}=await db.from('business_chats')
+      .insert({business_id:bizId,customer_id:CU.id}).select().single();
+    if(error){btn.disabled=false;btn.textContent='Tentar novamente';return showToast('Erro: '+error.message,'error');}
+    chat=nc;
+  }
+  // Send initial negotiation message
+  const isLoja = category === 'loja';
+  const priceDisplay = prodPrice > 0
+    ? 'R$ '+Number(prodPrice).toFixed(2).replace('.',',')
+    : (priceLabel || 'Sob consulta');
+  const initMsg = isLoja
+    ? `🛍️ Olá! Tenho interesse em comprar: *${prodName}* (${priceDisplay}). Podemos negociar?`
+    : `📅 Olá! Gostaria de agendar o serviço: *${prodName}* (${priceDisplay}). Quando há disponibilidade?`;
+  await db.from('business_messages').insert({
+    chat_id:chat.id, sender_id:CU.id, content:initMsg
+  });
+  await db.from('business_chats').update({updated_at:new Date().toISOString()}).eq('id',chat.id);
+  // Close all overlays and go to chat
+  document.querySelectorAll('[style*="z-index:4000"],[data-biz-overlay]').forEach(el=>el.remove());
+  showToast(`✅ Mensagem enviada para ${bizName}!`,'success');
+  nav('businesses');
+  setTimeout(async ()=>{
+    const chatsTab=document.querySelector('#biz-page-tabs .ptab[data-tab="biz-chats"]');
+    if(chatsTab) switchBizTab(chatsTab);
+    setTimeout(()=>openBizChat(chat.id, bizName),400);
+  },300);
 }
 
 </script>
