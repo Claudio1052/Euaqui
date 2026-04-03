@@ -2840,7 +2840,7 @@ function renderComment(c,myVote,isPostOwner,postId){
     ${avHtml}
     <div class="cmt-bubble ${hiddenClass}">
       <div class="cmt-user">@${xss(prof.username||'user')}${isHidden?' · <span style="color:var(--neon-pink);font-size:9px;">oculto</span>':''}</div>
-      <div class="cmt-text">${xss(c.content)}</div>
+      <div class="cmt-text">${linkify(c.content)}</div>
       <div class="cmt-actions">
         <button class="cvbtn${myVote==='like'?' active-like':''}" onclick="voteCmt('${c.id}','like',this,'${postId}')">👍 <span>${likeCount>0?likeCount:''}</span></button>
         <button class="cvbtn cv-dis${myVote==='dislike'?' active-dis':''}" onclick="voteCmt('${c.id}','dislike',this,'${postId}')">👎 <span>${disCount>0?disCount:''}</span></button>
