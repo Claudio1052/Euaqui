@@ -786,19 +786,8 @@ body{
     }
     
     /* Chat window = full screen, slides in from right */
-    .chat-window{
-      position:absolute;
-      inset:0;
-      width:100%;
-      height:100%;
-      z-index:11;
-      transform:translateX(100%);
-      transition:transform .28s cubic-bezier(.4,0,.2,1);
-      display:flex !important;
-    }
-    .chat-window.chat-open{
-      transform:translateX(0);
-    }
+    
+    
   
     /* Sidebar header */
     .chat-sb-hdr{
@@ -5427,9 +5416,16 @@ function showChatSidebar(){
   if(sb)  sb.classList.remove('chat-hidden');
   if(win) win.classList.remove('chat-open');
   currentChatUser = null;
-  // Reset input bar
+  // Clear messages area and header
+  const msgsArea = document.getElementById('msgs-area');
+  if(msgsArea) msgsArea.innerHTML = '';
+  const hdr = document.getElementById('chat-win-hdr');
+  if(hdr) hdr.innerHTML = '<div style="color:var(--text-muted);font-size:12px;margin:auto;">Selecione uma conversa</div>';
+  // Hide input bar
   const inArea = document.getElementById('msg-in-area');
   if(inArea) inArea.style.display = 'none';
+  // Remove active from conversation list
+  document.querySelectorAll('.ci').forEach(ci=>ci.classList.remove('active'));
 }
 
 async function loadNotifTab(tabId){
