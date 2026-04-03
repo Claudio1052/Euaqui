@@ -6007,8 +6007,8 @@ async function loadMyBusiness(){
       <div class="dash-card"><div class="dash-num">${data.sales_done||0}</div><div class="dash-lbl">Vendas Concluídas</div></div>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-      <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);">📦 Produtos / Serviços</div>
-      <button class="tbtn" onclick="openAddProduct('${data.id}')">+ Adicionar</button>
+      <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);">📦 Produtos / Serviços <span style="color:var(--text-muted);font-size:9px;">(${(prods||[]).length}/10)</span></div>
+      <button class="tbtn" id="add-prod-btn" onclick="openAddProduct('${data.id}')">+ Adicionar</button>
     </div>
     <div class="prod-grid" id="my-prod-grid"></div>`;
 
@@ -6050,6 +6050,12 @@ function openBizForm(edit=false){
     document.getElementById('biz-city').value = bizCity;
     document.getElementById('biz-state').value = bizState;
     detectFormLocation();
+    // Warn if already has a business
+    if(myBusiness){
+      showToast(`Você já tem "${myBusiness.name}". Edite-o ou cancele primeiro para criar outro.`,'error');
+      closeBizForm();
+      return;
+    }
   }
 }
 
@@ -6085,6 +6091,16 @@ async function saveBusiness(){
   if(!name) return showToast('Digite o nome do negócio','error');
   if(!city) return showToast('Digite a cidade','error');
 
+  // ── Limite: 1 negócio por usuário ──
+  const editIdVal = document.getElementById('biz-edit-id').value;
+  if(!editIdVal){
+    // New business — check if user already has one
+    const {data:existing} = await db.from('businesses').select('id,name').eq('owner_id',CU.id).maybeSingle();
+    if(existing){
+      return showToast(`Você já tem um negócio cadastrado: "${existing.name}". Edite-o ou cancele para criar outro.`,'error');
+    }
+  }
+
   // Moderation check
   const desc = document.getElementById('biz-desc').value.trim();
   if(desc){ const mod=await moderateContent(name+' '+desc); if(!mod.allowed){showModerationError(mod.categories);return;} }
@@ -6117,19 +6133,58 @@ async function saveBusiness(){
 }
 
 // ── Produto ───────────────────────────────────────────────────────
-function openAddProduct(bizId){
-  const name  = prompt('Nome do produto/serviço:');
-  if(!name) return;
-  const price = prompt('Preço (ex: 49.90) ou deixe vazio para "Sob consulta":');
-  db.from('business_products').insert({
-    business_id: bizId,
-    name: name.trim(),
-    price: price ? parseFloat(price) : null,
-    price_label: price ? null : 'Sob consulta'
-  }).then(({error})=>{
-    if(error) showToast('Erro: '+error.message,'error');
-    else { showToast('Produto adicionado!','success'); loadMyBusiness(); }
+async function openAddProduct(bizId){
+  // Check product limit (max 10)
+  const {count} = await db.from('business_products')
+    .select('id',{count:'exact',head:true}).eq('business_id',bizId);
+  if(count >= 10){
+    return showToast('Limite de 10 produtos/serviços atingido. Remova um para adicionar outro.','error');
+  }
+
+  // Professional modal instead of prompt
+  const overlay = document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);z-index:3500;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.innerHTML=`
+    <div class="modal" style="max-width:400px;width:100%;">
+      <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);margin-bottom:16px;">📦 Adicionar Produto / Serviço</div>
+      <div style="font-size:10px;color:var(--text-muted);margin-bottom:12px;">Você tem ${count||0}/10 produtos cadastrados</div>
+      <div class="igrp"><label class="ilbl">Nome *</label>
+        <input class="ainput" id="prod-name-input" placeholder="Ex: Corte de cabelo, Notebook..."></div>
+      <div class="igrp"><label class="ilbl">Preço (R$)</label>
+        <input class="ainput" id="prod-price-input" type="number" step="0.01" placeholder="Deixe vazio para 'Sob consulta'"></div>
+      <div class="igrp"><label class="ilbl">Categoria</label>
+        <input class="ainput" id="prod-cat-input" placeholder="Ex: Eletrônicos, Cabelo, Roupa..."></div>
+      <div class="igrp"><label class="ilbl">Descrição breve</label>
+        <input class="ainput" id="prod-desc-input" placeholder="Opcional..."></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px;">
+        <button class="tbtn" onclick="this.closest('[style*=fixed]').remove()">Cancelar</button>
+        <button class="post-btn" onclick="saveNewProduct('${bizId}',this)" style="font-size:10px;">✅ Adicionar</button>
+      </div>
+    </div>`;
+  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+  document.body.appendChild(overlay);
+  document.getElementById('prod-name-input')?.focus();
+}
+
+async function saveNewProduct(bizId, btn){
+  const name = document.getElementById('prod-name-input')?.value.trim();
+  if(!name) return showToast('Digite o nome do produto','error');
+  const price = parseFloat(document.getElementById('prod-price-input')?.value||'')||null;
+  const category = document.getElementById('prod-cat-input')?.value.trim()||'';
+  const desc = document.getElementById('prod-desc-input')?.value.trim()||'';
+  btn.disabled=true; btn.textContent='⏳...';
+  // Moderation
+  if(name){ const mod=await moderateContent(name+' '+desc); if(!mod.allowed){showModerationError(mod.categories);btn.disabled=false;btn.textContent='✅ Adicionar';return;} }
+  const {error} = await db.from('business_products').insert({
+    business_id:bizId,
+    name, price, category,
+    description: desc||null,
+    price_label: price?null:'Sob consulta'
   });
+  if(error){ btn.disabled=false; btn.textContent='✅ Adicionar'; return showToast('Erro: '+error.message,'error'); }
+  showToast('✅ Produto adicionado!','success');
+  btn.closest('[style*=fixed]').remove();
+  loadMyBusiness();
 }
 
 async function deleteProduct(prodId){
@@ -6598,6 +6653,7 @@ function selectBizProduct(bizId, bizName, prodName, prodPrice, priceLabel, categ
     ? 'R$ '+Number(prodPrice).toFixed(2).replace('.',',')
     : (priceLabel || 'Sob consulta');
   const overlay = document.createElement('div');
+  overlay.dataset.bizSelect='1';
   overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);backdrop-filter:blur(8px);z-index:4000;display:flex;align-items:center;justify-content:center;padding:16px;';
   overlay.innerHTML=`
     <div class="modal" style="max-width:400px;width:100%;text-align:center;">
@@ -6621,38 +6677,59 @@ function selectBizProduct(bizId, bizName, prodName, prodPrice, priceLabel, categ
 }
 
 async function confirmBizNegotiation(bizId, bizName, prodName, prodPrice, priceLabel, category, btn){
-  if(!CU){overlay.remove();return showToast('Faça login para negociar','error');}
-  btn.disabled=true; btn.textContent='⏳...';
-  // Create or open chat
-  let {data:chat} = await db.from('business_chats')
-    .select('*').eq('business_id',bizId).eq('customer_id',CU.id).maybeSingle();
-  if(!chat){
-    const {data:nc,error}=await db.from('business_chats')
-      .insert({business_id:bizId,customer_id:CU.id}).select().single();
-    if(error){btn.disabled=false;btn.textContent='Tentar novamente';return showToast('Erro: '+error.message,'error');}
-    chat=nc;
+  if(!CU){
+    // Close the select overlay first (btn's parent)
+    btn.closest('[style*="position:fixed"]')?.remove();
+    return showToast('Faça login para negociar','error');
   }
-  // Send initial negotiation message
-  const isLoja = category === 'loja';
-  const priceDisplay = prodPrice > 0
-    ? 'R$ '+Number(prodPrice).toFixed(2).replace('.',',')
-    : (priceLabel || 'Sob consulta');
-  const initMsg = isLoja
-    ? `🛍️ Olá! Tenho interesse em comprar: *${prodName}* (${priceDisplay}). Podemos negociar?`
-    : `📅 Olá! Gostaria de agendar o serviço: *${prodName}* (${priceDisplay}). Quando há disponibilidade?`;
-  await db.from('business_messages').insert({
-    chat_id:chat.id, sender_id:CU.id, content:initMsg
-  });
-  await db.from('business_chats').update({updated_at:new Date().toISOString()}).eq('id',chat.id);
-  // Close all overlays and go to chat
-  document.querySelectorAll('[style*="z-index:4000"],[data-biz-overlay]').forEach(el=>el.remove());
-  showToast(`✅ Mensagem enviada para ${bizName}!`,'success');
-  nav('businesses');
-  setTimeout(async ()=>{
-    const chatsTab=document.querySelector('#biz-page-tabs .ptab[data-tab="biz-chats"]');
-    if(chatsTab) switchBizTab(chatsTab);
-    setTimeout(()=>openBizChat(chat.id, bizName),400);
-  },300);
+  btn.disabled=true;
+  btn.textContent='⏳ Enviando...';
+
+  try{
+    // Create or get existing chat
+    let {data:chat} = await db.from('business_chats')
+      .select('*').eq('business_id',bizId).eq('customer_id',CU.id).maybeSingle();
+    if(!chat){
+      const {data:nc,error}=await db.from('business_chats')
+        .insert({business_id:bizId,customer_id:CU.id}).select().single();
+      if(error) throw new Error(error.message);
+      chat=nc;
+    }
+
+    // Send initial message
+    const isLoja = category === 'loja';
+    const priceDisplay = prodPrice > 0
+      ? 'R$ '+Number(prodPrice).toFixed(2).replace('.',',')
+      : (priceLabel || 'Sob consulta');
+    const initMsg = isLoja
+      ? `🛍️ Olá! Tenho interesse em comprar: *${prodName}* (${priceDisplay}). Podemos negociar?`
+      : `📅 Olá! Gostaria de agendar o serviço: *${prodName}* (${priceDisplay}). Quando há disponibilidade?`;
+
+    await db.from('business_messages').insert({
+      chat_id:chat.id, sender_id:CU.id, content:initMsg
+    });
+    await db.from('business_chats').update({updated_at:new Date().toISOString()}).eq('id',chat.id);
+
+    // Close ALL overlays (product select + biz detail)
+    document.querySelectorAll('[data-biz-overlay],[data-biz-select]').forEach(el=>el.remove());
+    showToast('✅ Mensagem enviada! Indo para o chat...','success');
+
+    // Navigate to businesses > chats tab > open this chat
+    nav('businesses');
+    await new Promise(r=>setTimeout(r,400));
+    const chatsTab = document.querySelector('#biz-page-tabs .ptab[data-tab="biz-chats"]');
+    if(chatsTab){ switchBizTab(chatsTab); }
+    await new Promise(r=>setTimeout(r,500));
+    // Load chats first so the list is populated
+    await loadBizChats();
+    await new Promise(r=>setTimeout(r,200));
+    openBizChat(chat.id, bizName);
+
+  } catch(e){
+    btn.disabled=false;
+    btn.textContent='Tentar novamente';
+    showToast('Erro: '+e.message,'error');
+  }
 }
 
 </script>
