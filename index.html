@@ -1700,6 +1700,34 @@ body.day-mode .bnav-btn.active .bni{
   z-index:9000;
 }
 .emoji-picker.open{display:flex;}
+
+/* ===== YOUTUBE EMBED ===== */
+.yt-embed-wrap{
+  position:relative;
+  width:100%;
+  padding-bottom:56.25%; /* 16:9 */
+  height:0;
+  border-radius:12px;
+  overflow:hidden;
+  margin:10px 0 4px;
+  background:#000;
+}
+.yt-embed{
+  position:absolute;
+  top:0; left:0;
+  width:100%; height:100%;
+  border:none;
+  border-radius:12px;
+}
+.yt-link{
+  font-size:10px;
+  color:var(--text-muted);
+  word-break:break-all;
+  display:block;
+  margin-bottom:6px;
+}
+.yt-link:hover{ color:var(--neon-cyan); }
+body.day-mode .yt-link{ color:#6b7280; }
 </style>
 </head>
 <body>
@@ -3804,7 +3832,7 @@ async function loadProfilePage(userId){
         const chat = document.createElement('button'); chat.className='post-btn';
         chat.style.cssText='background:none;border:1px solid var(--border-glow);color:var(--neon-cyan);';
         chat.textContent='💬 Chat';
-        chat.onclick=()=>{ openHomeChatWith(userId,profile.username||'',av); nav('messages'); };
+        chat.onclick=()=>{ nav('messages'); setTimeout(()=>openChat(userId,profile.username||'',av),300); };
         btns.appendChild(chat);
       }
       pbar.appendChild(btns);
@@ -3976,6 +4004,11 @@ async function openChat(userId,username,avatarUrl){
   currentChatUser={id:userId,username,avatar:avatarUrl};
   document.getElementById('msg-badge')?.remove();
   document.querySelectorAll('.ci').forEach(c=>c.classList.remove('active'));
+  document.getElementById('ci-'+userId)?.classList.add('active');
+  // Load conversations if list is empty
+  const chatList = document.getElementById('chat-list');
+  if(chatList && !chatList.children.length) await loadConversations();
+  // Highlight this user in the list
   document.getElementById('ci-'+userId)?.classList.add('active');
 
   // Build chat window header
@@ -4749,7 +4782,7 @@ async function showPostAuthorProfile(userId, triggerEl){
   chatBtn.className='post-btn';
   chatBtn.style.cssText='background:none;border:1px solid var(--border-glow);color:var(--neon-cyan);font-size:10px;padding:7px 14px;';
   chatBtn.textContent='💬 Chat';
-  chatBtn.onclick=()=>{openHomeChatWith(userId,p.username||'',getAvatar(p));popup.remove();overlay.remove();};
+  chatBtn.onclick=()=>{popup.remove();overlay.remove();nav('messages');setTimeout(()=>openChat(userId,p.username||'',getAvatar(p)),300);};
   btnRow.appendChild(chatBtn);
   inner.appendChild(btnRow);
 
@@ -4964,7 +4997,36 @@ function vPass(){const v=document.getElementById('r-pass').value;const el=docume
 
 // ===== UTILS =====
 function xss(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
-function linkify(t){return xss(t).replace(/@(\w+)/g,'<span class="mention" onclick="searchUser(\'$1\')">@$1</span>').replace(/#(\w+)/g,'<span class="htag">#$1</span>');}
+function getYouTubeId(url){
+  try{
+    const m = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+    return m ? m[1] : null;
+  }catch(e){ return null; }
+}
+
+function linkify(t){
+  const safe = xss(t);
+  // Detect YouTube links and replace with embed player
+  const ytRegex = /https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})[^\s]*/g;
+  let result = safe.replace(ytRegex, (match, videoId)=>{
+    return `<div class="yt-embed-wrap">
+      <iframe class="yt-embed" 
+        src="https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1"
+        frameborder="0"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        allowfullscreen
+        loading="lazy"
+        title="YouTube video">
+      </iframe>
+    </div>
+    <a class="yt-link" href="${match}" target="_blank" rel="noopener">${match}</a>`;
+  });
+  // Mentions and hashtags
+  result = result
+    .replace(/@(\w+)/g,'<span class="mention" onclick="searchUser(\'$1\')">@$1</span>')
+    .replace(/#(\w+)/g,'<span class="htag">#$1</span>');
+  return result;
+}
 function searchUser(u){nav('explore');document.getElementById('exp-search').value=u;doSearch();}
 function timeAgo(d){if(!d)return'';const s=Math.floor((Date.now()-new Date(d))/1000);if(s<60)return'agora';const m=Math.floor(s/60);if(m<60)return m+'min';const h=Math.floor(m/60);if(h<24)return h+'h';const dy=Math.floor(h/24);if(dy<7)return dy+'d';return new Date(d).toLocaleDateString('pt-BR');}
 function skeletons(n,h=''){return Array.from({length:n},()=>`<div class="post-card"><div style="display:flex;gap:10px;margin-bottom:12px;"><div class="sk" style="width:42px;height:${h||'42px'};border-radius:50%;flex-shrink:0;"></div><div style="flex:1;"><div class="sk" style="height:11px;width:130px;margin-bottom:6px;"></div><div class="sk" style="height:9px;width:70px;"></div></div></div><div class="sk" style="height:12px;margin-bottom:6px;"></div><div class="sk" style="height:12px;width:70%;"></div></div>`).join('');}
