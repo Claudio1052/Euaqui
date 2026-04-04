@@ -6932,9 +6932,9 @@ async function confirmarDivulgacao(bizId, prodName, prodPrice, imgUrl, priceLabe
   const {data:post, error} = await db.from('posts').insert({
     user_id: CU.id,
     content: postText,
-    type: 'biz_promo',
-    media_url: imgUrl||null,
-    media_type: imgUrl?'image':null,
+    type: imgUrl ? 'image' : 'text',
+    media_urls: imgUrl ? [imgUrl] : [],
+    media_types: imgUrl ? ['image'] : [],
     visibility: 'public'
   }).select().maybeSingle();
 
