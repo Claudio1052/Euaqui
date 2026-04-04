@@ -2371,6 +2371,28 @@ body.day-mode .biz-stat-l{color:#9ca3af;}
       </div>
       <form onsubmit="return false;">
         <input type="hidden" id="biz-edit-id">
+        
+        <!-- Logo e Banner -->
+        <div style="margin-bottom:16px;">
+          <div style="font-size:11px;color:var(--neon-cyan);font-family:Silkscreen,monospace;margin-bottom:10px;">🖼️ Identidade Visual</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div class="igrp" style="margin:0;">
+              <label class="ilbl">Logo da loja</label>
+              <div id="biz-logo-preview" style="width:70px;height:70px;border-radius:12px;border:2px dashed var(--border-glow);display:flex;align-items:center;justify-content:center;font-size:28px;cursor:pointer;margin:6px 0;background:var(--glass);" onclick="document.getElementById('biz-logo-file').click()">🏪</div>
+              <input type="file" id="biz-logo-file" accept="image/*" style="display:none" onchange="previewBizImage(this,'biz-logo-preview','biz-logo-url')">
+              <input type="hidden" id="biz-logo-url">
+              <button type="button" class="tbtn" style="font-size:9px;width:100%;" onclick="document.getElementById('biz-logo-file').click()">📷 Escolher logo</button>
+            </div>
+            <div class="igrp" style="margin:0;">
+              <label class="ilbl">Banner (capa)</label>
+              <div id="biz-banner-preview" style="width:100%;height:70px;border-radius:8px;border:2px dashed var(--border-glow);display:flex;align-items:center;justify-content:center;font-size:22px;cursor:pointer;margin:6px 0;background:var(--glass);" onclick="document.getElementById('biz-banner-file').click()">🌅</div>
+              <input type="file" id="biz-banner-file" accept="image/*" style="display:none" onchange="previewBizImage(this,'biz-banner-preview','biz-banner-url')">
+              <input type="hidden" id="biz-banner-url">
+              <button type="button" class="tbtn" style="font-size:9px;width:100%;" onclick="document.getElementById('biz-banner-file').click()">📷 Escolher banner</button>
+            </div>
+          </div>
+        </div>
+
         <div class="igrp"><label class="ilbl">Tipo *</label>
           <select class="ainput" id="biz-type">
             <option value="loja">🛍️ Loja (venda de produtos)</option>
@@ -2659,6 +2681,7 @@ function showApp(){
   setTimeout(()=>{ try{ updateVisitCounter(); }catch(e){} }, 500);
   setTimeout(()=>{ try{ updateLevel(); }catch(e){} }, 600);
   setTimeout(()=>{ try{ initTheme(); }catch(e){} }, 50);
+  setTimeout(()=>{ try{ checkBizInviteUrl(); }catch(e){} }, 1200);
 }
 function showAuth(){
   hideLS();
@@ -5996,10 +6019,13 @@ async function loadMyBusiness(){
   const {data:prods} = await db.from('business_products').select('*').eq('business_id',data.id).eq('available',true);
 
   el.innerHTML = `
-    <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
       <div style="font-family:Silkscreen,monospace;font-size:16px;color:var(--neon-cyan);">🏪 ${xss(data.name)}</div>
       <span style="font-size:10px;color:var(--neon-yellow);">${xss(data.segment)}</span>
-      <button class="tbtn" onclick="openBizForm(true)" style="margin-left:auto;">✏️ Editar</button>
+      <div style="display:flex;gap:6px;margin-left:auto;">
+        <button class="tbtn" style="font-size:9px;color:var(--neon-pink);" onclick="gerarLinkConvite('${data.id}','${xss(data.name)}')">📣 Convite</button>
+        <button class="tbtn" style="font-size:9px;" onclick="openBizForm(true)">✏️ Editar</button>
+      </div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px;">
       <div class="dash-card"><div class="dash-num">${data.followers_count||0}</div><div class="dash-lbl">Seguidores</div></div>
@@ -6022,7 +6048,10 @@ async function loadMyBusiness(){
         ${p.image_url?`<img class="prod-img" src="${xss(p.image_url)}">`:'<div class="prod-img" style="display:flex;align-items:center;justify-content:center;font-size:30px;">📦</div>'}
         <div class="prod-name">${xss(p.name)}</div>
         <div class="prod-price">${p.price?'R$ '+Number(p.price).toFixed(2):xss(p.price_label||'Sob consulta')}</div>
-        <button class="tbtn" style="margin-top:6px;width:100%;font-size:9px;" onclick="deleteProduct('${p.id}')">🗑 Remover</button>`;
+        <div style="display:flex;gap:4px;margin-top:6px;">
+          <button class="tbtn" style="flex:1;font-size:9px;color:var(--neon-cyan);padding:5px;" onclick="divulgarProduto('${data.id}','${xss(p.name)}',${p.price||0},'${xss(p.image_url||'')}','${xss(p.price_label||'')}')">📢 Divulgar</button>
+          <button class="tbtn" style="font-size:9px;padding:5px;" onclick="deleteProduct('${p.id}')">🗑</button>
+        </div>`;
       pg.appendChild(pc);
     });
   }
@@ -6045,6 +6074,17 @@ function openBizForm(edit=false){
     document.getElementById('biz-website').value = b.website||'';
     document.getElementById('biz-city').value = b.city||'';
     document.getElementById('biz-state').value = b.state||'';
+    // Load existing logo/banner previews
+    if(b.logo_url){
+      document.getElementById('biz-logo-url').value = b.logo_url;
+      const lp=document.getElementById('biz-logo-preview');
+      if(lp) lp.innerHTML=`<img src="${xss(b.logo_url)}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">`;
+    }
+    if(b.banner_url){
+      document.getElementById('biz-banner-url').value = b.banner_url;
+      const bp=document.getElementById('biz-banner-preview');
+      if(bp) bp.innerHTML=`<img src="${xss(b.banner_url)}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">`;
+    }
   } else {
     document.getElementById('biz-edit-id').value = '';
     document.getElementById('biz-city').value = bizCity;
@@ -6117,6 +6157,8 @@ async function saveBusiness(){
     city,
     state:     document.getElementById('biz-state').value.trim().toUpperCase().slice(0,2),
     lat: bizLat, lng: bizLng,
+    logo_url:   document.getElementById('biz-logo-url')?.value || null,
+    banner_url: document.getElementById('biz-banner-url')?.value || null,
   };
 
   const editId = document.getElementById('biz-edit-id').value;
@@ -6148,6 +6190,14 @@ async function openAddProduct(bizId){
     <div class="modal" style="max-width:400px;width:100%;">
       <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);margin-bottom:16px;">📦 Adicionar Produto / Serviço</div>
       <div style="font-size:10px;color:var(--text-muted);margin-bottom:12px;">Você tem ${count||0}/10 produtos cadastrados</div>
+      <div class="igrp"><label class="ilbl">Foto do produto/serviço</label>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+          <div id="prod-img-preview" style="width:60px;height:60px;border-radius:8px;border:2px dashed var(--border-glow);display:flex;align-items:center;justify-content:center;font-size:24px;cursor:pointer;background:var(--glass);flex-shrink:0;" onclick="document.getElementById('prod-img-file').click()">📦</div>
+          <button type="button" class="tbtn" style="font-size:9px;" onclick="document.getElementById('prod-img-file').click()">📷 Escolher foto</button>
+          <input type="file" id="prod-img-file" accept="image/*" style="display:none" onchange="previewBizImage(this,'prod-img-preview','prod-img-url')">
+          <input type="hidden" id="prod-img-url">
+        </div>
+      </div>
       <div class="igrp"><label class="ilbl">Nome *</label>
         <input class="ainput" id="prod-name-input" placeholder="Ex: Corte de cabelo, Notebook..."></div>
       <div class="igrp"><label class="ilbl">Preço (R$)</label>
@@ -6179,7 +6229,8 @@ async function saveNewProduct(bizId, btn){
     business_id:bizId,
     name, price, category,
     description: desc||null,
-    price_label: price?null:'Sob consulta'
+    price_label: price?null:'Sob consulta',
+    image_url: document.getElementById('prod-img-url')?.value||null
   });
   if(error){ btn.disabled=false; btn.textContent='✅ Adicionar'; return showToast('Erro: '+error.message,'error'); }
   showToast('✅ Produto adicionado!','success');
@@ -6731,6 +6782,262 @@ async function confirmBizNegotiation(bizId, bizName, prodName, prodPrice, priceL
     showToast('Erro: '+e.message,'error');
   }
 }
+
+
+// ================================================================
+// NEGÓCIOS — Recursos Avançados
+// 1. Preview de imagem (logo, banner, produto)
+// 2. Upload de imagem para Storage
+// 3. Divulgar produto (marketing, 5x/dia para seguidores)
+// 4. Notificações para seguidores
+// 5. Link de convite / propaganda
+// ================================================================
+
+// ── 1. Preview de imagem local ───────────────────────────────────
+function previewBizImage(input, previewId, hiddenId){
+  const file = input.files[0];
+  if(!file) return;
+  const maxMB = 5;
+  if(file.size > maxMB*1024*1024) return showToast(`Imagem muito grande (máx. ${maxMB}MB)`,'error');
+  const reader = new FileReader();
+  reader.onload = e=>{
+    const prev = document.getElementById(previewId);
+    if(prev){
+      prev.innerHTML = `<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">`;
+      prev.style.border = '2px solid var(--neon-cyan)';
+    }
+    // Store file reference for upload
+    window._bizImgFiles = window._bizImgFiles||{};
+    window._bizImgFiles[hiddenId] = file;
+  };
+  reader.readAsDataURL(file);
+}
+
+// ── Upload de imagem para businesses bucket ──────────────────────
+async function uploadBizImage(fieldId, folder){
+  const file = window._bizImgFiles?.[fieldId];
+  if(!file) return document.getElementById(fieldId)?.value || null;
+  const ext = file.name.split('.').pop().toLowerCase();
+  const path = `${folder}/${CU.id}_${Date.now()}.${ext}`;
+  const {error, data} = await db.storage.from('businesses').upload(path, file, {upsert:true, contentType:file.type});
+  if(error){ showToast('Erro upload imagem: '+error.message,'error'); return null; }
+  const {data:{publicUrl}} = db.storage.from('businesses').getPublicUrl(path);
+  return publicUrl;
+}
+
+// ── Patch saveBusiness to upload images ─────────────────────────
+const _origSaveBusiness = saveBusiness;
+saveBusiness = async function(){
+  // Upload logo and banner before saving
+  if(window._bizImgFiles?.['biz-logo-url']){
+    showToast('⏳ Enviando logo...','');
+    const url = await uploadBizImage('biz-logo-url','logos');
+    if(url) document.getElementById('biz-logo-url').value = url;
+  }
+  if(window._bizImgFiles?.['biz-banner-url']){
+    showToast('⏳ Enviando banner...','');
+    const url = await uploadBizImage('biz-banner-url','banners');
+    if(url) document.getElementById('biz-banner-url').value = url;
+  }
+  await _origSaveBusiness();
+};
+
+// ── Patch saveNewProduct to upload image ─────────────────────────
+const _origSaveNewProduct = saveNewProduct;
+saveNewProduct = async function(bizId, btn){
+  if(window._bizImgFiles?.['prod-img-url']){
+    btn.textContent='⏳ Enviando foto...'; btn.disabled=true;
+    const url = await uploadBizImage('prod-img-url','products');
+    if(url) document.getElementById('prod-img-url').value = url;
+    btn.textContent='✅ Adicionar'; btn.disabled=false;
+  }
+  await _origSaveNewProduct(bizId, btn);
+};
+
+// ── Patch saveBusiness payload to include logo/banner ────────────
+// Override the actual insert/update inside saveBusiness by monkey-patching
+// the payload construction — done via the hidden inputs added to the form
+
+// ── 2. Divulgar produto (marketing) ──────────────────────────────
+const BIZ_PROMO_LIMIT = 5;
+
+async function divulgarProduto(bizId, prodName, prodPrice, imgUrl, priceLabel){
+  if(!CU) return showToast('Faça login','error');
+  if(!myBusiness || myBusiness.id !== bizId) return showToast('Acesso negado','error');
+
+  // Check daily limit (count posts with type='biz_promo' today)
+  const today = new Date(); today.setHours(0,0,0,0);
+  const {count} = await db.from('posts')
+    .select('id',{count:'exact',head:true})
+    .eq('user_id',CU.id)
+    .eq('type','biz_promo')
+    .gte('created_at', today.toISOString());
+  if((count||0) >= BIZ_PROMO_LIMIT){
+    return showToast(`Limite de ${BIZ_PROMO_LIMIT} divulgações por dia atingido. Tente amanhã!`,'error');
+  }
+
+  // Check followers
+  const {data:followers} = await db.from('business_followers')
+    .select('user_id').eq('business_id',bizId);
+  if(!followers?.length){
+    return showToast('Sua loja ainda não tem seguidores para divulgar.','error');
+  }
+
+  // Show preview modal
+  const priceDisplay = prodPrice > 0
+    ? 'R$ '+Number(prodPrice).toFixed(2).replace('.',',')
+    : (priceLabel || 'Sob consulta');
+  const overlay = document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(8px);z-index:4000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.innerHTML=`
+    <div class="modal" style="max-width:420px;width:100%;">
+      <div style="font-family:Silkscreen,monospace;font-size:12px;color:var(--neon-cyan);margin-bottom:14px;">📢 Divulgar produto/serviço</div>
+      <div style="background:var(--bg-mid);border:1px solid var(--border-glow);border-radius:12px;padding:14px;margin-bottom:14px;">
+        ${imgUrl?`<img src="${xss(imgUrl)}" style="width:100%;height:140px;object-fit:cover;border-radius:8px;margin-bottom:10px;">`:''}
+        <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--text-light);margin-bottom:4px;">${xss(prodName)}</div>
+        <div style="font-family:VT323,monospace;font-size:24px;color:var(--neon-cyan);">${priceDisplay}</div>
+        <div style="font-size:10px;color:var(--neon-yellow);margin-top:4px;">🏪 ${xss(myBusiness.name)}</div>
+      </div>
+      <div class="igrp">
+        <label class="ilbl">Mensagem personalizada (opcional)</label>
+        <textarea class="ainput" id="promo-msg" rows="2" placeholder="Ex: Promoção especial! Estoque limitado..." style="resize:none;font-size:11px;"></textarea>
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);margin-bottom:12px;">
+        📊 ${count||0}/${BIZ_PROMO_LIMIT} divulgações hoje · 👥 Será enviado para ${followers.length} seguidor(es)
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button class="tbtn" onclick="this.closest('[style*=fixed]').remove()">Cancelar</button>
+        <button class="post-btn" style="font-size:10px;" 
+          onclick="confirmarDivulgacao('${bizId}','${xss(prodName)}',${prodPrice},'${xss(imgUrl||'')}','${xss(priceLabel||'')}',this)">
+          📢 Divulgar agora
+        </button>
+      </div>
+    </div>`;
+  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+  document.body.appendChild(overlay);
+}
+
+async function confirmarDivulgacao(bizId, prodName, prodPrice, imgUrl, priceLabel, btn){
+  btn.disabled=true; btn.textContent='⏳ Publicando...';
+  const msg = document.getElementById('promo-msg')?.value.trim()||'';
+  const priceDisplay = prodPrice > 0
+    ? 'R$ '+Number(prodPrice).toFixed(2).replace('.',',')
+    : (priceLabel||'Sob consulta');
+  const postText = `🏪 *${myBusiness.name}*\n📦 ${prodName} — ${priceDisplay}${msg?'\n\n'+msg:''}`;
+
+  // Moderate content
+  if(msg){ const mod=await moderateContent(msg); if(!mod.allowed){showModerationError(mod.categories);btn.disabled=false;btn.textContent='📢 Divulgar agora';return;} }
+
+  // Create post with type biz_promo
+  const {data:post, error} = await db.from('posts').insert({
+    user_id: CU.id,
+    content: postText,
+    type: 'biz_promo',
+    media_url: imgUrl||null,
+    media_type: imgUrl?'image':null,
+    visibility: 'public'
+  }).select().maybeSingle();
+
+  if(error){ btn.disabled=false; btn.textContent='📢 Divulgar'; return showToast('Erro: '+error.message,'error'); }
+
+  // Send notification to all followers
+  const {data:followers} = await db.from('business_followers')
+    .select('user_id').eq('business_id',bizId);
+  if(followers?.length){
+    const notifs = followers
+      .filter(f=>f.user_id !== CU.id)
+      .map(f=>({
+        user_id:   f.user_id,
+        actor_id:  CU.id,
+        type:      'biz_promo',
+        content:   `🏪 ${myBusiness.name} divulgou: ${prodName} por ${priceDisplay}`,
+        read:      false
+      }));
+    if(notifs.length) await db.from('notifications').insert(notifs);
+  }
+
+  btn.closest('[style*=fixed]').remove();
+  showToast(`✅ Divulgado para ${followers?.length||0} seguidores!`,'success');
+  // Refresh feed
+  cachedPosts={};cachedPostIds=new Set();lastFeedLoad=0;
+  if(document.getElementById('page-home')?.classList.contains('active')) loadFeed();
+}
+
+// ── 3. Notificar seguidores (promoção manual) ────────────────────
+async function notifyBizFollowers(bizId, msg){
+  if(!CU||!myBusiness) return;
+  const {data:followers} = await db.from('business_followers')
+    .select('user_id').eq('business_id',bizId);
+  if(!followers?.length) return;
+  const notifs = followers
+    .filter(f=>f.user_id!==CU.id)
+    .map(f=>({user_id:f.user_id, actor_id:CU.id, type:'biz_promo', content:msg, read:false}));
+  if(notifs.length) await db.from('notifications').insert(notifs);
+}
+
+// ── 4. Link de convite / propaganda ──────────────────────────────
+function gerarLinkConvite(bizId, bizName){
+  // Create shareable URL that opens the app and shows the business
+  const baseUrl = window.location.origin + window.location.pathname;
+  const url = `${baseUrl}?biz=${bizId}`;
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(8px);z-index:4000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.innerHTML=`
+    <div class="modal" style="max-width:440px;width:100%;text-align:center;">
+      <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);margin-bottom:4px;">📣 Convite / Propaganda</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;">Compartilhe este link para convidar pessoas a seguirem sua loja</div>
+      
+      <!-- Card preview do convite -->
+      <div style="background:linear-gradient(135deg,var(--bg-mid),rgba(0,255,204,.06));border:1px solid var(--border-glow);border-radius:14px;padding:18px;margin-bottom:16px;">
+        <div style="font-size:32px;margin-bottom:8px;">${myBusiness?.category==='loja'?'🛍️':'🔧'}</div>
+        <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-cyan);margin-bottom:4px;">${xss(bizName)}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">${xss(myBusiness?.segment||'')} · ${xss(myBusiness?.city||'')}</div>
+        <div style="font-size:12px;color:var(--text-light);margin-bottom:14px;">👆 Clique para seguir e ficar por dentro das novidades!</div>
+        <div style="background:rgba(0,0,0,.3);border:1px solid var(--border-glow);border-radius:8px;padding:8px;font-size:10px;color:var(--neon-cyan);word-break:break-all;cursor:pointer;" onclick="copyBizLink('${url}')" id="biz-invite-url">${url}</div>
+      </div>
+
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+        <button class="post-btn" onclick="copyBizLink('${url}')" style="font-size:10px;">📋 Copiar link</button>
+        <button class="post-btn" onclick="shareBizLink('${url}','${xss(bizName)}')" style="font-size:10px;background:linear-gradient(135deg,#25d366,#128c7e);">📱 Compartilhar</button>
+        <button class="tbtn" onclick="this.closest('[style*=fixed]').remove()">Fechar</button>
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:12px;">Ao acessar o link, a pessoa verá sua loja e poderá seguir.</div>
+    </div>`;
+  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+  document.body.appendChild(overlay);
+}
+
+function copyBizLink(url){
+  if(navigator.clipboard){ navigator.clipboard.writeText(url).then(()=>showToast('✅ Link copiado!','success')); }
+  else {
+    const ta=document.createElement('textarea');ta.value=url;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+    showToast('Link copiado!','success');
+  }
+}
+
+function shareBizLink(url, name){
+  if(navigator.share){
+    navigator.share({title:`Siga ${name} no EuAqui`,text:`Confira ${name} no EuAqui e siga para receber novidades!`,url});
+  } else { copyBizLink(url); }
+}
+
+// ── Handle biz invite URL on load ────────────────────────────────
+function checkBizInviteUrl(){
+  const params = new URLSearchParams(window.location.search);
+  const bizId = params.get('biz');
+  if(bizId && CU){
+    // Navigate to businesses page and open this business
+    setTimeout(async ()=>{
+      nav('businesses');
+      await new Promise(r=>setTimeout(r,600));
+      const {data:biz} = await db.from('businesses').select('*').eq('id',bizId).maybeSingle();
+      if(biz) openBizDetail(biz);
+    }, 800);
+  }
+}
+
 
 </script>
 </body>
