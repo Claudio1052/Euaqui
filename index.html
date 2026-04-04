@@ -3028,28 +3028,14 @@ async function updateCommentCounts(postIds){
 
 function renderPost(post,rxCounts={},myRx=''){
   const prof=post.profiles||{};
-
-  // ── Detectar post de loja (BIZ_PROMO) ──
-  let bizMeta = null;
-  let displayContent = post.content||'';
-  const bizMatch = (post.content||'').match(/^\[BIZ_PROMO:([^:]+):([^:]+):([^\]]*)\][\s\S]?/);
-  if(bizMatch){
-    bizMeta = { id:bizMatch[1], name:bizMatch[2].replace(/\|/g,':'), logo:bizMatch[3] };
-    displayContent = (post.content||'').replace(/^\[BIZ_PROMO:[^\]]+\][\s\S]?/,'');
-  }
-
-  // Avatar e nome — usa identidade da loja se for BIZ_PROMO
-  const avUrl = bizMeta?.logo || prof.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'user');
-  const displayName = bizMeta?.name || prof.full_name||prof.username||'Usuário';
-  const displayHandle = bizMeta ? `🏪 ${bizMeta.name}` : `@${prof.username||'user'}`;
-  const avBorderColor = bizMeta ? 'var(--neon-yellow)' : 'var(--neon-pink)';
-  const avHtml='<img src="'+xss(avUrl)+'" data-uid="'+post.user_id+'" data-fb="https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u')+'" style="width:42px;height:42px;border-radius:'+(bizMeta?'10px':'50%')+';object-fit:cover;border:2px solid '+(bizMeta?'rgba(255,204,0,.5)':'rgba(0,255,204,.25)')+';flex-shrink:0;cursor:pointer;" onclick="showPostAuthorProfile(this.dataset.uid,null)" onerror="this.src=this.dataset.fb">'; 
+  // Avatar seguro — usa apenas avatar_url (sem avatar_type/retro_icon que podem não existir na tabela)
+  const avUrl=prof.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'user');
+  const avHtml='<img src="'+xss(avUrl)+'" data-uid="'+post.user_id+'" data-fb="https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u')+'" style="width:42px;height:42px;border-radius:50%;object-fit:cover;border:2px solid rgba(0,255,204,.25);flex-shrink:0;cursor:pointer;" onclick="showPostAuthorProfile(this.dataset.uid,null)" onerror="this.src=this.dataset.fb">'; 
   const time=timeAgo(post.created_at);
-  const content=linkify(displayContent);
+  const content=linkify(post.content||'');
   // Visibilidade (coluna pode não existir)
   const vis=post.visibility||'public';
   const visBadge=vis==='friends'?`<span class="vis-badge vis-fri">👥 Amigos</span>`:vis==='private'?`<span class="vis-badge vis-prv">🔒 Privado</span>`:`<span class="vis-badge vis-pub">🌍 Público</span>`;
-  if(bizMeta) visBadge='<span style="background:rgba(255,204,0,.15);color:var(--neon-yellow);border:1px solid rgba(255,204,0,.3);border-radius:6px;font-size:9px;padding:2px 7px;">🏪 Publicidade</span>';
   const REACTIONS=['👍','❤️','😂','😮','😢'];
   const rxHtml=REACTIONS.map(r=>{
     const cnt=rxCounts[r]||0;
@@ -3065,8 +3051,8 @@ function renderPost(post,rxCounts={},myRx=''){
     <div class="ph">
       ${avHtml}
       <div class="pmeta">
-        <div class="pun" style="cursor:pointer;" data-uid="${post.user_id}" onclick="${bizMeta?`openBizById('${bizMeta?.id||''}')`:`showPostAuthorProfile('${post.user_id}',null)`}">${xss(displayName)}</div>
-        <div class="pt"><span>${xss(displayHandle)}</span> · ${time} ${visBadge}</div>
+        <div class="pun" style="cursor:pointer;" data-uid="${post.user_id}" onclick="showPostAuthorProfile(this.dataset.uid,null)">${xss(prof.full_name||prof.username||'Usuário')}</div>
+        <div class="pt"><span>@${xss(prof.username||'user')}</span> · ${time} ${visBadge}</div>
       </div>
       <div style="display:flex;gap:4px;margin-left:auto;">
         ${isOwn?`<button class="abtn danger" onclick="deletePost('${post.id}')" title="Deletar">🗑</button>`:''}
@@ -6937,9 +6923,7 @@ async function confirmarDivulgacao(bizId, prodName, prodPrice, imgUrl, priceLabe
   const priceDisplay = prodPrice > 0
     ? 'R$ '+Number(prodPrice).toFixed(2).replace('.',',')
     : (priceLabel||'Sob consulta');
-  const bizLogo = myBusiness.logo_url||'';
-  const metaLine = `[BIZ_PROMO:${myBusiness.id}:${myBusiness.name.replace(/:/g,'|')}:${bizLogo}]`;
-  const postText = `${metaLine}\n🏪 *${myBusiness.name}*\n📦 ${prodName} — ${priceDisplay}${msg?'\n\n'+msg:''}`;
+  const postText = `🏪 *${myBusiness.name}*\n📦 ${prodName} — ${priceDisplay}${msg?'\n\n'+msg:''}`;
 
   // Moderate content
   if(msg){ const mod=await moderateContent(msg); if(!mod.allowed){showModerationError(mod.categories);btn.disabled=false;btn.textContent='📢 Divulgar agora';return;} }
@@ -7055,14 +7039,6 @@ function checkBizInviteUrl(){
 }
 
 
-
-function openBizById(bizId){
-  if(!bizId) return;
-  db.from('businesses').select('*').eq('id',bizId).maybeSingle().then(({data})=>{
-    if(data) openBizDetail(data);
-    else showToast('Loja não encontrada','error');
-  });
-}
 </script>
 </body>
 </html>
