@@ -3038,18 +3038,25 @@ function renderPost(post,rxCounts={},myRx=''){
   let bizMeta = null;
   let displayContent = post.content||'';
   try{
-    if((post.content||'').startsWith('[BIZ_PROMO:')){
-      const endBracket = post.content.indexOf(']');
-      if(endBracket > 0){
-        const meta = post.content.substring(1, endBracket); // remove [ and ]
-        const parts = meta.split(':');
-        // parts[0]='BIZ_PROMO', [1]=id, [2]=name, [3..]=logo URL parts
-        if(parts.length >= 3 && parts[0]==='BIZ_PROMO'){
-          const bizId   = parts[1] || '';
-          const bizName = (parts[2] || '').replace(/\|/g,':');
-          const bizLogo = parts.slice(3).join(':'); // rejoin URL with colons
-          bizMeta = { id:bizId, name:bizName, logo:bizLogo };
-          displayContent = post.content.substring(endBracket+1).replace(/^\n/,'');
+    const rawContent = post.content||'';
+    // Find BIZ_PROMO marker anywhere in first 200 chars
+    const bizStart = rawContent.indexOf('[BIZ_PROMO:');
+    if(bizStart >= 0 && bizStart < 200){
+      const bizEnd = rawContent.indexOf(']', bizStart);
+      if(bizEnd > bizStart){
+        const meta = rawContent.substring(bizStart+1, bizEnd); // without [ ]
+        const colonIdx1 = meta.indexOf(':');          // after BIZ_PROMO
+        const colonIdx2 = meta.indexOf(':', colonIdx1+1); // after id
+        const colonIdx3 = meta.indexOf(':', colonIdx2+1); // after name
+        if(colonIdx1>0 && colonIdx2>0){
+          const marker = meta.substring(0, colonIdx1);
+          if(marker === 'BIZ_PROMO'){
+            const bizId   = meta.substring(colonIdx1+1, colonIdx2);
+            const bizName = (colonIdx3>0 ? meta.substring(colonIdx2+1, colonIdx3) : meta.substring(colonIdx2+1)).replace(/\|/g,':');
+            const bizLogo = colonIdx3>0 ? meta.substring(colonIdx3+1) : '';
+            bizMeta = { id:bizId, name:bizName, logo:bizLogo };
+            displayContent = rawContent.substring(bizEnd+1).replace(/^\n/,'');
+          }
         }
       }
     }
@@ -4120,7 +4127,7 @@ async function loadProfilePage(userId){
     // Avatar
     const av = profile.avatar_url || 'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(profile.username||'u');
     const isEmoji = av.length <= 4 && !av.startsWith('http');
-    const seed = 'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(profile.username||'u');
+    const fallbackSeed = 'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(profile.username||'u');
     const days = Math.floor((Date.now()-new Date(profile.created_at))/(864e5));
 
     // Build cover bar with DOM
@@ -4143,7 +4150,7 @@ async function loadProfilePage(userId){
       } else {
         const img = document.createElement('img');
         img.className = 'pbav'; img.src = av; img.alt = profile.username||'';
-        img.onerror = function(){ this.src = seed; };
+        img.onerror = function(){ this.src = fallbackSeed; };
         pbar.appendChild(img);
       }
 
@@ -4929,7 +4936,7 @@ async function loadHomeProfile(){
   if(!CP) await loadProfile();
   const av=getAvatar(CP);
   const isE=av&&av.length<=4&&!av.startsWith('http');
-  const seed='https://api.dicebear.com/7.x/pixel-art/svg?seed='+(CP?.username||'u');
+  const homeSeed='https://api.dicebear.com/7.x/pixel-art/svg?seed='+(CP?.username||'u');
   // Build using DOM
   el.innerHTML='';
   const wrap=document.createElement('div');wrap.style.cssText='text-align:center;padding:20px 0;';
@@ -4941,7 +4948,7 @@ async function loadHomeProfile(){
   }else{
     const img=document.createElement('img');
     img.src=av;img.style.cssText='width:80px;height:80px;border-radius:50%;border:3px solid var(--neon-cyan);object-fit:cover;margin:0 auto 12px;display:block;box-shadow:0 0 20px rgba(0,255,204,.2);';
-    img.onerror=function(){this.src=seed;};
+    img.onerror=function(){this.src=homeSeed;};
     wrap.appendChild(img);
   }
   // Append text nodes using DOM to avoid quote issues
