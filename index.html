@@ -3072,7 +3072,7 @@ function renderPost(post,rxCounts={},myRx=''){
   const content=linkify(displayContent);
   // Visibilidade (coluna pode não existir)
   const vis=post.visibility||'public';
-  const visBadge=vis==='friends'?`<span class="vis-badge vis-fri">👥 Amigos</span>`:vis==='private'?`<span class="vis-badge vis-prv">🔒 Privado</span>`:`<span class="vis-badge vis-pub">🌍 Público</span>`;
+  let visBadge=vis==='friends'?`<span class="vis-badge vis-fri">👥 Amigos</span>`:vis==='private'?`<span class="vis-badge vis-prv">🔒 Privado</span>`:`<span class="vis-badge vis-pub">🌍 Público</span>`;
   if(bizMeta) visBadge='<span style="background:rgba(255,204,0,.15);color:var(--neon-yellow);border:1px solid rgba(255,204,0,.3);border-radius:6px;font-size:9px;padding:2px 7px;">🏪 Publicidade</span>';
   const REACTIONS=['👍','❤️','😂','😮','😢'];
   const rxHtml=REACTIONS.map(r=>{
@@ -6903,15 +6903,14 @@ async function divulgarProduto(bizId, prodName, prodPrice, imgUrl, priceLabel){
   if(!CU) return showToast('Faça login','error');
   if(!myBusiness || myBusiness.id !== bizId) return showToast('Acesso negado','error');
 
-  // Check daily limit (count posts with type='biz_promo' today)
+  // Check daily limit from biz_posts table
   const today = new Date(); today.setHours(0,0,0,0);
-  const {count} = await db.from('posts')
+  const {count} = await db.from('biz_posts')
     .select('id',{count:'exact',head:true})
-    .eq('user_id',CU.id)
-    .eq('type','biz_promo')
+    .eq('owner_id',CU.id)
     .gte('created_at', today.toISOString());
   if((count||0) >= BIZ_PROMO_LIMIT){
-    return showToast(`Limite de ${BIZ_PROMO_LIMIT} divulgações por dia atingido. Tente amanhã!`,'error');
+    return showToast('Limite de '+BIZ_PROMO_LIMIT+' divulgações por dia atingido. Tente amanhã!','error');
   }
 
   // Check followers
@@ -6980,6 +6979,22 @@ async function confirmarDivulgacao(bizId, prodName, prodPrice, imgUrl, priceLabe
   }).select().maybeSingle();
 
   if(error){ btn.disabled=false; btn.textContent='📢 Divulgar'; return showToast('Erro: '+error.message,'error'); }
+
+  // Save to dedicated biz_posts table (for tracking + clean separation)
+  await db.from('biz_posts').insert({
+    business_id:  bizId,
+    owner_id:     CU.id,
+    product_name: prodName,
+    product_price: prodPrice>0 ? prodPrice : null,
+    price_label:  prodPrice>0 ? null : priceLabel,
+    image_url:    imgUrl||null,
+    message:      msg||null,
+    biz_name:     myBusiness.name,
+    biz_logo:     myBusiness.logo_url||null,
+    biz_segment:  myBusiness.segment||null,
+    biz_city:     myBusiness.city||null,
+    sent_to:      0
+  });
 
   // Send notification to all followers
   const {data:followers} = await db.from('business_followers')
