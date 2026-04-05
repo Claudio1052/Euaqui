@@ -6510,7 +6510,7 @@ async function openBizDetail(biz){
       ${biz.whatsapp?`<a href="https://wa.me/55${biz.whatsapp.replace(/\D/g,'')}" target="_blank" class="post-btn" style="text-decoration:none;font-size:10px;padding:8px 14px;">📱 WhatsApp</a>`:''}
       ${biz.email?`<a href="mailto:${xss(biz.email)}" class="tbtn" style="text-decoration:none;">✉️ E-mail</a>`:''}
       ${biz.website?`<a href="${xss(biz.website)}" target="_blank" class="tbtn" style="text-decoration:none;">🌐 Site</a>`:''}
-      <button class="tbtn ${isFollowing?'biz-follow-btn following':''}" onclick="toggleBizFollow('${biz.id}',this)" style="${isFollowing?'color:var(--neon-cyan);border-color:var(--neon-cyan);background:rgba(0,255,204,.08);':'color:var(--neon-cyan);'}">${isFollowing?'✓ Seguindo':'❤️ Seguir'}</button>
+      <button id="biz-follow-btn-${biz.id}" class="tbtn" onclick="toggleBizFollow('${biz.id}',this)" style="color:var(--neon-cyan);">⏳ ...</button>
     </div>
     <div id="biz-prods-section-${biz.id}"><div style="color:var(--text-muted);font-size:11px;">⏳ Carregando produtos...</div></div>
     <div id="biz-reviews-section-${biz.id}"><div style="color:var(--text-muted);font-size:11px;">⏳ Carregando avaliações...</div></div>
@@ -6521,16 +6521,43 @@ async function openBizDetail(biz){
   document.body.appendChild(overlay);
 
   // NOW load data in parallel (non-blocking)
-  const [prodsRes, reviewsRes, myRevRes, followRes] = await Promise.all([
+  const [prodsRes, reviewsRes, myRevRes, followRes, freshBizRes] = await Promise.all([
     db.from('business_products').select('*').eq('business_id',biz.id).eq('available',true).order('created_at'),
     db.from('business_reviews').select('*, profiles(username,avatar_url)').eq('business_id',biz.id).order('created_at',{ascending:false}).limit(10),
     CU ? db.from('business_reviews').select('*').eq('business_id',biz.id).eq('user_id',CU.id).maybeSingle() : Promise.resolve({data:null}),
-    CU ? db.from('business_followers').select('id').eq('business_id',biz.id).eq('user_id',CU.id).maybeSingle() : Promise.resolve({data:null})
+    CU ? db.from('business_followers').select('id').eq('business_id',biz.id).eq('user_id',CU.id).maybeSingle() : Promise.resolve({data:null}),
+    db.from('businesses').select('*').eq('id',biz.id).maybeSingle()
   ]);
+  // Use fresh data if available
+  if(freshBizRes.data) biz = {...biz, ...freshBizRes.data};
+  // Update stats in modal with fresh data
+  const statsEl = document.getElementById('biz-stats-'+biz.id);
+  if(statsEl && freshBizRes.data){
+    const bd = freshBizRes.data;
+    statsEl.innerHTML = bd.category==='loja'
+      ? `<div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${bd.sales_done||0}</div><div class="dash-lbl">🛍️ Vendas</div></div>
+         <div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${bd.deals_closed||0}</div><div class="dash-lbl">🤝 Fechados</div></div>
+         <div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${bd.followers_count||0}</div><div class="dash-lbl">👥 Seguidores</div></div>`
+      : `<div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${bd.deals_closed||0}</div><div class="dash-lbl">📅 Agendamentos</div></div>
+         <div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${bd.followers_count||0}</div><div class="dash-lbl">👥 Seguidores</div></div>`;
+  }
   const prods = prodsRes.data;
   const reviews = reviewsRes.data;
   const myReview = myRevRes.data;
   const isFollowing = !!followRes.data;
+  // Update the follow button now that we know the state
+  const followBtn = document.getElementById('biz-follow-btn-'+biz.id);
+  if(followBtn){
+    if(isFollowing){
+      followBtn.className='tbtn biz-follow-btn following';
+      followBtn.style.cssText='color:var(--neon-cyan);border-color:var(--neon-cyan);background:rgba(0,255,204,.08);';
+      followBtn.textContent='✓ Seguindo';
+    } else {
+      followBtn.className='tbtn';
+      followBtn.style.cssText='color:var(--neon-cyan);';
+      followBtn.textContent='❤️ Seguir';
+    }
+  }
 
   // Fill products section
   const prodsEl = document.getElementById('biz-prods-section-'+biz.id);
