@@ -6991,10 +6991,24 @@ async function confirmarDivulgacao(bizId, prodName, prodPrice, imgUrl, priceLabe
   }
 
   btn.closest('[style*=fixed]').remove();
-  showToast(`✅ Divulgado para ${followers?.length||0} seguidores!`,'success');
-  // Refresh feed
+  const numFollowers = followers?.length||0;
+  showToast('✅ Divulgado para '+numFollowers+' seguidor(es)! Abrindo feed...','success');
+  // Force feed refresh and navigate to home > Recentes
   cachedPosts={};cachedPostIds=new Set();lastFeedLoad=0;
-  if(document.getElementById('page-home')?.classList.contains('active')) loadFeed();
+  setTimeout(()=>{
+    feedTab='recent'; // Ensure Recentes tab is active
+    nav('home');
+    setTimeout(()=>{
+      // Activate ht-feed home tab
+      const feedHomeTab = document.querySelector('.nav-tab[data-tab="ht-feed"]');
+      if(feedHomeTab) switchHomeTab(feedHomeTab);
+      // Activate Recentes in feed
+      document.querySelectorAll('.ftab').forEach(b=>{
+        b.classList.toggle('active', b.textContent.includes('Recentes'));
+      });
+      loadFeed(true); // force reload bypassing cache
+    }, 500);
+  }, 800);
 }
 
 // ── 3. Notificar seguidores (promoção manual) ────────────────────
