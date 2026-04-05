@@ -3090,7 +3090,7 @@ function renderPost(post,rxCounts={},myRx=''){
     <div class="ph">
       ${avHtml}
       <div class="pmeta">
-        <div class="pun" style="cursor:pointer;" data-uid="${post.user_id}" data-bizid="${bizMeta?.id||''}" onclick="handlePostClick(this)">${xss(displayName)}</div>
+        <div class="pun" style="cursor:pointer;" data-uid="${post.user_id}" data-bizid="${bizMeta && bizMeta.id ? bizMeta.id : ''}" onclick="handlePostClick(this)">${xss(displayName)}</div>
         <div class="pt"><span>${xss(displayHandle)}</span> · ${time} ${visBadge}</div>
       </div>
       <div style="display:flex;gap:4px;margin-left:auto;">
@@ -7131,7 +7131,7 @@ function openBizById(bizId){
 function handlePostClick(el){
   const bizId = el.dataset.bizid;
   const uid   = el.dataset.uid;
-  if(bizId) openBizById(bizId);
+  if(bizId && bizId !== 'undefined' && bizId.length > 10) openBizById(bizId);
   else showPostAuthorProfile(uid, null);
 }
 </script>
