@@ -2960,13 +2960,13 @@ async function loadFeed(force=false){
   if(feedTab==='popular'){
     q=db.from('posts').select(SEL).order('likes_count',{ascending:false}).range(0,24);
   } else if(feedTab==='friends'&&CU){
-    const{data:fws}=await db.from('follows').select('following_id').eq('follower_id',CU.id);
-    const ids=(fws||[]).map(f=>f.following_id);
+    const{data:fws}=await db.from('friends').select('friend_id').eq('user_id',CU.id);
+    const ids=(fws||[]).map(f=>f.friend_id);
     if(!ids.length){
-      if(feed.children.length===0)feed.innerHTML='<div style="text-align:center;padding:40px;color:var(--text-muted);font-family:\'VT323\',monospace;font-size:20px;">Siga alguém para ver posts aqui!</div>';
+      if(feed.children.length===0)feed.innerHTML='<div style="text-align:center;padding:40px;color:var(--text-muted);font-family:\'VT323\',monospace;font-size:20px;">Adicione amigos para ver os posts deles aqui!</div>';
       return;
     }
-    q=db.from('posts').select(SEL).in('user_id',ids).order('created_at',{ascending:false}).range(0,24);
+    q=db.from('posts').select(SEL).in('user_id',[...ids,CU.id]).order('created_at',{ascending:false}).range(0,24);
   } else {
     q=db.from('posts').select(SEL).order('created_at',{ascending:false}).range(0,24);
   }
@@ -3037,16 +3037,28 @@ function renderPost(post,rxCounts={},myRx=''){
   // ── Detectar post de loja (BIZ_PROMO) ──
   let bizMeta = null;
   let displayContent = post.content||'';
-  const bizMatch = (post.content||'').match(/^\[BIZ_PROMO:([^:]+):([^:]+):([^\]]*)\][\s\S]?/);
-  if(bizMatch){
-    bizMeta = { id:bizMatch[1], name:bizMatch[2].replace(/\|/g,':'), logo:bizMatch[3] };
-    displayContent = (post.content||'').replace(/^\[BIZ_PROMO:[^\]]+\][\s\S]?/,'');
-  }
+  try{
+    if((post.content||'').startsWith('[BIZ_PROMO:')){
+      const endBracket = post.content.indexOf(']');
+      if(endBracket > 0){
+        const meta = post.content.substring(1, endBracket); // remove [ and ]
+        const parts = meta.split(':');
+        // parts[0]='BIZ_PROMO', [1]=id, [2]=name, [3..]=logo URL parts
+        if(parts.length >= 3 && parts[0]==='BIZ_PROMO'){
+          const bizId   = parts[1] || '';
+          const bizName = (parts[2] || '').replace(/\|/g,':');
+          const bizLogo = parts.slice(3).join(':'); // rejoin URL with colons
+          bizMeta = { id:bizId, name:bizName, logo:bizLogo };
+          displayContent = post.content.substring(endBracket+1).replace(/^\n/,'');
+        }
+      }
+    }
+  }catch(e){ bizMeta=null; displayContent=post.content||''; }
 
   // Avatar e nome — usa identidade da loja se for BIZ_PROMO
-  const avUrl = bizMeta?.logo || prof.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'user');
-  const displayName = bizMeta?.name || prof.full_name||prof.username||'Usuário';
-  const displayHandle = bizMeta ? `🏪 ${bizMeta.name}` : `@${prof.username||'user'}`;
+  const avUrl = (bizMeta && bizMeta.logo) ? bizMeta.logo : (prof.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'user'));
+  const displayName = (bizMeta && bizMeta.name) ? bizMeta.name : (prof.full_name||prof.username||'Usuário');
+  const displayHandle = bizMeta ? ('🏪 '+(bizMeta.name||'')) : ('@'+(prof.username||'user'));
   const avBorderColor = bizMeta ? 'var(--neon-yellow)' : 'var(--neon-pink)';
   const avHtml='<img src="'+xss(avUrl)+'" data-uid="'+post.user_id+'" data-fb="https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u')+'" style="width:42px;height:42px;border-radius:'+(bizMeta?'10px':'50%')+';object-fit:cover;border:2px solid '+(bizMeta?'rgba(255,204,0,.5)':'rgba(0,255,204,.25)')+';flex-shrink:0;cursor:pointer;" onclick="showPostAuthorProfile(this.dataset.uid,null)" onerror="this.src=this.dataset.fb">'; 
   const time=timeAgo(post.created_at);
@@ -6943,7 +6955,8 @@ async function confirmarDivulgacao(bizId, prodName, prodPrice, imgUrl, priceLabe
     ? 'R$ '+Number(prodPrice).toFixed(2).replace('.',',')
     : (priceLabel||'Sob consulta');
   const bizLogo = myBusiness.logo_url||'';
-  const metaLine = `[BIZ_PROMO:${myBusiness.id}:${myBusiness.name.replace(/:/g,'|')}:${bizLogo}]`;
+  const bizNameSafe = (myBusiness.name||'').replace(/:/g,'|').replace(/\[/g,'(').replace(/\]/g,')');
+  const metaLine = '[BIZ_PROMO:'+myBusiness.id+':'+bizNameSafe+':'+bizLogo+']';
   const postText = `${metaLine}\n🏪 *${myBusiness.name}*\n📦 ${prodName} — ${priceDisplay}${msg?'\n\n'+msg:''}`;
 
   // Moderate content
