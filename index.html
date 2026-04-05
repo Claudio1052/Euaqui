@@ -2994,8 +2994,12 @@ async function loadFeed(force=false){
   });
   const myRxMap={};
   (myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
-  const html=posts.map(p=>renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||'')).join('');
-  feed.innerHTML=html;
+  const rendered = posts.map(p=>{
+    try{ return renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||''); }
+    catch(e){ console.warn('renderPost error:',e,p?.id); return ''; }
+  });
+  const html = rendered.join('');
+  feed.innerHTML = html || '<div style="text-align:center;padding:40px;color:var(--text-muted);"><div style="font-size:40px;margin-bottom:12px;">📭</div><div style="font-family:VT323,monospace;font-size:20px;">Nenhuma postagem ainda</div></div>';
   posts.forEach(p=>cachedPostIds.add(p.id));
   cachedPosts[cacheKey]=html;
   // Update comment counts with real DB values (handles cases where trigger hasn't run)
@@ -3027,6 +3031,7 @@ async function updateCommentCounts(postIds){
 }
 
 function renderPost(post,rxCounts={},myRx=''){
+  if(!post) return '';
   const prof=post.profiles||{};
 
   // ── Detectar post de loja (BIZ_PROMO) ──
