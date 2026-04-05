@@ -3032,6 +3032,7 @@ async function updateCommentCounts(postIds){
 
 function renderPost(post,rxCounts={},myRx=''){
   if(!post) return '';
+  try{
   const prof=post.profiles||{};
 
   // ── Detectar post de loja (BIZ_PROMO) ──
@@ -3108,6 +3109,10 @@ function renderPost(post,rxCounts={},myRx=''){
     </div>
     <div class="comments-sec" id="cmts-${post.id}" style="display:none;"></div>
   </div>`;
+  }catch(err){
+    console.error('renderPost fatal error:', err?.message, 'post:', post?.id, post?.content?.slice?.(0,80));
+    return '';
+  }
 }
 
 function renderMedia(urls,types){
@@ -4215,7 +4220,10 @@ async function loadProfilePage(userId){
         ]);
         const rxMap={};(rxRes.data||[]).forEach(r=>{if(!rxMap[r.post_id])rxMap[r.post_id]={};rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1;});
         const myRxMap={};(myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
-        postsPanel.innerHTML=posts.map(p=>renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||'')).join('');
+        postsPanel.innerHTML=posts.map(p=>{
+          try{ return renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||''); }
+          catch(e){ console.warn('renderPost profile error:',e?.message,p?.id); return ''; }
+        }).join('') || '<div style="text-align:center;padding:30px;color:var(--text-muted);">Nenhuma postagem ainda</div>';
       }
     }
 
