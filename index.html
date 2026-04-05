@@ -5999,7 +5999,7 @@ function buildBizCard(biz, isFollowing){
         <button class="biz-follow-btn ${isFollowing?'following':''}" onclick="toggleBizFollow('${biz.id}',this)">
           ${isFollowing?'✓ Seguindo':'+ Seguir'}
         </button>
-        <button class="biz-chat-btn" onclick="openBizDetail(${JSON.stringify(biz).replace(/`/g,"'")})">🛍️ Ver loja</button>
+        <button class="biz-chat-btn" data-bizid="${biz.id}" onclick="openBizById(this.dataset.bizid)">🛍️ Ver loja</button>
       </div>
     </div>`;
   div.querySelector('.biz-body').addEventListener('click', e=>{
