@@ -695,12 +695,12 @@ body{
 
   /* Profile */
   .pcov{height:100px!important;}
-  .pbav{width:72px!important;height:72px!important;margin-top:-36px!important;border-width:3px!important;}
+  .pbav{margin-top:0 !important;}
   .pname{font-size:16px!important;}
   .phandle{font-size:10px!important;}
   .pbio{font-size:11px!important;}
   .pbar{padding:10px 12px 14px!important;flex-wrap:nowrap !important;gap:12px !important;align-items:center !important;}
-  .pbav{width:64px !important;height:64px !important;margin-top:0 !important;flex-shrink:0 !important;}
+  .pbav{margin-top:0 !important;}
   .pdet{min-width:0;flex:1 !important;width:auto !important;}
   .pname{font-size:clamp(12px,3.8vw,18px) !important;white-space:normal !important;word-break:break-word !important;line-height:1.2 !important;}
   .pstats{gap:10px!important;flex-wrap:wrap;}
@@ -939,7 +939,7 @@ body{
   .abtn{padding:4px 6px;font-size:9px;}
   .tbtn{padding:4px 5px;font-size:9px;}
   .vis-opt{padding:5px 2px;font-size:8px;}
-  .pbav{width:60px!important;height:60px!important;margin-top:-30px!important;}
+  .pbav{margin-top:0 !important;}
   .bnav-btn 
 }
 
@@ -4681,109 +4681,134 @@ async function loadProfilePage(userId){
       coverBar.appendChild(cov);
 
       const pbar = document.createElement('div');
-      pbar.className = 'pbar';
+      // Layout inline 100% — imune a CSS externo
+      pbar.style.cssText = [
+        'display:flex',
+        'align-items:flex-start',
+        'gap:12px',
+        'padding:12px 14px 14px',
+        'background:var(--bg-card)',
+        'border-bottom:1px solid var(--border-glow)',
+        'backdrop-filter:blur(20px)',
+        'flex-wrap:nowrap',
+        'width:100%',
+        'box-sizing:border-box',
+      ].join(';');
 
-      // Avatar element
+      // ── Avatar — tamanho fixo, sem margin-top negativo ──
+      const avWrapEl = document.createElement('div');
+      avWrapEl.style.cssText = 'flex-shrink:0;width:72px;height:72px;';
+
       if(isEmoji){
         const avDiv = document.createElement('div');
         avDiv.className = 'pbav';
-        avDiv.style.cssText = 'display:flex;align-items:center;justify-content:center;font-size:50px;background:rgba(255,255,255,.06);';
+        avDiv.style.cssText = 'width:72px;height:72px;display:flex;align-items:center;justify-content:center;font-size:38px;background:rgba(255,255,255,.06);border-radius:50%;border:2px solid var(--neon-cyan);margin:0;';
         avDiv.textContent = av;
-        pbar.appendChild(avDiv);
+        avWrapEl.appendChild(avDiv);
       } else {
         const img = document.createElement('img');
-        img.className = 'pbav'; img.src = av; img.alt = profile.username||'';
+        img.className = 'pbav';
+        img.style.cssText = 'width:72px;height:72px;border-radius:50%;object-fit:cover;border:2px solid var(--neon-cyan);display:block;margin:0;';
+        img.src = av; img.alt = profile.username||'';
         img.onerror = function(){ this.src = fallbackSeed; };
-        pbar.appendChild(img);
+        avWrapEl.appendChild(img);
       }
+      pbar.appendChild(avWrapEl);
 
-      // ── Info box — layout inline sem depender de CSS externo ──
-      const pdet = document.createElement('div');
-      pdet.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;';
+      // ── Coluna direita: nome + info + stats + botões ──
+      const rightCol = document.createElement('div');
+      rightCol.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;';
 
-      // Nome — caixa própria com truncamento controlado
+      // Nome
       const pnameBox = document.createElement('div');
       pnameBox.style.cssText = [
         'font-family:Syne,sans-serif',
         'font-weight:800',
+        'font-size:clamp(14px,4vw,22px)',
         'color:var(--text-light)',
         'line-height:1.2',
         'word-break:break-word',
         'overflow-wrap:anywhere',
         'white-space:normal',
         'max-width:100%',
-        'font-size:clamp(12px,3.5vw,22px)',
       ].join(';');
       pnameBox.textContent = profile.full_name || profile.username || '';
-      pdet.appendChild(pnameBox);
+      rightCol.appendChild(pnameBox);
 
       // Handle
       const phandleBox = document.createElement('div');
-      phandleBox.style.cssText = 'font-family:Space Mono,monospace;font-size:11px;color:var(--neon-cyan);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-      phandleBox.textContent = '@' + (profile.username || '');
-      pdet.appendChild(phandleBox);
+      phandleBox.style.cssText = 'font-family:Space Mono,monospace;font-size:10px;color:var(--neon-cyan);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+      phandleBox.textContent = '@'+(profile.username||'');
+      rightCol.appendChild(phandleBox);
 
       // Bio
       if(profile.bio){
         const pbioBox = document.createElement('div');
-        pbioBox.style.cssText = 'font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;';
+        pbioBox.style.cssText = 'font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
         pbioBox.textContent = profile.bio;
-        pdet.appendChild(pbioBox);
+        rightCol.appendChild(pbioBox);
       }
 
       // Dias
       const pdaysBox = document.createElement('div');
-      pdaysBox.style.cssText = 'font-size:10px;color:var(--text-muted);margin-top:2px;';
-      pdaysBox.textContent = '⏱ ' + days + ' dias';
-      pdet.appendChild(pdaysBox);
+      pdaysBox.style.cssText = 'font-size:10px;color:var(--text-muted);';
+      pdaysBox.textContent = '⏱ '+days+' dias';
+      rightCol.appendChild(pdaysBox);
 
-      // Stats — clicáveis com DOM
+      // Stats em linha horizontal
       const pstatsBox = document.createElement('div');
-      pstatsBox.style.cssText = 'display:flex;gap:14px;margin-top:6px;flex-wrap:wrap;';
+      pstatsBox.style.cssText = 'display:flex;gap:16px;margin-top:6px;flex-wrap:wrap;';
 
       const _uid = userId;
       const makeStatEl = (count, label, clickFn) => {
         const el = document.createElement('div');
-        el.style.cssText = 'text-align:center;' + (clickFn ? 'cursor:pointer;' : '');
-        el.innerHTML = '<div style="font-family:VT323,monospace;font-size:20px;color:var(--neon-cyan);">'+count+'</div>'
-          + '<div style="font-size:9px;color:var(--text-muted);'+(clickFn?'text-decoration:underline dotted;color:var(--neon-cyan);':'')+'">'+label+'</div>';
+        el.style.cssText = 'text-align:center;'+(clickFn?'cursor:pointer;':'');
+        const num = document.createElement('div');
+        num.style.cssText = 'font-family:VT323,monospace;font-size:22px;color:var(--neon-cyan);line-height:1;';
+        num.textContent = count;
+        const lbl = document.createElement('div');
+        lbl.style.cssText = 'font-size:9px;color:var(--text-muted);'+(clickFn?'color:var(--neon-cyan);text-decoration:underline dotted;':'');
+        lbl.textContent = label;
+        el.appendChild(num); el.appendChild(lbl);
         if(clickFn) el.addEventListener('click', clickFn);
         return el;
       };
-      pstatsBox.appendChild(makeStatEl(pRes.count||0, 'Posts', null));
-      pstatsBox.appendChild(makeStatEl(frRes.count||0, 'Seguidores', ()=>showFollowersList(_uid,'seguidores')));
-      pstatsBox.appendChild(makeStatEl(fngRes.count||0, 'Seguindo', ()=>showFollowersList(_uid,'seguindo')));
-      pdet.appendChild(pstatsBox);
+      pstatsBox.appendChild(makeStatEl(pRes.count||0,'Posts',null));
+      pstatsBox.appendChild(makeStatEl(frRes.count||0,'Seguidores',()=>showFollowersList(_uid,'seguidores')));
+      pstatsBox.appendChild(makeStatEl(fngRes.count||0,'Seguindo',()=>showFollowersList(_uid,'seguindo')));
+      rightCol.appendChild(pstatsBox);
 
-      pbar.appendChild(pdet);
-
-      // Buttons
+      // Botões de ação
       const btns = document.createElement('div');
-      btns.className = 'pbtns';
+      btns.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;';
+
       if(isOwn){
         const b = document.createElement('button'); b.className='post-btn';
-        b.style.cssText='background:none;border:1px solid var(--border-glow);color:var(--neon-cyan);';
+        b.style.cssText='background:none;border:1px solid var(--border-glow);color:var(--neon-cyan);font-size:11px;padding:7px 12px;';
         b.textContent='✏ Editar Perfil'; b.onclick=()=>showSettings();
         btns.appendChild(b);
       } else {
         const flw = document.createElement('button'); flw.className='post-btn';
+        flw.style.cssText='font-size:11px;padding:7px 12px;';
         flw.textContent = isFollowing?'✓ Seguindo':'+ Seguir';
-        flw.onclick = () => toggleFollow(userId, flw); btns.appendChild(flw);
+        flw.onclick = ()=>toggleFollow(userId,flw); btns.appendChild(flw);
 
         const fri = document.createElement('button'); fri.className='post-btn';
-        fri.style.cssText='background:none;border:1px solid rgba(191,95,255,.4);color:var(--neon-purple);';
+        fri.style.cssText='background:none;border:1px solid rgba(191,95,255,.4);color:var(--neon-purple);font-size:11px;padding:7px 12px;';
         fri.textContent = isFriend?'👥 Amigos':'+ Amigo';
-        if(!isFriend) fri.onclick = ()=>sendFriendReq(userId,fri);
+        if(!isFriend) fri.onclick=()=>sendFriendReq(userId,fri);
         else fri.disabled=true;
         btns.appendChild(fri);
 
         const chat = document.createElement('button'); chat.className='post-btn';
-        chat.style.cssText='background:none;border:1px solid var(--border-glow);color:var(--neon-cyan);';
+        chat.style.cssText='background:none;border:1px solid var(--border-glow);color:var(--neon-cyan);font-size:11px;padding:7px 12px;';
         chat.textContent='💬 Chat';
         chat.onclick=()=>{ nav('messages'); setTimeout(()=>openChat(userId,profile.username||'',av),300); };
         btns.appendChild(chat);
       }
-      pbar.appendChild(btns);
+      rightCol.appendChild(btns);
+
+      pbar.appendChild(rightCol);
       coverBar.appendChild(pbar); coverBar.dataset.profileUid = userId;
     }
 
