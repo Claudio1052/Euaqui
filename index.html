@@ -2239,6 +2239,75 @@ body.day-mode .msg-mic-btn{
   border-color:#008b9e;
   color:#008b9e;
 }
+
+/* ================================================================
+   CHAT MOBILE — LAYOUT FIXO DEFINITIVO
+   Header topo fixo + msgs rola + barra inferior fixa
+   ================================================================ */
+@media(max-width:768px){
+
+  /* Página messages: ocupa exatamente entre navbar e bottom-nav */
+  #page-messages.active{
+    position: fixed !important;
+    top: 52px !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 68px !important;
+    height: auto !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* chat-page-wrap = 100% do espaço disponível */
+  #page-messages .chat-page-wrap{
+    height: 100% !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    position: relative !important;
+  }
+
+  /* Chat window = coluna flex com altura total */
+  #page-messages .chat-window{
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100% !important;
+    overflow: hidden !important;
+  }
+
+  /* Header — nunca some, sempre no topo */
+  #page-messages .chat-win-hdr{
+    flex: 0 0 auto !important;
+    position: relative !important;
+    z-index: 20 !important;
+    background: rgba(10,10,42,.98) !important;
+    backdrop-filter: blur(12px) !important;
+  }
+
+  /* Área de mensagens — ÚNICO elemento que rola */
+  #page-messages .msgs-area{
+    flex: 1 1 0 !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior: contain !important;
+  }
+
+  /* Preview de anexos */
+  #page-messages #msg-attach-prev{
+    flex: 0 0 auto !important;
+  }
+
+  /* Barra de input — nunca some, sempre na base */
+  #page-messages .msg-in-bar{
+    flex: 0 0 auto !important;
+    position: relative !important;
+    z-index: 20 !important;
+    background: rgba(10,10,42,.98) !important;
+    backdrop-filter: blur(12px) !important;
+  }
+}
 </style>
 </head>
 <body>
@@ -7669,9 +7738,11 @@ function cancelAudioRecord(){
   const recEl=document.getElementById('chat-audio-recorder');
   const inputEl=document.getElementById('msg-in');
   const sendBtn=document.getElementById('chat-send-btn');
+  const micBtn=document.getElementById('chat-mic-btn');
   if(recEl)recEl.style.display='none';
   if(inputEl)inputEl.style.display='';
-  if(sendBtn){sendBtn.onclick=()=>sendMsg();sendBtn.innerHTML='➤';}
+  if(micBtn)micBtn.style.display='';
+  if(sendBtn){sendBtn.onclick=()=>sendMsg();sendBtn.innerHTML='➤';sendBtn.title='Enviar';}
   showToast('Gravação cancelada','');
 }
 
