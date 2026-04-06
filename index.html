@@ -9246,44 +9246,60 @@ async function acceptCall(){
 // ── 5. REJEITAR / ENCERRAR ──────────────────────────────────────
 function rejectCall(){
   _stopRing();
-  if(_callPeer){
-    const cid=_chanId(CU.id,_callPeer.id);
-    const ch=db.channel(cid,{config:{broadcast:{self:false}}});
-    ch.subscribe(s=>{if(s==='SUBSCRIBED'){
+  // Fechar overlay IMEDIATAMENTE
+  document.getElementById('call-overlay')?.remove();
+  // Guardar peer antes do cleanup
+  const peer = _callPeer ? {..._callPeer} : null;
+  const nm = CP?.full_name||CP?.username||'Alguém';
+  _cleanup();
+  // Enviar sinal e notificação em background (não bloqueia UI)
+  if(peer){
+    const cid = _chanId(CU.id, peer.id);
+    const ch = db.channel(cid,{config:{broadcast:{self:false}}});
+    ch.subscribe(s=>{ if(s==='SUBSCRIBED'){
       ch.send({type:'broadcast',event:'call-reject',payload:{from:CU.id}});
       setTimeout(()=>{try{db.removeChannel(ch);}catch(e){}},2000);
     }});
-    // Notificar o chamador que não atendeu
-    const nm=CP?.full_name||CP?.username||'Alguém';
     db.from('notifications').insert({
-      user_id:_callPeer.id, actor_id:CU.id,
+      user_id:peer.id, actor_id:CU.id,
       type:'call_missed',
       content:'📵 '+nm+' não atendeu sua chamada',
       read:false
     }).catch(()=>{});
   }
-  _cleanup();
-  document.getElementById('call-overlay')?.remove();
 }
 function endCall(){
   _stopRing();
+  // Fechar overlay IMEDIATAMENTE
+  document.getElementById('call-overlay')?.remove();
+  // Guardar estado antes do cleanup
+  const peer     = _callPeer ? {..._callPeer} : null;
+  const wasCaller = _isCaller;
+  const hadTimer  = !!_callTimer;
+  const nm = CP?.full_name||CP?.username||'Alguém';
+  // Enviar sinal de encerramento pelo canal já aberto (se disponível)
   if(_sigCh) _sigCh.send({type:'broadcast',event:'call-end',payload:{from:CU.id}}).catch(()=>{});
-  // Se estava chamando e nunca conectou → notificar que ligou
-  if(_isCaller && _callPeer && !_callTimer){
-    const nm=CP?.full_name||CP?.username||'Alguém';
+  _cleanup();
+  // Notificação de chamada perdida em background
+  if(wasCaller && peer && !hadTimer){
     db.from('notifications').insert({
-      user_id:_callPeer.id, actor_id:CU.id,
+      user_id:peer.id, actor_id:CU.id,
       type:'call_missed',
       content:'📞 '+nm+' ligou para você',
       read:false
     }).catch(()=>{});
   }
-  _hangup('📵 Chamada encerrada');
 }
 function _hangup(msg){
   _stopRing();
-  const st=document.getElementById('call-status');
-  if(st) st.textContent=msg;
+  // Mostrar mensagem por 1s e fechar
+  const ov=document.getElementById('call-overlay');
+  if(ov){
+    const st=ov.querySelector('#call-status');
+    if(st) st.textContent=msg;
+    // Desabilitar todos os botões para evitar double-click
+    ov.querySelectorAll('button').forEach(b=>b.disabled=true);
+  }
   setTimeout(()=>{document.getElementById('call-overlay')?.remove();_cleanup();},1500);
 }
 
