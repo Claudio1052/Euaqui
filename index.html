@@ -258,8 +258,8 @@ nav{position:fixed;top:0;left:0;right:0;background:#0a0a2a;border-bottom:1px sol
 /* profile cover pattern — removed for performance */
 .pbar{background:var(--bg-card);border-bottom:1px solid var(--border-glow);padding:0 24px 18px;display:flex;align-items:flex-end;gap:16px;backdrop-filter:blur(20px);}
 .pbav{width:100px;height:100px;border-radius:50%;border:4px solid var(--neon-cyan);object-fit:cover;margin-top:-50px;box-shadow:0 0 24px rgba(0,255,204,.35);flex-shrink:0;font-size:50px;display:flex;align-items:center;justify-content:center;background:var(--bg-deep);}
-.pdet{flex:1;padding-bottom:2px;min-width:0;}
-.pname{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;color:var(--text-light);}
+.pdet{flex:1;padding-bottom:2px;min-width:0;overflow:hidden;max-width:100%;}
+.pname{font-family:'Syne',sans-serif;font-size:clamp(14px,4vw,22px);font-weight:800;color:var(--text-light);word-break:break-word;overflow-wrap:break-word;white-space:normal;line-height:1.2;}
 .phandle{font-family:'Space Mono',monospace;font-size:11px;color:var(--neon-cyan);margin:2px 0 6px;}
 .pbio{font-size:11px;color:var(--text-muted);line-height:1.5;}
 .pstats{display:flex;gap:18px;margin-top:8px;flex-wrap:wrap;}
@@ -2336,6 +2336,16 @@ body.day-mode .msg-mic-btn{
 
 /* Modo dia */
 body.day-mode .presence-dot{ border-color:#ffffff; }
+
+/* ── Stats clicáveis no perfil ── */
+.pstat-click{ cursor:pointer; transition:transform .15s; }
+.pstat-click:hover{ transform:translateY(-2px); }
+.pstat-click:hover .pstl-link{ color:var(--neon-cyan) !important; }
+.pstl-link{
+  color:var(--neon-cyan);
+  text-decoration:underline dotted;
+  font-size:9px;
+}
 </style>
 </head>
 <body>
@@ -4679,9 +4689,15 @@ async function loadProfilePage(userId){
         '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">⏱ '+days+' dias</div>'+
         '<div class="pstats">'+
           '<div class="pstat"><div class="pstn">'+(pRes.count||0)+'</div><div class="pstl">Posts</div></div>'+
-          '<div class="pstat"><div class="pstn">'+(frRes.count||0)+'</div><div class="pstl">Seguidores</div></div>'+
-          '<div class="pstat"><div class="pstn">'+(fngRes.count||0)+'</div><div class="pstl">Seguindo</div></div>'+
+          '<div class="pstat pstat-click" id="stat-followers"><div class="pstn">'+(frRes.count||0)+'</div><div class="pstl pstl-link">Seguidores</div></div>'+
+          '<div class="pstat pstat-click" id="stat-seguindo"><div class="pstn">'+(fngRes.count||0)+'</div><div class="pstl pstl-link">Seguindo</div></div>'+
         '</div>';
+      // Clique nos stats via addEventListener (evita problema de escaping)
+      setTimeout(()=>{
+        const _uid = userId;
+        document.getElementById('stat-followers')?.addEventListener('click',()=>showFollowersList(_uid,'seguidores'));
+        document.getElementById('stat-seguindo')?.addEventListener('click',()=>showFollowersList(_uid,'seguindo'));
+      },50);
       pbar.appendChild(pdet);
 
       // Buttons
@@ -4773,7 +4789,11 @@ async function loadProfilePage(userId){
           gbHtml+
           (!isOwn?'<div style="display:flex;gap:7px;margin-top:8px;"><input class="cmt-input" type="text" id="gb-in" placeholder="Deixe uma mensagem..."><button class="cmt-sub" data-uid="'+userId+'" onclick="submitGb(this.dataset.uid)">➤</button></div>':'')+
         '</div>'+
+        '<div id="about-communities-section"><div style="margin:10px 0;color:var(--text-muted);font-size:11px;font-family:Space Mono,monospace;">⏳ Carregando...</div></div>'+
+        '<div id="about-businesses-section"></div>'+
         '</div>';
+      // Carregar comunidades e lojas de forma assíncrona
+      loadAboutExtras(userId);
     }
 
     // Update CP if own profile
@@ -8606,6 +8626,147 @@ function _updateAllPresenceDots(){
       statusTxt.textContent = isOnline ? '● online' : '○ offline';
       statusTxt.style.color = isOnline ? '#22c55e' : '#6b7280';
     }
+  }
+}
+
+
+// ================================================================
+// PERFIL — MODAL SEGUIDORES / SEGUINDO
+// ================================================================
+async function showFollowersList(userId, tipo){
+  // Criar overlay
+  const overlay = document.createElement('div');
+  overlay.className = 'game-modal-overlay';
+  overlay.id = 'followers-overlay';
+  overlay.innerHTML = `
+    <div class="game-modal" style="max-width:360px;max-height:70vh;overflow:hidden;display:flex;flex-direction:column;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <div class="game-modal-title" style="margin:0;">${tipo==='seguidores'?'👥 Seguidores':'➡ Seguindo'}</div>
+        <button class="game-btn secondary" style="padding:4px 10px;margin:0;" onclick="document.getElementById('followers-overlay').remove()">✕</button>
+      </div>
+      <div id="followers-list" style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:8px;padding-right:4px;">
+        <div style="color:var(--text-muted);font-size:12px;text-align:center;padding:20px;">⏳ Carregando...</div>
+      </div>
+    </div>`;
+  overlay.onclick = e => { if(e.target===overlay) overlay.remove(); };
+  document.body.appendChild(overlay);
+
+  const list = document.getElementById('followers-list');
+  try{
+    let profileIds = [];
+    if(tipo === 'seguidores'){
+      // Quem segue este userId
+      const{data} = await db.from('follows').select('follower_id').eq('following_id', userId);
+      profileIds = (data||[]).map(r=>r.follower_id);
+    } else {
+      // Quem este userId segue
+      const{data} = await db.from('follows').select('following_id').eq('follower_id', userId);
+      profileIds = (data||[]).map(r=>r.following_id);
+    }
+
+    if(!profileIds.length){
+      list.innerHTML = `<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">
+        ${tipo==='seguidores'?'Nenhum seguidor ainda':'Não está seguindo ninguém'}
+      </div>`;
+      return;
+    }
+
+    const{data:profiles} = await db.from('profiles')
+      .select('id,username,full_name,avatar_url,bio')
+      .in('id', profileIds);
+
+    list.innerHTML = '';
+    (profiles||[]).forEach(p => {
+      const isOnline = _onlineUsers.has(p.id);
+      const dot = `<span class="presence-dot ${isOnline?'online':'offline'}" style="position:absolute;bottom:1px;right:1px;"></span>`;
+      const item = document.createElement('div');
+      item.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--border-glow);cursor:pointer;border-radius:8px;transition:background .15s;';
+      item.onmouseenter = () => item.style.background='rgba(0,255,204,.05)';
+      item.onmouseleave = () => item.style.background='';
+      item.innerHTML = `
+        <div style="position:relative;flex-shrink:0;">
+          ${renderAvatar(p, 42, 'ci-av')}
+          ${dot}
+        </div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;font-weight:700;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(p.full_name||p.username)}</div>
+          <div style="font-size:10px;color:var(--neon-cyan);">@${xss(p.username)}</div>
+          ${p.bio?`<div style="font-size:10px;color:var(--text-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(p.bio.slice(0,50))}</div>`:''}
+        </div>
+        <div style="font-size:9px;color:${isOnline?'#22c55e':'#6b7280'};">${isOnline?'● online':'○ off'}</div>`;
+      item.onclick = () => { overlay.remove(); loadProfilePage(p.id); };
+      list.appendChild(item);
+    });
+  } catch(e){
+    list.innerHTML = `<div style="color:var(--neon-pink);font-size:12px;padding:20px;text-align:center;">Erro: ${e.message}</div>`;
+  }
+}
+
+// ================================================================
+// PERFIL — SOBRE: Comunidades e Lojas que segue
+// ================================================================
+async function loadAboutExtras(userId){
+  const commEl = document.getElementById('about-communities-section');
+  const bizEl  = document.getElementById('about-businesses-section');
+  if(!commEl && !bizEl) return;
+
+  try{
+    // Comunidades que segue
+    if(commEl){
+      const{data:commFollows} = await db.from('community_members')
+        .select('community_id, communities(id,name,description,icon,member_count)')
+        .eq('user_id', userId).limit(20);
+
+      const comms = (commFollows||[]).map(r=>r.communities).filter(Boolean);
+      if(comms.length){
+        commEl.innerHTML = `
+          <div class="edit-section" style="margin-top:10px;">
+            <div class="edit-section-title">🏘 COMUNIDADES (${comms.length})</div>
+            ${comms.map(cm=>`
+              <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05);">
+                <div style="font-size:22px;width:36px;text-align:center;">${cm.icon||'🏘'}</div>
+                <div style="flex:1;min-width:0;">
+                  <div style="font-size:12px;font-weight:600;color:var(--text-light);">${xss(cm.name)}</div>
+                  ${cm.description?`<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${xss(cm.description.slice(0,60))}</div>`:''}
+                  <div style="font-size:9px;color:var(--neon-cyan);margin-top:1px;">👥 ${cm.member_count||0} membros</div>
+                </div>
+              </div>`).join('')}
+          </div>`;
+      } else {
+        commEl.innerHTML = '';
+      }
+    }
+
+    // Lojas/serviços que segue
+    if(bizEl){
+      const{data:bizFollows} = await db.from('business_follows')
+        .select('business_id, businesses(id,name,description,logo_url,category)')
+        .eq('user_id', userId).limit(20);
+
+      const bizs = (bizFollows||[]).map(r=>r.businesses).filter(Boolean);
+      if(bizs.length){
+        bizEl.innerHTML = `
+          <div class="edit-section" style="margin-top:10px;">
+            <div class="edit-section-title">🏪 LOJAS SEGUIDAS (${bizs.length})</div>
+            ${bizs.map(b=>`
+              <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05);">
+                <div style="width:36px;height:36px;border-radius:8px;overflow:hidden;background:rgba(0,255,204,.08);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                  ${b.logo_url?`<img src="${xss(b.logo_url)}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='🏪'">`:'🏪'}
+                </div>
+                <div style="flex:1;min-width:0;">
+                  <div style="font-size:12px;font-weight:600;color:var(--text-light);">${xss(b.name)}</div>
+                  ${b.category?`<div style="font-size:9px;color:var(--neon-yellow);text-transform:uppercase;letter-spacing:1px;">${xss(b.category)}</div>`:''}
+                  ${b.description?`<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${xss(b.description.slice(0,60))}</div>`:''}
+                </div>
+              </div>`).join('')}
+          </div>`;
+      } else {
+        bizEl.innerHTML = '';
+      }
+    }
+  } catch(e){
+    if(commEl) commEl.innerHTML = '';
+    console.warn('loadAboutExtras:', e.message);
   }
 }
 
