@@ -3458,7 +3458,7 @@ function nav(page){
     else if(page==='friends')        loadFriendsList('friends');
     else if(page==='communities')    { loadCommGrid('all'); setTimeout(buildCommIconGrid,200); }
     else if(page==='businesses')     initBusinessPage();
-    else if(page==='messages')       { loadConversations(); _unreadMsgCount=0; updateMsgBadge(0); db.from('messages').update({read:true}).eq('receiver_id',CU.id).eq('read',false).catch(()=>{}); }
+    else if(page==='messages')       { loadConversations(); _unreadMsgCount=0; updateMsgBadge(0); }
     else if(page==='notifications')  loadNotifTab('nt-all');
     else if(page==='capsules')       loadCapsules();
     else if(page==='profile')        loadProfilePage(CU?.id);
@@ -5004,8 +5004,9 @@ async function openChat(userId,username,avatarUrl){
   const backBtn='<button id="chat-back-btn" onclick="showChatSidebar()" style="display:flex;align-items:center;gap:4px;padding:8px 10px;font-size:12px;" class="tbtn">← Voltar</button>';
   top.innerHTML=backBtn+avH+'<div><div class="chat-win-name">@'+xss(username)+'</div>'+statusTxt+'</div>';
   document.getElementById('msg-in-area').style.display='flex';
-  // Marcar msgs desse usuario como lidas e atualizar badge
-  db.from('messages').update({read:true}).eq('receiver_id',CU.id).eq('sender_id',userId).eq('read',false).then(()=>loadUnreadMsgCount());
+  // Zerar badge imediatamente e marcar como lido em background
+  loadUnreadMsgCount(); // Ja exclui o remetente atual da contagem
+  db.from('messages').update({read:true}).eq('receiver_id',CU.id).eq('sender_id',userId).eq('read',false).catch(()=>{});
 
   // On mobile: slide to chat window
   showChatWindow();
@@ -5048,6 +5049,14 @@ async function loadMsgs(userId){
   }
   area.innerHTML = html;
   area.scrollTop = area.scrollHeight;
+  // Marcar mensagens recebidas como lidas e atualizar badge
+  db.from('messages')
+    .update({read:true})
+    .eq('receiver_id', CU.id)
+    .eq('sender_id', userId)
+    .eq('read', false)
+    .then(()=>{ loadUnreadMsgCount(); })
+    .catch(()=>{});
 }
 
 
@@ -5154,17 +5163,27 @@ function setupRealtime(){
       showToast('🔔 '+pl.new.content,'success');
       loadNotifCount();
       if(document.getElementById('ht-alerts-list')?.children.length>0) loadHomeAlerts();
-    }).subscribe();
+    })
+    .on('postgres_changes',{event:'DELETE',schema:'public',table:'notifications',filter:'user_id=eq.'+CU.id},()=>{
+      loadNotifCount(); // Atualizar badge quando deletar
+    })
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'notifications',filter:'user_id=eq.'+CU.id},()=>{
+      loadNotifCount(); // Atualizar badge quando marcar como lido
+    })
+    .subscribe();
 
   // Real-time messages via Supabase Realtime
   db.channel('rt-msgs-'+CU.id)
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'messages',filter:'receiver_id=eq.'+CU.id},()=>{
+      loadUnreadMsgCount(); // Badge atualiza quando msg e marcada como lida
+    })
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'receiver_id=eq.'+CU.id},(pl)=>{
       handleIncomingMessage(pl.new);
     }).subscribe();
 
   // Polling fallback every 5s — ensures messages arrive even if realtime drops
   clearInterval(_msgPollInterval);
-  _msgPollInterval = setInterval(()=>{ pollNewMessages(); loadUnreadMsgCount(); }, 5000);
+  _msgPollInterval = setInterval(()=>{ pollNewMessages(); loadUnreadMsgCount(); loadNotifCount(); }, 8000);
 }
 
 let _lastMsgCheck=new Date().toISOString();
@@ -5202,12 +5221,11 @@ function handleIncomingMessage(msg){
 
   // Badge on chat button if not viewing this chat
   if(currentChatUser?.id!==senderId && homeChatUser?.id!==senderId){
-    _unreadMsgCount = (_unreadMsgCount||0) + 1;
-    updateMsgBadge(_unreadMsgCount);
+    loadUnreadMsgCount();
     const chatNav=document.getElementById('nb-messages');
     if(chatNav&&!document.getElementById('msg-badge')){
       const dot=document.createElement('span');
-      dot.className='nbadge';dot.id='msg-badge';dot.textContent=String(_unreadMsgCount);
+      dot.className='nbadge';dot.id='msg-badge';dot.textContent='';
       chatNav.appendChild(dot);
     }
   }
@@ -8936,10 +8954,14 @@ let _unreadMsgCount = 0;
 async function loadUnreadMsgCount(){
   if(!CU) return;
   try{
-    const {count} = await db.from('messages')
+    // Se ha um chat aberto, nao contar msgs desse remetente (ja estao sendo lidas)
+    let q = db.from('messages')
       .select('id', {count:'exact', head:true})
       .eq('receiver_id', CU.id)
       .eq('read', false);
+    if(currentChatUser?.id) q = q.neq('sender_id', currentChatUser.id);
+    if(homeChatUser?.id) q = q.neq('sender_id', homeChatUser.id);
+    const {count} = await q;
     _unreadMsgCount = count || 0;
     updateMsgBadge(_unreadMsgCount);
   }catch(e){}
