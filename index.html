@@ -4697,25 +4697,64 @@ async function loadProfilePage(userId){
         pbar.appendChild(img);
       }
 
-      // Details
+      // ── Info box — layout inline sem depender de CSS externo ──
       const pdet = document.createElement('div');
-      pdet.className = 'pdet';
-      pdet.innerHTML =
-        '<div class="pname">'+xss(profile.full_name||profile.username||'')+'</div>'+
-        '<div class="phandle">@'+xss(profile.username||'')+'</div>'+
-        (profile.bio ? '<div class="pbio">'+xss(profile.bio)+'</div>' : '')+
-        '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">⏱ '+days+' dias</div>'+
-        '<div class="pstats">'+
-          '<div class="pstat"><div class="pstn">'+(pRes.count||0)+'</div><div class="pstl">Posts</div></div>'+
-          '<div class="pstat pstat-click" id="stat-followers"><div class="pstn">'+(frRes.count||0)+'</div><div class="pstl pstl-link">Seguidores</div></div>'+
-          '<div class="pstat pstat-click" id="stat-seguindo"><div class="pstn">'+(fngRes.count||0)+'</div><div class="pstl pstl-link">Seguindo</div></div>'+
-        '</div>';
-      // Clique nos stats via addEventListener (evita problema de escaping)
-      setTimeout(()=>{
-        const _uid = userId;
-        document.getElementById('stat-followers')?.addEventListener('click',()=>showFollowersList(_uid,'seguidores'));
-        document.getElementById('stat-seguindo')?.addEventListener('click',()=>showFollowersList(_uid,'seguindo'));
-      },50);
+      pdet.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;';
+
+      // Nome — caixa própria com truncamento controlado
+      const pnameBox = document.createElement('div');
+      pnameBox.style.cssText = [
+        'font-family:Syne,sans-serif',
+        'font-weight:800',
+        'color:var(--text-light)',
+        'line-height:1.2',
+        'word-break:break-word',
+        'overflow-wrap:anywhere',
+        'white-space:normal',
+        'max-width:100%',
+        'font-size:clamp(12px,3.5vw,22px)',
+      ].join(';');
+      pnameBox.textContent = profile.full_name || profile.username || '';
+      pdet.appendChild(pnameBox);
+
+      // Handle
+      const phandleBox = document.createElement('div');
+      phandleBox.style.cssText = 'font-family:Space Mono,monospace;font-size:11px;color:var(--neon-cyan);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      phandleBox.textContent = '@' + (profile.username || '');
+      pdet.appendChild(phandleBox);
+
+      // Bio
+      if(profile.bio){
+        const pbioBox = document.createElement('div');
+        pbioBox.style.cssText = 'font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;';
+        pbioBox.textContent = profile.bio;
+        pdet.appendChild(pbioBox);
+      }
+
+      // Dias
+      const pdaysBox = document.createElement('div');
+      pdaysBox.style.cssText = 'font-size:10px;color:var(--text-muted);margin-top:2px;';
+      pdaysBox.textContent = '⏱ ' + days + ' dias';
+      pdet.appendChild(pdaysBox);
+
+      // Stats — clicáveis com DOM
+      const pstatsBox = document.createElement('div');
+      pstatsBox.style.cssText = 'display:flex;gap:14px;margin-top:6px;flex-wrap:wrap;';
+
+      const _uid = userId;
+      const makeStatEl = (count, label, clickFn) => {
+        const el = document.createElement('div');
+        el.style.cssText = 'text-align:center;' + (clickFn ? 'cursor:pointer;' : '');
+        el.innerHTML = '<div style="font-family:VT323,monospace;font-size:20px;color:var(--neon-cyan);">'+count+'</div>'
+          + '<div style="font-size:9px;color:var(--text-muted);'+(clickFn?'text-decoration:underline dotted;color:var(--neon-cyan);':'')+'">'+label+'</div>';
+        if(clickFn) el.addEventListener('click', clickFn);
+        return el;
+      };
+      pstatsBox.appendChild(makeStatEl(pRes.count||0, 'Posts', null));
+      pstatsBox.appendChild(makeStatEl(frRes.count||0, 'Seguidores', ()=>showFollowersList(_uid,'seguidores')));
+      pstatsBox.appendChild(makeStatEl(fngRes.count||0, 'Seguindo', ()=>showFollowersList(_uid,'seguindo')));
+      pdet.appendChild(pstatsBox);
+
       pbar.appendChild(pdet);
 
       // Buttons
@@ -8652,77 +8691,88 @@ function _updateAllPresenceDots(){
 // PERFIL — MODAL SEGUIDORES / SEGUINDO
 // ================================================================
 async function showFollowersList(userId, tipo){
-  const overlay = document.createElement('div');
-  overlay.className = 'game-modal-overlay';
-  overlay.id = 'followers-overlay';
+  document.getElementById('followers-overlay')?.remove();
+
   const titulo = tipo === 'seguidores' ? '👥 Seguidores' : '➡ Seguindo';
-  overlay.innerHTML = `
-    <div class="game-modal" style="max-width:360px;max-height:72vh;overflow:hidden;display:flex;flex-direction:column;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-        <div class="game-modal-title" style="margin:0;">${titulo}</div>
-        <button class="game-btn secondary" style="padding:4px 10px;margin:0;" onclick="document.getElementById('followers-overlay').remove()">✕</button>
-      </div>
-      <div id="followers-list" style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:6px;padding-right:2px;">
-        <div style="color:var(--text-muted);font-size:12px;text-align:center;padding:24px;">⏳ Carregando...</div>
-      </div>
-    </div>`;
+  const overlay = document.createElement('div');
+  overlay.id = 'followers-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(6px);z-index:5000;display:flex;align-items:center;justify-content:center;padding:16px;';
   overlay.onclick = e => { if(e.target===overlay) overlay.remove(); };
+
+  const box = document.createElement('div');
+  box.style.cssText = 'background:var(--bg-mid);border:1px solid var(--border-glow);border-radius:18px;padding:20px;max-width:380px;width:100%;max-height:75vh;display:flex;flex-direction:column;gap:12px;box-shadow:0 20px 60px rgba(0,0,0,.6);';
+
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;';
+  hdr.innerHTML = '<div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);letter-spacing:2px;">'+titulo+'</div>';
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '✕';
+  closeBtn.style.cssText = 'background:rgba(255,255,255,.08);border:1px solid var(--border-glow);color:var(--text-muted);width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:14px;';
+  closeBtn.onclick = () => overlay.remove();
+  hdr.appendChild(closeBtn);
+  box.appendChild(hdr);
+
+  const list = document.createElement('div');
+  list.style.cssText = 'overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:8px;';
+  list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:13px;">⏳ Carregando...</div>';
+  box.appendChild(list);
+  overlay.appendChild(box);
   document.body.appendChild(overlay);
 
-  const list = document.getElementById('followers-list');
   try{
-    let profiles = [];
-
+    let ids = [];
     if(tipo === 'seguidores'){
-      // Quem segue userId — usar FK igual ao resto do app
-      const{data, error} = await db.from('follows')
-        .select('follower_id, profiles!follows_follower_id_fkey(id,username,full_name,avatar_url,bio)')
-        .eq('following_id', userId)
-        .limit(100);
-      if(!error) profiles = (data||[]).map(r=>r.profiles).filter(Boolean);
+      const {data, error} = await db.from('follows').select('follower_id').eq('following_id', userId);
+      if(error) throw new Error(error.message);
+      ids = (data||[]).map(r => r.follower_id).filter(Boolean);
     } else {
-      // Quem userId segue
-      const{data, error} = await db.from('follows')
-        .select('following_id, profiles!follows_following_id_fkey(id,username,full_name,avatar_url,bio)')
-        .eq('follower_id', userId)
-        .limit(100);
-      if(!error) profiles = (data||[]).map(r=>r.profiles).filter(Boolean);
+      const {data, error} = await db.from('follows').select('following_id').eq('follower_id', userId);
+      if(error) throw new Error(error.message);
+      ids = (data||[]).map(r => r.following_id).filter(Boolean);
     }
 
-    if(!profiles.length){
-      list.innerHTML = `<div style="text-align:center;padding:30px 16px;">
-        <div style="font-size:40px;margin-bottom:10px;">${tipo==='seguidores'?'👥':'🔭'}</div>
-        <div style="color:var(--text-muted);font-size:12px;">${tipo==='seguidores'?'Nenhum seguidor ainda':'Não está seguindo ninguém'}</div>
-      </div>`;
+    if(!ids.length){
+      list.innerHTML = '<div style="text-align:center;padding:30px;">'
+        +'<div style="font-size:40px;margin-bottom:10px;">'+(tipo==='seguidores'?'👥':'🔭')+'</div>'
+        +'<div style="color:var(--text-muted);font-size:12px;">'+(tipo==='seguidores'?'Nenhum seguidor ainda':'Não está seguindo ninguém')+'</div>'
+        +'</div>';
       return;
     }
 
+    const {data:profiles, error:pErr} = await db.from('profiles')
+      .select('id,username,full_name,avatar_url,bio').in('id', ids);
+    if(pErr) throw new Error(pErr.message);
+
     list.innerHTML = '';
-    profiles.forEach(p => {
-      const isOnline = _onlineUsers?.has(p.id) || false;
-      const item = document.createElement('div');
-      item.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 6px;border-bottom:1px solid var(--border-glow);cursor:pointer;border-radius:8px;transition:background .15s;';
-      item.onmouseenter = () => item.style.background = 'rgba(0,255,204,.06)';
-      item.onmouseleave = () => item.style.background = '';
-      item.innerHTML = `
-        <div style="position:relative;flex-shrink:0;">
-          ${renderAvatar(p, 44, 'ci-av')}
-          <span style="position:absolute;bottom:1px;right:1px;width:10px;height:10px;border-radius:50%;border:2px solid var(--bg-mid);background:${isOnline?'#22c55e':'#ef4444'};display:block;"></span>
-        </div>
-        <div style="flex:1;min-width:0;">
-          <div style="font-size:13px;font-weight:700;color:var(--text-light);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${xss(p.full_name||p.username||'?')}</div>
-          <div style="font-size:10px;color:var(--neon-cyan);">@${xss(p.username||'')}</div>
-          ${p.bio ? `<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;">${xss(p.bio.slice(0,50))}</div>` : ''}
-        </div>
-        <div style="font-size:9px;color:${isOnline?'#22c55e':'#6b7280'};flex-shrink:0;">${isOnline?'● on':'○ off'}</div>`;
-      item.onclick = () => { overlay.remove(); loadProfilePage(p.id); };
-      list.appendChild(item);
+    (profiles||[]).forEach(p => {
+      const isOnline = _onlineUsers?.has(p.id)||false;
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid rgba(255,255,255,.07);cursor:pointer;border-radius:8px;transition:background .15s;';
+      row.onmouseenter = ()=>row.style.background='rgba(0,255,204,.06)';
+      row.onmouseleave = ()=>row.style.background='';
+
+      const avWrap = document.createElement('div');
+      avWrap.style.cssText = 'position:relative;flex-shrink:0;';
+      avWrap.innerHTML = renderAvatar(p,44,'ci-av')
+        +'<span style="position:absolute;bottom:1px;right:1px;width:10px;height:10px;border-radius:50%;border:2px solid var(--bg-mid);background:'+(isOnline?'#22c55e':'#ef4444')+';display:block;"></span>';
+
+      const info = document.createElement('div');
+      info.style.cssText = 'flex:1;min-width:0;';
+      info.innerHTML = '<div style="font-size:13px;font-weight:700;color:var(--text-light);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+xss(p.full_name||p.username||'?')+'</div>'
+        +'<div style="font-size:10px;color:var(--neon-cyan);">@'+xss(p.username||'')+'</div>'
+        +(p.bio?'<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px;">'+xss(p.bio.slice(0,50))+'</div>':'');
+
+      const status = document.createElement('div');
+      status.style.cssText = 'font-size:9px;color:'+(isOnline?'#22c55e':'#6b7280')+';flex-shrink:0;';
+      status.textContent = isOnline?'● on':'○ off';
+
+      row.appendChild(avWrap); row.appendChild(info); row.appendChild(status);
+      row.onclick = ()=>{ overlay.remove(); loadProfilePage(p.id); };
+      list.appendChild(row);
     });
   } catch(e){
-    list.innerHTML = `<div style="color:var(--neon-pink);font-size:12px;padding:20px;text-align:center;">
-      <div style="font-size:28px;margin-bottom:8px;">⚠</div>
-      ${xss(e.message||'Erro desconhecido')}
-    </div>`;
+    list.innerHTML = '<div style="color:var(--neon-pink);font-size:12px;padding:20px;text-align:center;">'
+      +'<div style="font-size:28px;margin-bottom:8px;">⚠</div>'+xss(e.message||'Erro')+'</div>';
     console.error('showFollowersList:', e);
   }
 }
