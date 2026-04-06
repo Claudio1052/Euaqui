@@ -315,7 +315,7 @@ nav{position:fixed;top:0;left:0;right:0;background:#0a0a2a;border-bottom:1px sol
 .ci-time{font-family:'VT323',monospace;font-size:13px;color:var(--text-muted);}
 .chat-main{display:flex;flex-direction:column;background:var(--bg-deep);}
 .chat-top{padding:12px 16px;border-bottom:1px solid var(--border-glow);display:flex;align-items:center;gap:10px;background:rgba(10,10,42,.8);}
-.msgs-area{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px;}
+.msgs-area{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px;min-height:0;}
 
 
 
@@ -422,8 +422,8 @@ nav{position:fixed;top:0;left:0;right:0;background:#0a0a2a;border-bottom:1px sol
 .ci-name{font-family:'Silkscreen',monospace;font-size:10px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .ci-last{font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;}
 .ci-unread{background:var(--neon-pink);color:#fff;font-size:9px;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 4px;flex-shrink:0;}
-.chat-window{display:flex;flex-direction:column;background:var(--bg-deep);}
-.chat-win-hdr{padding:12px 16px;border-bottom:1px solid var(--border-glow);display:flex;align-items:center;gap:12px;background:rgba(10,10,42,.9);flex-shrink:0;}
+.chat-window{display:flex;flex-direction:column;background:var(--bg-deep);height:100%;overflow:hidden;}
+.chat-win-hdr{padding:12px 16px;border-bottom:1px solid var(--border-glow);display:flex;align-items:center;gap:12px;background:rgba(10,10,42,.96);flex-shrink:0;position:sticky;top:0;z-index:10;backdrop-filter:blur(12px);}
 .chat-win-av{width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid var(--border-glow);font-size:18px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.06);flex-shrink:0;}
 .chat-win-name{font-family:'Silkscreen',monospace;font-size:12px;color:var(--neon-cyan);}
 .chat-win-status{font-size:10px;color:var(--text-muted);}
@@ -439,7 +439,7 @@ nav{position:fixed;top:0;left:0;right:0;background:#0a0a2a;border-bottom:1px sol
 
 
 
-.msg-in-bar{padding:10px 14px;border-top:1px solid var(--border-glow);background:rgba(10,10,42,.95);display:flex;gap:8px;align-items:flex-end;flex-shrink:0;}
+.msg-in-bar{padding:10px 14px;border-top:1px solid var(--border-glow);background:rgba(10,10,42,.97);display:flex;gap:8px;align-items:flex-end;flex-shrink:0;position:sticky;bottom:0;z-index:10;backdrop-filter:blur(12px);}
 .msg-attach-btn{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:var(--text-muted);width:36px;height:36px;border-radius:8px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0;}
 .msg-attach-btn:hover{color:var(--neon-cyan);border-color:var(--border-glow);}
 .msg-in{flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:20px;padding:9px 14px;color:var(--text-light);font-family:'Space Mono',monospace;font-size:12px;outline:none;resize:none;max-height:100px;overflow-y:auto;transition:border-color .2s;line-height:1.5;}
@@ -2211,6 +2211,34 @@ body.day-mode .attach-menu button:hover{ background:rgba(0,139,158,.08); color:#
 /* ── Convite aguardando ── */
 .game-invite-waiting{display:flex;align-items:center;justify-content:center;gap:8px;font-size:11px;color:var(--text-muted);font-family:'Space Mono',monospace;}
 .game-waiting-dot{width:8px;height:8px;border-radius:50%;background:var(--neon-cyan);animation:recBlink 1.2s ease-in-out infinite;flex-shrink:0;}
+
+/* ── Botão Microfone dedicado ── */
+.msg-mic-btn{
+  width:40px; height:40px;
+  border-radius:50%;
+  background:rgba(0,255,204,.12);
+  border:1px solid var(--neon-cyan);
+  color:var(--neon-cyan);
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer;
+  flex-shrink:0;
+  transition:all .2s;
+}
+.msg-mic-btn:hover{
+  background:rgba(0,255,204,.25);
+  transform:scale(1.08);
+}
+.msg-mic-btn.recording{
+  background:rgba(255,51,102,.2);
+  border-color:var(--neon-pink);
+  color:var(--neon-pink);
+  animation:recBlink 1s ease-in-out infinite;
+}
+body.day-mode .msg-mic-btn{
+  background:rgba(0,139,158,.1);
+  border-color:#008b9e;
+  color:#008b9e;
+}
 </style>
 </head>
 <body>
@@ -2631,7 +2659,16 @@ body.day-mode .attach-menu button:hover{ background:rgba(0,139,158,.08); color:#
               <span id="chat-audio-timer" style="font-family:'VT323',monospace;font-size:16px;color:var(--neon-pink);">0:00</span>
               <button class="msg-attach-btn" onclick="cancelAudioRecord()" style="color:var(--neon-pink);" title="Cancelar">✕</button>
             </div>
-            <!-- Enviar / Mic -->
+            <!-- Botão de áudio dedicado (microfone) -->
+            <button class="msg-mic-btn" id="chat-mic-btn" onclick="startAudioRecord()" title="Gravar áudio">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8" y1="23" x2="16" y2="23"/>
+              </svg>
+            </button>
+            <!-- Botão enviar -->
             <button class="msg-snd" id="chat-send-btn" onclick="sendMsg()">➤</button>
           </div>
           <input type="file" id="msg-file-input" style="display:none;" onchange="handleMsgFile(this)">
@@ -7594,8 +7631,10 @@ function startAudioRecord(ctx){
     const recEl=document.getElementById('chat-audio-recorder');
     const inputEl=document.getElementById('msg-in');
     const sendBtn=document.getElementById('chat-send-btn');
+    const micBtn=document.getElementById('chat-mic-btn');
     if(recEl)recEl.style.display='flex';
     if(inputEl)inputEl.style.display='none';
+    if(micBtn)micBtn.style.display='none';
     if(sendBtn){sendBtn.onclick=()=>stopAudioRecord();sendBtn.innerHTML='⏹';sendBtn.title='Parar e enviar';}
     _audioSeconds=0;
     const timerEl=document.getElementById('chat-audio-timer');
@@ -7614,8 +7653,10 @@ function stopAudioRecord(){
   const recEl=document.getElementById('chat-audio-recorder');
   const inputEl=document.getElementById('msg-in');
   const sendBtn=document.getElementById('chat-send-btn');
+  const micBtn=document.getElementById('chat-mic-btn');
   if(recEl)recEl.style.display='none';
   if(inputEl)inputEl.style.display='';
+  if(micBtn)micBtn.style.display='';
   if(sendBtn){sendBtn.onclick=()=>sendMsg();sendBtn.innerHTML='➤';sendBtn.title='Enviar';}
 }
 
@@ -7978,18 +8019,63 @@ function isMyTurn(){
 
 function showGameResult(msg,gameId){
   const wrap=document.getElementById('game-board-wrap');if(!wrap)return;
+
+  // Determinar se o resultado é vitória minha, derrota ou empate
+  const isWin = msg.includes('🏆');
+  const isDraw = msg.includes('Empate') || msg.includes('🤝');
+  const isGameOver = isWin || isDraw || msg.includes('Game Over');
+
+  // Extrair o nome do vencedor da mensagem se houver
+  const myUsername = CP?.username || CP?.name || 'Você';
+  const opponentUsername = _gameCurrentUser?.username || _gameCurrentUser?.name || 'Adversário';
+
+  // Descobrir se eu venci: host=❌/Vermelho/Brancas, guest=⭕/Azul/Pretas
+  let winnerName = '';
+  let iMWon = false;
+  if(isWin){
+    if(_gameType==='ttt'){
+      const hostWon = msg.includes('❌');
+      iMWon = (_gameMyRole==='host' && hostWon) || (_gameMyRole==='guest' && !hostWon);
+    } else if(_gameType==='checker'){
+      const redWon = msg.includes('Vermelho') || msg.includes('Vermelhas');
+      iMWon = (_gameMyRole==='host' && redWon) || (_gameMyRole==='guest' && !redWon);
+    } else if(_gameType==='chess'){
+      const whiteWon = msg.includes('Brancas');
+      iMWon = (_gameMyRole==='host' && whiteWon) || (_gameMyRole==='guest' && !whiteWon);
+    } else { iMWon = true; }
+    winnerName = iMWon ? myUsername : opponentUsername;
+  }
+
+  const trophy = isWin ? (iMWon ? '🏆' : '😢') : isDraw ? '🤝' : '🎮';
+  const headline = isWin
+    ? (iMWon
+        ? `🏆 Parabéns, @${myUsername}!`
+        : `🎉 @${winnerName} venceu!`)
+    : isDraw ? '🤝 Empate!' : msg;
+
+  const subtitle = isWin
+    ? (iMWon ? 'Você é o campeão desta partida! 🎉' : 'Boa sorte na próxima rodada!')
+    : isDraw ? 'Que partida equilibrada!' : '';
+
   const result=document.createElement('div');
-  result.style.cssText='position:absolute;inset:0;background:rgba(0,0,0,.88);display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:20px;z-index:10;gap:14px;padding:20px;text-align:center;';
-  const trophy=msg.includes('Vencedor')||msg.includes('🏆')?'🏆':msg.includes('Empate')?'🤝':'🎮';
+  result.style.cssText='position:absolute;inset:0;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:20px;z-index:10;gap:12px;padding:24px;text-align:center;';
   result.innerHTML=`
-    <div style="font-size:52px;">${trophy}</div>
-    <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);letter-spacing:2px;">${msg}</div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:6px;">
+    <div style="font-size:56px;animation:recBlink 1.5s ease-in-out 3;">${trophy}</div>
+    <div style="font-family:Silkscreen,monospace;font-size:14px;color:${iMWon?'var(--neon-cyan)':isDraw?'var(--neon-yellow)':'var(--neon-pink)'};letter-spacing:2px;line-height:1.5;">${headline}</div>
+    ${subtitle?`<div style="font-size:12px;color:var(--text-muted);margin-top:-4px;">${subtitle}</div>`:''}
+    <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:10px;">
       <button class="game-btn" onclick="handleRematch('${gameId}')">🔄 Jogar Novamente</button>
-      <button class="game-btn secondary" onclick="exitGame()">✕ Sair</button>
+      <button class="game-btn secondary" onclick="exitGame()">✕ Fechar</button>
     </div>`;
   wrap.style.position='relative';
   wrap.appendChild(result);
+
+  // Fechar automaticamente após 8 segundos se o usuário não interagir
+  result._autoClose = setTimeout(()=>{
+    if(document.getElementById('game-board-wrap')){
+      exitGame();
+    }
+  }, 8000);
 }
 
 function handleRematch(gameId){
