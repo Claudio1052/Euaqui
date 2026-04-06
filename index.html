@@ -3203,6 +3203,7 @@ function showApp(){
   }catch(e){}
   // Load page data — each wrapped so one failure doesn't block the rest
   setTimeout(()=>{ try{ loadFeed(); }catch(e){ console.warn('loadFeed:',e); } }, 0);
+  setTimeout(()=>{ try{ loadNotifCount(); loadUnreadMsgCount(); }catch(e){} }, 0);
   setTimeout(()=>{ try{ loadNotifCount(); }catch(e){} }, 100);
   setTimeout(()=>{ try{ checkMigration(); }catch(e){} }, 2000);
   setTimeout(()=>{ try{ loadBlast(); }catch(e){} }, 200);
@@ -3457,7 +3458,7 @@ function nav(page){
     else if(page==='friends')        loadFriendsList('friends');
     else if(page==='communities')    { loadCommGrid('all'); setTimeout(buildCommIconGrid,200); }
     else if(page==='businesses')     initBusinessPage();
-    else if(page==='messages')       loadConversations();
+    else if(page==='messages')       { loadConversations(); _unreadMsgCount=0; updateMsgBadge(0); db.from('messages').update({read:true}).eq('receiver_id',CU.id).eq('read',false).catch(()=>{}); }
     else if(page==='notifications')  loadNotifTab('nt-all');
     else if(page==='capsules')       loadCapsules();
     else if(page==='profile')        loadProfilePage(CU?.id);
@@ -5003,6 +5004,8 @@ async function openChat(userId,username,avatarUrl){
   const backBtn='<button id="chat-back-btn" onclick="showChatSidebar()" style="display:flex;align-items:center;gap:4px;padding:8px 10px;font-size:12px;" class="tbtn">← Voltar</button>';
   top.innerHTML=backBtn+avH+'<div><div class="chat-win-name">@'+xss(username)+'</div>'+statusTxt+'</div>';
   document.getElementById('msg-in-area').style.display='flex';
+  // Marcar msgs desse usuario como lidas e atualizar badge
+  db.from('messages').update({read:true}).eq('receiver_id',CU.id).eq('sender_id',userId).eq('read',false).then(()=>loadUnreadMsgCount());
 
   // On mobile: slide to chat window
   showChatWindow();
@@ -5125,7 +5128,7 @@ async function markRead(id,el){
     niEl.style.padding='0';
     niEl.style.margin='0';
     niEl.style.overflow='hidden';
-    setTimeout(()=>niEl.remove(), 320);
+    setTimeout(()=>{ niEl.remove(); loadNotifCount(); }, 320);
   }
   // Try DELETE first
   const{error:delErr} = await db.from('notifications').delete().eq('id',id).eq('user_id',CU.id);
@@ -5161,7 +5164,7 @@ function setupRealtime(){
 
   // Polling fallback every 5s — ensures messages arrive even if realtime drops
   clearInterval(_msgPollInterval);
-  _msgPollInterval = setInterval(()=>{ pollNewMessages(); }, 5000);
+  _msgPollInterval = setInterval(()=>{ pollNewMessages(); loadUnreadMsgCount(); }, 5000);
 }
 
 let _lastMsgCheck=new Date().toISOString();
@@ -5199,10 +5202,12 @@ function handleIncomingMessage(msg){
 
   // Badge on chat button if not viewing this chat
   if(currentChatUser?.id!==senderId && homeChatUser?.id!==senderId){
+    _unreadMsgCount = (_unreadMsgCount||0) + 1;
+    updateMsgBadge(_unreadMsgCount);
     const chatNav=document.getElementById('nb-messages');
     if(chatNav&&!document.getElementById('msg-badge')){
       const dot=document.createElement('span');
-      dot.className='nbadge';dot.id='msg-badge';dot.textContent='●';
+      dot.className='nbadge';dot.id='msg-badge';dot.textContent=String(_unreadMsgCount);
       chatNav.appendChild(dot);
     }
   }
@@ -5646,11 +5651,10 @@ async function loadHomeAlerts(){
 
 async function markAllNotifsRead(){
   if(!CU) return;
-  // Try DELETE all notifications; fallback to marking as read
-  const{error:delAllErr} = await db.from('notifications').delete().eq('user_id',CU.id);
-  if(delAllErr){
-    await db.from('notifications').update({read:true}).eq('user_id',CU.id).eq('read',false);
-  }
+  db.from('notifications').delete().eq('user_id',CU.id).then(({error})=>{
+    if(error) db.from('notifications').update({read:true}).eq('user_id',CU.id);
+    loadNotifCount();
+  });
   // Remove all notification items from every list
   ['ht-alerts-list','notif-list-all','notif-list-mentions','notif-list-social','notif-list-system'].forEach(id=>{
     const el=document.getElementById(id);
@@ -6447,8 +6451,7 @@ async function loadNotifTab(tabId){
   const el = document.getElementById('notif-list-' + tabId.replace('nt-',''));
   if(!el) return;
   el.innerHTML = skeletons(3);
-  const _24h=new Date(Date.now()-24*60*60*1000).toISOString();
-  let q = db.from('notifications').select('id,type,content,read,created_at').eq('user_id',CU.id).gte('created_at',_24h).order('created_at',{ascending:false}).limit(40);
+  let q = db.from('notifications').select('id,type,content,read,created_at').eq('user_id',CU.id).eq('read',false).order('created_at',{ascending:false}).limit(50);
   if(Array.isArray(filter)) q = q.in('type', filter);
   else if(filter) q = q.eq('type', filter);
   const{data} = await q;
@@ -6466,8 +6469,7 @@ async function loadNotifTab(tabId){
         ${n.type==='friend_request'?`<div class="ni-actions"><button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();acceptFriendFromNotif(this)">✓ Aceitar</button><button class="ni-act-btn ni-act-rej" onclick="event.stopPropagation();">✕ Recusar</button></div>`:''}
       </div>
     </div>`).join('');
-  // Mark all as read
-  try{ await db.from('notifications').update({read:true}).eq('user_id',CU.id).eq('read',false); }catch(e){}
+  // Nao marcar automaticamente ao abrir
   document.getElementById('notif-badge').style.display='none';
 }
 
@@ -8922,6 +8924,58 @@ async function loadAboutExtras(userId){
       bizEl.innerHTML = '';
       console.warn('businesses:', e.message);
     }
+  }
+}
+
+
+// ================================================================
+// BADGE DE MENSAGENS NAO LIDAS
+// ================================================================
+let _unreadMsgCount = 0;
+
+async function loadUnreadMsgCount(){
+  if(!CU) return;
+  try{
+    const {count} = await db.from('messages')
+      .select('id', {count:'exact', head:true})
+      .eq('receiver_id', CU.id)
+      .eq('read', false);
+    _unreadMsgCount = count || 0;
+    updateMsgBadge(_unreadMsgCount);
+  }catch(e){}
+}
+
+function updateMsgBadge(n){
+  // Badge no bottom nav (icone de chat)
+  let bnBadge = document.getElementById('bnav-msg-badge');
+  if(!bnBadge){
+    const btn = document.getElementById('bn-messages');
+    if(btn){
+      bnBadge = document.createElement('span');
+      bnBadge.id = 'bnav-msg-badge';
+      bnBadge.className = 'nbadge';
+      bnBadge.style.cssText = 'position:absolute;top:4px;right:calc(50% - 16px);font-size:8px;min-width:14px;height:14px;line-height:14px;padding:0 3px;border-radius:7px;display:none;';
+      btn.style.position = 'relative';
+      btn.appendChild(bnBadge);
+    }
+  }
+  if(bnBadge){
+    bnBadge.textContent = n > 99 ? '99+' : n;
+    bnBadge.style.display = n > 0 ? 'inline-block' : 'none';
+  }
+  // Badge no nav desktop
+  const navBadge = document.getElementById('msg-badge');
+  if(!navBadge && n > 0){
+    const chatNav = document.getElementById('nb-messages');
+    if(chatNav){
+      const dot = document.createElement('span');
+      dot.className = 'nbadge'; dot.id = 'msg-badge';
+      dot.textContent = n > 99 ? '99+' : String(n);
+      chatNav.appendChild(dot);
+    }
+  } else if(navBadge){
+    if(n > 0){ navBadge.textContent = n > 99 ? '99+' : String(n); }
+    else { navBadge.remove(); }
   }
 }
 
