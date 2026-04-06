@@ -3285,6 +3285,7 @@ function showApp(){
   // Load page data — each wrapped so one failure doesn't block the rest
   setTimeout(()=>{ try{ loadFeed(); }catch(e){ console.warn('loadFeed:',e); } }, 0);
   setTimeout(()=>{ try{ loadNotifCount(); loadUnreadMsgCount(); }catch(e){} }, 0);
+  setTimeout(()=>{ try{ _initCallListen(); }catch(e){} }, 500);
   setTimeout(()=>{ try{ loadNotifCount(); }catch(e){} }, 100);
   setTimeout(()=>{ try{ checkMigration(); }catch(e){} }, 2000);
   setTimeout(()=>{ try{ loadBlast(); }catch(e){} }, 200);
@@ -5245,13 +5246,7 @@ function setupRealtime(){
   // Real-time notifications
   db.channel('rt-notifs-'+CU.id)
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'user_id=eq.'+CU.id},(pl)=>{
-      const n=pl.new;
-      // Chamada recebida — tratar antes de qualquer outra coisa
-      if(n.type==='call_incoming'){
-        handleCallNotification(n);
-        return; // não mostrar toast nem badge para chamadas
-      }
-      showToast('🔔 '+n.content,'success');
+      showToast('🔔 '+pl.new.content,'success');
       loadNotifCount();
       if(document.getElementById('ht-alerts-list')?.children.length>0) loadHomeAlerts();
     }).subscribe();
@@ -9065,164 +9060,208 @@ async function loadUnreadMsgCount(){
 
 
 
+
 // ================================================================
 // CHAMADAS DE VOZ/VÍDEO
 // ================================================================
 // ================================================================
-// CHAMADAS DE VOZ/VÍDEO v4 — Ordem correta de operações
-// Sinalização: notifications (INSERT) → realtime chega ao destino
-// Canal RTC: 'call-{sessionId}' único por chamada
+// CHAMADAS DE VOZ/VÍDEO
+// - Sinalização: Supabase Broadcast no canal 'call-{menorId}-{maiorId}'
+//   (canal fixo entre os 2 usuários, sempre o mesmo)
+// - WebRTC: com _waitIce para SDP completo
+// - Ring: som de toque via AudioContext
+// - Popup de chamada recebida (não vai para notificações)
 // ================================================================
-let _pc=null, _localStream=null, _rtcCh=null;
+
+let _pc=null, _localStream=null, _sigCh=null;
 let _callTimer=null, _callSecs=0;
 let _callPeer=null, _callType='audio';
 let _isCaller=false, _isMuted=false;
-let _pendingOffer=null, _sessionId=null;
-const _STUN={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun2.l.google.com:19302'}]};
+let _pendingOffer=null, _ringing=null;
+const _ICE={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun2.l.google.com:19302'}]};
 
-// ── Aguardar ICE gathering completo ──────────────────────────────
+// Canal fixo entre dois usuários (mesma string dos dois lados)
+function _chanId(uid1, uid2){
+  return 'vcall-'+(uid1<uid2?uid1+'-'+uid2:uid2+'-'+uid1);
+}
+
+// Aguardar ICE gathering completo (timeout 4s)
 function _waitIce(pc){
-  return new Promise(resolve=>{
-    if(pc.iceGatheringState==='complete'){ resolve(); return; }
-    const check=()=>{ if(pc.iceGatheringState==='complete'){ pc.removeEventListener('icegatheringstatechange',check); resolve(); } };
-    pc.addEventListener('icegatheringstatechange',check);
-    setTimeout(resolve, 4000); // timeout de segurança
+  return new Promise(r=>{
+    if(pc.iceGatheringState==='complete'){r();return;}
+    const h=()=>{if(pc.iceGatheringState==='complete'){pc.removeEventListener('icegatheringstatechange',h);r();}};
+    pc.addEventListener('icegatheringstatechange',h);
+    setTimeout(r,4000);
   });
 }
 
+// ── Som de toque (ringtone via AudioContext) ─────────────────────
+function _startRing(){
+  try{
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    let i=0;
+    _ringing=setInterval(()=>{
+      const o=ctx.createOscillator(), g=ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type='sine'; o.frequency.value=i%2===0?440:480;
+      g.gain.setValueAtTime(0.3,ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.4);
+      o.start(); o.stop(ctx.currentTime+0.4);
+      i++;
+    },1000);
+  }catch(e){}
+}
+function _stopRing(){ clearInterval(_ringing); _ringing=null; }
+
 // ── 1. QUEM LIGA ────────────────────────────────────────────────
 async function startCall(userId, username, type){
-  if(!CU){ showToast('Faça login','error'); return; }
-  if(_pc){ showToast('Já há uma chamada ativa','error'); return; }
+  if(!CU){showToast('Faça login','error');return;}
+  if(_pc){showToast('Já há uma chamada ativa','error');return;}
 
   _callType=type||'audio'; _isCaller=true;
   _callPeer={id:userId,name:username};
-  _sessionId='c'+Date.now();
 
-  // Pedir mídia primeiro
+  // Pedir mídia
   try{
     _localStream=await navigator.mediaDevices.getUserMedia({audio:true,video:_callType==='video'});
-  }catch(e){ showToast('Permissão negada: '+e.message,'error'); return; }
+  }catch(e){showToast('Permissão de microfone negada','error');return;}
 
-  _showCallUI('caller', username, _callType, null);
+  // Mostrar tela de chamando + tocar ring
+  _showCallUI('caller',username,_callType,null);
+  _startRing();
 
-  // PASSO 1: Abrir canal e aguardar SUBSCRIBED
-  _rtcCh = db.channel('call-'+_sessionId, {config:{broadcast:{self:false}}})
-    .on('broadcast',{event:'answer'},(p)=>{ _onAnswer(p.payload.sdp); })
-    .on('broadcast',{event:'ice'},   (p)=>{ _addIce(p.payload.c); })
-    .on('broadcast',{event:'reject'},(p)=>{ _hangup('❌ Chamada recusada'); })
-    .on('broadcast',{event:'end'},   (p)=>{ _hangup('📵 Chamada encerrada'); })
-    .subscribe(async(status)=>{
-      if(status!=='SUBSCRIBED') return;
-
-      // PASSO 2: Criar PC (onicecandidate já tem canal disponível)
-      _buildPC();
-
-      // PASSO 3: Criar offer e aguardar ICE gathering COMPLETO
+  // Abrir canal de sinalização (fixo entre os 2 usuários)
+  const cid=_chanId(CU.id,userId);
+  if(_sigCh){try{db.removeChannel(_sigCh);}catch(e){}}
+  _sigCh=db.channel(cid,{config:{broadcast:{self:false}}})
+    .on('broadcast',{event:'call-answer'},(p)=>_onAnswer(p.payload))
+    .on('broadcast',{event:'call-reject'},(p)=>{_stopRing();_hangup('❌ Chamada recusada');})
+    .on('broadcast',{event:'call-end'},   (p)=>{_stopRing();_hangup('📵 Encerrada');})
+    .on('broadcast',{event:'call-ice'},   (p)=>_addIce(p.payload.c))
+    .subscribe(async(s)=>{
+      if(s!=='SUBSCRIBED')return;
+      // Criar PC e offer DEPOIS do canal estar pronto
+      _buildPC(userId);
       const offer=await _pc.createOffer();
       await _pc.setLocalDescription(offer);
-      await _waitIce(_pc); // aguarda todos os ICE candidates
-
-      // PASSO 4: Enviar SDP completo via notification
-      const payload=JSON.stringify({
-        sid:_sessionId, ctype:_callType,
-        fromId:CU.id,
-        fromName:CP?.full_name||CP?.username||'Alguém',
-        fromAv:CP?.avatar_url||'',
-        sdp:{type:_pc.localDescription.type, sdp:_pc.localDescription.sdp}
+      await _waitIce(_pc);
+      // Enviar invite no canal de escuta do destinatário
+      const _invCh=db.channel('vcall-listen-'+userId,{config:{broadcast:{self:false}}});
+      _invCh.subscribe(si=>{
+        if(si!=='SUBSCRIBED') return;
+        _invCh.send({type:'broadcast',event:'call-invite',payload:{
+          from:CU.id,
+          name:CP?.full_name||CP?.username||'Alguém',
+          avatar:CP?.avatar_url||'',
+          callType:_callType,
+          sdp:{type:_pc.localDescription.type,sdp:_pc.localDescription.sdp}
+        }});
+        setTimeout(()=>{try{db.removeChannel(_invCh);}catch(e){}},3000);
       });
-      const {error}=await db.from('notifications').insert({
-        user_id:userId, actor_id:CU.id,
-        type:'call_incoming', content:payload, read:false
-      });
-      if(error) showToast('Erro ao chamar: '+error.message,'error');
     });
 }
 
-// ── 2. QUEM RECEBE (chamado via setupRealtime) ──────────────────
-function handleCallNotification(notif){
-  if(notif.type!=='call_incoming') return;
-  let d; try{d=JSON.parse(notif.content);}catch(e){return;}
-  if(!d?.sid) return;
+// ── 2. RECEBER CHAMADA (via canal de sinalização permanente) ─────
+function _setupCallListen(){
+  if(!CU) return;
+  // Este canal escuta chamadas DE qualquer amigo
+  // Mas como o canal é par-a-par, precisamos de um canal por amigo
+  // Solução: canal de "disponibilidade" por usuário
+  if(window._callListenCh) return;
+  window._callListenCh=db.channel('vcall-listen-'+CU.id,{config:{broadcast:{self:false}}})
+    .on('broadcast',{event:'call-invite'},(p)=>{
+      if(p.payload?.from && p.payload.from!==CU.id) _onIncoming(p.payload);
+    })
+    .subscribe();
+}
 
-  // Deletar notification para não aparecer no sino
-  db.from('notifications').delete().eq('id',notif.id).catch(()=>{});
-
+// ── 3. RECEBER INVITE ────────────────────────────────────────────
+function _onIncoming(payload){
   if(_pc){
-    // Ocupado → rejeitar via canal
-    const ch=db.channel('call-'+d.sid,{config:{broadcast:{self:false}}});
-    ch.subscribe(s=>{ if(s==='SUBSCRIBED'){
-      ch.send({type:'broadcast',event:'reject',payload:{}});
+    // Ocupado
+    const cid=_chanId(CU.id,payload.from);
+    const ch=db.channel(cid,{config:{broadcast:{self:false}}});
+    ch.subscribe(s=>{if(s==='SUBSCRIBED'){
+      ch.send({type:'broadcast',event:'call-reject',payload:{from:CU.id,reason:'busy'}});
       setTimeout(()=>{try{db.removeChannel(ch);}catch(e){}},2000);
     }});
     return;
   }
-
-  _sessionId=d.sid; _callType=d.ctype||'audio';
-  _isCaller=false; _pendingOffer=d.sdp;
-  _callPeer={id:d.fromId, name:d.fromName, avatar:d.fromAv};
-  _showCallUI('receiver', d.fromName||'Amigo', _callType, d.fromAv);
+  _callPeer={id:payload.from,name:payload.name,avatar:payload.avatar};
+  _callType=payload.callType||'audio';
+  _pendingOffer=payload.sdp;
+  _isCaller=false;
+  _startRing();
+  _showCallUI('receiver',payload.name,_callType,payload.avatar);
 }
 
-// ── 3. ACEITAR ──────────────────────────────────────────────────
+// ── 4. ACEITAR ──────────────────────────────────────────────────
 async function acceptCall(){
-  if(!_pendingOffer||!_sessionId) return;
-  const offerSDP=_pendingOffer; _pendingOffer=null;
+  if(!_pendingOffer||!_callPeer)return;
+  _stopRing();
+  const offer=_pendingOffer; _pendingOffer=null;
   const st=document.getElementById('call-status');
   if(st) st.textContent='conectando...';
 
   try{
     _localStream=await navigator.mediaDevices.getUserMedia({audio:true,video:_callType==='video'});
-  }catch(e){ showToast('Microfone negado','error'); rejectCall(); return; }
+  }catch(e){showToast('Microfone negado','error');rejectCall();return;}
 
-  // PASSO 1: Abrir MESMO canal do chamador
-  _rtcCh=db.channel('call-'+_sessionId,{config:{broadcast:{self:false}}})
-    .on('broadcast',{event:'ice'},(p)=>{ _addIce(p.payload.c); })
-    .on('broadcast',{event:'end'},(p)=>{ _hangup('📵 Chamada encerrada'); })
-    .subscribe(async(status)=>{
-      if(status!=='SUBSCRIBED') return;
-
-      // PASSO 2: Criar PC
-      _buildPC();
-
-      // PASSO 3: Processar offer e criar answer
-      await _pc.setRemoteDescription(new RTCSessionDescription(offerSDP));
+  const cid=_chanId(CU.id,_callPeer.id);
+  if(_sigCh){try{db.removeChannel(_sigCh);}catch(e){}}
+  _sigCh=db.channel(cid,{config:{broadcast:{self:false}}})
+    .on('broadcast',{event:'call-ice'},(p)=>_addIce(p.payload.c))
+    .on('broadcast',{event:'call-end'},(p)=>_hangup('📵 Encerrada'))
+    .subscribe(async(s)=>{
+      if(s!=='SUBSCRIBED')return;
+      _buildPC(_callPeer.id);
+      await _pc.setRemoteDescription(new RTCSessionDescription(offer));
       const answer=await _pc.createAnswer();
       await _pc.setLocalDescription(answer);
-      await _waitIce(_pc); // aguarda ICE completo
-
-      // PASSO 4: Enviar answer
-      _rtcCh.send({type:'broadcast',event:'answer',payload:{
-        sdp:{type:_pc.localDescription.type, sdp:_pc.localDescription.sdp}
+      await _waitIce(_pc);
+      _sigCh.send({type:'broadcast',event:'call-answer',payload:{
+        from:CU.id,
+        sdp:{type:_pc.localDescription.type,sdp:_pc.localDescription.sdp}
       }});
-
       if(_callType==='video'){
         const sv=document.getElementById('call-self-video');
-        if(sv){sv.srcObject=_localStream; sv.muted=true;}
+        if(sv){sv.srcObject=_localStream;sv.muted=true;}
       }
     });
 }
 
-// ── 4. REJEITAR / ENCERRAR ──────────────────────────────────────
+// ── 5. REJEITAR / ENCERRAR ──────────────────────────────────────
 function rejectCall(){
-  if(_rtcCh) _rtcCh.send({type:'broadcast',event:'reject',payload:{}}).catch(()=>{});
-  _cleanup(); document.getElementById('call-overlay')?.remove();
+  _stopRing();
+  if(_callPeer){
+    const cid=_chanId(CU.id,_callPeer.id);
+    const ch=db.channel(cid,{config:{broadcast:{self:false}}});
+    ch.subscribe(s=>{if(s==='SUBSCRIBED'){
+      ch.send({type:'broadcast',event:'call-reject',payload:{from:CU.id}});
+      setTimeout(()=>{try{db.removeChannel(ch);}catch(e){}},2000);
+    }});
+  }
+  _cleanup();
+  document.getElementById('call-overlay')?.remove();
 }
 function endCall(){
-  if(_rtcCh) _rtcCh.send({type:'broadcast',event:'end',payload:{}}).catch(()=>{});
+  _stopRing();
+  if(_sigCh) _sigCh.send({type:'broadcast',event:'call-end',payload:{from:CU.id}}).catch(()=>{});
   _hangup('📵 Chamada encerrada');
 }
 function _hangup(msg){
+  _stopRing();
   const st=document.getElementById('call-status');
-  if(st) st.textContent=msg||'Encerrada';
-  setTimeout(()=>{ document.getElementById('call-overlay')?.remove(); _cleanup(); },1500);
+  if(st) st.textContent=msg;
+  setTimeout(()=>{document.getElementById('call-overlay')?.remove();_cleanup();},1500);
 }
 
-// ── HELPERS ─────────────────────────────────────────────────────
-function _buildPC(){
-  _pc=new RTCPeerConnection(_STUN);
+// ── HELPERS WebRTC ───────────────────────────────────────────────
+function _buildPC(peerId){
+  _pc=new RTCPeerConnection(_ICE);
   _localStream?.getTracks().forEach(t=>_pc.addTrack(t,_localStream));
   _pc.ontrack=(e)=>{
+    _stopRing();
     if(_callType==='video'){
       const rv=document.getElementById('call-remote-video');
       if(rv) rv.srcObject=e.streams[0];
@@ -9233,35 +9272,34 @@ function _buildPC(){
     _startTimer();
   };
   _pc.onicecandidate=(e)=>{
-    // Com _waitIce não precisamos enviar ICE incremental
-    // mas mantemos como fallback
-    if(e.candidate&&_rtcCh)
-      _rtcCh.send({type:'broadcast',event:'ice',payload:{c:e.candidate.toJSON()}}).catch(()=>{});
+    if(e.candidate&&_sigCh)
+      _sigCh.send({type:'broadcast',event:'call-ice',payload:{c:e.candidate.toJSON()}}).catch(()=>{});
   };
   _pc.onconnectionstatechange=()=>{
     const s=_pc?.connectionState;
-    if(s==='connected') _startTimer();
+    if(s==='connected'){_stopRing();_startTimer();}
     if(['disconnected','failed','closed'].includes(s)) _hangup('📵 Conexão perdida');
   };
 }
-async function _onAnswer(sdp){
-  if(!_pc) return;
-  try{ await _pc.setRemoteDescription(new RTCSessionDescription(sdp)); }catch(e){}
+async function _onAnswer(payload){
+  if(!_pc)return;
+  _stopRing();
+  try{await _pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));}catch(e){}
   if(_callType==='video'){
     const sv=document.getElementById('call-self-video');
-    if(sv){sv.srcObject=_localStream; sv.muted=true;}
+    if(sv){sv.srcObject=_localStream;sv.muted=true;}
   }
 }
-function _addIce(c){ if(_pc&&c) _pc.addIceCandidate(new RTCIceCandidate(c)).catch(()=>{}); }
+function _addIce(c){if(_pc&&c)_pc.addIceCandidate(new RTCIceCandidate(c)).catch(()=>{});}
 function _cleanup(){
-  clearInterval(_callTimer); _callTimer=null; _callSecs=0;
-  _localStream?.getTracks().forEach(t=>t.stop()); _localStream=null;
-  try{_pc?.close();}catch(e){} _pc=null;
-  if(_rtcCh){try{db.removeChannel(_rtcCh);}catch(e){} _rtcCh=null;}
-  _callPeer=null; _isCaller=false; _isMuted=false; _pendingOffer=null; _sessionId=null;
+  clearInterval(_callTimer);_callTimer=null;_callSecs=0;
+  _localStream?.getTracks().forEach(t=>t.stop());_localStream=null;
+  try{_pc?.close();}catch(e){}_pc=null;
+  if(_sigCh){try{db.removeChannel(_sigCh);}catch(e){}_sigCh=null;}
+  _callPeer=null;_isCaller=false;_isMuted=false;_pendingOffer=null;
 }
 function _startTimer(){
-  if(_callTimer) return; _callSecs=0;
+  if(_callTimer)return;_callSecs=0;
   const st=document.getElementById('call-status');
   const tm=document.getElementById('call-timer');
   if(st) st.textContent='em chamada';
@@ -9281,9 +9319,9 @@ function toggleMute(){
 }
 
 // ── UI DA CHAMADA ────────────────────────────────────────────────
-function _showCallUI(role, name, type, avatar){
+function _showCallUI(role,name,type,avatar){
   document.getElementById('call-overlay')?.remove();
-  const isCaller=role==='caller', isVideo=type==='video';
+  const isCaller=role==='caller',isVideo=type==='video';
   const ov=document.createElement('div');
   ov.id='call-overlay'; ov.className='call-overlay';
   const avH=(avatar&&avatar.startsWith('http'))
@@ -9291,20 +9329,20 @@ function _showCallUI(role, name, type, avatar){
     :`<div class="call-avatar">${isVideo?'📹':'📞'}</div>`;
   ov.innerHTML=`
     ${isVideo?`<div class="call-video-wrap">
-      <video id="call-remote-video" autoplay playsinline style="width:100%;height:100%;object-fit:cover;background:#000;border-radius:12px;"></video>
-      <div class="call-video-self"><video id="call-self-video" autoplay playsinline muted style="width:100%;border-radius:6px;"></video></div>
-    </div>`:`<audio id="call-remote-audio" autoplay></audio>`}
+        <video id="call-remote-video" autoplay playsinline style="width:100%;height:100%;object-fit:cover;background:#000;border-radius:12px;"></video>
+        <div class="call-video-self"><video id="call-self-video" autoplay playsinline muted style="width:100%;border-radius:6px;"></video></div>
+      </div>`:`<audio id="call-remote-audio" autoplay></audio>`}
     ${avH}
     <div class="call-name">${name||'Amigo'}</div>
-    <div class="call-status" id="call-status">${isCaller?'📞 chamando...':isVideo?'📹 videochamada':'📞 chamada de voz'}</div>
+    <div class="call-status" id="call-status">${isCaller?'📞 chamando...':isVideo?'📹 videochamada recebida':'📞 chamada de voz recebida'}</div>
     <div class="call-timer" id="call-timer" style="display:none;">0:00</div>
     <div class="call-actions">
       ${!isCaller?`<div style="text-align:center;">
-        <button class="call-action-btn" style="background:#22c55e;" onclick="acceptCall()">
-          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="white" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.38 2 2 0 0 1 3.6 1.21h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.77a16 16 0 0 0 6.29 6.29l1.63-1.63a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-        </button>
-        <div style="font-size:9px;color:#22c55e;margin-top:6px;font-family:'Space Mono',monospace;">ATENDER</div>
-      </div>`:''}
+          <button class="call-action-btn" style="background:#22c55e;" onclick="acceptCall()">
+            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="white" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.38 2 2 0 0 1 3.6 1.21h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.77a16 16 0 0 0 6.29 6.29l1.63-1.63a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+          </button>
+          <div style="font-size:9px;color:#22c55e;margin-top:6px;font-family:'Space Mono',monospace;">ATENDER</div>
+        </div>`:''}
       <div style="text-align:center;">
         <button class="call-action-btn call-btn-mute" id="call-mute-btn" onclick="toggleMute()">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
@@ -9319,6 +9357,19 @@ function _showCallUI(role, name, type, avatar){
       </div>
     </div>`;
   document.body.appendChild(ov);
+}
+
+// ── Inicializar escuta de chamadas ao fazer login ────────────────
+// Chamado no showApp após CU estar disponível
+function _initCallListen(){
+  if(!CU||window._callListenCh) return;
+  window._callListenCh=db.channel('vcall-listen-'+CU.id,{config:{broadcast:{self:false}}})
+    .on('broadcast',{event:'call-invite'},(p)=>{
+      if(p.payload?.from && p.payload.from!==CU.id) _onIncoming(p.payload);
+    })
+    .subscribe((s)=>{
+      if(s==='SUBSCRIBED') console.log('[CALL] Listen channel ready:', 'vcall-listen-'+CU.id);
+    });
 }
 
 </script>
