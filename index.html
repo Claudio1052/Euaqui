@@ -2371,6 +2371,71 @@ body.day-mode .presence-dot{ border-color:#ffffff; }
 }
 .notif-dot.active{ display:block; }
 body.day-mode .notif-dot{ border-color:#f5f7fa; }
+
+/* ── Tela de chamada ── */
+.call-overlay{
+  position:fixed;inset:0;
+  background:linear-gradient(135deg,#0a0a2a 0%,#0d1b2a 100%);
+  z-index:9000;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  gap:20px;
+  padding:30px;
+}
+.call-avatar{
+  width:100px;height:100px;border-radius:50%;
+  border:3px solid var(--neon-cyan);
+  object-fit:cover;font-size:48px;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(0,255,204,.1);
+  box-shadow:0 0 40px rgba(0,255,204,.2);
+  animation:callPulse 2s ease-in-out infinite;
+}
+@keyframes callPulse{
+  0%,100%{box-shadow:0 0 30px rgba(0,255,204,.2);}
+  50%{box-shadow:0 0 60px rgba(0,255,204,.4);}
+}
+.call-name{
+  font-family:'Syne',sans-serif;font-size:24px;font-weight:800;
+  color:var(--text-light);
+}
+.call-status{
+  font-family:'Space Mono',monospace;font-size:12px;
+  color:var(--text-muted);letter-spacing:2px;
+}
+.call-timer{
+  font-family:'VT323',monospace;font-size:32px;
+  color:var(--neon-cyan);
+}
+.call-actions{
+  display:flex;gap:20px;margin-top:20px;
+}
+.call-action-btn{
+  width:60px;height:60px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;border:none;transition:all .2s;
+  flex-direction:column;gap:4px;
+}
+.call-action-btn:hover{transform:scale(1.08);}
+.call-btn-end{background:#ef4444;}
+.call-btn-mute{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);}
+.call-btn-speaker{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);}
+.call-btn-video{background:rgba(0,255,204,.15);border:1px solid var(--neon-cyan);}
+.call-btn-label{font-size:9px;color:rgba(255,255,255,.6);font-family:'Space Mono',monospace;}
+
+/* Video */
+.call-video-wrap{
+  width:100%;max-width:400px;
+  border-radius:16px;overflow:hidden;
+  position:relative;background:#000;
+  aspect-ratio:4/3;
+}
+.call-video-wrap video{width:100%;height:100%;object-fit:cover;}
+.call-video-self{
+  position:absolute;bottom:10px;right:10px;
+  width:80px;border-radius:8px;overflow:hidden;
+  border:2px solid var(--neon-cyan);
+}
 </style>
 </head>
 <body>
@@ -5020,7 +5085,13 @@ async function openChat(userId,username,avatarUrl){
   const avH=`<div class="chat-av-wrap">${renderAvatar({id:userId,username,avatar_url:avatarUrl},38,'chat-win-av')}${dot}</div>`;
   const statusTxt=`<div class="chat-win-status" id="chat-win-status-txt" style="font-size:10px;color:${isOnlineNow?'#22c55e':'#6b7280'};font-family:'Space Mono',monospace;">${isOnlineNow?'● online':'○ offline'}</div>`;
   const backBtn='<button id="chat-back-btn" onclick="showChatSidebar()" style="display:flex;align-items:center;gap:4px;padding:8px 10px;font-size:12px;" class="tbtn">← Voltar</button>';
-  top.innerHTML=backBtn+avH+'<div><div class="chat-win-name">@'+xss(username)+'</div>'+statusTxt+'</div>';
+  const callBtn=`<button id="chat-call-btn" onclick="startCall('${userId}','${username.replace(/'/g,"\'")}','audio')" title="Ligar" style="margin-left:auto;background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.4);color:#22c55e;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:all .2s;">
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.38 2 2 0 0 1 3.6 1.21h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.77a16 16 0 0 0 6.29 6.29l1.63-1.63a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+  </button>`;
+  const videoBtn=`<button id="chat-video-btn" onclick="startCall('${userId}','${username.replace(/'/g,"\'")}','video')" title="Videochamada" style="background:rgba(0,255,204,.1);border:1px solid rgba(0,255,204,.3);color:var(--neon-cyan);width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:all .2s;">
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+  </button>`;
+  top.innerHTML=backBtn+avH+'<div style="flex:1;min-width:0;"><div class="chat-win-name">@'+xss(username)+'</div>'+statusTxt+'</div>'+callBtn+videoBtn;
   document.getElementById('msg-in-area').style.display='flex';
 
   // On mobile: slide to chat window
@@ -5184,6 +5255,9 @@ function setupRealtime(){
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'receiver_id=eq.'+CU.id},(pl)=>{
       handleIncomingMessage(pl.new);
     }).subscribe();
+
+  // Chamadas de voz/vídeo
+  setupCallChannel();
 
   // Polling fallback every 5s — ensures messages arrive even if realtime drops
   clearInterval(_msgPollInterval);
@@ -8982,6 +9056,382 @@ async function loadUnreadMsgCount(){
       nb?.remove();
     }
   }catch(e){}
+}
+
+
+// ================================================================
+// SISTEMA DE CHAMADAS
+// ================================================================
+// ================================================================
+// SISTEMA DE CHAMADAS — WebRTC + Supabase Realtime Signaling
+// ================================================================
+let _callChannel = null;
+let _peerConn = null;
+let _localStream = null;
+let _callTimer = null;
+let _callSeconds = 0;
+let _callUserId = null;
+let _callType = 'audio'; // 'audio' | 'video'
+let _isCaller = false;
+let _isMuted = false;
+let _callPendingOffer = null;
+
+const ICE_SERVERS = {
+  iceServers:[
+    {urls:'stun:stun.l.google.com:19302'},
+    {urls:'stun:stun1.l.google.com:19302'}
+  ]
+};
+
+// ── Iniciar chamada (quem liga) ──────────────────────────────────
+async function startCall(userId, username, type){
+  if(!CU){ showToast('Faça login para ligar','error'); return; }
+  if(_peerConn){ showToast('Já há uma chamada em andamento','error'); return; }
+
+  _callUserId = userId;
+  _callType = type || 'audio';
+  _isCaller = true;
+
+  // Pedir permissão de mídia
+  try{
+    _localStream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: _callType === 'video'
+    });
+  } catch(e){
+    showToast('Erro ao acessar câmera/microfone: '+e.message,'error');
+    return;
+  }
+
+  // Mostrar tela de chamada (tocando...)
+  showCallScreen(username, type, 'caller', null);
+
+  // Canal de sinalização via Supabase Broadcast
+  const channelId = [CU.id, userId].sort().join('_');
+  _callChannel = db.channel('call-'+channelId)
+    .on('broadcast',{event:'call-answer'},(p)=>{
+      if(p.payload?.from === userId) handleAnswer(p.payload);
+    })
+    .on('broadcast',{event:'call-ice'},(p)=>{
+      if(p.payload?.from === userId && _peerConn) {
+        _peerConn.addIceCandidate(new RTCIceCandidate(p.payload.candidate)).catch(()=>{});
+      }
+    })
+    .on('broadcast',{event:'call-reject'},(p)=>{
+      if(p.payload?.from === userId) endCall('Chamada recusada');
+    })
+    .on('broadcast',{event:'call-end'},(p)=>{
+      if(p.payload?.from === userId) endCall('Chamada encerrada');
+    })
+    .subscribe(async(status)=>{
+      if(status==='SUBSCRIBED'){
+        // Criar oferta WebRTC
+        _peerConn = new RTCPeerConnection(ICE_SERVERS);
+        _localStream.getTracks().forEach(t=>_peerConn.addTrack(t,_localStream));
+
+        _peerConn.ontrack = (e)=>{
+          const remoteVideo = document.getElementById('call-remote-video');
+          const remoteAudio = document.getElementById('call-remote-audio');
+          if(remoteVideo && _callType==='video') remoteVideo.srcObject = e.streams[0];
+          if(remoteAudio) remoteAudio.srcObject = e.streams[0];
+        };
+
+        _peerConn.onicecandidate = (e)=>{
+          if(e.candidate && _callChannel){
+            _callChannel.send({type:'broadcast',event:'call-ice',payload:{from:CU.id,candidate:e.candidate}});
+          }
+        };
+
+        const offer = await _peerConn.createOffer();
+        await _peerConn.setLocalDescription(offer);
+
+        // Enviar oferta via broadcast
+        _callChannel.send({type:'broadcast',event:'call-offer',payload:{
+          from:CU.id,
+          fromName: CP?.full_name||CP?.username||'',
+          fromAvatar: CP?.avatar_url||'',
+          type:_callType,
+          offer: offer
+        }});
+
+        // Também notificar via mensagem no chat (para quem estiver com app fechado)
+        const callMsg = `[CALL_INCOMING:${_callType}:${CU.id}:${CP?.username||''}]`;
+        await db.from('messages').insert({
+          sender_id:CU.id, receiver_id:userId,
+          content:callMsg, read:false
+        }).catch(()=>{});
+      }
+    });
+}
+
+// ── Receber chamada (quem recebe) ────────────────────────────────
+function handleIncomingCall(payload){
+  if(_peerConn){ 
+    // Já em chamada — rejeitar automaticamente
+    const channelId = [CU.id, payload.from].sort().join('_');
+    const ch = db.channel('call-'+channelId);
+    ch.send({type:'broadcast',event:'call-reject',payload:{from:CU.id}}).then(()=>db.removeChannel(ch));
+    return;
+  }
+
+  _callPendingOffer = payload;
+  _callUserId = payload.from;
+  _callType = payload.type || 'audio';
+  _isCaller = false;
+
+  // Mostrar tela de chamada recebida
+  showCallScreen(payload.fromName||'@'+payload.from, payload.type, 'receiver', payload);
+}
+
+// ── Aceitar chamada ──────────────────────────────────────────────
+async function acceptCall(){
+  if(!_callPendingOffer) return;
+  const payload = _callPendingOffer;
+  _callPendingOffer = null;
+
+  try{
+    _localStream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: _callType === 'video'
+    });
+  } catch(e){
+    showToast('Erro ao acessar mídia: '+e.message,'error');
+    rejectCall();
+    return;
+  }
+
+  // Atualizar tela para "conectando..."
+  const statusEl = document.getElementById('call-status-txt');
+  if(statusEl) statusEl.textContent = 'conectando...';
+
+  const channelId = [CU.id, payload.from].sort().join('_');
+  _callChannel = db.channel('call-'+channelId)
+    .on('broadcast',{event:'call-ice'},(p)=>{
+      if(p.payload?.from === payload.from && _peerConn){
+        _peerConn.addIceCandidate(new RTCIceCandidate(p.payload.candidate)).catch(()=>{});
+      }
+    })
+    .on('broadcast',{event:'call-end'},(p)=>{
+      if(p.payload?.from === payload.from) endCall('Chamada encerrada');
+    })
+    .subscribe(async(status)=>{
+      if(status==='SUBSCRIBED'){
+        _peerConn = new RTCPeerConnection(ICE_SERVERS);
+        _localStream.getTracks().forEach(t=>_peerConn.addTrack(t,_localStream));
+
+        _peerConn.ontrack = (e)=>{
+          const remoteVideo = document.getElementById('call-remote-video');
+          const remoteAudio = document.getElementById('call-remote-audio');
+          if(remoteVideo && _callType==='video') remoteVideo.srcObject = e.streams[0];
+          if(remoteAudio) remoteAudio.srcObject = e.streams[0];
+        };
+
+        _peerConn.onicecandidate = (e)=>{
+          if(e.candidate && _callChannel){
+            _callChannel.send({type:'broadcast',event:'call-ice',payload:{from:CU.id,candidate:e.candidate}});
+          }
+        };
+
+        _peerConn.onconnectionstatechange = ()=>{
+          if(_peerConn?.connectionState === 'connected') startCallTimer();
+          if(['disconnected','failed','closed'].includes(_peerConn?.connectionState)) endCall();
+        };
+
+        await _peerConn.setRemoteDescription(new RTCSessionDescription(payload.offer));
+        const answer = await _peerConn.createAnswer();
+        await _peerConn.setLocalDescription(answer);
+
+        _callChannel.send({type:'broadcast',event:'call-answer',payload:{from:CU.id,answer}});
+
+        // Video próprio
+        if(_callType==='video'){
+          const selfVideo = document.getElementById('call-self-video');
+          if(selfVideo){ selfVideo.srcObject = _localStream; selfVideo.muted = true; }
+        }
+      }
+    });
+}
+
+// ── Resposta à oferta (quem ligou recebe) ────────────────────────
+async function handleAnswer(payload){
+  if(!_peerConn) return;
+  await _peerConn.setRemoteDescription(new RTCSessionDescription(payload.answer));
+  // Video próprio
+  if(_callType==='video'){
+    const selfVideo = document.getElementById('call-self-video');
+    if(selfVideo){ selfVideo.srcObject = _localStream; selfVideo.muted = true; }
+  }
+  _peerConn.onconnectionstatechange = ()=>{
+    if(_peerConn?.connectionState === 'connected') startCallTimer();
+    if(['disconnected','failed','closed'].includes(_peerConn?.connectionState)) endCall();
+  };
+  startCallTimer();
+}
+
+// ── Rejeitar chamada ─────────────────────────────────────────────
+function rejectCall(){
+  if(_callUserId && _callChannel){
+    _callChannel.send({type:'broadcast',event:'call-reject',payload:{from:CU.id}});
+  }
+  cleanupCall();
+  document.getElementById('call-overlay')?.remove();
+}
+
+// ── Encerrar chamada ─────────────────────────────────────────────
+function endCall(reason){
+  if(_callChannel){
+    _callChannel.send({type:'broadcast',event:'call-end',payload:{from:CU.id}}).catch(()=>{});
+  }
+  cleanupCall();
+  const overlay = document.getElementById('call-overlay');
+  if(overlay){
+    const statusEl = document.getElementById('call-status-txt');
+    if(statusEl) statusEl.textContent = reason || 'Chamada encerrada';
+    setTimeout(()=>overlay.remove(), 1500);
+  }
+}
+
+function cleanupCall(){
+  clearInterval(_callTimer); _callTimer=null; _callSeconds=0;
+  _localStream?.getTracks().forEach(t=>t.stop()); _localStream=null;
+  if(_peerConn){ _peerConn.close(); _peerConn=null; }
+  if(_callChannel){ try{db.removeChannel(_callChannel);}catch(e){} _callChannel=null; }
+  _callUserId=null; _isCaller=false; _callPendingOffer=null; _isMuted=false;
+}
+
+// ── Timer ────────────────────────────────────────────────────────
+function startCallTimer(){
+  _callSeconds=0;
+  const statusEl = document.getElementById('call-status-txt');
+  const timerEl  = document.getElementById('call-timer');
+  if(statusEl) statusEl.textContent = 'em chamada';
+  if(timerEl)  timerEl.style.display='block';
+  clearInterval(_callTimer);
+  _callTimer=setInterval(()=>{
+    _callSeconds++;
+    const m=Math.floor(_callSeconds/60), s=_callSeconds%60;
+    if(timerEl) timerEl.textContent=m+':'+(s<10?'0':'')+s;
+  },1000);
+}
+
+// ── Mudo ─────────────────────────────────────────────────────────
+function toggleMute(){
+  _isMuted=!_isMuted;
+  _localStream?.getAudioTracks().forEach(t=>t.enabled=!_isMuted);
+  const btn=document.getElementById('call-mute-btn');
+  if(btn){
+    btn.style.background = _isMuted?'rgba(239,68,68,.3)':'rgba(255,255,255,.1)';
+    btn.title=_isMuted?'Ativar microfone':'Silenciar';
+    btn.querySelector('svg').style.opacity=_isMuted?'0.5':'1';
+  }
+  showToast(_isMuted?'🔇 Microfone silenciado':'🎙 Microfone ativado','');
+}
+
+// ── Tela de chamada ──────────────────────────────────────────────
+function showCallScreen(name, type, role, payload){
+  document.getElementById('call-overlay')?.remove();
+
+  const isCaller = role==='caller';
+  const isVideo  = type==='video';
+
+  const ov = document.createElement('div');
+  ov.id = 'call-overlay';
+  ov.className = 'call-overlay';
+
+  // Avatar do interlocutor
+  const avHtml = (payload?.fromAvatar && !payload.fromAvatar.includes('dicebear'))
+    ? `<img class="call-avatar" src="${payload.fromAvatar}" onerror="this.outerHTML='<div class=\\'call-avatar\\' style=\\'font-size:42px;\\'>📞</div>'">`
+    : `<div class="call-avatar">${isVideo?'📹':'📞'}</div>`;
+
+  ov.innerHTML = `
+    ${isVideo?`
+      <div class="call-video-wrap" id="call-video-wrap">
+        <video id="call-remote-video" autoplay playsinline style="width:100%;height:100%;object-fit:cover;"></video>
+        <div class="call-video-self">
+          <video id="call-self-video" autoplay playsinline muted style="width:100%;"></video>
+        </div>
+      </div>`
+    :`<audio id="call-remote-audio" autoplay></audio>`}
+
+    ${avHtml}
+    <div class="call-name">${name}</div>
+    <div class="call-status" id="call-status-txt">${isCaller?'chamando...':'chamada de '+(type==='video'?'📹 vídeo':'📞 voz')}</div>
+    <div class="call-timer" id="call-timer" style="display:none;">0:00</div>
+
+    <div class="call-actions">
+      ${!isCaller?`
+        <!-- RECEIVER: aceitar + rejeitar -->
+        <div style="text-align:center;">
+          <button class="call-action-btn" style="background:#22c55e;" onclick="acceptCall()">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="white" stroke-width="2.5">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.38 2 2 0 0 1 3.6 1.21h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.77a16 16 0 0 0 6.29 6.29l1.63-1.63a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+            </svg>
+          </button>
+          <div class="call-btn-label" style="margin-top:6px;color:#22c55e;">Atender</div>
+        </div>`:''}
+
+      <!-- Mudo -->
+      <div style="text-align:center;">
+        <button class="call-action-btn call-btn-mute" id="call-mute-btn" onclick="toggleMute()" title="Silenciar">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" stroke-width="2">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+          </svg>
+        </button>
+        <div class="call-btn-label" style="margin-top:6px;">Silenciar</div>
+      </div>
+
+      <!-- Encerrar -->
+      <div style="text-align:center;">
+        <button class="call-action-btn call-btn-end" onclick="${isCaller?'endCall()':'rejectCall()'}">
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="white" stroke-width="2.5">
+            <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.34 1.85.573 2.81.7A2 2 0 0 1 22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 3.59 1.21h3a2 2 0 0 1 2 1.72 12.05 12.05 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.77"/>
+            <line x1="1" y1="1" x2="23" y2="23" stroke="white" stroke-width="2.5"/>
+          </svg>
+        </button>
+        <div class="call-btn-label" style="margin-top:6px;">Encerrar</div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(ov);
+}
+
+// ── Detectar chamada recebida via mensagem ───────────────────────
+// Patch no handleIncomingMessage para detectar [CALL_INCOMING:]
+const _callOrigHandleMsg = typeof handleIncomingMessage === 'function' ? handleIncomingMessage : null;
+if(_callOrigHandleMsg){
+  handleIncomingMessage = function(msg){
+    if(msg.content?.startsWith('[CALL_INCOMING:')){
+      // Extrair dados
+      const inner = msg.content.slice(1, msg.content.lastIndexOf(']'));
+      const parts  = inner.split(':');
+      // Não renderizar a mensagem — só processar o evento
+      // A chamada real vem pelo canal Supabase Broadcast
+      return;
+    }
+    _callOrigHandleMsg(msg);
+  };
+}
+
+// ── Detectar chamada via Supabase Realtime (canal dedicado) ──────
+function setupCallChannel(){
+  if(!CU) return;
+  // Escutar convites de chamada
+  db.channel('call-invite-'+CU.id)
+    .on('broadcast',{event:'call-offer'},(p)=>{
+      if(p.payload?.from && p.payload.from !== CU.id){
+        handleIncomingCallBroadcast(p.payload);
+      }
+    })
+    .subscribe();
+}
+
+function handleIncomingCallBroadcast(payload){
+  // Buscar nome do chamador
+  const callerName = payload.fromName || '@' + payload.from;
+  handleIncomingCall({...payload, fromName: callerName});
 }
 
 </script>
