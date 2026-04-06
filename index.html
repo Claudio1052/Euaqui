@@ -2255,39 +2255,12 @@ body.day-mode .msg-mic-btn{
     position: relative !important;
   }
 
-  /* Sidebar = tela cheia, slide para esquerda quando chat abre */
-  #page-messages .chat-sidebar{
-    display: flex !important;
-    position: absolute !important;
-    inset: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
-    z-index: 10 !important;
-    transform: translateX(0) !important;
-    transition: transform .28s cubic-bezier(.4,0,.2,1) !important;
-    flex-direction: column !important;
-  }
-  #page-messages .chat-sidebar.chat-hidden{
-    transform: translateX(-100%) !important;
-    pointer-events: none !important;
-  }
-
-  /* Chat window = slide de fora para dentro, coluna flex interna */
+  /* Chat window = coluna flex com altura total */
   #page-messages .chat-window{
-    position: absolute !important;
-    inset: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
-    z-index: 11 !important;
     display: flex !important;
     flex-direction: column !important;
+    height: 100% !important;
     overflow: hidden !important;
-    transform: translateX(100%) !important;
-    transition: transform .28s cubic-bezier(.4,0,.2,1) !important;
-    background: var(--bg-deep) !important;
-  }
-  #page-messages .chat-window.chat-open{
-    transform: translateX(0) !important;
   }
 
   /* Header — nunca some, sempre no topo */
@@ -3230,7 +3203,6 @@ function showApp(){
   }catch(e){}
   // Load page data — each wrapped so one failure doesn't block the rest
   setTimeout(()=>{ try{ loadFeed(); }catch(e){ console.warn('loadFeed:',e); } }, 0);
-  setTimeout(()=>{ try{ loadNotifCount(); loadUnreadMsgCount(); }catch(e){} }, 0);
   setTimeout(()=>{ try{ loadNotifCount(); }catch(e){} }, 100);
   setTimeout(()=>{ try{ checkMigration(); }catch(e){} }, 2000);
   setTimeout(()=>{ try{ loadBlast(); }catch(e){} }, 200);
@@ -3485,7 +3457,7 @@ function nav(page){
     else if(page==='friends')        loadFriendsList('friends');
     else if(page==='communities')    { loadCommGrid('all'); setTimeout(buildCommIconGrid,200); }
     else if(page==='businesses')     initBusinessPage();
-    else if(page==='messages')       { loadConversations(); _unreadMsgCount=0; updateMsgBadge(0); }
+    else if(page==='messages')       loadConversations();
     else if(page==='notifications')  loadNotifTab('nt-all');
     else if(page==='capsules')       loadCapsules();
     else if(page==='profile')        loadProfilePage(CU?.id);
@@ -5031,9 +5003,6 @@ async function openChat(userId,username,avatarUrl){
   const backBtn='<button id="chat-back-btn" onclick="showChatSidebar()" style="display:flex;align-items:center;gap:4px;padding:8px 10px;font-size:12px;" class="tbtn">← Voltar</button>';
   top.innerHTML=backBtn+avH+'<div><div class="chat-win-name">@'+xss(username)+'</div>'+statusTxt+'</div>';
   document.getElementById('msg-in-area').style.display='flex';
-  // Zerar badge imediatamente e marcar como lido em background
-  loadUnreadMsgCount(); // Ja exclui o remetente atual da contagem
-  db.from('messages').update({read:true}).eq('receiver_id',CU.id).eq('sender_id',userId).eq('read',false).catch(()=>{});
 
   // On mobile: slide to chat window
   showChatWindow();
@@ -5076,14 +5045,6 @@ async function loadMsgs(userId){
   }
   area.innerHTML = html;
   area.scrollTop = area.scrollHeight;
-  // Marcar mensagens recebidas como lidas e atualizar badge
-  db.from('messages')
-    .update({read:true})
-    .eq('receiver_id', CU.id)
-    .eq('sender_id', userId)
-    .eq('read', false)
-    .then(()=>{ loadUnreadMsgCount(); })
-    .catch(()=>{});
 }
 
 
@@ -5164,7 +5125,7 @@ async function markRead(id,el){
     niEl.style.padding='0';
     niEl.style.margin='0';
     niEl.style.overflow='hidden';
-    setTimeout(()=>{ niEl.remove(); loadNotifCount(); }, 320);
+    setTimeout(()=>niEl.remove(), 320);
   }
   // Try DELETE first
   const{error:delErr} = await db.from('notifications').delete().eq('id',id).eq('user_id',CU.id);
@@ -5190,27 +5151,17 @@ function setupRealtime(){
       showToast('🔔 '+pl.new.content,'success');
       loadNotifCount();
       if(document.getElementById('ht-alerts-list')?.children.length>0) loadHomeAlerts();
-    })
-    .on('postgres_changes',{event:'DELETE',schema:'public',table:'notifications',filter:'user_id=eq.'+CU.id},()=>{
-      loadNotifCount(); // Atualizar badge quando deletar
-    })
-    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'notifications',filter:'user_id=eq.'+CU.id},()=>{
-      loadNotifCount(); // Atualizar badge quando marcar como lido
-    })
-    .subscribe();
+    }).subscribe();
 
   // Real-time messages via Supabase Realtime
   db.channel('rt-msgs-'+CU.id)
-    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'messages',filter:'receiver_id=eq.'+CU.id},()=>{
-      loadUnreadMsgCount(); // Badge atualiza quando msg e marcada como lida
-    })
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'receiver_id=eq.'+CU.id},(pl)=>{
       handleIncomingMessage(pl.new);
     }).subscribe();
 
   // Polling fallback every 5s — ensures messages arrive even if realtime drops
   clearInterval(_msgPollInterval);
-  _msgPollInterval = setInterval(()=>{ pollNewMessages(); loadUnreadMsgCount(); loadNotifCount(); }, 8000);
+  _msgPollInterval = setInterval(()=>{ pollNewMessages(); }, 5000);
 }
 
 let _lastMsgCheck=new Date().toISOString();
@@ -5248,11 +5199,10 @@ function handleIncomingMessage(msg){
 
   // Badge on chat button if not viewing this chat
   if(currentChatUser?.id!==senderId && homeChatUser?.id!==senderId){
-    loadUnreadMsgCount();
     const chatNav=document.getElementById('nb-messages');
     if(chatNav&&!document.getElementById('msg-badge')){
       const dot=document.createElement('span');
-      dot.className='nbadge';dot.id='msg-badge';dot.textContent='';
+      dot.className='nbadge';dot.id='msg-badge';dot.textContent='●';
       chatNav.appendChild(dot);
     }
   }
@@ -5696,10 +5646,11 @@ async function loadHomeAlerts(){
 
 async function markAllNotifsRead(){
   if(!CU) return;
-  db.from('notifications').delete().eq('user_id',CU.id).then(({error})=>{
-    if(error) db.from('notifications').update({read:true}).eq('user_id',CU.id);
-    loadNotifCount();
-  });
+  // Try DELETE all notifications; fallback to marking as read
+  const{error:delAllErr} = await db.from('notifications').delete().eq('user_id',CU.id);
+  if(delAllErr){
+    await db.from('notifications').update({read:true}).eq('user_id',CU.id).eq('read',false);
+  }
   // Remove all notification items from every list
   ['ht-alerts-list','notif-list-all','notif-list-mentions','notif-list-social','notif-list-system'].forEach(id=>{
     const el=document.getElementById(id);
@@ -6465,16 +6416,11 @@ function switchCommDetailTab(tabId, btn){
 }
 
 function showChatSidebar(){
+  // Back button on mobile — slide back to conversation list
   const sb  = document.getElementById('chat-sidebar');
   const win = document.getElementById('chat-window');
-  if(sb){
-    sb.classList.remove('chat-hidden');
-    sb.style.transform = '';
-  }
-  if(win){
-    win.classList.remove('chat-open');
-    win.style.transform = '';
-  }
+  if(sb)  sb.classList.remove('chat-hidden');
+  if(win) win.classList.remove('chat-open');
   currentChatUser = null;
   // Clear messages area and header
   const msgsArea = document.getElementById('msgs-area');
@@ -6501,7 +6447,8 @@ async function loadNotifTab(tabId){
   const el = document.getElementById('notif-list-' + tabId.replace('nt-',''));
   if(!el) return;
   el.innerHTML = skeletons(3);
-  let q = db.from('notifications').select('id,type,content,read,created_at').eq('user_id',CU.id).eq('read',false).order('created_at',{ascending:false}).limit(50);
+  const _24h=new Date(Date.now()-24*60*60*1000).toISOString();
+  let q = db.from('notifications').select('id,type,content,read,created_at').eq('user_id',CU.id).gte('created_at',_24h).order('created_at',{ascending:false}).limit(40);
   if(Array.isArray(filter)) q = q.in('type', filter);
   else if(filter) q = q.eq('type', filter);
   const{data} = await q;
@@ -6519,7 +6466,8 @@ async function loadNotifTab(tabId){
         ${n.type==='friend_request'?`<div class="ni-actions"><button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();acceptFriendFromNotif(this)">✓ Aceitar</button><button class="ni-act-btn ni-act-rej" onclick="event.stopPropagation();">✕ Recusar</button></div>`:''}
       </div>
     </div>`).join('');
-  // Nao marcar automaticamente ao abrir
+  // Mark all as read
+  try{ await db.from('notifications').update({read:true}).eq('user_id',CU.id).eq('read',false); }catch(e){}
   document.getElementById('notif-badge').style.display='none';
 }
 
@@ -6527,17 +6475,12 @@ async function loadNotifTab(tabId){
 let msgAttachFiles = [];
 
 function showChatWindow(){
-  const sb  = document.getElementById('chat-sidebar');
-  const win = document.getElementById('chat-window');
-  if(!sb || !win) return;
+  // On mobile: slide sidebar out, chat window in
   if(window.innerWidth <= 768){
-    // Esconder sidebar
-    sb.classList.add('chat-hidden');
-    // Mostrar chat window
-    win.classList.add('chat-open');
-    // Forçar via style também (redundância para garantir)
-    win.style.transform = 'translateX(0)';
-    sb.style.transform  = 'translateX(-100%)';
+    const sb  = document.getElementById('chat-sidebar');
+    const win = document.getElementById('chat-window');
+    if(sb)  sb.classList.add('chat-hidden');
+    if(win) win.classList.add('chat-open');
     // Show back button
     const backBtn = document.getElementById('chat-back-btn');
     if(backBtn) backBtn.style.display = 'flex';
@@ -8979,62 +8922,6 @@ async function loadAboutExtras(userId){
       bizEl.innerHTML = '';
       console.warn('businesses:', e.message);
     }
-  }
-}
-
-
-// ================================================================
-// BADGE DE MENSAGENS NAO LIDAS
-// ================================================================
-let _unreadMsgCount = 0;
-
-async function loadUnreadMsgCount(){
-  if(!CU) return;
-  try{
-    // Se ha um chat aberto, nao contar msgs desse remetente (ja estao sendo lidas)
-    let q = db.from('messages')
-      .select('id', {count:'exact', head:true})
-      .eq('receiver_id', CU.id)
-      .eq('read', false);
-    if(currentChatUser?.id) q = q.neq('sender_id', currentChatUser.id);
-    if(homeChatUser?.id) q = q.neq('sender_id', homeChatUser.id);
-    const {count} = await q;
-    _unreadMsgCount = count || 0;
-    updateMsgBadge(_unreadMsgCount);
-  }catch(e){}
-}
-
-function updateMsgBadge(n){
-  // Badge no bottom nav (icone de chat)
-  let bnBadge = document.getElementById('bnav-msg-badge');
-  if(!bnBadge){
-    const btn = document.getElementById('bn-messages');
-    if(btn){
-      bnBadge = document.createElement('span');
-      bnBadge.id = 'bnav-msg-badge';
-      bnBadge.className = 'nbadge';
-      bnBadge.style.cssText = 'position:absolute;top:4px;right:calc(50% - 16px);font-size:8px;min-width:14px;height:14px;line-height:14px;padding:0 3px;border-radius:7px;display:none;';
-      btn.style.position = 'relative';
-      btn.appendChild(bnBadge);
-    }
-  }
-  if(bnBadge){
-    bnBadge.textContent = n > 99 ? '99+' : n;
-    bnBadge.style.display = n > 0 ? 'inline-block' : 'none';
-  }
-  // Badge no nav desktop
-  const navBadge = document.getElementById('msg-badge');
-  if(!navBadge && n > 0){
-    const chatNav = document.getElementById('nb-messages');
-    if(chatNav){
-      const dot = document.createElement('span');
-      dot.className = 'nbadge'; dot.id = 'msg-badge';
-      dot.textContent = n > 99 ? '99+' : String(n);
-      chatNav.appendChild(dot);
-    }
-  } else if(navBadge){
-    if(n > 0){ navBadge.textContent = n > 99 ? '99+' : String(n); }
-    else { navBadge.remove(); }
   }
 }
 
