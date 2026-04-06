@@ -1517,99 +1517,17 @@ body.day-mode ::-webkit-scrollbar-thumb:hover{ background:#008b9e; }
 /* =====================================================
    BOTTOM NAV — Ícones puros, estilo Instagram (só mobile)
    ===================================================== */
-.bottom-nav{
-  display:none;
-  position:fixed;
-  bottom:0; left:0; right:0;
-  background:rgba(8,8,30,.98);
-  border-top:1px solid rgba(0,255,204,.15);
-  z-index:1000;
-  backdrop-filter:blur(20px);
-  -webkit-backdrop-filter:blur(20px);
-  padding-bottom:env(safe-area-inset-bottom,0px);
-}
-.bnav-items{
-  display:flex;
-  align-items:center;
-  justify-content:space-around;
-  height:60px;
-  padding:0 4px;
-}
-.bnav-btn{
-  flex:1;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  background:none;
-  border:none;
-  color:#5a6a8a;
-  cursor:pointer;
-  padding:8px 0 4px;
-  transition:color .18s, transform .15s;
-  position:relative;
-  min-width:0;
-  gap:3px;
-}
-.bn-label{
-  font-size:8px;
-  font-family:'Space Mono',monospace;
-  letter-spacing:-.3px;
-  line-height:1;
-  color:currentColor;
-  white-space:nowrap;
-}
-.bni{
-  width:20px; height:20px;
-  stroke:currentColor;
-  fill:none;
-  stroke-width:1.8;
-  stroke-linecap:round;
-  stroke-linejoin:round;
-  transition:transform .15s;
-  flex-shrink:0;
-}
-/* Ativo */
-.bnav-btn.active{
-  color:var(--neon-cyan);
-}
-.bnav-btn.active .bn-label{
-  font-weight:700;
-  opacity:1;
-}
-.bnav-btn .bn-label{
-  opacity:.6;
-}
-.bnav-btn.active .bni{
-  stroke-width:2.2;
-  transform:scale(1.12);
-  filter:drop-shadow(0 0 4px var(--neon-cyan));
-}
-/* Notif badge */
-#bnav-notif-badge{
-  position:absolute;
-  top:6px; right:calc(50% - 20px);
-  background:var(--neon-pink);
-  color:#fff;
-  font-size:8px;
-  min-width:14px; height:14px;
-  border-radius:7px;
-  line-height:14px;
-  text-align:center;
-  padding:0 3px;
-  font-family:'Space Mono',monospace;
-}
-/* Day mode */
-body.day-mode .bottom-nav{
-  background:rgba(255,255,255,.98);
-  border-color:#e2e8f0;
-  box-shadow:0 -1px 8px rgba(0,0,0,.08);
-}
-body.day-mode .bnav-btn{ color:#9ca3af; }
-body.day-mode .bnav-btn.active{ color:#008b9e; }
-body.day-mode .bnav-btn.active .bni{ filter:none; }
-body.day-mode .bn-label{ opacity:.7; }
-body.day-mode .bnav-btn.active .bn-label{ opacity:1; font-weight:600; }
+.bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:rgba(10,10,42,.97);border-top:1px solid var(--border-glow);padding:8px 0 calc(8px + env(safe-area-inset-bottom));z-index:1000;backdrop-filter:blur(20px);}
+.bnav-items{display:flex;justify-content:space-around;align-items:center;}
+.bnav-btn{display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;color:var(--text-muted);cursor:pointer;padding:6px 12px;border-radius:8px;transition:color .2s;font-size:9px;font-family:'Space Mono',monospace;min-width:50px;position:relative;}
+.bnav-btn.active{color:var(--neon-cyan);}
+.bnav-btn .bi{font-size:22px;line-height:1;}
+.bn-label{font-size:9px;}
+.bni{display:none;}
+#bnav-notif-badge{position:absolute;top:4px;right:6px;background:var(--neon-pink);color:#fff;font-size:8px;min-width:14px;height:14px;border-radius:7px;line-height:14px;text-align:center;padding:0 3px;font-family:'Space Mono',monospace;}
+body.day-mode .bottom-nav{background:rgba(255,255,255,.98);border-color:#e2e8f0;box-shadow:0 -1px 8px rgba(0,0,0,.08);}
+body.day-mode .bnav-btn{color:#9ca3af;}
+body.day-mode .bnav-btn.active{color:#008b9e;}
 
 /* ===== EMOJI PICKER ===== */
 .emoji-wrap{
@@ -2575,33 +2493,14 @@ body.day-mode .biz-stat-l{color:#9ca3af;}
 </div>
 
 <!-- BOTTOM NAV (mobile) -->
+<!-- BOTTOM NAV (mobile) -->
 <div class="bottom-nav">
   <div class="bnav-items">
-    <button class="bnav-btn active" id="bn-home" onclick="nav('home')" aria-label="Feed">
-      <svg class="bni" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-      <span class="bn-label">Feed</span>
-    </button>
-    <button class="bnav-btn" id="bn-explore" onclick="nav('explore')" aria-label="Explorar">
-      <svg class="bni" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <span class="bn-label">Explorar</span>
-    </button>
-    <button class="bnav-btn" id="bn-messages" onclick="nav('messages')" aria-label="Chat">
-      <svg class="bni" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-      <span class="bn-label">Chat</span>
-    </button>
-    <button class="bnav-btn" id="bn-businesses" onclick="nav('businesses')" aria-label="Lojas">
-      <svg class="bni" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-      <span class="bn-label">Lojas</span>
-    </button>
-    <button class="bnav-btn" id="bn-notifications" onclick="nav('notifications')" aria-label="Alertas" style="position:relative;">
-      <svg class="bni" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-      <span class="nbadge" id="bnav-notif-badge" style="display:none;position:absolute;top:3px;right:calc(50% - 16px);font-size:8px;min-width:14px;height:14px;line-height:14px;padding:0 3px;border-radius:7px;">0</span>
-      <span class="bn-label">Alertas</span>
-    </button>
-    <button class="bnav-btn" id="bn-profile" onclick="nav('profile')" aria-label="Perfil">
-      <svg class="bni" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-      <span class="bn-label">Perfil</span>
-    </button>
+    <button class="bnav-btn active" id="bn-home" onclick="nav('home')"><span class="bi">🏠</span><span class="bn-label">Feed</span></button>
+    <button class="bnav-btn" id="bn-friends" onclick="nav('friends')"><span class="bi">👥</span><span class="bn-label">Amigos</span></button>
+    <button class="bnav-btn" id="bn-businesses" onclick="nav('businesses')"><span class="bi">🏪</span><span class="bn-label">Lojas</span></button>
+    <button class="bnav-btn" id="bn-messages" onclick="nav('messages')"><span class="bi">💬</span><span class="bn-label">Chat</span></button>
+    <button class="bnav-btn" id="bn-notifications" onclick="nav('notifications')" style="position:relative;"><span class="bi">🔔</span><span class="bn-label">Alertas</span><span class="nbadge" id="bnav-notif-badge" style="display:none;position:absolute;top:4px;right:6px;font-size:8px;">0</span></button>
   </div>
 </div>
 
