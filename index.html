@@ -5130,9 +5130,23 @@ async function loadMsgs(userId){
         mediaHtml = '<div class="mb-media" data-src="'+safeUrl+'" onclick="openLightbox(this.dataset.src)"><img src="'+safeUrl+'" alt="imagem" style="display:block;width:100%;border-radius:8px;"></div>';
       }
     }
-    const contentHtml = m.content ? '<div class="mb-bubble">'+xss(m.content)+'</div>' : '';
+    // Mensagens de chamada: estilo centralizado especial
+    const isCallMsg = m.content && /^[📞📹📵✅]/.test(m.content) &&
+      (m.content.includes('Chamada') || m.content.includes('ligou'));
+    let contentHtml = '';
+    if(isCallMsg){
+      const isRej = m.content.includes('rejeitada') || m.content.includes('não atendida');
+      const color = isRej ? '#ef4444' : m.content.includes('atendida') ? '#22c55e' : '#f59e0b';
+      contentHtml = '<div style="font-size:12px;color:'+color+';text-align:center;padding:6px 12px;background:rgba(255,255,255,.05);border-radius:20px;border:1px solid '+color+'40;">'+xss(m.content)+'</div>';
+    } else if(m.content){
+      contentHtml = '<div class="mb-bubble">'+xss(m.content)+'</div>';
+    }
     const timeHtml = '<div class="mb-time">'+timeAgo(m.created_at)+'</div>';
-    html += '<div class="mb '+(isSent?'sent':'recv')+'">'+mediaHtml+contentHtml+timeHtml+'</div>';
+    if(isCallMsg){
+      html += '<div style="display:flex;justify-content:center;align-items:center;gap:6px;margin:6px 0;">'+contentHtml+'<span style="font-size:10px;color:var(--text-muted);">'+timeAgo(m.created_at)+'</span></div>';
+    } else {
+      html += '<div class="mb '+(isSent?'sent':'recv')+'">'+mediaHtml+contentHtml+timeHtml+'</div>';
+    }
   }
   area.innerHTML = html;
   area.scrollTop = area.scrollHeight;
@@ -9236,6 +9250,9 @@ async function acceptCall(){
         from:CU.id,
         sdp:{type:_pc.localDescription.type,sdp:_pc.localDescription.sdp}
       }});
+      // Mensagem no chat: chamada atendida
+      const _callIcon = _callType==='video'?'📹':'📞';
+      _insertCallMsg(_callPeer.id, _callIcon+' Chamada atendida');
       if(_callType==='video'){
         const sv=document.getElementById('call-self-video');
         if(sv){sv.srcObject=_localStream;sv.muted=true;}
@@ -9252,8 +9269,10 @@ function rejectCall(){
   const peer = _callPeer ? {..._callPeer} : null;
   const nm = CP?.full_name||CP?.username||'Alguém';
   _cleanup();
-  // Enviar sinal e notificação em background (não bloqueia UI)
+  // Enviar sinal, notificação e mensagem no chat em background
   if(peer){
+    // Mensagem no chat: chamada rejeitada
+    _insertCallMsg(peer.id, '📵 Chamada rejeitada');
     const cid = _chanId(CU.id, peer.id);
     const ch = db.channel(cid,{config:{broadcast:{self:false}}});
     ch.subscribe(s=>{ if(s==='SUBSCRIBED'){
@@ -9280,8 +9299,10 @@ function endCall(){
   // Enviar sinal de encerramento pelo canal já aberto (se disponível)
   if(_sigCh) _sigCh.send({type:'broadcast',event:'call-end',payload:{from:CU.id}}).catch(()=>{});
   _cleanup();
-  // Notificação de chamada perdida em background
+  // Notificação + mensagem de chamada perdida em background
   if(wasCaller && peer && !hadTimer){
+    // Mensagem no chat
+    _insertCallMsg(peer.id, '📞 Chamada não atendida');
     db.from('notifications').insert({
       user_id:peer.id, actor_id:CU.id,
       type:'call_missed',
@@ -9419,6 +9440,20 @@ function _initCallListen(){
     });
 }
 
+
+// ── Inserir mensagem de sistema no chat ─────────────────────────
+async function _insertCallMsg(toUserId, text){
+  if(!CU||!toUserId) return;
+  try{
+    await db.from('messages').insert({
+      sender_id:CU.id, receiver_id:toUserId,
+      content:text, read:false
+    });
+    // Se o chat com esse usuário estiver aberto, recarregar
+    if(currentChatUser?.id===toUserId) loadMsgs(toUserId);
+    if(homeChatUser?.id===toUserId) loadHomeMsgs(toUserId);
+  }catch(e){}
+}
 </script>
 </body>
 </html>
