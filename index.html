@@ -9064,195 +9064,165 @@ async function loadUnreadMsgCount(){
 
 
 
-// ================================================================
-// CHAMADAS DE VOZ/VIDEO
-// ================================================================
-// ================================================================
-// CHAMADAS DE VOZ/VÍDEO — Arquitetura definitiva
-//
-// SINALIZAÇÃO: tabela notifications (postgres_changes já ativo)
-//   - Quem liga insere notification type='call_incoming' com SDP
-//   - Destinatário recebe via realtime, mostra tela de chamada
-//   - Resposta (answer/ice/reject/end) via Supabase Broadcast
-//     num canal ÚNICO por sessão: 'call-{sessionId}'
-//   - Sem canal duplicado, sem conflito
-// ================================================================
 
-let _pc = null;
-let _localStream = null;
-let _rtcCh = null;
-let _callTimer = null;
-let _callSecs = 0;
-let _callPeer = null;
-let _callType = 'audio';
-let _isCaller = false;
-let _isMuted = false;
-let _pendingOffer = null;
-let _sessionId = null;
+// ================================================================
+// CHAMADAS DE VOZ/VÍDEO
+// ================================================================
+// ================================================================
+// CHAMADAS DE VOZ/VÍDEO v4 — Ordem correta de operações
+// Sinalização: notifications (INSERT) → realtime chega ao destino
+// Canal RTC: 'call-{sessionId}' único por chamada
+// ================================================================
+let _pc=null, _localStream=null, _rtcCh=null;
+let _callTimer=null, _callSecs=0;
+let _callPeer=null, _callType='audio';
+let _isCaller=false, _isMuted=false;
+let _pendingOffer=null, _sessionId=null;
+const _STUN={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun2.l.google.com:19302'}]};
 
-const _STUN = {iceServers:[
-  {urls:'stun:stun.l.google.com:19302'},
-  {urls:'stun:stun2.l.google.com:19302'}
-]};
+// ── Aguardar ICE gathering completo ──────────────────────────────
+function _waitIce(pc){
+  return new Promise(resolve=>{
+    if(pc.iceGatheringState==='complete'){ resolve(); return; }
+    const check=()=>{ if(pc.iceGatheringState==='complete'){ pc.removeEventListener('icegatheringstatechange',check); resolve(); } };
+    pc.addEventListener('icegatheringstatechange',check);
+    setTimeout(resolve, 4000); // timeout de segurança
+  });
+}
 
-// ─────────────────────────────────────────────
-// 1. QUEM LIGA
-// ─────────────────────────────────────────────
+// ── 1. QUEM LIGA ────────────────────────────────────────────────
 async function startCall(userId, username, type){
   if(!CU){ showToast('Faça login','error'); return; }
-  if(_pc)  { showToast('Já há uma chamada ativa','error'); return; }
+  if(_pc){ showToast('Já há uma chamada ativa','error'); return; }
 
-  _callType  = type||'audio';
-  _isCaller  = true;
-  _callPeer  = {id:userId, name:username};
-  _sessionId = 'c'+Date.now();
+  _callType=type||'audio'; _isCaller=true;
+  _callPeer={id:userId,name:username};
+  _sessionId='c'+Date.now();
 
-  // Pedir mídia
+  // Pedir mídia primeiro
   try{
-    _localStream = await navigator.mediaDevices.getUserMedia({
-      audio:true, video:_callType==='video'
-    });
-  }catch(e){ showToast('Microfone/câmera negado','error'); return; }
+    _localStream=await navigator.mediaDevices.getUserMedia({audio:true,video:_callType==='video'});
+  }catch(e){ showToast('Permissão negada: '+e.message,'error'); return; }
 
   _showCallUI('caller', username, _callType, null);
 
-  // Criar PeerConnection
-  _buildPC();
-
-  // Gerar offer SDP
-  const offer = await _pc.createOffer();
-  await _pc.setLocalDescription(offer);
-
-  // Abrir canal de sinalização (único para esta sessão)
+  // PASSO 1: Abrir canal e aguardar SUBSCRIBED
   _rtcCh = db.channel('call-'+_sessionId, {config:{broadcast:{self:false}}})
     .on('broadcast',{event:'answer'},(p)=>{ _onAnswer(p.payload.sdp); })
     .on('broadcast',{event:'ice'},   (p)=>{ _addIce(p.payload.c); })
     .on('broadcast',{event:'reject'},(p)=>{ _hangup('❌ Chamada recusada'); })
-    .on('broadcast',{event:'end'},   (p)=>{ _hangup('📵 Encerrada pelo outro'); })
-    .subscribe(async(s)=>{
-      if(s!=='SUBSCRIBED') return;
+    .on('broadcast',{event:'end'},   (p)=>{ _hangup('📵 Chamada encerrada'); })
+    .subscribe(async(status)=>{
+      if(status!=='SUBSCRIBED') return;
 
-      // Avisar destinatário via notification (realtime já ativo nele)
-      const notifContent = JSON.stringify({
-        sid     : _sessionId,
-        ctype   : _callType,
-        fromId  : CU.id,
-        fromName: CP?.full_name||CP?.username||'Alguém',
-        fromAv  : CP?.avatar_url||'',
-        sdp     : _pc.localDescription
+      // PASSO 2: Criar PC (onicecandidate já tem canal disponível)
+      _buildPC();
+
+      // PASSO 3: Criar offer e aguardar ICE gathering COMPLETO
+      const offer=await _pc.createOffer();
+      await _pc.setLocalDescription(offer);
+      await _waitIce(_pc); // aguarda todos os ICE candidates
+
+      // PASSO 4: Enviar SDP completo via notification
+      const payload=JSON.stringify({
+        sid:_sessionId, ctype:_callType,
+        fromId:CU.id,
+        fromName:CP?.full_name||CP?.username||'Alguém',
+        fromAv:CP?.avatar_url||'',
+        sdp:{type:_pc.localDescription.type, sdp:_pc.localDescription.sdp}
       });
-
-      const {error} = await db.from('notifications').insert({
-        user_id : userId,
-        actor_id: CU.id,
-        type    : 'call_incoming',
-        content : notifContent,
-        read    : false
+      const {error}=await db.from('notifications').insert({
+        user_id:userId, actor_id:CU.id,
+        type:'call_incoming', content:payload, read:false
       });
-
       if(error) showToast('Erro ao chamar: '+error.message,'error');
     });
 }
 
-// ─────────────────────────────────────────────
-// 2. QUEM RECEBE (chamado pelo setupRealtime)
-// ─────────────────────────────────────────────
+// ── 2. QUEM RECEBE (chamado via setupRealtime) ──────────────────
 function handleCallNotification(notif){
-  if(notif.type !== 'call_incoming') return;
-  let d;
-  try{ d = JSON.parse(notif.content); }catch(e){ return; }
+  if(notif.type!=='call_incoming') return;
+  let d; try{d=JSON.parse(notif.content);}catch(e){return;}
   if(!d?.sid) return;
 
-  // Deletar a notificação para não aparecer no sino
-  db.from('notifications').delete().eq('id', notif.id).catch(()=>{});
+  // Deletar notification para não aparecer no sino
+  db.from('notifications').delete().eq('id',notif.id).catch(()=>{});
 
   if(_pc){
-    // Ocupado → rejeitar silenciosamente
-    const ch = db.channel('call-'+d.sid, {config:{broadcast:{self:false}}});
-    ch.subscribe((s)=>{ if(s==='SUBSCRIBED'){
+    // Ocupado → rejeitar via canal
+    const ch=db.channel('call-'+d.sid,{config:{broadcast:{self:false}}});
+    ch.subscribe(s=>{ if(s==='SUBSCRIBED'){
       ch.send({type:'broadcast',event:'reject',payload:{}});
-      setTimeout(()=>{ try{db.removeChannel(ch);}catch(e){} }, 2000);
+      setTimeout(()=>{try{db.removeChannel(ch);}catch(e){}},2000);
     }});
     return;
   }
 
-  _sessionId   = d.sid;
-  _callType    = d.ctype||'audio';
-  _isCaller    = false;
-  _callPeer    = {id:d.fromId, name:d.fromName, avatar:d.fromAv};
-  _pendingOffer= d.sdp;
-
+  _sessionId=d.sid; _callType=d.ctype||'audio';
+  _isCaller=false; _pendingOffer=d.sdp;
+  _callPeer={id:d.fromId, name:d.fromName, avatar:d.fromAv};
   _showCallUI('receiver', d.fromName||'Amigo', _callType, d.fromAv);
 }
 
-// ─────────────────────────────────────────────
-// 3. ACEITAR CHAMADA
-// ─────────────────────────────────────────────
+// ── 3. ACEITAR ──────────────────────────────────────────────────
 async function acceptCall(){
   if(!_pendingOffer||!_sessionId) return;
-
-  const offerSDP = _pendingOffer;
-  _pendingOffer  = null;
-
-  const st = document.getElementById('call-status');
-  if(st) st.textContent = 'conectando...';
+  const offerSDP=_pendingOffer; _pendingOffer=null;
+  const st=document.getElementById('call-status');
+  if(st) st.textContent='conectando...';
 
   try{
-    _localStream = await navigator.mediaDevices.getUserMedia({
-      audio:true, video:_callType==='video'
-    });
+    _localStream=await navigator.mediaDevices.getUserMedia({audio:true,video:_callType==='video'});
   }catch(e){ showToast('Microfone negado','error'); rejectCall(); return; }
 
-  _buildPC();
+  // PASSO 1: Abrir MESMO canal do chamador
+  _rtcCh=db.channel('call-'+_sessionId,{config:{broadcast:{self:false}}})
+    .on('broadcast',{event:'ice'},(p)=>{ _addIce(p.payload.c); })
+    .on('broadcast',{event:'end'},(p)=>{ _hangup('📵 Chamada encerrada'); })
+    .subscribe(async(status)=>{
+      if(status!=='SUBSCRIBED') return;
 
-  // Mesmo canal do chamador
-  _rtcCh = db.channel('call-'+_sessionId, {config:{broadcast:{self:false}}})
-    .on('broadcast',{event:'ice'}, (p)=>{ _addIce(p.payload.c); })
-    .on('broadcast',{event:'end'}, (p)=>{ _hangup('📵 Encerrada pelo outro'); })
-    .subscribe(async(s)=>{
-      if(s!=='SUBSCRIBED') return;
+      // PASSO 2: Criar PC
+      _buildPC();
 
+      // PASSO 3: Processar offer e criar answer
       await _pc.setRemoteDescription(new RTCSessionDescription(offerSDP));
-      const answer = await _pc.createAnswer();
+      const answer=await _pc.createAnswer();
       await _pc.setLocalDescription(answer);
+      await _waitIce(_pc); // aguarda ICE completo
 
-      _rtcCh.send({type:'broadcast',event:'answer',payload:{sdp:_pc.localDescription}});
+      // PASSO 4: Enviar answer
+      _rtcCh.send({type:'broadcast',event:'answer',payload:{
+        sdp:{type:_pc.localDescription.type, sdp:_pc.localDescription.sdp}
+      }});
 
       if(_callType==='video'){
         const sv=document.getElementById('call-self-video');
-        if(sv){ sv.srcObject=_localStream; sv.muted=true; }
+        if(sv){sv.srcObject=_localStream; sv.muted=true;}
       }
     });
 }
 
-// ─────────────────────────────────────────────
-// 4. REJEITAR / ENCERRAR
-// ─────────────────────────────────────────────
+// ── 4. REJEITAR / ENCERRAR ──────────────────────────────────────
 function rejectCall(){
   if(_rtcCh) _rtcCh.send({type:'broadcast',event:'reject',payload:{}}).catch(()=>{});
-  _cleanup();
-  document.getElementById('call-overlay')?.remove();
+  _cleanup(); document.getElementById('call-overlay')?.remove();
 }
-
 function endCall(){
   if(_rtcCh) _rtcCh.send({type:'broadcast',event:'end',payload:{}}).catch(()=>{});
   _hangup('📵 Chamada encerrada');
 }
-
 function _hangup(msg){
   const st=document.getElementById('call-status');
   if(st) st.textContent=msg||'Encerrada';
-  setTimeout(()=>{ document.getElementById('call-overlay')?.remove(); _cleanup(); }, 1500);
+  setTimeout(()=>{ document.getElementById('call-overlay')?.remove(); _cleanup(); },1500);
 }
 
-// ─────────────────────────────────────────────
-// HELPERS WebRTC
-// ─────────────────────────────────────────────
+// ── HELPERS ─────────────────────────────────────────────────────
 function _buildPC(){
-  _pc = new RTCPeerConnection(_STUN);
+  _pc=new RTCPeerConnection(_STUN);
   _localStream?.getTracks().forEach(t=>_pc.addTrack(t,_localStream));
-
-  _pc.ontrack = (e)=>{
+  _pc.ontrack=(e)=>{
     if(_callType==='video'){
       const rv=document.getElementById('call-remote-video');
       if(rv) rv.srcObject=e.streams[0];
@@ -9262,44 +9232,36 @@ function _buildPC(){
     }
     _startTimer();
   };
-
-  _pc.onicecandidate = (e)=>{
-    if(e.candidate && _rtcCh)
+  _pc.onicecandidate=(e)=>{
+    // Com _waitIce não precisamos enviar ICE incremental
+    // mas mantemos como fallback
+    if(e.candidate&&_rtcCh)
       _rtcCh.send({type:'broadcast',event:'ice',payload:{c:e.candidate.toJSON()}}).catch(()=>{});
   };
-
-  _pc.onconnectionstatechange = ()=>{
+  _pc.onconnectionstatechange=()=>{
     const s=_pc?.connectionState;
     if(s==='connected') _startTimer();
     if(['disconnected','failed','closed'].includes(s)) _hangup('📵 Conexão perdida');
   };
 }
-
 async function _onAnswer(sdp){
   if(!_pc) return;
   try{ await _pc.setRemoteDescription(new RTCSessionDescription(sdp)); }catch(e){}
   if(_callType==='video'){
     const sv=document.getElementById('call-self-video');
-    if(sv){ sv.srcObject=_localStream; sv.muted=true; }
+    if(sv){sv.srcObject=_localStream; sv.muted=true;}
   }
 }
-
 function _addIce(c){ if(_pc&&c) _pc.addIceCandidate(new RTCIceCandidate(c)).catch(()=>{}); }
-
 function _cleanup(){
   clearInterval(_callTimer); _callTimer=null; _callSecs=0;
   _localStream?.getTracks().forEach(t=>t.stop()); _localStream=null;
   try{_pc?.close();}catch(e){} _pc=null;
-  if(_rtcCh){ try{db.removeChannel(_rtcCh);}catch(e){} _rtcCh=null; }
+  if(_rtcCh){try{db.removeChannel(_rtcCh);}catch(e){} _rtcCh=null;}
   _callPeer=null; _isCaller=false; _isMuted=false; _pendingOffer=null; _sessionId=null;
 }
-
-// ─────────────────────────────────────────────
-// TIMER E MUDO
-// ─────────────────────────────────────────────
 function _startTimer(){
-  if(_callTimer) return;
-  _callSecs=0;
+  if(_callTimer) return; _callSecs=0;
   const st=document.getElementById('call-status');
   const tm=document.getElementById('call-timer');
   if(st) st.textContent='em chamada';
@@ -9310,7 +9272,6 @@ function _startTimer(){
     if(tm) tm.textContent=m+':'+(s<10?'0':'')+s;
   },1000);
 }
-
 function toggleMute(){
   _isMuted=!_isMuted;
   _localStream?.getAudioTracks().forEach(t=>t.enabled=!_isMuted);
@@ -9319,19 +9280,15 @@ function toggleMute(){
   showToast(_isMuted?'🔇 Mic silenciado':'🎙 Mic ativado','');
 }
 
-// ─────────────────────────────────────────────
-// UI DA CHAMADA
-// ─────────────────────────────────────────────
+// ── UI DA CHAMADA ────────────────────────────────────────────────
 function _showCallUI(role, name, type, avatar){
   document.getElementById('call-overlay')?.remove();
   const isCaller=role==='caller', isVideo=type==='video';
   const ov=document.createElement('div');
   ov.id='call-overlay'; ov.className='call-overlay';
-
   const avH=(avatar&&avatar.startsWith('http'))
-    ? `<img class="call-avatar" src="${avatar}" onerror="this.outerHTML='<div class=\\'call-avatar\\'>📞</div>'">`
-    : `<div class="call-avatar">${isVideo?'📹':'📞'}</div>`;
-
+    ?`<img class="call-avatar" src="${avatar}" onerror="this.outerHTML='<div class=\\'call-avatar\\'>📞</div>'">`
+    :`<div class="call-avatar">${isVideo?'📹':'📞'}</div>`;
   ov.innerHTML=`
     ${isVideo?`<div class="call-video-wrap">
       <video id="call-remote-video" autoplay playsinline style="width:100%;height:100%;object-fit:cover;background:#000;border-radius:12px;"></video>
@@ -9342,33 +9299,23 @@ function _showCallUI(role, name, type, avatar){
     <div class="call-status" id="call-status">${isCaller?'📞 chamando...':isVideo?'📹 videochamada':'📞 chamada de voz'}</div>
     <div class="call-timer" id="call-timer" style="display:none;">0:00</div>
     <div class="call-actions">
-      ${!isCaller?`
-      <div style="text-align:center;">
+      ${!isCaller?`<div style="text-align:center;">
         <button class="call-action-btn" style="background:#22c55e;" onclick="acceptCall()">
-          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="white" stroke-width="2.5">
-            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.38 2 2 0 0 1 3.6 1.21h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.77a16 16 0 0 0 6.29 6.29l1.63-1.63a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
-          </svg>
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="white" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.38 2 2 0 0 1 3.6 1.21h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.77a16 16 0 0 0 6.29 6.29l1.63-1.63a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
         </button>
-        <div style="font-size:9px;color:#22c55e;margin-top:6px;font-family:'Space Mono',monospace;letter-spacing:1px;">ATENDER</div>
+        <div style="font-size:9px;color:#22c55e;margin-top:6px;font-family:'Space Mono',monospace;">ATENDER</div>
       </div>`:''}
       <div style="text-align:center;">
         <button class="call-action-btn call-btn-mute" id="call-mute-btn" onclick="toggleMute()">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" stroke-width="2">
-            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-            <line x1="12" y1="19" x2="12" y2="23"/>
-          </svg>
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
         </button>
-        <div style="font-size:9px;color:rgba(255,255,255,.5);margin-top:6px;font-family:'Space Mono',monospace;letter-spacing:1px;">MIC</div>
+        <div style="font-size:9px;color:rgba(255,255,255,.5);margin-top:6px;font-family:'Space Mono',monospace;">MIC</div>
       </div>
       <div style="text-align:center;">
         <button class="call-action-btn call-btn-end" onclick="${isCaller?'endCall':'rejectCall'}()">
-          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="white" stroke-width="2.5">
-            <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.34 1.85.573 2.81.7A2 2 0 0 1 22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 3.59 1.21h3a2 2 0 0 1 2 1.72 12.05 12.05 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.77"/>
-            <line x1="1" y1="1" x2="23" y2="23"/>
-          </svg>
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="white" stroke-width="2.5"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.34 1.85.573 2.81.7A2 2 0 0 1 22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 3.59 1.21h3a2 2 0 0 1 2 1.72 12.05 12.05 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.77"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
         </button>
-        <div style="font-size:9px;color:#ef4444;margin-top:6px;font-family:'Space Mono',monospace;letter-spacing:1px;">ENCERRAR</div>
+        <div style="font-size:9px;color:#ef4444;margin-top:6px;font-family:'Space Mono',monospace;">ENCERRAR</div>
       </div>
     </div>`;
   document.body.appendChild(ov);
