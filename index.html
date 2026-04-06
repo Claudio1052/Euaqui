@@ -2278,6 +2278,7 @@ body.day-mode .msg-mic-btn{
     inset: 0 !important;
     width: 100% !important;
     height: 100% !important;
+    z-index: 11 !important;
     display: flex !important;
     flex-direction: column !important;
     overflow: hidden !important;
@@ -6464,11 +6465,16 @@ function switchCommDetailTab(tabId, btn){
 }
 
 function showChatSidebar(){
-  // Back button on mobile — slide back to conversation list
   const sb  = document.getElementById('chat-sidebar');
   const win = document.getElementById('chat-window');
-  if(sb)  sb.classList.remove('chat-hidden');
-  if(win) win.classList.remove('chat-open');
+  if(sb){
+    sb.classList.remove('chat-hidden');
+    sb.style.transform = '';
+  }
+  if(win){
+    win.classList.remove('chat-open');
+    win.style.transform = '';
+  }
   currentChatUser = null;
   // Clear messages area and header
   const msgsArea = document.getElementById('msgs-area');
@@ -6521,12 +6527,17 @@ async function loadNotifTab(tabId){
 let msgAttachFiles = [];
 
 function showChatWindow(){
-  // On mobile: slide sidebar out, chat window in
+  const sb  = document.getElementById('chat-sidebar');
+  const win = document.getElementById('chat-window');
+  if(!sb || !win) return;
   if(window.innerWidth <= 768){
-    const sb  = document.getElementById('chat-sidebar');
-    const win = document.getElementById('chat-window');
-    if(sb)  sb.classList.add('chat-hidden');
-    if(win) win.classList.add('chat-open');
+    // Esconder sidebar
+    sb.classList.add('chat-hidden');
+    // Mostrar chat window
+    win.classList.add('chat-open');
+    // Forçar via style também (redundância para garantir)
+    win.style.transform = 'translateX(0)';
+    sb.style.transform  = 'translateX(-100%)';
     // Show back button
     const backBtn = document.getElementById('chat-back-btn');
     if(backBtn) backBtn.style.display = 'flex';
