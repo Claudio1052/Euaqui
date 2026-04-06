@@ -1167,17 +1167,7 @@ body{
 
 
 /* ===== PROFILE NAME FIX ===== */
-.pname{
-  font-family:'Syne',sans-serif;
-  font-size:20px;
-  font-weight:800;
-  color:var(--text-light);
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  max-width:100%;
-  line-height:1.2;
-}
+/* pname-removed */
 .pdet{
   flex:1;
   min-width:0;
@@ -2345,6 +2335,29 @@ body.day-mode .presence-dot{ border-color:#ffffff; }
   color:var(--neon-cyan);
   text-decoration:underline dotted;
   font-size:9px;
+}
+
+/* ── NOME DO PERFIL — nunca quebrar verticalmente ── */
+.pname{
+  font-family:'Syne',sans-serif !important;
+  font-size:clamp(13px,3.5vw,22px) !important;
+  font-weight:800 !important;
+  color:var(--text-light) !important;
+  white-space:normal !important;
+  word-break:break-word !important;
+  overflow-wrap:anywhere !important;
+  line-height:1.15 !important;
+  max-width:100% !important;
+  display:block !important;
+}
+.pdet{
+  flex:1 1 0 !important;
+  min-width:0 !important;
+  overflow:hidden !important;
+  max-width:calc(100% - 20px) !important;
+}
+.pbar{
+  flex-wrap:wrap !important;
 }
 </style>
 </head>
@@ -4171,17 +4184,24 @@ function showSettings(){
 
 function switchProfileTab(btn){
   const tabId = btn.dataset.tab;
-  // Update button active states
   document.querySelectorAll('.pptab').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
-  // Show correct panel
   document.querySelectorAll('.profile-tab-panel').forEach(p=>p.classList.remove('active'));
   const panel = document.getElementById(tabId);
   if(panel) panel.classList.add('active');
-  // Load edit form if switching to edit tab
   if(tabId === 'pp-edit'){
     if(CP) loadEditForm();
     else if(CU) loadProfilePage(CU.id).then(()=>loadEditForm());
+  }
+  // Ao abrir aba Sobre: recarregar comunidades/lojas
+  if(tabId === 'pp-about'){
+    const commEl = document.getElementById('about-communities-section');
+    const bizEl  = document.getElementById('about-businesses-section');
+    // Se ainda tiver loading ou vazio, recarregar
+    if(commEl && (commEl.innerHTML.includes('Carregando') || commEl.innerHTML.trim()==='')) {
+      const uid = document.querySelector('[data-profile-uid]')?.dataset?.profileUid || CU?.id;
+      if(uid) loadAboutExtras(uid);
+    }
   }
 }
 
@@ -4727,7 +4747,7 @@ async function loadProfilePage(userId){
         btns.appendChild(chat);
       }
       pbar.appendChild(btns);
-      coverBar.appendChild(pbar);
+      coverBar.appendChild(pbar); coverBar.dataset.profileUid = userId;
     }
 
     // 4. Load posts tab
@@ -8634,18 +8654,17 @@ function _updateAllPresenceDots(){
 // PERFIL — MODAL SEGUIDORES / SEGUINDO
 // ================================================================
 async function showFollowersList(userId, tipo){
-  // Criar overlay
   const overlay = document.createElement('div');
   overlay.className = 'game-modal-overlay';
   overlay.id = 'followers-overlay';
   overlay.innerHTML = `
-    <div class="game-modal" style="max-width:360px;max-height:70vh;overflow:hidden;display:flex;flex-direction:column;">
+    <div class="game-modal" style="max-width:360px;max-height:72vh;overflow:hidden;display:flex;flex-direction:column;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
         <div class="game-modal-title" style="margin:0;">${tipo==='seguidores'?'👥 Seguidores':'➡ Seguindo'}</div>
         <button class="game-btn secondary" style="padding:4px 10px;margin:0;" onclick="document.getElementById('followers-overlay').remove()">✕</button>
       </div>
-      <div id="followers-list" style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:8px;padding-right:4px;">
-        <div style="color:var(--text-muted);font-size:12px;text-align:center;padding:20px;">⏳ Carregando...</div>
+      <div id="followers-list" style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:6px;padding-right:2px;">
+        <div style="color:var(--text-muted);font-size:12px;text-align:center;padding:24px;">⏳ Carregando...</div>
       </div>
     </div>`;
   overlay.onclick = e => { if(e.target===overlay) overlay.remove(); };
@@ -8654,19 +8673,37 @@ async function showFollowersList(userId, tipo){
   const list = document.getElementById('followers-list');
   try{
     let profileIds = [];
-    if(tipo === 'seguidores'){
-      // Quem segue este userId
-      const{data} = await db.from('follows').select('follower_id').eq('following_id', userId);
-      profileIds = (data||[]).map(r=>r.follower_id);
-    } else {
-      // Quem este userId segue
-      const{data} = await db.from('follows').select('following_id').eq('follower_id', userId);
-      profileIds = (data||[]).map(r=>r.following_id);
+
+    // Tentar tabela 'follows' primeiro, depois 'followers'
+    const tryQuery = async (table, col) => {
+      try{
+        const{data,error} = await db.from(table).select(col).eq(
+          tipo==='seguidores' ? 'following_id' : 'follower_id', userId
+        );
+        if(!error && data?.length) return data.map(r=>r[col.split(',')[0].trim()]);
+      }catch(e){}
+      return null;
+    };
+
+    // Coluna que queremos: quem segue = follower_id; quem eu sigo = following_id
+    const wantCol = tipo==='seguidores' ? 'follower_id' : 'following_id';
+
+    // Tentar tabela follows
+    let result = await tryQuery('follows', wantCol);
+    // Fallback: tabela followers
+    if(!result) result = await tryQuery('followers', wantCol);
+    // Fallback: tabela friends (amigos mútuos)
+    if(!result){
+      const{data:fd} = await db.from('friends').select('friend_id').eq('user_id', userId).catch(()=>({data:null}));
+      result = fd ? fd.map(r=>r.friend_id) : [];
     }
 
+    profileIds = result || [];
+
     if(!profileIds.length){
-      list.innerHTML = `<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">
-        ${tipo==='seguidores'?'Nenhum seguidor ainda':'Não está seguindo ninguém'}
+      list.innerHTML = `<div style="text-align:center;padding:30px 16px;">
+        <div style="font-size:32px;margin-bottom:8px;">${tipo==='seguidores'?'👥':'🔭'}</div>
+        <div style="color:var(--text-muted);font-size:12px;">${tipo==='seguidores'?'Nenhum seguidor ainda':'Não está seguindo ninguém'}</div>
       </div>`;
       return;
     }
@@ -8677,99 +8714,151 @@ async function showFollowersList(userId, tipo){
 
     list.innerHTML = '';
     (profiles||[]).forEach(p => {
-      const isOnline = _onlineUsers.has(p.id);
-      const dot = `<span class="presence-dot ${isOnline?'online':'offline'}" style="position:absolute;bottom:1px;right:1px;"></span>`;
+      const isOnline = _onlineUsers?.has(p.id) || false;
       const item = document.createElement('div');
-      item.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--border-glow);cursor:pointer;border-radius:8px;transition:background .15s;';
+      item.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 6px;border-bottom:1px solid var(--border-glow);cursor:pointer;border-radius:8px;transition:background .15s;';
       item.onmouseenter = () => item.style.background='rgba(0,255,204,.05)';
       item.onmouseleave = () => item.style.background='';
+
+      const avHtml = renderAvatar(p, 44, 'ci-av');
       item.innerHTML = `
         <div style="position:relative;flex-shrink:0;">
-          ${renderAvatar(p, 42, 'ci-av')}
-          ${dot}
+          ${avHtml}
+          <span class="presence-dot ${isOnline?'online':'offline'}" style="position:absolute;bottom:1px;right:1px;width:10px;height:10px;border-radius:50%;border:2px solid var(--bg-mid);background:${isOnline?'#22c55e':'#ef4444'};"></span>
         </div>
         <div style="flex:1;min-width:0;">
-          <div style="font-size:12px;font-weight:700;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(p.full_name||p.username)}</div>
-          <div style="font-size:10px;color:var(--neon-cyan);">@${xss(p.username)}</div>
-          ${p.bio?`<div style="font-size:10px;color:var(--text-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(p.bio.slice(0,50))}</div>`:''}
+          <div style="font-size:13px;font-weight:700;color:var(--text-light);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${xss(p.full_name||p.username||'?')}</div>
+          <div style="font-size:10px;color:var(--neon-cyan);">@${xss(p.username||'')}</div>
+          ${p.bio?`<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px;">${xss(p.bio.slice(0,50))}</div>`:''}
         </div>
-        <div style="font-size:9px;color:${isOnline?'#22c55e':'#6b7280'};">${isOnline?'● online':'○ off'}</div>`;
+        <div style="font-size:9px;color:${isOnline?'#22c55e':'#6b7280'};flex-shrink:0;">${isOnline?'● on':'○ off'}</div>`;
       item.onclick = () => { overlay.remove(); loadProfilePage(p.id); };
       list.appendChild(item);
     });
   } catch(e){
-    list.innerHTML = `<div style="color:var(--neon-pink);font-size:12px;padding:20px;text-align:center;">Erro: ${e.message}</div>`;
+    list.innerHTML = `<div style="color:var(--neon-pink);font-size:12px;padding:20px;text-align:center;">
+      <div style="font-size:24px;margin-bottom:8px;">⚠</div>
+      Erro ao carregar: ${xss(e.message||'desconhecido')}
+    </div>`;
+    console.error('showFollowersList:', e);
   }
 }
+
 
 // ================================================================
 // PERFIL — SOBRE: Comunidades e Lojas que segue
 // ================================================================
 async function loadAboutExtras(userId){
+  // Aguardar DOM renderizar
+  await new Promise(r=>setTimeout(r,100));
+
   const commEl = document.getElementById('about-communities-section');
   const bizEl  = document.getElementById('about-businesses-section');
-  if(!commEl && !bizEl) return;
 
-  try{
-    // Comunidades que segue
-    if(commEl){
-      const{data:commFollows} = await db.from('community_members')
-        .select('community_id, communities(id,name,description,icon,member_count)')
-        .eq('user_id', userId).limit(20);
+  // Tentar buscar comunidades
+  if(commEl){
+    try{
+      // Tentar community_members com join
+      let comms = [];
+      try{
+        const{data,error} = await db.from('community_members')
+          .select('community_id, communities(id,name,description,icon,member_count)')
+          .eq('user_id', userId).limit(20);
+        if(!error && data?.length){
+          comms = data.map(r=>r.communities).filter(Boolean);
+        }
+      }catch(e){}
 
-      const comms = (commFollows||[]).map(r=>r.communities).filter(Boolean);
+      // Fallback: só ids
+      if(!comms.length){
+        try{
+          const{data} = await db.from('community_members').select('community_id').eq('user_id',userId).limit(20);
+          if(data?.length){
+            const ids = data.map(r=>r.community_id);
+            const{data:cd} = await db.from('communities').select('id,name,description,icon,member_count').in('id',ids);
+            comms = cd||[];
+          }
+        }catch(e){}
+      }
+
       if(comms.length){
         commEl.innerHTML = `
           <div class="edit-section" style="margin-top:10px;">
             <div class="edit-section-title">🏘 COMUNIDADES (${comms.length})</div>
             ${comms.map(cm=>`
-              <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05);">
-                <div style="font-size:22px;width:36px;text-align:center;">${cm.icon||'🏘'}</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06);">
+                <div style="font-size:24px;width:38px;text-align:center;flex-shrink:0;">${cm.icon||'🏘'}</div>
                 <div style="flex:1;min-width:0;">
-                  <div style="font-size:12px;font-weight:600;color:var(--text-light);">${xss(cm.name)}</div>
+                  <div style="font-size:12px;font-weight:600;color:var(--text-light);">${xss(cm.name||'')}</div>
                   ${cm.description?`<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${xss(cm.description.slice(0,60))}</div>`:''}
-                  <div style="font-size:9px;color:var(--neon-cyan);margin-top:1px;">👥 ${cm.member_count||0} membros</div>
+                  <div style="font-size:9px;color:var(--neon-cyan);margin-top:2px;">👥 ${cm.member_count||0} membros</div>
                 </div>
               </div>`).join('')}
           </div>`;
       } else {
-        commEl.innerHTML = '';
+        commEl.innerHTML = `<div class="edit-section" style="margin-top:10px;">
+          <div class="edit-section-title">🏘 COMUNIDADES</div>
+          <div style="font-size:11px;color:var(--text-muted);padding:8px 0;">Nenhuma comunidade seguida ainda.</div>
+        </div>`;
       }
+    } catch(e){
+      commEl.innerHTML = '';
+      console.warn('communities:', e.message);
     }
+  }
 
-    // Lojas/serviços que segue
-    if(bizEl){
-      const{data:bizFollows} = await db.from('business_follows')
-        .select('business_id, businesses(id,name,description,logo_url,category)')
-        .eq('user_id', userId).limit(20);
+  // Tentar buscar lojas
+  if(bizEl){
+    try{
+      let bizs = [];
+      try{
+        const{data,error} = await db.from('business_follows')
+          .select('business_id, businesses(id,name,description,logo_url,category)')
+          .eq('user_id', userId).limit(20);
+        if(!error && data?.length){
+          bizs = data.map(r=>r.businesses).filter(Boolean);
+        }
+      }catch(e){}
 
-      const bizs = (bizFollows||[]).map(r=>r.businesses).filter(Boolean);
+      // Fallback: só ids
+      if(!bizs.length){
+        try{
+          const{data} = await db.from('business_follows').select('business_id').eq('user_id',userId).limit(20);
+          if(data?.length){
+            const ids = data.map(r=>r.business_id);
+            const{data:bd} = await db.from('businesses').select('id,name,description,logo_url,category').in('id',ids);
+            bizs = bd||[];
+          }
+        }catch(e){}
+      }
+
       if(bizs.length){
         bizEl.innerHTML = `
           <div class="edit-section" style="margin-top:10px;">
             <div class="edit-section-title">🏪 LOJAS SEGUIDAS (${bizs.length})</div>
             ${bizs.map(b=>`
-              <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05);">
-                <div style="width:36px;height:36px;border-radius:8px;overflow:hidden;background:rgba(0,255,204,.08);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-                  ${b.logo_url?`<img src="${xss(b.logo_url)}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='🏪'">`:'🏪'}
+              <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06);">
+                <div style="width:38px;height:38px;border-radius:8px;overflow:hidden;background:rgba(0,255,204,.08);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:20px;">
+                  ${b.logo_url?`<img src="${xss(b.logo_url)}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.textContent='🏪'">`:'🏪'}
                 </div>
                 <div style="flex:1;min-width:0;">
-                  <div style="font-size:12px;font-weight:600;color:var(--text-light);">${xss(b.name)}</div>
-                  ${b.category?`<div style="font-size:9px;color:var(--neon-yellow);text-transform:uppercase;letter-spacing:1px;">${xss(b.category)}</div>`:''}
+                  <div style="font-size:12px;font-weight:600;color:var(--text-light);">${xss(b.name||'')}</div>
+                  ${b.category?`<div style="font-size:9px;color:var(--neon-yellow);text-transform:uppercase;letter-spacing:1px;margin-top:1px;">${xss(b.category)}</div>`:''}
                   ${b.description?`<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${xss(b.description.slice(0,60))}</div>`:''}
                 </div>
               </div>`).join('')}
           </div>`;
       } else {
-        bizEl.innerHTML = '';
+        bizEl.innerHTML = `<div class="edit-section" style="margin-top:10px;">
+          <div class="edit-section-title">🏪 LOJAS SEGUIDAS</div>
+          <div style="font-size:11px;color:var(--text-muted);padding:8px 0;">Nenhuma loja seguida ainda.</div>
+        </div>`;
       }
+    } catch(e){
+      bizEl.innerHTML = '';
+      console.warn('businesses:', e.message);
     }
-  } catch(e){
-    if(commEl) commEl.innerHTML = '';
-    console.warn('loadAboutExtras:', e.message);
   }
 }
 
-</script>
-</body>
-</html>
+>
