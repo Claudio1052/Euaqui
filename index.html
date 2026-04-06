@@ -2331,7 +2331,6 @@ body.day-mode .presence-dot{ border-color:#ffffff; }
 .pstat-click:hover .pstl-link{ color:var(--neon-cyan) !important; }
 .pstl-link{
   color:var(--neon-cyan);
-  text-decoration:underline dotted;
   font-size:9px;
 }
 
@@ -4767,7 +4766,7 @@ async function loadProfilePage(userId){
         num.style.cssText = 'font-family:VT323,monospace;font-size:22px;color:var(--neon-cyan);line-height:1;';
         num.textContent = count;
         const lbl = document.createElement('div');
-        lbl.style.cssText = 'font-size:9px;color:var(--text-muted);'+(clickFn?'color:var(--neon-cyan);text-decoration:underline dotted;':'');
+        lbl.style.cssText = 'font-size:9px;color:var(--text-muted);'+(clickFn?'color:var(--neon-cyan);':'');
         lbl.textContent = label;
         el.appendChild(num); el.appendChild(lbl);
         if(clickFn) el.addEventListener('click', clickFn);
@@ -6078,7 +6077,7 @@ async function loadFriendsList(type){
       list.innerHTML = (data||[]).length ? data.map(r => `
         <div class="friend-card">
           ${renderAvatar(r.profiles,40,'friend-av')}
-          <div class="friend-info">
+          <div class="friend-info" onclick="loadProfilePage('${r.sender_id}')" style="cursor:pointer;flex:1;">
             <div class="friend-name">${xss(r.profiles?.full_name||r.profiles?.username)}</div>
             <div class="friend-user">@${xss(r.profiles?.username)}</div>
           </div>
@@ -6094,8 +6093,10 @@ async function loadFriendsList(type){
         .eq('user_id',CU.id);
       list.innerHTML = (data||[]).length ? data.map(f => `
         <div class="friend-card">
-          ${renderAvatar(f.profiles,40,'friend-av')}
-          <div class="friend-info">
+          <div class="friend-av-wrap" onclick="loadProfilePage('${f.friend_id}')" style="cursor:pointer;">
+            ${renderAvatar(f.profiles,40,'friend-av')}
+          </div>
+          <div class="friend-info" onclick="loadProfilePage('${f.friend_id}')" style="cursor:pointer;flex:1;">
             <div class="friend-name">${xss(f.profiles?.full_name||f.profiles?.username)}</div>
             <div class="friend-user">@${xss(f.profiles?.username)}</div>
           </div>
@@ -6111,8 +6112,10 @@ async function loadFriendsList(type){
         .eq('follower_id',CU.id);
       list.innerHTML = (data||[]).length ? data.map(f => `
         <div class="friend-card">
-          ${renderAvatar(f.profiles,40,'friend-av')}
-          <div class="friend-info">
+          <div class="friend-av-wrap" onclick="loadProfilePage('${f.following_id}')" style="cursor:pointer;">
+            ${renderAvatar(f.profiles,40,'friend-av')}
+          </div>
+          <div class="friend-info" onclick="loadProfilePage('${f.following_id}')" style="cursor:pointer;flex:1;">
             <div class="friend-name">${xss(f.profiles?.full_name||f.profiles?.username)}</div>
             <div class="friend-user">@${xss(f.profiles?.username)}</div>
           </div>
@@ -6125,8 +6128,10 @@ async function loadFriendsList(type){
         .eq('following_id',CU.id);
       list.innerHTML = (data||[]).length ? data.map(f => `
         <div class="friend-card">
-          ${renderAvatar(f.profiles,40,'friend-av')}
-          <div class="friend-info">
+          <div class="friend-av-wrap" onclick="loadProfilePage('${f.follower_id}')" style="cursor:pointer;">
+            ${renderAvatar(f.profiles,40,'friend-av')}
+          </div>
+          <div class="friend-info" onclick="loadProfilePage('${f.follower_id}')" style="cursor:pointer;flex:1;">
             <div class="friend-name">${xss(f.profiles?.full_name||f.profiles?.username)}</div>
             <div class="friend-user">@${xss(f.profiles?.username)}</div>
           </div>
