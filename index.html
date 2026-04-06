@@ -2205,6 +2205,12 @@ body.day-mode .attach-menu button:hover{ background:rgba(0,139,158,.08); color:#
   animation:recBlink 1.2s ease-in-out infinite;
   flex-shrink:0;
 }
+
+/* ── Game role badge ── */
+.game-role-badge{text-align:center;margin-bottom:8px;min-height:22px;}
+/* ── Convite aguardando ── */
+.game-invite-waiting{display:flex;align-items:center;justify-content:center;gap:8px;font-size:11px;color:var(--text-muted);font-family:'Space Mono',monospace;}
+.game-waiting-dot{width:8px;height:8px;border-radius:50%;background:var(--neon-cyan);animation:recBlink 1.2s ease-in-out infinite;flex-shrink:0;}
 </style>
 </head>
 <body>
@@ -7554,174 +7560,155 @@ function selectBizProductEl(el){
   selectBizProduct(bizId, bizName, prodName, price, priceLabel, category);
 }
 
-// ===== CHAT EXTRAS: ÁUDIO + MINI GAMES =====
+// ===== CHAT EXTRAS: ÁUDIO + MINI GAMES MULTIPLAYER =====
 
 // ================================================================
 // ATTACH MENU
 // ================================================================
 function toggleAttachMenu(menuId){
-  const m = document.getElementById(menuId);
-  if(!m) return;
-  const isOpen = m.classList.contains('open');
+  const m=document.getElementById(menuId);if(!m)return;
+  const isOpen=m.classList.contains('open');
   document.querySelectorAll('.attach-menu.open').forEach(el=>el.classList.remove('open'));
-  if(!isOpen) m.classList.add('open');
+  if(!isOpen)m.classList.add('open');
 }
-function closeAttachMenu(menuId){
-  document.getElementById(menuId)?.classList.remove('open');
-}
-document.addEventListener('click', function(e){
-  if(!e.target.closest('.msg-attach-wrap')){
+function closeAttachMenu(menuId){document.getElementById(menuId)?.classList.remove('open');}
+document.addEventListener('click',function(e){
+  if(!e.target.closest('.msg-attach-wrap'))
     document.querySelectorAll('.attach-menu.open').forEach(el=>el.classList.remove('open'));
-  }
 });
 
 // ================================================================
 // GRAVAÇÃO DE ÁUDIO
 // ================================================================
-let _mediaRecorder = null;
-let _audioChunks = [];
-let _audioTimerInterval = null;
-let _audioSeconds = 0;
-let _audioContext = 'chat';
+let _mediaRecorder=null,_audioChunks=[],_audioTimerInterval=null,_audioSeconds=0,_audioContext='chat';
 
 function startAudioRecord(ctx){
-  _audioContext = ctx || 'chat';
-  if(!navigator.mediaDevices?.getUserMedia)
-    return showToast('Seu dispositivo não suporta gravação de áudio','error');
+  _audioContext=ctx||'chat';
+  if(!navigator.mediaDevices?.getUserMedia) return showToast('Dispositivo não suporta gravação','error');
   navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
-    _audioChunks = [];
-    _mediaRecorder = new MediaRecorder(stream);
-    _mediaRecorder.ondataavailable = e=>{ if(e.data.size>0) _audioChunks.push(e.data); };
-    _mediaRecorder.onstop = ()=>{ stream.getTracks().forEach(t=>t.stop()); _sendAudioMsg(); };
+    _audioChunks=[];
+    _mediaRecorder=new MediaRecorder(stream);
+    _mediaRecorder.ondataavailable=e=>{if(e.data.size>0)_audioChunks.push(e.data);};
+    _mediaRecorder.onstop=()=>{stream.getTracks().forEach(t=>t.stop());_sendAudioMsg();};
     _mediaRecorder.start();
-    const recEl = document.getElementById('chat-audio-recorder');
-    const inputEl = document.getElementById('msg-in');
-    const sendBtn = document.getElementById('chat-send-btn');
-    if(recEl) recEl.style.display='flex';
-    if(inputEl) inputEl.style.display='none';
-    if(sendBtn){ sendBtn.onclick=()=>stopAudioRecord(); sendBtn.innerHTML='⏹'; sendBtn.title='Parar e enviar'; }
-    _audioSeconds = 0;
-    const timerEl = document.getElementById('chat-audio-timer');
-    _audioTimerInterval = setInterval(()=>{
+    const recEl=document.getElementById('chat-audio-recorder');
+    const inputEl=document.getElementById('msg-in');
+    const sendBtn=document.getElementById('chat-send-btn');
+    if(recEl)recEl.style.display='flex';
+    if(inputEl)inputEl.style.display='none';
+    if(sendBtn){sendBtn.onclick=()=>stopAudioRecord();sendBtn.innerHTML='⏹';sendBtn.title='Parar e enviar';}
+    _audioSeconds=0;
+    const timerEl=document.getElementById('chat-audio-timer');
+    _audioTimerInterval=setInterval(()=>{
       _audioSeconds++;
-      if(timerEl){ const m=Math.floor(_audioSeconds/60),s=_audioSeconds%60; timerEl.textContent=m+':'+(s<10?'0':'')+s; }
-      if(_audioSeconds>=120) stopAudioRecord();
+      if(timerEl){const m=Math.floor(_audioSeconds/60),s=_audioSeconds%60;timerEl.textContent=m+':'+(s<10?'0':'')+s;}
+      if(_audioSeconds>=120)stopAudioRecord();
     },1000);
     showToast('🎙 Gravando... Toque ⏹ para enviar','success');
   }).catch(e=>showToast('Erro ao acessar microfone: '+e.message,'error'));
 }
 
 function stopAudioRecord(){
-  if(_mediaRecorder&&_mediaRecorder.state!=='inactive') _mediaRecorder.stop();
+  if(_mediaRecorder&&_mediaRecorder.state!=='inactive')_mediaRecorder.stop();
   clearInterval(_audioTimerInterval);
   const recEl=document.getElementById('chat-audio-recorder');
   const inputEl=document.getElementById('msg-in');
   const sendBtn=document.getElementById('chat-send-btn');
-  if(recEl) recEl.style.display='none';
-  if(inputEl) inputEl.style.display='';
-  if(sendBtn){ sendBtn.onclick=()=>sendMsg(); sendBtn.innerHTML='➤'; sendBtn.title='Enviar'; }
+  if(recEl)recEl.style.display='none';
+  if(inputEl)inputEl.style.display='';
+  if(sendBtn){sendBtn.onclick=()=>sendMsg();sendBtn.innerHTML='➤';sendBtn.title='Enviar';}
 }
 
 function cancelAudioRecord(){
   if(_mediaRecorder&&_mediaRecorder.state!=='inactive'){
-    _mediaRecorder.ondataavailable=null; _mediaRecorder.onstop=null;
-    _mediaRecorder.stop(); _mediaRecorder.stream?.getTracks().forEach(t=>t.stop());
+    _mediaRecorder.ondataavailable=null;_mediaRecorder.onstop=null;
+    _mediaRecorder.stop();_mediaRecorder.stream?.getTracks().forEach(t=>t.stop());
   }
-  _audioChunks=[]; clearInterval(_audioTimerInterval);
+  _audioChunks=[];clearInterval(_audioTimerInterval);
   const recEl=document.getElementById('chat-audio-recorder');
   const inputEl=document.getElementById('msg-in');
   const sendBtn=document.getElementById('chat-send-btn');
-  if(recEl) recEl.style.display='none';
-  if(inputEl) inputEl.style.display='';
-  if(sendBtn){ sendBtn.onclick=()=>sendMsg(); sendBtn.innerHTML='➤'; }
+  if(recEl)recEl.style.display='none';
+  if(inputEl)inputEl.style.display='';
+  if(sendBtn){sendBtn.onclick=()=>sendMsg();sendBtn.innerHTML='➤';}
   showToast('Gravação cancelada','');
 }
 
 async function _sendAudioMsg(){
-  if(!_audioChunks.length) return;
+  if(!_audioChunks.length)return;
   const blob=new Blob(_audioChunks,{type:'audio/webm'});
   _audioChunks=[];
-  if(blob.size<1000){ showToast('Áudio muito curto','error'); return; }
+  if(blob.size<1000){showToast('Áudio muito curto','error');return;}
   showToast('⏳ Enviando áudio...','');
   try{
     const user=_audioContext==='ht'?homeChatUser:currentChatUser;
-    if(!user){ showToast('Nenhum chat aberto','error'); return; }
+    if(!user){showToast('Nenhum chat aberto','error');return;}
     const path=CU.id+'/audio-'+Date.now()+'.webm';
     const{data:ud,error:ue}=await db.storage.from('media').upload(path,blob,{upsert:true,contentType:'audio/webm'});
-    if(ue){ showToast('Erro upload áudio: '+ue.message,'error'); return; }
+    if(ue){showToast('Erro upload áudio: '+ue.message,'error');return;}
     const{data:{publicUrl}}=db.storage.from('media').getPublicUrl(path);
     await db.from('messages').insert({sender_id:CU.id,receiver_id:user.id,content:'🎙 Áudio',media_url:publicUrl,media_type:'audio/webm',read:false});
     showToast('✅ Áudio enviado!','success');
-    if(_audioContext==='ht') loadHomeMsgs(user.id); else loadMsgs(user.id);
-  }catch(e){ showToast('Erro: '+e.message,'error'); }
+    if(_audioContext==='ht')loadHomeMsgs(user.id);else loadMsgs(user.id);
+  }catch(e){showToast('Erro: '+e.message,'error');}
 }
 
 function renderAudioBubble(url){
   const safeUrl=url.replace(/'/g,"\\'");
   return '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;min-width:160px;">'
     +'<button onclick="toggleAudioPlay(this,\''+safeUrl+'\')" style="background:var(--neon-cyan);border:none;color:var(--bg-deep);width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">▶</button>'
-    +'<div style="flex:1;">'
-      +'<div style="height:3px;background:rgba(255,255,255,.15);border-radius:2px;overflow:hidden;">'
-        +'<div class="audio-wave" style="height:100%;width:0%;background:var(--neon-cyan);border-radius:2px;transition:width .1s;"></div>'
-      +'</div>'
-      +'<div style="font-size:9px;color:var(--text-muted);margin-top:3px;font-family:VT323,monospace;" class="audio-dur">🎙 Áudio</div>'
-    +'</div>'
-    +'<audio src="'+safeUrl+'" style="display:none;" '
-      +'onended="this.previousElementSibling.previousElementSibling.querySelector(\'button\').innerHTML=\'▶\';" '
-      +'ontimeupdate="updateAudioBar(this)"></audio>'
-  +'</div>';
+    +'<div style="flex:1;"><div style="height:3px;background:rgba(255,255,255,.15);border-radius:2px;overflow:hidden;"><div class="audio-wave" style="height:100%;width:0%;background:var(--neon-cyan);border-radius:2px;transition:width .1s;"></div></div>'
+    +'<div style="font-size:9px;color:var(--text-muted);margin-top:3px;font-family:VT323,monospace;" class="audio-dur">🎙 Áudio</div></div>'
+    +'<audio src="'+safeUrl+'" style="display:none;" ontimeupdate="updateAudioBar(this)"></audio></div>';
 }
 
 function toggleAudioPlay(btn,url){
-  const wrap=btn.parentElement;
-  const audio=wrap.querySelector('audio');
-  if(!audio) return;
-  if(audio.paused){ document.querySelectorAll('audio').forEach(a=>{if(a!==audio)a.pause();}); audio.play(); btn.innerHTML='⏸'; }
-  else { audio.pause(); btn.innerHTML='▶'; }
+  const wrap=btn.parentElement;const audio=wrap.querySelector('audio');if(!audio)return;
+  if(audio.paused){document.querySelectorAll('audio').forEach(a=>{if(a!==audio)a.pause();});audio.play();btn.innerHTML='⏸';}
+  else{audio.pause();btn.innerHTML='▶';}
 }
 
 function updateAudioBar(audio){
-  if(!audio.duration) return;
+  if(!audio.duration)return;
   const pct=(audio.currentTime/audio.duration)*100;
   const wrap=audio.closest('div');
-  const wave=wrap?.querySelector('.audio-wave');
-  if(wave) wave.style.width=pct+'%';
+  wrap?.querySelector('.audio-wave')&&(wrap.querySelector('.audio-wave').style.width=pct+'%');
   const dur=wrap?.querySelector('.audio-dur');
-  if(dur){ const rem=Math.ceil(audio.duration-audio.currentTime); dur.textContent='🎙 '+rem+'s'; }
+  if(dur){const rem=Math.ceil(audio.duration-audio.currentTime);dur.textContent='🎙 '+rem+'s';}
 }
 
 // ================================================================
-// MINI GAMES — Sistema de Convite em Tempo Real
+// MINI GAMES — MULTIPLAYER VIA SUPABASE REALTIME
 // ================================================================
-// Protocolo de mensagens de jogo:
-// [GAME_INVITE:gameId:gameName:gameIcon:inviteId]  — convite
-// [GAME_ACCEPT:inviteId:gameId:gameName:gameIcon]  — aceitação
-// [GAME_REJECT:inviteId]                           — recusa
+// Protocolo de mensagens:
+// [GAME_INVITE:gameId:gameName:gameIcon:inviteId]
+// [GAME_ACCEPT:inviteId:gameId:gameName:gameIcon]
+// [GAME_REJECT:inviteId]
+// [GAME_MOVE:sessionId:moveData]  ← movimentos ao vivo
 
-let _gameState = null;
-let _gameType = null;
-let _gameCurrentUser = null;
-let _pendingInviteId = null; // ID da mensagem de convite pendente
+let _gameState=null,_gameType=null,_gameCurrentUser=null;
+let _gameSessionId=null;   // ID único da sessão de jogo
+let _gameMyRole=null;      // 'host' (quem convidou) ou 'guest' (quem aceitou)
+let _gameChannel=null;     // Canal Supabase Realtime para movimentos
 
-const GAMES = [
-  {id:'ttt',    name:'Jogo da Velha', icon:'⭕', desc:'3x3 clássico'},
-  {id:'checker',name:'Dama',          icon:'🔴', desc:'8x8 estratégia'},
-  {id:'chess',  name:'Xadrez',        icon:'♟️', desc:'O rei dos jogos'},
-  {id:'memory', name:'Memória',       icon:'🃏', desc:'Encontre os pares'},
-  {id:'snake',  name:'Snake',         icon:'🐍', desc:'Come e cresce'},
+const GAMES=[
+  {id:'ttt',    name:'Jogo da Velha',icon:'⭕',desc:'3x3 clássico'},
+  {id:'checker',name:'Dama',         icon:'🔴',desc:'8x8 estratégia'},
+  {id:'chess',  name:'Xadrez',       icon:'♟️',desc:'O rei dos jogos'},
 ];
 
+// ── Abrir menu de jogos ──────────────────────────────────────────
 function openMiniGameMenu(){
   const user=currentChatUser||homeChatUser;
-  if(!user){ showToast('Abra um chat primeiro','error'); return; }
+  if(!user){showToast('Abra um chat primeiro','error');return;}
   _gameCurrentUser=user;
   const overlay=document.createElement('div');
-  overlay.className='game-modal-overlay'; overlay.id='game-menu-overlay';
+  overlay.className='game-modal-overlay';overlay.id='game-menu-overlay';
   overlay.innerHTML=`
     <div class="game-modal">
       <div class="game-modal-title">🎮 MINI GAMES</div>
       <div style="font-size:11px;color:var(--text-muted);text-align:center;margin-bottom:14px;">
-        Convidar <strong style="color:var(--neon-cyan);">@${user.username||'amigo'}</strong> para jogar
+        Convidar <strong style="color:var(--neon-cyan);">@${user.username||'amigo'}</strong> para jogar ao vivo
       </div>
       <div class="game-list">
         ${GAMES.map(g=>`
@@ -7739,48 +7726,43 @@ function openMiniGameMenu(){
   document.body.appendChild(overlay);
 }
 
+// ── Enviar convite ───────────────────────────────────────────────
 async function sendGameInvite(gameId){
   document.getElementById('game-menu-overlay')?.remove();
   const g=GAMES.find(x=>x.id===gameId);
-  if(!g||!_gameCurrentUser||!CU) return;
-  // Gerar ID único para o convite
+  if(!g||!_gameCurrentUser||!CU)return;
   const inviteId='inv_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
-  _pendingInviteId=inviteId;
-  // Enviar mensagem de convite com o inviteId embutido
   const content=`[GAME_INVITE:${gameId}:${g.name}:${g.icon}:${inviteId}]`;
-  const{error}=await db.from('messages').insert({
-    sender_id:CU.id, receiver_id:_gameCurrentUser.id, content, read:false
-  });
-  if(error){ showToast('Erro ao enviar convite: '+error.message,'error'); return; }
+  const{error}=await db.from('messages').insert({sender_id:CU.id,receiver_id:_gameCurrentUser.id,content,read:false});
+  if(error){showToast('Erro ao enviar convite: '+error.message,'error');return;}
   showToast(`${g.icon} Convite de ${g.name} enviado!`,'success');
-  if(currentChatUser?.id===_gameCurrentUser.id) loadMsgs(_gameCurrentUser.id);
-  else if(homeChatUser?.id===_gameCurrentUser.id) loadHomeMsgs(_gameCurrentUser.id);
+  if(currentChatUser?.id===_gameCurrentUser.id)loadMsgs(_gameCurrentUser.id);
+  else if(homeChatUser?.id===_gameCurrentUser.id)loadHomeMsgs(_gameCurrentUser.id);
 }
 
-// Quem RECEBE o convite clica em Aceitar
-async function acceptGameInvite(gameId, inviteId, gameName, gameIcon){
-  if(!CU) return;
+// ── Aceitar convite — quem recebeu ──────────────────────────────
+async function acceptGameInvite(gameId,inviteId,gameName,gameIcon){
+  if(!CU)return;
   const user=currentChatUser||homeChatUser;
-  if(!user){ showToast('Chat não encontrado','error'); return; }
-  // Enviar mensagem de aceitação
+  if(!user){showToast('Chat não encontrado','error');return;}
   const content=`[GAME_ACCEPT:${inviteId}:${gameId}:${gameName}:${gameIcon}]`;
-  await db.from('messages').insert({
-    sender_id:CU.id, receiver_id:user.id, content, read:false
-  });
-  // Atualizar o card do convite para "Aceito"
+  await db.from('messages').insert({sender_id:CU.id,receiver_id:user.id,content,read:false});
+  // Atualizar card localmente
   const invCard=document.querySelector(`[data-invite-id="${inviteId}"]`);
   if(invCard){
     const actions=invCard.querySelector('.game-invite-actions');
-    if(actions) actions.innerHTML=`<span style="color:var(--neon-cyan);font-size:11px;">✅ Aceitou! Iniciando...</span>`;
+    if(actions)actions.innerHTML=`<span style="color:var(--neon-cyan);font-size:11px;">✅ Aceito! Iniciando...</span>`;
   }
-  // Abrir o jogo imediatamente para quem aceitou
-  setTimeout(()=>startGame(gameId),400);
-  showToast(`${gameIcon} Jogo aceito! Iniciando ${gameName}...`,'success');
+  // Iniciar como guest (o host define o sessionId = inviteId)
+  _gameMyRole='guest';
+  _gameCurrentUser=user;
+  setTimeout(()=>startGameMultiplayer(gameId,inviteId,'guest'),400);
+  showToast(`${gameIcon} Jogo aceito! Conectando...`,'success');
 }
 
-// Quem RECEBE o convite clica em Recusar
-async function rejectGameInvite(inviteId, el){
-  if(!CU) return;
+// ── Recusar convite ─────────────────────────────────────────────
+async function rejectGameInvite(inviteId,el){
+  if(!CU)return;
   const user=currentChatUser||homeChatUser;
   if(user){
     const content=`[GAME_REJECT:${inviteId}]`;
@@ -7789,13 +7771,13 @@ async function rejectGameInvite(inviteId, el){
   const card=el?.closest('.game-invite-msg');
   if(card){
     const actions=card.querySelector('.game-invite-actions');
-    if(actions) actions.innerHTML=`<span style="color:var(--neon-pink);font-size:11px;">❌ Recusado</span>`;
+    if(actions)actions.innerHTML=`<span style="color:var(--neon-pink);font-size:11px;">❌ Recusado</span>`;
   }
 }
 
-// Parse de todos os tipos de mensagem de jogo
+// ── Parse de mensagens de jogo ───────────────────────────────────
 function parseGameMsg(content){
-  if(!content||!content.startsWith('[GAME_')) return null;
+  if(!content||!content.startsWith('[GAME_'))return null;
   const inner=content.slice(1,content.lastIndexOf(']'));
   const parts=inner.split(':');
   const type=parts[0];
@@ -7805,12 +7787,15 @@ function parseGameMsg(content){
     return{type:'accept',inviteId:parts[1],gameId:parts[2],name:parts[3],icon:parts[4]};
   if(type==='GAME_REJECT'&&parts.length>=2)
     return{type:'reject',inviteId:parts[1]};
+  if(type==='GAME_MOVE'&&parts.length>=3)
+    return{type:'move',sessionId:parts[1],moveData:parts.slice(2).join(':')};
   return null;
 }
 
-function renderGameInviteCard(msg, isSent){
-  const {name,icon,inviteId,gameId}=msg;
-  return `<div class="game-invite-msg" data-invite-id="${inviteId}" data-game-id="${gameId}">
+// ── Renderizar card de convite ───────────────────────────────────
+function renderGameInviteCard(msg,isSent){
+  const{name,icon,inviteId,gameId}=msg;
+  return`<div class="game-invite-msg" data-invite-id="${inviteId}" data-game-id="${gameId}">
     <div class="game-invite-icon">${icon}</div>
     <div class="game-invite-name">${name}</div>
     <div class="game-invite-txt">
@@ -7818,263 +7803,317 @@ function renderGameInviteCard(msg, isSent){
       <strong>${name}</strong>!
     </div>
     ${isSent
-      ? `<div class="game-invite-waiting"><div class="game-waiting-dot"></div><span>Aguardando resposta...</span></div>`
-      : `<div class="game-invite-actions">
-           <button class="game-btn" onclick="acceptGameInvite('${gameId}','${inviteId}','${name}','${icon}')">✓ Aceitar</button>
-           <button class="game-btn secondary" onclick="rejectGameInvite('${inviteId}',this)">✕ Recusar</button>
-         </div>`
+      ?`<div class="game-invite-waiting"><div class="game-waiting-dot"></div><span>Aguardando resposta...</span></div>`
+      :`<div class="game-invite-actions">
+          <button class="game-btn" onclick="acceptGameInvite('${gameId}','${inviteId}','${name}','${icon}')">✓ Aceitar</button>
+          <button class="game-btn secondary" onclick="rejectGameInvite('${inviteId}',this)">✕ Recusar</button>
+        </div>`
     }
   </div>`;
 }
 
-// Processar mensagem de ACEITAÇÃO ao renderizar — abre o jogo para quem enviou
-function processGameAccept(msg){
-  const{inviteId,gameId,name,icon}=msg;
-  // Atualizar o card de convite que estava "Aguardando"
+// ── Processar aceitação em tempo real ────────────────────────────
+function processGameAccept(parsed){
+  const{inviteId,gameId,name,icon}=parsed;
+  // Atualizar card de quem enviou
   const invCard=document.querySelector(`[data-invite-id="${inviteId}"]`);
   if(invCard){
     const waiting=invCard.querySelector('.game-invite-waiting');
-    if(waiting) waiting.innerHTML=`<span style="color:var(--neon-cyan);font-size:11px;">✅ Aceito! Iniciando ${icon} ${name}...</span>`;
+    if(waiting)waiting.innerHTML=`<span style="color:var(--neon-cyan);font-size:11px;">✅ Aceito! ${icon} ${name}</span>`;
+    // Botão para entrar no jogo
+    if(!invCard.querySelector('.game-btn-join')){
+      const btn=document.createElement('button');
+      btn.className='game-btn game-btn-join';
+      btn.style.cssText='margin-top:10px;font-size:10px;width:100%;';
+      btn.textContent=`${icon} Entrar no jogo`;
+      btn.onclick=()=>{
+        btn.remove();
+        _gameMyRole='host';
+        const user=currentChatUser||homeChatUser;
+        if(user)_gameCurrentUser=user;
+        startGameMultiplayer(gameId,inviteId,'host');
+      };
+      invCard.appendChild(btn);
+    }
   }
-  // Abrir jogo para quem enviou o convite
-  setTimeout(()=>{
-    showToast(`${icon} ${name} aceito! Iniciando...`,'success');
-    startGame(gameId);
-  },600);
+  showToast(`${icon} ${name} aceito! Clique no card para entrar.`,'success');
 }
 
-// Processar mensagem de REJEIÇÃO
 function processGameReject(inviteId){
   const invCard=document.querySelector(`[data-invite-id="${inviteId}"]`);
   if(invCard){
     const waiting=invCard.querySelector('.game-invite-waiting');
-    if(waiting) waiting.innerHTML=`<span style="color:var(--neon-pink);font-size:11px;">❌ Convite recusado</span>`;
+    if(waiting)waiting.innerHTML=`<span style="color:var(--neon-pink);font-size:11px;">❌ Convite recusado</span>`;
   }
-  showToast('O amigo recusou o convite de jogo','');
-}
-
-// Processar mensagens de jogo ao detectar nova msg em tempo real
-function handleGameMessage(msg){
-  const parsed=parseGameMsg(msg.content||'');
-  if(!parsed) return false;
-  const isMine=msg.sender_id===CU?.id;
-  if(parsed.type==='accept'&&!isMine){
-    // Recebi aceitação do meu convite — abrir jogo
-    processGameAccept(parsed);
-  } else if(parsed.type==='reject'&&!isMine){
-    processGameReject(parsed.inviteId);
-  }
-  return true;
+  showToast('O amigo recusou o convite','');
 }
 
 // ================================================================
-// PATCH: handleIncomingMessage — detectar aceitação em tempo real
+// MULTIPLAYER — Canal Realtime para movimentos
 // ================================================================
-const _origHandleIncoming = handleIncomingMessage;
-handleIncomingMessage = function(msg){
-  // Se for mensagem de jogo, processar
-  if(msg.content&&msg.content.startsWith('[GAME_')){
-    handleGameMessage(msg);
-    // Recarregar msgs para mostrar o card atualizado
-    if(currentChatUser?.id===msg.sender_id) loadMsgs(msg.sender_id);
-    else if(homeChatUser?.id===msg.sender_id) loadHomeMsgs(msg.sender_id);
-    return;
-  }
-  _origHandleIncoming(msg);
-};
-
-// ================================================================
-// PATCH: loadMsgs — renderizar cards de jogo
-// ================================================================
-const _origLoadMsgs = loadMsgs;
-loadMsgs = async function(userId){
-  await _origLoadMsgs(userId);
-  _processGameBubbles('msgs-area', userId);
-};
-
-const _origLoadHomeMsgs = loadHomeMsgs;
-loadHomeMsgs = async function(userId){
-  await _origLoadHomeMsgs(userId);
-  _processGameBubbles('ht-msgs-area', userId);
-};
-
-function _processGameBubbles(areaId, userId){
-  const area=document.getElementById(areaId);
-  if(!area) return;
-  area.querySelectorAll('.mb-bubble').forEach(bubble=>{
-    const txt=(bubble.textContent||'').trim();
-    if(!txt.startsWith('[GAME_')) return;
-    const parsed=parseGameMsg(txt);
-    if(!parsed) return;
-    const mb=bubble.closest('.mb');
-    const isSent=mb?.classList.contains('sent');
-    if(parsed.type==='invite'){
-      bubble.innerHTML=renderGameInviteCard(parsed,isSent);
-      bubble.style.cssText='background:transparent;border:none;padding:0;max-width:280px;';
-    } else if(parsed.type==='accept'){
-      // Ocultar msgs de accept — são mensagens de sistema
-      mb.style.display='none';
-      // E atualizar o convite correspondente se existir
-      const invCard=area.querySelector(`[data-invite-id="${parsed.inviteId}"]`);
-      if(invCard&&!isSent){
-        const waiting=invCard.querySelector('.game-invite-waiting');
-        if(waiting) waiting.innerHTML=`<span style="color:var(--neon-cyan);font-size:11px;">✅ Aceito! ${parsed.icon} ${parsed.name}</span>`;
-        // Se eu sou quem enviou, botão para entrar no jogo
-        if(invCard.querySelector('.game-btn-join')) return;
-        const joinBtn=document.createElement('button');
-        joinBtn.className='game-btn';
-        joinBtn.style.cssText='margin-top:8px;font-size:10px;';
-        joinBtn.textContent=`${parsed.icon} Entrar no jogo`;
-        joinBtn.onclick=()=>{ joinBtn.remove(); startGame(parsed.gameId); };
-        invCard.appendChild(joinBtn);
-      }
-    } else if(parsed.type==='reject'){
-      mb.style.display='none';
-      const invCard=area.querySelector(`[data-invite-id="${parsed.inviteId}"]`);
-      if(invCard){
-        const waiting=invCard.querySelector('.game-invite-waiting');
-        if(waiting) waiting.innerHTML=`<span style="color:var(--neon-pink);font-size:11px;">❌ Convite recusado</span>`;
-      }
-    }
-    // Áudio
-    if(txt==='🎙 Áudio'){
-      const mbEl=bubble.closest('.mb');
-      const media=mbEl?.querySelector('.mb-media');
-      if(media){
-        const url=media.querySelector('video')?.src||media.querySelector('audio')?.src;
-        if(url&&url.includes('webm')) media.innerHTML=renderAudioBubble(url);
-      }
-    }
-  });
-}
-
-// ================================================================
-// ENGINES DOS JOGOS
-// ================================================================
-function startGame(gameId){
+function startGameMultiplayer(gameId,sessionId,role){
   _gameType=gameId;
-  if(gameId==='ttt') startTTT();
-  else if(gameId==='checker') startChecker();
-  else if(gameId==='chess') startChess();
-  else if(gameId==='memory') startMemory();
-  else if(gameId==='snake') startSnake();
+  _gameSessionId=sessionId;
+  _gameMyRole=role;
+  // Inscrever no canal de movimentos via Supabase Broadcast
+  if(_gameChannel){
+    try{db.removeChannel(_gameChannel);}catch(e){}
+    _gameChannel=null;
+  }
+  _gameChannel=db.channel('game-'+sessionId)
+    .on('broadcast',{event:'move'},(payload)=>{
+      // Receber movimento do adversário
+      if(payload.payload?.sender!==CU.id){
+        applyRemoteMove(payload.payload);
+      }
+    })
+    .on('broadcast',{event:'rematch'},(payload)=>{
+      if(payload.payload?.sender!==CU.id){
+        showRematchRequest(gameId,sessionId);
+      }
+    })
+    .subscribe((status)=>{
+      if(status==='SUBSCRIBED'){
+        // Iniciar o jogo após conectar
+        if(gameId==='ttt')startTTT(role);
+        else if(gameId==='checker')startChecker(role);
+        else if(gameId==='chess')startChess(role);
+        showToast('🎮 Conectado! Jogo ao vivo ativado','success');
+      }
+    });
 }
 
-function createGameBoard(title, boardHTML){
+// Enviar movimento para o adversário via Broadcast
+function broadcastMove(moveData){
+  if(!_gameChannel||!_gameSessionId)return;
+  _gameChannel.send({type:'broadcast',event:'move',payload:{sender:CU.id,sessionId:_gameSessionId,...moveData}});
+}
+
+// Aplicar movimento recebido do adversário
+function applyRemoteMove(payload){
+  if(!_gameState||!_gameType)return;
+  if(_gameType==='ttt')applyTTTMove(payload.index);
+  else if(_gameType==='checker')applyCheckerMove(payload.from,payload.to);
+  else if(_gameType==='chess')applyChessMove(payload.from,payload.to);
+}
+
+// Pedir revanche via broadcast
+function requestRematch(gameId,sessionId){
+  if(_gameChannel){
+    _gameChannel.send({type:'broadcast',event:'rematch',payload:{sender:CU.id,gameId,sessionId}});
+  }
+}
+
+function showRematchRequest(gameId,sessionId){
+  const wrap=document.getElementById('game-board-wrap');
+  if(!wrap)return;
+  showToast('♟ Seu amigo quer uma revanche!','success');
+  // Se já tiver tela de resultado, adicionar botão de aceitar revanche
+  const resultEl=wrap.querySelector('[style*="position:absolute"]');
+  if(resultEl){
+    const btn=document.createElement('button');
+    btn.className='game-btn';
+    btn.style.cssText='margin:4px;';
+    btn.textContent='🔄 Aceitar revanche!';
+    btn.onclick=()=>{
+      exitGame();
+      setTimeout(()=>startGameMultiplayer(gameId,sessionId,_gameMyRole),200);
+    };
+    resultEl.appendChild(btn);
+  }
+}
+
+// ================================================================
+// UTILITÁRIOS DE JOGO
+// ================================================================
+function createGameBoard(title,boardHTML,statusExtra){
   const wrap=document.createElement('div');
-  wrap.className='game-board-wrap'; wrap.id='game-board-wrap';
+  wrap.className='game-board-wrap';wrap.id='game-board-wrap';
   wrap.innerHTML=`
     <div class="game-board-header">${title}</div>
-    <div class="game-status" id="game-status"></div>
+    <div class="game-role-badge" id="game-role-badge"></div>
+    <div class="game-status" id="game-status">${statusExtra||''}</div>
     ${boardHTML}
     <div style="display:flex;flex-wrap:wrap;justify-content:center;margin-top:8px;">
       <button class="game-btn secondary" onclick="confirmExitGame()">✕ Sair</button>
     </div>`;
   document.body.appendChild(wrap);
+  // Mostrar papel do jogador
+  const badge=wrap.querySelector('#game-role-badge');
+  if(badge&&_gameMyRole){
+    const isHost=_gameMyRole==='host';
+    badge.innerHTML=`<span style="font-size:10px;background:${isHost?'rgba(255,51,102,.15)':'rgba(0,255,204,.15)'};color:${isHost?'var(--neon-pink)':'var(--neon-cyan)'};border:1px solid ${isHost?'rgba(255,51,102,.3)':'rgba(0,255,204,.3)'};border-radius:20px;padding:3px 10px;font-family:Silkscreen,monospace;">
+      ${isHost?'❌ Você':'⭕ Você'} ${isHost?'(1º a jogar)':'(2º a jogar)'}
+    </span>`;
+  }
   return wrap;
 }
 
-function confirmExitGame(){ if(confirm('Sair do jogo?')) exitGame(); }
+function confirmExitGame(){if(confirm('Sair do jogo?'))exitGame();}
 function exitGame(){
   document.getElementById('game-board-wrap')?.remove();
-  _gameState=null; _gameType=null;
-  clearInterval(_snakeInterval);
-  document.removeEventListener('keydown',snakeKey);
+  if(_gameChannel){try{db.removeChannel(_gameChannel);}catch(e){}_gameChannel=null;}
+  _gameState=null;_gameType=null;_gameSessionId=null;_gameMyRole=null;
 }
 
 function setStatus(msg,color){
   const el=document.getElementById('game-status');
-  if(el){ el.textContent=msg; if(color) el.style.color=color; }
+  if(el){el.textContent=msg;if(color)el.style.color=color;}
 }
 
-function showGameResult(msg, gameId){
-  const wrap=document.getElementById('game-board-wrap');
-  if(!wrap) return;
+function isMyTurn(){
+  if(!_gameState||!_gameMyRole)return true; // local
+  if(_gameType==='ttt'){
+    const mySymbol=_gameMyRole==='host'?'❌':'⭕';
+    return _gameState.turn===mySymbol;
+  }
+  if(_gameType==='checker'){
+    return(_gameMyRole==='host'&&_gameState.turn===1)||(_gameMyRole==='guest'&&_gameState.turn===2);
+  }
+  if(_gameType==='chess'){
+    return(_gameMyRole==='host'&&_gameState.turn==='white')||(_gameMyRole==='guest'&&_gameState.turn==='black');
+  }
+  return true;
+}
+
+function showGameResult(msg,gameId){
+  const wrap=document.getElementById('game-board-wrap');if(!wrap)return;
   const result=document.createElement('div');
-  result.style.cssText='position:absolute;inset:0;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:20px;z-index:10;gap:14px;padding:20px;text-align:center;';
+  result.style.cssText='position:absolute;inset:0;background:rgba(0,0,0,.88);display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:20px;z-index:10;gap:14px;padding:20px;text-align:center;';
   const trophy=msg.includes('Vencedor')||msg.includes('🏆')?'🏆':msg.includes('Empate')?'🤝':'🎮';
   result.innerHTML=`
     <div style="font-size:52px;">${trophy}</div>
     <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);letter-spacing:2px;">${msg}</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:6px;">
-      <button class="game-btn" onclick="this.closest('[style*=position]').remove();startGame('${gameId}')">🔄 Jogar Novamente</button>
+      <button class="game-btn" onclick="handleRematch('${gameId}')">🔄 Jogar Novamente</button>
       <button class="game-btn secondary" onclick="exitGame()">✕ Sair</button>
     </div>`;
   wrap.style.position='relative';
   wrap.appendChild(result);
 }
 
-// ─── JOGO DA VELHA ─────────────────────────────────────────────
-function startTTT(){
+function handleRematch(gameId){
+  // Notificar adversário via broadcast
+  requestRematch(gameId,_gameSessionId);
+  // Reiniciar localmente
+  const sessionId=_gameSessionId,role=_gameMyRole,user=_gameCurrentUser;
+  exitGame();
+  _gameCurrentUser=user;
+  setTimeout(()=>startGameMultiplayer(gameId,sessionId,role),200);
+}
+
+// ================================================================
+// JOGO DA VELHA MULTIPLAYER
+// ================================================================
+function startTTT(role){
+  // host=❌ (joga primeiro), guest=⭕
   _gameState={board:Array(9).fill(''),turn:'❌'};
   createGameBoard('⭕ JOGO DA VELHA',
     `<div class="ttt-board">${Array(9).fill('').map((_,i)=>
       `<div class="ttt-cell" id="ttt-${i}" onclick="tttClick(${i})"></div>`).join('')}</div>`);
-  setStatus('Vez de ❌','var(--neon-pink)');
+  updateTTTStatus();
+}
+
+function updateTTTStatus(){
+  const s=_gameState;if(!s)return;
+  const myTurn=isMyTurn();
+  setStatus(myTurn?`Sua vez — ${s.turn}`:`Vez do adversário — ${s.turn}`,
+    s.turn==='❌'?'var(--neon-pink)':'var(--neon-cyan)');
 }
 
 function tttClick(i){
-  const s=_gameState; if(!s||s.board[i]) return;
+  const s=_gameState;if(!s||s.board[i])return;
+  if(!isMyTurn()){showToast('Não é sua vez!','error');return;}
+  applyTTTMove(i);
+  broadcastMove({index:i});
+}
+
+function applyTTTMove(i){
+  const s=_gameState;if(!s||s.board[i])return;
   s.board[i]=s.turn;
   const cell=document.getElementById('ttt-'+i);
-  if(cell){ cell.textContent=s.turn; cell.classList.add('filled'); cell.style.color=s.turn==='❌'?'var(--neon-pink)':'var(--neon-cyan)'; }
+  if(cell){cell.textContent=s.turn;cell.classList.add('filled');cell.style.color=s.turn==='❌'?'var(--neon-pink)':'var(--neon-cyan)';}
   const w=tttCheck(s.board);
-  if(w){ w.cells.forEach(c=>document.getElementById('ttt-'+c)?.classList.add('win-cell')); showGameResult(`🏆 Vencedor: ${w.sym}`,'ttt'); return; }
-  if(s.board.every(x=>x)){ showGameResult('🤝 Empate!','ttt'); return; }
+  if(w){w.cells.forEach(c=>document.getElementById('ttt-'+c)?.classList.add('win-cell'));showGameResult(`🏆 Vencedor: ${w.sym}`,'ttt');return;}
+  if(s.board.every(x=>x)){showGameResult('🤝 Empate!','ttt');return;}
   s.turn=s.turn==='❌'?'⭕':'❌';
-  setStatus('Vez de '+s.turn,s.turn==='❌'?'var(--neon-pink)':'var(--neon-cyan)');
+  updateTTTStatus();
 }
 
 function tttCheck(b){
   const lines=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
-  for(const[a,bb,c]of lines) if(b[a]&&b[a]===b[bb]&&b[a]===b[c]) return{sym:b[a],cells:[a,bb,c]};
+  for(const[a,bb,c]of lines)if(b[a]&&b[a]===b[bb]&&b[a]===b[c])return{sym:b[a],cells:[a,bb,c]};
   return null;
 }
 
-// ─── DAMA ────────────────────────────────────────────────────
-function startChecker(){
+// ================================================================
+// DAMA MULTIPLAYER
+// ================================================================
+// host=P1(🔴 vermelho), guest=P2(🔵 azul)
+function startChecker(role){
   const board=Array(64).fill(0);
-  for(let r=0;r<3;r++) for(let c=0;c<8;c++) if((r+c)%2===1) board[r*8+c]=2;
-  for(let r=5;r<8;r++) for(let c=0;c<8;c++) if((r+c)%2===1) board[r*8+c]=1;
+  for(let r=0;r<3;r++)for(let c=0;c<8;c++)if((r+c)%2===1)board[r*8+c]=2;
+  for(let r=5;r<8;r++)for(let c=0;c<8;c++)if((r+c)%2===1)board[r*8+c]=1;
   _gameState={board,turn:1,selected:null,validMoves:[]};
-  createGameBoard('🔴 DAMA',`<div class="checker-board" id="checker-board"></div>`);
+  // host=P1, guest=P2
+  const myLabel=(_gameMyRole==='host')?'🔴 Vermelho':'🔵 Azul';
+  createGameBoard(`${myLabel} — DAMA`,`<div class="checker-board" id="checker-board"></div>`);
   renderCheckerBoard();
-  setStatus('Vez das 🔴 Vermelhas','var(--neon-pink)');
+  updateCheckerStatus();
+}
+
+function updateCheckerStatus(){
+  const s=_gameState;if(!s)return;
+  const myTurn=isMyTurn();
+  const whoLabel=s.turn===1?'🔴 Vermelhas':'🔵 Azuis';
+  setStatus(myTurn?`Sua vez (${whoLabel})`:`Vez do adversário (${whoLabel})`,
+    s.turn===1?'var(--neon-pink)':'var(--neon-cyan)');
 }
 
 function buildCheckerCells(){
   const s=_gameState;
   return s.board.map((v,i)=>{
     const r=Math.floor(i/8),col=i%8;
-    const isDark=(r+col)%2===1;
-    const cls='checker-cell '+(isDark?'dark':'light')+(s.selected===i?' selected':'')+(s.validMoves.includes(i)?' valid-move':'');
+    const cls='checker-cell '+((r+col)%2===1?'dark':'light')+(s.selected===i?' selected':'')+(s.validMoves.includes(i)?' valid-move':'');
     let inner='';
-    if(v===1||v===3) inner=`<div class="checker-piece p1${v===3?' king':''}">${v===3?'♛':''}</div>`;
-    if(v===2||v===4) inner=`<div class="checker-piece p2${v===4?' king':''}">${v===4?'♛':''}</div>`;
+    if(v===1||v===3)inner=`<div class="checker-piece p1${v===3?' king':''}">${v===3?'♛':''}</div>`;
+    if(v===2||v===4)inner=`<div class="checker-piece p2${v===4?' king':''}">${v===4?'♛':''}</div>`;
     return`<div class="${cls}" onclick="checkerClick(${i})">${inner}</div>`;
   }).join('');
 }
 
-function renderCheckerBoard(){ const b=document.getElementById('checker-board'); if(b) b.innerHTML=buildCheckerCells(); }
+function renderCheckerBoard(){const b=document.getElementById('checker-board');if(b)b.innerHTML=buildCheckerCells();}
 
 function checkerClick(i){
-  const s=_gameState; if(!s) return;
+  const s=_gameState;if(!s)return;
+  if(!isMyTurn()){showToast('Não é sua vez!','error');return;}
   const r=Math.floor(i/8),c=i%8,v=s.board[i];
   if(s.validMoves.includes(i)&&s.selected!==null){
-    const from=s.selected,fr=Math.floor(from/8),fc=from%8;
-    s.board[i]=s.board[from]; s.board[from]=0;
-    if(Math.abs(r-fr)===2){ s.board[Math.floor((r+fr)/2)*8+Math.floor((c+fc)/2)]=0; }
-    if(s.board[i]===1&&r===0) s.board[i]=3;
-    if(s.board[i]===2&&r===7) s.board[i]=4;
-    s.selected=null; s.validMoves=[];
-    s.turn=s.turn===1?2:1;
-    setStatus(s.turn===1?'Vez das 🔴 Vermelhas':'Vez das 🔵 Azuis',s.turn===1?'var(--neon-pink)':'var(--neon-cyan)');
-    const p1=s.board.some(v=>v===1||v===3),p2=s.board.some(v=>v===2||v===4);
-    if(!p1||!p2){ showGameResult('🏆 Vencedor: '+(p1?'🔴 Vermelhas':'🔵 Azuis'),'checker'); return; }
+    const from=s.selected;
+    applyCheckerMove(from,i);
+    broadcastMove({from,to:i});
   } else if(v===s.turn||(s.turn===1&&v===3)||(s.turn===2&&v===4)){
-    s.selected=i; s.validMoves=getCheckerMoves(i,s);
-  } else { s.selected=null; s.validMoves=[]; }
+    s.selected=i;s.validMoves=getCheckerMoves(i,s);
+    renderCheckerBoard();
+  } else {
+    s.selected=null;s.validMoves=[];
+    renderCheckerBoard();
+  }
+}
+
+function applyCheckerMove(from,to){
+  const s=_gameState;if(!s)return;
+  const fr=Math.floor(from/8),fc=from%8,tr=Math.floor(to/8),tc=to%8;
+  s.board[to]=s.board[from];s.board[from]=0;
+  if(Math.abs(tr-fr)===2)s.board[Math.floor((tr+fr)/2)*8+Math.floor((tc+fc)/2)]=0;
+  if(s.board[to]===1&&tr===0)s.board[to]=3;
+  if(s.board[to]===2&&tr===7)s.board[to]=4;
+  s.selected=null;s.validMoves=[];
+  s.turn=s.turn===1?2:1;
+  const p1=s.board.some(v=>v===1||v===3),p2=s.board.some(v=>v===2||v===4);
   renderCheckerBoard();
+  if(!p1||!p2){showGameResult('🏆 Vencedor: '+(p1?'🔴 Vermelhas':'🔵 Azuis'),'checker');return;}
+  updateCheckerStatus();
 }
 
 function getCheckerMoves(idx,s){
@@ -8082,37 +8121,53 @@ function getCheckerMoves(idx,s){
   const dirs=v===1?[[-1,-1],[-1,1]]:v===2?[[1,-1],[1,1]]:[[-1,-1],[-1,1],[1,-1],[1,1]];
   for(const[dr,dc]of dirs){
     const nr=r+dr,nc=c+dc;
-    if(nr<0||nr>7||nc<0||nc>7) continue;
+    if(nr<0||nr>7||nc<0||nc>7)continue;
     const ni=nr*8+nc;
-    if(!s.board[ni]){ moves.push(ni); }
+    if(!s.board[ni]){moves.push(ni);}
     else{
       const enemy=(v===1||v===3)?[2,4]:[1,3];
       if(enemy.includes(s.board[ni])){
         const jr=r+dr*2,jc=c+dc*2;
-        if(jr>=0&&jr<=7&&jc>=0&&jc<=7&&!s.board[jr*8+jc]) moves.push(jr*8+jc);
+        if(jr>=0&&jr<=7&&jc>=0&&jc<=7&&!s.board[jr*8+jc])moves.push(jr*8+jc);
       }
     }
   }
   return moves;
 }
 
-// ─── XADREZ ──────────────────────────────────────────────────
-const CHESS_INIT=['r','n','b','q','k','b','n','r','p','p','p','p','p','p','p','p',...Array(32).fill(''),'P','P','P','P','P','P','P','P','R','N','B','Q','K','B','N','R'];
+// ================================================================
+// XADREZ MULTIPLAYER
+// ================================================================
+// host=brancas (joga primeiro), guest=pretas
+const CHESS_INIT_ARR=['r','n','b','q','k','b','n','r','p','p','p','p','p','p','p','p',...Array(32).fill(''),'P','P','P','P','P','P','P','P','R','N','B','Q','K','B','N','R'];
 const CHESS_SYM={k:'♚',q:'♛',r:'♜',b:'♝',n:'♞',p:'♟',K:'♔',Q:'♕',R:'♖',B:'♗',N:'♘',P:'♙'};
 
-function startChess(){
-  _gameState={board:[...CHESS_INIT],turn:'white',selected:null,validMoves:[]};
-  createGameBoard('♟ XADREZ',`<div class="chess-board" id="chess-board"></div>`);
-  renderChessBoard(); setStatus('Vez das ⬜ Brancas','#e2e8f0');
+function startChess(role){
+  _gameState={board:[...CHESS_INIT_ARR],turn:'white',selected:null,validMoves:[]};
+  const myColor=(_gameMyRole==='host')?'⬜ Brancas':'⬛ Pretas';
+  createGameBoard(`${myColor} — XADREZ`,`<div class="chess-board" id="chess-board"></div>`);
+  renderChessBoard();
+  updateChessStatus();
+}
+
+function updateChessStatus(){
+  const s=_gameState;if(!s)return;
+  const myTurn=isMyTurn();
+  const who=s.turn==='white'?'⬜ Brancas':'⬛ Pretas';
+  setStatus(myTurn?`Sua vez (${who})`:`Vez do adversário (${who})`,
+    s.turn==='white'?'#e2e8f0':'var(--text-muted)');
 }
 
 function renderChessBoard(){
-  const s=_gameState; if(!s) return;
-  const b=document.getElementById('chess-board'); if(!b) return;
-  b.innerHTML=s.board.map((v,i)=>{
+  const s=_gameState;if(!s)return;
+  const b=document.getElementById('chess-board');if(!b)return;
+  // Se for pretas (guest), inverter o tabuleiro visualmente
+  const flipBoard=_gameMyRole==='guest';
+  const indices=flipBoard?[...Array(64).keys()].reverse():[...Array(64).keys()];
+  b.innerHTML=indices.map(i=>{
     const r=Math.floor(i/8),c=i%8;
     const isDark=(r+c)%2===1,isSel=s.selected===i,isVM=s.validMoves.includes(i);
-    const sym=v?CHESS_SYM[v]||v:'',isW=v&&v===v.toUpperCase();
+    const v=s.board[i],sym=v?CHESS_SYM[v]||v:'',isW=v&&v===v.toUpperCase();
     return`<div class="chess-cell ${isDark?'dark':'light'}${isSel?' selected':''}${isVM?' valid-move':''}"
       style="color:${isW?'#f8f8f8':'#111'};text-shadow:${isW?'0 1px 4px rgba(0,0,0,.9)':'0 1px 2px rgba(255,255,255,.5)'}"
       onclick="chessClick(${i})">${sym}</div>`;
@@ -8120,134 +8175,137 @@ function renderChessBoard(){
 }
 
 function chessClick(i){
-  const s=_gameState; if(!s) return;
-  const v=s.board[i],isW=v&&v===v.toUpperCase(),isB=v&&v===v.toLowerCase();
+  const s=_gameState;if(!s)return;
+  if(!isMyTurn()){showToast('Não é sua vez!','error');return;}
+  const v=s.board[i];
+  const isW=v&&v===v.toUpperCase(),isB=v&&v===v.toLowerCase();
   const myPiece=s.turn==='white'?isW:isB;
   if(s.validMoves.includes(i)&&s.selected!==null){
-    let np=s.board[s.selected];
-    const toR=Math.floor(i/8);
-    if(np==='P'&&toR===0) np='Q'; if(np==='p'&&toR===7) np='q';
-    const captured=s.board[i];
-    s.board[i]=np; s.board[s.selected]=''; s.selected=null; s.validMoves=[];
-    if(captured==='k'){ renderChessBoard(); showGameResult('🏆 Vencedor: ⬜ Brancas','chess'); return; }
-    if(captured==='K'){ renderChessBoard(); showGameResult('🏆 Vencedor: ⬛ Pretas','chess'); return; }
-    s.turn=s.turn==='white'?'black':'white';
-    setStatus(s.turn==='white'?'Vez das ⬜ Brancas':'Vez das ⬛ Pretas',s.turn==='white'?'#e2e8f0':'var(--text-muted)');
-  } else if(myPiece){ s.selected=i; s.validMoves=getChessMoves(i,s); }
-  else { s.selected=null; s.validMoves=[]; }
+    const from=s.selected;
+    applyChessMove(from,i);
+    broadcastMove({from,to:i});
+  } else if(myPiece){
+    s.selected=i;s.validMoves=getChessMoves(i,s);
+    renderChessBoard();
+  } else {
+    s.selected=null;s.validMoves=[];
+    renderChessBoard();
+  }
+}
+
+function applyChessMove(from,to){
+  const s=_gameState;if(!s)return;
+  let np=s.board[from];
+  const toR=Math.floor(to/8);
+  if(np==='P'&&toR===0)np='Q';
+  if(np==='p'&&toR===7)np='q';
+  const captured=s.board[to];
+  s.board[to]=np;s.board[from]='';
+  s.selected=null;s.validMoves=[];
   renderChessBoard();
+  if(captured==='k'){showGameResult('🏆 Vencedor: ⬜ Brancas','chess');return;}
+  if(captured==='K'){showGameResult('🏆 Vencedor: ⬛ Pretas','chess');return;}
+  s.turn=s.turn==='white'?'black':'white';
+  updateChessStatus();
 }
 
 function getChessMoves(idx,s){
   const moves=[],r=Math.floor(idx/8),c=idx%8,v=s.board[idx];
-  if(!v) return moves;
+  if(!v)return moves;
   const isW=v===v.toUpperCase();
-  const ok=pos=>{ const p=s.board[pos]; return!p||(isW?p===p.toLowerCase():p===p.toUpperCase()); };
+  const ok=pos=>{const p=s.board[pos];return!p||(isW?p===p.toLowerCase():p===p.toUpperCase());};
   const empty=pos=>!s.board[pos];
   const inB=(rr,cc)=>rr>=0&&rr<8&&cc>=0&&cc<8;
   const p=v.toUpperCase();
   if(p==='P'){
     const d=isW?-1:1,st=isW?6:1;
-    if(inB(r+d,c)&&empty((r+d)*8+c)){ moves.push((r+d)*8+c); if(r===st&&empty((r+d*2)*8+c)) moves.push((r+d*2)*8+c); }
-    [[r+d,c-1],[r+d,c+1]].forEach(([rr,cc])=>{ if(inB(rr,cc)){ const pos=rr*8+cc; const pv=s.board[pos]; if(pv&&(isW?pv===pv.toLowerCase():pv===pv.toUpperCase())) moves.push(pos); } });
+    if(inB(r+d,c)&&empty((r+d)*8+c)){moves.push((r+d)*8+c);if(r===st&&empty((r+d*2)*8+c))moves.push((r+d*2)*8+c);}
+    [[r+d,c-1],[r+d,c+1]].forEach(([rr,cc])=>{if(inB(rr,cc)){const pos=rr*8+cc;const pv=s.board[pos];if(pv&&(isW?pv===pv.toLowerCase():pv===pv.toUpperCase()))moves.push(pos);}});
   }
-  if(p==='R'||p==='Q') for(const[dr,dc]of[[0,1],[0,-1],[1,0],[-1,0]]){ let rr=r+dr,cc=c+dc; while(inB(rr,cc)){ moves.push(rr*8+cc); if(!empty(rr*8+cc)) break; rr+=dr;cc+=dc; } }
-  if(p==='B'||p==='Q') for(const[dr,dc]of[[1,1],[1,-1],[-1,1],[-1,-1]]){ let rr=r+dr,cc=c+dc; while(inB(rr,cc)){ moves.push(rr*8+cc); if(!empty(rr*8+cc)) break; rr+=dr;cc+=dc; } }
-  if(p==='N') for(const[dr,dc]of[[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]) if(inB(r+dr,c+dc)) moves.push((r+dr)*8+c+dc);
-  if(p==='K') for(const[dr,dc]of[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]) if(inB(r+dr,c+dc)) moves.push((r+dr)*8+c+dc);
+  if(p==='R'||p==='Q')for(const[dr,dc]of[[0,1],[0,-1],[1,0],[-1,0]]){let rr=r+dr,cc=c+dc;while(inB(rr,cc)){moves.push(rr*8+cc);if(!empty(rr*8+cc))break;rr+=dr;cc+=dc;}}
+  if(p==='B'||p==='Q')for(const[dr,dc]of[[1,1],[1,-1],[-1,1],[-1,-1]]){let rr=r+dr,cc=c+dc;while(inB(rr,cc)){moves.push(rr*8+cc);if(!empty(rr*8+cc))break;rr+=dr;cc+=dc;}}
+  if(p==='N')for(const[dr,dc]of[[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]])if(inB(r+dr,c+dc))moves.push((r+dr)*8+c+dc);
+  if(p==='K')for(const[dr,dc]of[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]])if(inB(r+dr,c+dc))moves.push((r+dr)*8+c+dc);
   return moves.filter(pos=>ok(pos));
 }
 
-// ─── MEMÓRIA ──────────────────────────────────────────────────
-function startMemory(){
-  const icons=['🐶','🐱','🦊','🐸','🦋','🌈','⭐','🎸','🍕','🎮','💎','🚀'];
-  const cards=[...icons,...icons].sort(()=>Math.random()-.5);
-  _gameState={cards,flipped:[],matched:[],moves:0,waiting:false};
-  createGameBoard('🃏 MEMÓRIA',
-    `<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:12px;max-width:360px;" id="memory-board">
-      ${cards.map((_,i)=>`<div class="ttt-cell" id="mem-${i}" onclick="memClick(${i})" style="width:52px;height:52px;font-size:24px;cursor:pointer;">❓</div>`).join('')}
-    </div>`);
-  setStatus('Encontre os pares!','var(--neon-cyan)');
-}
-
-function memClick(i){
-  const s=_gameState;
-  if(!s||s.waiting||s.matched.includes(i)||s.flipped.includes(i)) return;
-  const cell=document.getElementById('mem-'+i);
-  if(cell){ cell.textContent=s.cards[i]; cell.style.background='rgba(0,255,204,.12)'; }
-  s.flipped.push(i);
-  if(s.flipped.length===2){
-    s.moves++; s.waiting=true;
-    const[a,b]=s.flipped;
-    if(s.cards[a]===s.cards[b]){
-      s.matched.push(a,b);
-      [a,b].forEach(idx=>document.getElementById('mem-'+idx)?.classList.add('win-cell'));
-      s.flipped=[]; s.waiting=false;
-      if(s.matched.length===s.cards.length){ showGameResult(`🏆 Parabéns! ${s.moves} movimentos`,'memory'); return; }
-    } else {
-      setTimeout(()=>{
-        [a,b].forEach(idx=>{ const el=document.getElementById('mem-'+idx); if(el){ el.textContent='❓'; el.style.background=''; } });
-        s.flipped=[]; s.waiting=false;
-      },900);
+// ================================================================
+// PATCH handleIncomingMessage — detectar aceitação em tempo real
+// ================================================================
+const _origHandleIncoming=handleIncomingMessage;
+handleIncomingMessage=function(msg){
+  if(msg.content&&msg.content.startsWith('[GAME_')){
+    const parsed=parseGameMsg(msg.content);
+    if(parsed){
+      if(parsed.type==='accept'&&msg.sender_id!==CU?.id)processGameAccept(parsed);
+      else if(parsed.type==='reject'&&msg.sender_id!==CU?.id)processGameReject(parsed.inviteId);
     }
-    setStatus(`Movimentos: ${s.moves}`,'var(--neon-yellow)');
+    if(currentChatUser?.id===msg.sender_id)loadMsgs(msg.sender_id);
+    else if(homeChatUser?.id===msg.sender_id)loadHomeMsgs(msg.sender_id);
+    return;
   }
-}
+  _origHandleIncoming(msg);
+};
 
-// ─── SNAKE ───────────────────────────────────────────────────
-let _snakeInterval=null;
+// ================================================================
+// PATCH loadMsgs — renderizar cards de jogo
+// ================================================================
+const _origLoadMsgs=loadMsgs;
+loadMsgs=async function(userId){
+  await _origLoadMsgs(userId);
+  _processGameBubbles('msgs-area');
+};
 
-function startSnake(){
-  const SZ=15;
-  _gameState={snake:[{x:7,y:7},{x:6,y:7},{x:5,y:7}],dir:{x:1,y:0},nextDir:{x:1,y:0},food:rndFood(SZ,[]),size:SZ,score:0,running:true};
-  createGameBoard('🐍 SNAKE',
-    `<canvas id="snake-canvas" width="300" height="300" style="border:1px solid var(--border-glow);border-radius:8px;background:rgba(0,0,0,.3);"></canvas>
-     <div style="font-size:11px;color:var(--text-muted);margin:6px 0 2px;text-align:center;">Use ← ↑ → ↓ ou deslize para mover</div>`);
-  setStatus('Score: 0','var(--neon-cyan)');
-  document.addEventListener('keydown',snakeKey);
-  const canvas=document.getElementById('snake-canvas');
-  let tx=0,ty=0;
-  canvas.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;ty=e.touches[0].clientY;},{passive:true});
-  canvas.addEventListener('touchend',e=>{
-    const dx=e.changedTouches[0].clientX-tx,dy=e.changedTouches[0].clientY-ty;
-    if(Math.abs(dx)>Math.abs(dy)) _gameState.nextDir=dx>0?{x:1,y:0}:{x:-1,y:0};
-    else _gameState.nextDir=dy>0?{x:0,y:1}:{x:0,y:-1};
+const _origLoadHomeMsgs=loadHomeMsgs;
+loadHomeMsgs=async function(userId){
+  await _origLoadHomeMsgs(userId);
+  _processGameBubbles('ht-msgs-area');
+};
+
+function _processGameBubbles(areaId){
+  const area=document.getElementById(areaId);if(!area)return;
+  area.querySelectorAll('.mb-bubble').forEach(bubble=>{
+    const txt=(bubble.textContent||'').trim();
+    if(!txt.startsWith('[GAME_'))return;
+    const parsed=parseGameMsg(txt);if(!parsed)return;
+    const mb=bubble.closest('.mb');
+    const isSent=mb?.classList.contains('sent');
+    if(parsed.type==='invite'){
+      bubble.innerHTML=renderGameInviteCard(parsed,isSent);
+      bubble.style.cssText='background:transparent;border:none;padding:0;max-width:280px;';
+    } else if(parsed.type==='accept'||parsed.type==='reject'){
+      mb.style.display='none'; // Ocultar msgs de sistema
+      if(parsed.type==='accept'&&!isSent){
+        // Atualizar o convite
+        const invCard=area.querySelector(`[data-invite-id="${parsed.inviteId}"]`);
+        if(invCard){
+          const waiting=invCard.querySelector('.game-invite-waiting');
+          if(waiting)waiting.innerHTML=`<span style="color:var(--neon-cyan);font-size:11px;">✅ Aceito! ${parsed.icon} ${parsed.name}</span>`;
+          if(!invCard.querySelector('.game-btn-join')){
+            const btn=document.createElement('button');
+            btn.className='game-btn game-btn-join';
+            btn.style.cssText='margin-top:10px;font-size:10px;width:100%;';
+            btn.textContent=`${parsed.icon} Entrar no jogo`;
+            btn.onclick=()=>{
+              btn.remove();_gameMyRole='host';
+              _gameCurrentUser=currentChatUser||homeChatUser;
+              startGameMultiplayer(parsed.gameId,parsed.inviteId,'host');
+            };
+            invCard.appendChild(btn);
+          }
+        }
+      }
+      if(parsed.type==='reject'){
+        const invCard=area.querySelector(`[data-invite-id="${parsed.inviteId}"]`);
+        if(invCard){const w=invCard.querySelector('.game-invite-waiting');if(w)w.innerHTML=`<span style="color:var(--neon-pink);font-size:11px;">❌ Recusado</span>`;}
+      }
+    }
+    // Áudio
+    if(txt==='🎙 Áudio'){
+      const mbEl=bubble.closest('.mb');const media=mbEl?.querySelector('.mb-media');
+      if(media){const url=media.querySelector('video')?.src||media.querySelector('audio')?.src;if(url&&url.includes('webm'))media.innerHTML=renderAudioBubble(url);}
+    }
   });
-  _snakeInterval=setInterval(snakeTick,140);
-}
-
-function rndFood(SZ,snake){ let pos; do{pos={x:Math.floor(Math.random()*SZ),y:Math.floor(Math.random()*SZ)};}while(snake.some(s=>s.x===pos.x&&s.y===pos.y)); return pos; }
-
-function snakeKey(e){
-  const map={ArrowUp:{x:0,y:-1},ArrowDown:{x:0,y:1},ArrowLeft:{x:-1,y:0},ArrowRight:{x:1,y:0}};
-  if(map[e.key]&&_gameState?.running){
-    const d=map[e.key];
-    if((d.x!==0&&_gameState.dir.x!==0)||(d.y!==0&&_gameState.dir.y!==0)) return;
-    _gameState.nextDir=d; e.preventDefault();
-  }
-}
-
-function snakeTick(){
-  const s=_gameState; if(!s||!s.running) return;
-  s.dir=s.nextDir;
-  const head={x:s.snake[0].x+s.dir.x,y:s.snake[0].y+s.dir.y};
-  if(head.x<0||head.x>=s.size||head.y<0||head.y>=s.size||s.snake.some(sg=>sg.x===head.x&&sg.y===head.y)){
-    s.running=false; clearInterval(_snakeInterval); document.removeEventListener('keydown',snakeKey);
-    showGameResult(`🐍 Game Over! Score: ${s.score}`,'snake'); return;
-  }
-  s.snake.unshift(head);
-  if(head.x===s.food.x&&head.y===s.food.y){ s.score+=10; s.food=rndFood(s.size,s.snake); setStatus('Score: '+s.score,'var(--neon-cyan)'); }
-  else s.snake.pop();
-  drawSnake();
-}
-
-function drawSnake(){
-  const s=_gameState; const canvas=document.getElementById('snake-canvas'); if(!canvas||!s) return;
-  const ctx=canvas.getContext('2d'),cell=canvas.width/s.size;
-  ctx.fillStyle='rgba(0,0,0,.3)'; ctx.fillRect(0,0,canvas.width,canvas.height);
-  s.snake.forEach((seg,i)=>{ ctx.fillStyle=i===0?'#00ffcc':'rgba(0,255,204,.6)'; ctx.beginPath(); ctx.roundRect(seg.x*cell+1,seg.y*cell+1,cell-2,cell-2,4); ctx.fill(); });
-  ctx.font=`${cell*.8}px serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillText('🍎',s.food.x*cell+cell/2,s.food.y*cell+cell/2);
 }
 
 
