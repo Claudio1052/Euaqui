@@ -2308,6 +2308,34 @@ body.day-mode .msg-mic-btn{
     backdrop-filter: blur(12px) !important;
   }
 }
+
+/* ── Bolinha de presença (online/offline) ── */
+.presence-dot{
+  position:absolute;
+  bottom:1px; right:1px;
+  width:11px; height:11px;
+  border-radius:50%;
+  border:2px solid var(--bg-deep);
+  background:#6b7280; /* cinza = desconhecido */
+  z-index:5;
+  transition:background .4s;
+}
+.presence-dot.online { background:#22c55e; box-shadow:0 0 5px rgba(34,197,94,.6); }
+.presence-dot.offline{ background:#ef4444; box-shadow:none; }
+
+/* Avatar wrapper precisa de position:relative */
+.ci-av{ position:relative !important; }
+.chat-av-wrap{ position:relative; display:inline-block; flex-shrink:0; }
+
+/* Bolinha no header do chat aberto */
+.chat-win-hdr .presence-dot{
+  width:13px; height:13px;
+  bottom:0; right:0;
+  border-width:2px;
+}
+
+/* Modo dia */
+body.day-mode .presence-dot{ border-color:#ffffff; }
 </style>
 </head>
 <body>
@@ -4830,7 +4858,11 @@ async function loadConversations(){
     const av = getAvatar(p);
     const div = document.createElement('div');
     div.className='ci'; div.id='ci-'+conv.userId;
-    div.innerHTML = renderAvatar(p,46,'ci-av')
+    // Avatar com bolinha de presença
+    const isOnline = _onlineUsers.has(conv.userId);
+    const dot = `<span class="presence-dot ${isOnline?'online':'offline'}" id="pdot-${conv.userId}"></span>`;
+    const avHtml = `<div class="chat-av-wrap">${renderAvatar(p,46,'ci-av')}${dot}</div>`;
+    div.innerHTML = avHtml
       +'<div class="ci-info">'
         +'<div class="ci-name">'+xss(p.full_name||p.username||'?')+'</div>'
         +'<div class="ci-last">'+(conv.lastMsg?xss(conv.lastMsg.slice(0,35)):'Toque para conversar')+'</div>'
@@ -4863,9 +4895,12 @@ async function openChat(userId,username,avatarUrl){
 
   // Build chat window header
   const top=document.getElementById('chat-win-hdr');
-  const avH=renderAvatar({id:userId,username,avatar_url:avatarUrl},36,'chat-win-av');
+  const isOnlineNow = _onlineUsers.has(userId);
+  const dot=`<span class="presence-dot ${isOnlineNow?'online':'offline'}" id="pdot-hdr-${userId}"></span>`;
+  const avH=`<div class="chat-av-wrap">${renderAvatar({id:userId,username,avatar_url:avatarUrl},38,'chat-win-av')}${dot}</div>`;
+  const statusTxt=`<div class="chat-win-status" id="chat-win-status-txt" style="font-size:10px;color:${isOnlineNow?'#22c55e':'#6b7280'};font-family:'Space Mono',monospace;">${isOnlineNow?'● online':'○ offline'}</div>`;
   const backBtn='<button id="chat-back-btn" onclick="showChatSidebar()" style="display:flex;align-items:center;gap:4px;padding:8px 10px;font-size:12px;" class="tbtn">← Voltar</button>';
-  top.innerHTML=backBtn+avH+'<div><div class="chat-win-name">@'+xss(username)+'</div></div>';
+  top.innerHTML=backBtn+avH+'<div><div class="chat-win-name">@'+xss(username)+'</div>'+statusTxt+'</div>';
   document.getElementById('msg-in-area').style.display='flex';
 
   // On mobile: slide to chat window
@@ -5005,6 +5040,9 @@ let _msgPollInterval=null;
 
 function setupRealtime(){
   if(!CU)return;
+
+  // ── Supabase Presence — quem está online ──────────────────────
+  setupPresence();
 
   // Real-time notifications
   db.channel('rt-notifs-'+CU.id)
@@ -8465,6 +8503,111 @@ function _processGameBubbles(areaId){
   });
 }
 
+
+
+// ================================================================
+// PRESENÇA EM TEMPO REAL — Supabase Realtime Presence
+// ================================================================
+const _onlineUsers = new Set(); // IDs dos usuários online
+let _presenceChannel = null;
+
+function setupPresence(){
+  if(!CU || _presenceChannel) return;
+
+  _presenceChannel = db.channel('euaqui-presence', {
+    config: { presence: { key: CU.id } }
+  });
+
+  _presenceChannel
+    .on('presence', { event: 'sync' }, () => {
+      const state = _presenceChannel.presenceState();
+      _onlineUsers.clear();
+      Object.keys(state).forEach(key => {
+        // key = userId
+        _onlineUsers.add(key);
+      });
+      _updateAllPresenceDots();
+    })
+    .on('presence', { event: 'join' }, ({ key }) => {
+      _onlineUsers.add(key);
+      _updatePresenceDot(key, true);
+    })
+    .on('presence', { event: 'leave' }, ({ key }) => {
+      _onlineUsers.delete(key);
+      _updatePresenceDot(key, false);
+    })
+    .subscribe(async (status) => {
+      if(status === 'SUBSCRIBED'){
+        // Anunciar presença do usuário atual
+        await _presenceChannel.track({
+          user_id: CU.id,
+          username: CP?.username || '',
+          online_at: new Date().toISOString()
+        });
+      }
+    });
+
+  // Sair da presença ao fechar a aba
+  window.addEventListener('beforeunload', () => {
+    _presenceChannel?.untrack();
+  });
+
+  // Sair/entrar ao mudar visibilidade da aba
+  document.addEventListener('visibilitychange', () => {
+    if(document.hidden){
+      _presenceChannel?.untrack();
+    } else {
+      _presenceChannel?.track({
+        user_id: CU.id,
+        username: CP?.username || '',
+        online_at: new Date().toISOString()
+      });
+    }
+  });
+}
+
+// Atualizar UMA bolinha específica (lista + header se aberto)
+function _updatePresenceDot(userId, isOnline){
+  const cls = isOnline ? 'online' : 'offline';
+  const rmv = isOnline ? 'offline' : 'online';
+  // Bolinha na lista de conversas
+  const dotList = document.getElementById('pdot-' + userId);
+  if(dotList){
+    dotList.classList.add(cls);
+    dotList.classList.remove(rmv);
+  }
+  // Bolinha no header se este chat estiver aberto
+  const dotHdr = document.getElementById('pdot-hdr-' + userId);
+  if(dotHdr){
+    dotHdr.classList.add(cls);
+    dotHdr.classList.remove(rmv);
+  }
+  // Texto de status no header
+  const statusTxt = document.getElementById('chat-win-status-txt');
+  if(statusTxt && currentChatUser?.id === userId){
+    statusTxt.textContent = isOnline ? '● online' : '○ offline';
+    statusTxt.style.color = isOnline ? '#22c55e' : '#6b7280';
+  }
+}
+
+// Atualizar TODAS as bolinhas de uma vez (após sync)
+function _updateAllPresenceDots(){
+  document.querySelectorAll('[id^="pdot-"]').forEach(dot => {
+    const userId = dot.id.replace('pdot-hdr-','').replace('pdot-','');
+    const isOnline = _onlineUsers.has(userId);
+    dot.classList.toggle('online', isOnline);
+    dot.classList.toggle('offline', !isOnline);
+  });
+  // Atualizar texto de status do chat aberto
+  if(currentChatUser){
+    const isOnline = _onlineUsers.has(currentChatUser.id);
+    const statusTxt = document.getElementById('chat-win-status-txt');
+    if(statusTxt){
+      statusTxt.textContent = isOnline ? '● online' : '○ offline';
+      statusTxt.style.color = isOnline ? '#22c55e' : '#6b7280';
+    }
+  }
+}
 
 </script>
 </body>
