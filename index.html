@@ -259,7 +259,7 @@ nav{position:fixed;top:0;left:0;right:0;background:#0a0a2a;border-bottom:1px sol
 .pbar{background:var(--bg-card);border-bottom:1px solid var(--border-glow);padding:0 24px 18px;display:flex;align-items:flex-end;gap:16px;backdrop-filter:blur(20px);}
 .pbav{width:100px;height:100px;border-radius:50%;border:4px solid var(--neon-cyan);object-fit:cover;margin-top:-50px;box-shadow:0 0 24px rgba(0,255,204,.35);flex-shrink:0;font-size:50px;display:flex;align-items:center;justify-content:center;background:var(--bg-deep);}
 .pdet{flex:1;padding-bottom:2px;min-width:0;overflow:hidden;max-width:100%;}
-.pname{font-family:'Syne',sans-serif;font-size:clamp(14px,4vw,22px);font-weight:800;color:var(--text-light);word-break:break-word;overflow-wrap:break-word;white-space:normal;line-height:1.2;}
+.pname{font-family:'Syne',sans-serif;font-size:clamp(13px,3.5vw,22px);font-weight:800;color:var(--text-light);word-break:break-word !important;overflow-wrap:anywhere !important;white-space:normal !important;line-height:1.15;max-width:100%;}
 .phandle{font-family:'Space Mono',monospace;font-size:11px;color:var(--neon-cyan);margin:2px 0 6px;}
 .pbio{font-size:11px;color:var(--text-muted);line-height:1.5;}
 .pstats{display:flex;gap:18px;margin-top:8px;flex-wrap:wrap;}
@@ -699,8 +699,10 @@ body{
   .pname{font-size:16px!important;}
   .phandle{font-size:10px!important;}
   .pbio{font-size:11px!important;}
-  .pbar{padding:0 12px 14px!important;flex-wrap:wrap;gap:10px!important;}
-  .pdet{min-width:0;width:100%;}
+  .pbar{padding:10px 12px 14px!important;flex-wrap:nowrap !important;gap:12px !important;align-items:center !important;}
+  .pbav{width:64px !important;height:64px !important;margin-top:0 !important;flex-shrink:0 !important;}
+  .pdet{min-width:0;flex:1 !important;width:auto !important;}
+  .pname{font-size:clamp(12px,3.8vw,18px) !important;white-space:normal !important;word-break:break-word !important;line-height:1.2 !important;}
   .pstats{gap:10px!important;flex-wrap:wrap;}
   .pstn{font-size:18px!important;}
   .pstl{font-size:8px!important;}
@@ -1174,11 +1176,7 @@ body{
   overflow:hidden;
 }
 /* When name is long, allow wrapping */
-.pbar .pdet .pname{
-  white-space:normal;
-  word-breakhite-space:normal;
-    word-break:break-word;
-  }
+.pbar .pdet .pname{ white-space:normal !important; word-break:break-word !important; }
 }
 
 /* ===== DAY / NIGHT THEME ===== */
@@ -8657,10 +8655,11 @@ async function showFollowersList(userId, tipo){
   const overlay = document.createElement('div');
   overlay.className = 'game-modal-overlay';
   overlay.id = 'followers-overlay';
+  const titulo = tipo === 'seguidores' ? '👥 Seguidores' : '➡ Seguindo';
   overlay.innerHTML = `
     <div class="game-modal" style="max-width:360px;max-height:72vh;overflow:hidden;display:flex;flex-direction:column;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-        <div class="game-modal-title" style="margin:0;">${tipo==='seguidores'?'👥 Seguidores':'➡ Seguindo'}</div>
+        <div class="game-modal-title" style="margin:0;">${titulo}</div>
         <button class="game-btn secondary" style="padding:4px 10px;margin:0;" onclick="document.getElementById('followers-overlay').remove()">✕</button>
       </div>
       <div id="followers-list" style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:6px;padding-right:2px;">
@@ -8672,64 +8671,48 @@ async function showFollowersList(userId, tipo){
 
   const list = document.getElementById('followers-list');
   try{
-    let profileIds = [];
+    let profiles = [];
 
-    // Tentar tabela 'follows' primeiro, depois 'followers'
-    const tryQuery = async (table, col) => {
-      try{
-        const{data,error} = await db.from(table).select(col).eq(
-          tipo==='seguidores' ? 'following_id' : 'follower_id', userId
-        );
-        if(!error && data?.length) return data.map(r=>r[col.split(',')[0].trim()]);
-      }catch(e){}
-      return null;
-    };
-
-    // Coluna que queremos: quem segue = follower_id; quem eu sigo = following_id
-    const wantCol = tipo==='seguidores' ? 'follower_id' : 'following_id';
-
-    // Tentar tabela follows
-    let result = await tryQuery('follows', wantCol);
-    // Fallback: tabela followers
-    if(!result) result = await tryQuery('followers', wantCol);
-    // Fallback: tabela friends (amigos mútuos)
-    if(!result){
-      const{data:fd} = await db.from('friends').select('friend_id').eq('user_id', userId).catch(()=>({data:null}));
-      result = fd ? fd.map(r=>r.friend_id) : [];
+    if(tipo === 'seguidores'){
+      // Quem segue userId — usar FK igual ao resto do app
+      const{data, error} = await db.from('follows')
+        .select('follower_id, profiles!follows_follower_id_fkey(id,username,full_name,avatar_url,bio)')
+        .eq('following_id', userId)
+        .limit(100);
+      if(!error) profiles = (data||[]).map(r=>r.profiles).filter(Boolean);
+    } else {
+      // Quem userId segue
+      const{data, error} = await db.from('follows')
+        .select('following_id, profiles!follows_following_id_fkey(id,username,full_name,avatar_url,bio)')
+        .eq('follower_id', userId)
+        .limit(100);
+      if(!error) profiles = (data||[]).map(r=>r.profiles).filter(Boolean);
     }
 
-    profileIds = result || [];
-
-    if(!profileIds.length){
+    if(!profiles.length){
       list.innerHTML = `<div style="text-align:center;padding:30px 16px;">
-        <div style="font-size:32px;margin-bottom:8px;">${tipo==='seguidores'?'👥':'🔭'}</div>
+        <div style="font-size:40px;margin-bottom:10px;">${tipo==='seguidores'?'👥':'🔭'}</div>
         <div style="color:var(--text-muted);font-size:12px;">${tipo==='seguidores'?'Nenhum seguidor ainda':'Não está seguindo ninguém'}</div>
       </div>`;
       return;
     }
 
-    const{data:profiles} = await db.from('profiles')
-      .select('id,username,full_name,avatar_url,bio')
-      .in('id', profileIds);
-
     list.innerHTML = '';
-    (profiles||[]).forEach(p => {
+    profiles.forEach(p => {
       const isOnline = _onlineUsers?.has(p.id) || false;
       const item = document.createElement('div');
       item.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 6px;border-bottom:1px solid var(--border-glow);cursor:pointer;border-radius:8px;transition:background .15s;';
-      item.onmouseenter = () => item.style.background='rgba(0,255,204,.05)';
-      item.onmouseleave = () => item.style.background='';
-
-      const avHtml = renderAvatar(p, 44, 'ci-av');
+      item.onmouseenter = () => item.style.background = 'rgba(0,255,204,.06)';
+      item.onmouseleave = () => item.style.background = '';
       item.innerHTML = `
         <div style="position:relative;flex-shrink:0;">
-          ${avHtml}
-          <span class="presence-dot ${isOnline?'online':'offline'}" style="position:absolute;bottom:1px;right:1px;width:10px;height:10px;border-radius:50%;border:2px solid var(--bg-mid);background:${isOnline?'#22c55e':'#ef4444'};"></span>
+          ${renderAvatar(p, 44, 'ci-av')}
+          <span style="position:absolute;bottom:1px;right:1px;width:10px;height:10px;border-radius:50%;border:2px solid var(--bg-mid);background:${isOnline?'#22c55e':'#ef4444'};display:block;"></span>
         </div>
         <div style="flex:1;min-width:0;">
           <div style="font-size:13px;font-weight:700;color:var(--text-light);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${xss(p.full_name||p.username||'?')}</div>
           <div style="font-size:10px;color:var(--neon-cyan);">@${xss(p.username||'')}</div>
-          ${p.bio?`<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px;">${xss(p.bio.slice(0,50))}</div>`:''}
+          ${p.bio ? `<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;">${xss(p.bio.slice(0,50))}</div>` : ''}
         </div>
         <div style="font-size:9px;color:${isOnline?'#22c55e':'#6b7280'};flex-shrink:0;">${isOnline?'● on':'○ off'}</div>`;
       item.onclick = () => { overlay.remove(); loadProfilePage(p.id); };
@@ -8737,12 +8720,13 @@ async function showFollowersList(userId, tipo){
     });
   } catch(e){
     list.innerHTML = `<div style="color:var(--neon-pink);font-size:12px;padding:20px;text-align:center;">
-      <div style="font-size:24px;margin-bottom:8px;">⚠</div>
-      Erro ao carregar: ${xss(e.message||'desconhecido')}
+      <div style="font-size:28px;margin-bottom:8px;">⚠</div>
+      ${xss(e.message||'Erro desconhecido')}
     </div>`;
     console.error('showFollowersList:', e);
   }
 }
+
 
 
 // ================================================================
@@ -8812,8 +8796,8 @@ async function loadAboutExtras(userId){
     try{
       let bizs = [];
       try{
-        const{data,error} = await db.from('business_follows')
-          .select('business_id, businesses(id,name,description,logo_url,category)')
+        const{data,error} = await db.from('business_followers')
+          .select('business_id, businesses(*)')
           .eq('user_id', userId).limit(20);
         if(!error && data?.length){
           bizs = data.map(r=>r.businesses).filter(Boolean);
@@ -8823,7 +8807,7 @@ async function loadAboutExtras(userId){
       // Fallback: só ids
       if(!bizs.length){
         try{
-          const{data} = await db.from('business_follows').select('business_id').eq('user_id',userId).limit(20);
+          const{data} = await db.from('business_followers').select('business_id').eq('user_id',userId).limit(20);
           if(data?.length){
             const ids = data.map(r=>r.business_id);
             const{data:bd} = await db.from('businesses').select('id,name,description,logo_url,category').in('id',ids);
