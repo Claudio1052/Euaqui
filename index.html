@@ -6540,7 +6540,7 @@ async function loadNotifTab(tabId){
   const typeMap = {
     'nt-all': null,
     'nt-mentions': 'mention',
-    'nt-social': ['follow','like','comment','friend_request','friend_accept'],
+    'nt-social': ['follow','like','comment','friend_request','friend_accept','call_missed'],
     'nt-system': ['message','community_invite']
   };
   const filter = typeMap[tabId];
@@ -6557,7 +6557,7 @@ async function loadNotifTab(tabId){
     el.innerHTML=`<div class="notif-empty"><div class="notif-empty-icon">🔔</div><div class="notif-empty-txt">Sem notificações</div></div>`;
     return;
   }
-  const icons={'follow':'👤','like':'❤️','comment':'💬','friend_request':'👥','friend_accept':'🎉','message':'💬','community_invite':'🏘','mention':'@'};
+  const icons={'follow':'👤','like':'❤️','comment':'💬','friend_request':'👥','friend_accept':'🎉','message':'💬','community_invite':'🏘','mention':'@','call_missed':'📞'};
   el.innerHTML = data.map(n=>`
     <div class="ni ${n.read?'':'unrd'}" onclick="markRead('${n.id}',this)">
       <div class="ni-icon">${icons[n.type]||'🔔'}</div>
@@ -9135,7 +9135,20 @@ async function startCall(userId, username, type){
   if(_sigCh){try{db.removeChannel(_sigCh);}catch(e){}}
   _sigCh=db.channel(cid,{config:{broadcast:{self:false}}})
     .on('broadcast',{event:'call-answer'},(p)=>_onAnswer(p.payload))
-    .on('broadcast',{event:'call-reject'},(p)=>{_stopRing();_hangup('❌ Chamada recusada');})
+    .on('broadcast',{event:'call-reject'},(p)=>{
+      _stopRing();
+      // Inserir notificação de chamada perdida para o destinatário
+      if(_callPeer){
+        const nm=CP?.full_name||CP?.username||'Alguém';
+        db.from('notifications').insert({
+          user_id:_callPeer.id, actor_id:CU.id,
+          type:'call_missed',
+          content:'📞 '+nm+' ligou para você',
+          read:false
+        }).catch(()=>{});
+      }
+      _hangup('❌ Chamada recusada');
+    })
     .on('broadcast',{event:'call-end'},   (p)=>{_stopRing();_hangup('📵 Encerrada');})
     .on('broadcast',{event:'call-ice'},   (p)=>_addIce(p.payload.c))
     .subscribe(async(s)=>{
@@ -9240,6 +9253,14 @@ function rejectCall(){
       ch.send({type:'broadcast',event:'call-reject',payload:{from:CU.id}});
       setTimeout(()=>{try{db.removeChannel(ch);}catch(e){}},2000);
     }});
+    // Notificar o chamador que não atendeu
+    const nm=CP?.full_name||CP?.username||'Alguém';
+    db.from('notifications').insert({
+      user_id:_callPeer.id, actor_id:CU.id,
+      type:'call_missed',
+      content:'📵 '+nm+' não atendeu sua chamada',
+      read:false
+    }).catch(()=>{});
   }
   _cleanup();
   document.getElementById('call-overlay')?.remove();
@@ -9247,6 +9268,16 @@ function rejectCall(){
 function endCall(){
   _stopRing();
   if(_sigCh) _sigCh.send({type:'broadcast',event:'call-end',payload:{from:CU.id}}).catch(()=>{});
+  // Se estava chamando e nunca conectou → notificar que ligou
+  if(_isCaller && _callPeer && !_callTimer){
+    const nm=CP?.full_name||CP?.username||'Alguém';
+    db.from('notifications').insert({
+      user_id:_callPeer.id, actor_id:CU.id,
+      type:'call_missed',
+      content:'📞 '+nm+' ligou para você',
+      read:false
+    }).catch(()=>{});
+  }
   _hangup('📵 Chamada encerrada');
 }
 function _hangup(msg){
