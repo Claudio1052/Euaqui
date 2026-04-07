@@ -2818,6 +2818,18 @@ body.day-mode .notif-dot{ border-color:#f5f7fa; }
               <input class="ainput" type="hidden" id="cm-icon" value="🏘">
               <span style="font-size:11px;color:var(--text-muted);">Escolha um ícone abaixo</span>
             </div>
+          <div class="igrp" style="margin-top:12px;">
+            <label class="ilbl">Banner da Comunidade (opcional)</label>
+            <div style="position:relative;height:100px;border-radius:10px;overflow:hidden;border:2px dashed var(--border-glow);background:linear-gradient(135deg,#0a0a2a,#1a0a3a);cursor:pointer;display:flex;align-items:center;justify-content:center;" id="cm-banner-prev" onclick="document.getElementById('cm-banner-file').click()">
+              <div style="text-align:center;color:var(--text-muted);">
+                <div style="font-size:24px;">🖼</div>
+                <div style="font-size:10px;margin-top:4px;">Clique para adicionar banner</div>
+                <div style="font-size:9px;margin-top:2px;">Recomendado: 700×160px</div>
+              </div>
+            </div>
+            <input type="file" id="cm-banner-file" accept="image/*" style="display:none" onchange="previewCommBanner(this,'cm-banner-prev')">
+            <input type="hidden" id="cm-banner-url" value="">
+          </div>
             <div id="cm-icon-grid" style="display:grid;grid-template-columns:repeat(8,1fr);gap:6px;max-height:180px;overflow-y:auto;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:10px;"></div>
           </div>
           <div class="igrp"><label class="ilbl">Visibilidade</label>
@@ -4744,7 +4756,19 @@ async function createCommunity(){
     }catch(e){console.warn('comm img:',e);}
     window._commImgFile=null;
   }
-  const{error:insErr}=await db.from('communities').insert({owner_id:CU.id,name,slug,description:desc,avatar_url:icon,visibility:vis});
+  // Upload banner
+  let bannerUrl = '';
+  const bannerFile = window._commBannerFiles?.['cm-banner-prev'];
+  if(bannerFile){
+    try{
+      const ext2=bannerFile.name.split('.').pop();
+      const path2=`comm/${CU.id}-banner-${Date.now()}.${ext2}`;
+      const{data:ud2}=await db.storage.from('media').upload(path2,bannerFile,{upsert:true,contentType:bannerFile.type});
+      if(ud2){const{data:u2}=db.storage.from('media').getPublicUrl(path2);bannerUrl=u2.publicUrl;}
+    }catch(e){console.warn('banner upload:',e);}
+    delete window._commBannerFiles['cm-banner-prev'];
+  }
+  const{error:insErr}=await db.from('communities').insert({owner_id:CU.id,name,slug,description:desc,avatar_url:icon,visibility:vis,banner_url:bannerUrl||null});
   const error=insErr;
   // Get the created community by slug to get its ID
   let data=null;
@@ -9759,6 +9783,16 @@ function switchCommInnerTab(commId, tabId, btn){
   if(tabId==='ct-xp') loadCommRanking(commId);
 }
 
+function previewCommBanner(input, prevId){
+  const file = input.files[0]; if(!file) return;
+  const url = URL.createObjectURL(file);
+  const prev = document.getElementById(prevId);
+  if(prev) prev.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;">`;
+  // Guardar arquivo para upload
+  window._commBannerFiles = window._commBannerFiles || {};
+  window._commBannerFiles[prevId] = file;
+}
+
 function previewCommImage(input){
   const file=input.files[0]; if(!file) return;
   window._commImgFile=file;
@@ -10011,6 +10045,16 @@ async function openEditComm(commId){
       </div>
       <input type="hidden" id="edit-comm-img-url" value="${xss(comm.avatar_url||'')}">
     </div>
+    <div class="igrp" style="margin-top:4px;">
+      <label class="ilbl">Banner (opcional)</label>
+      <div style="position:relative;height:90px;border-radius:10px;overflow:hidden;border:2px dashed var(--border-glow);background:linear-gradient(135deg,#0a0a2a,#1a0a3a);cursor:pointer;" id="edit-comm-banner-prev" onclick="document.getElementById('edit-comm-banner-file').click()">
+        ${comm.banner_url
+          ? `<img src="${xss(comm.banner_url)}" style="width:100%;height:100%;object-fit:cover;">`
+          : `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-muted);"><div style="font-size:20px;">🖼</div><div style="font-size:9px;margin-top:4px;">Clique para adicionar banner</div></div>`}
+      </div>
+      <input type="file" id="edit-comm-banner-file" accept="image/*" style="display:none" onchange="previewCommBanner(this,'edit-comm-banner-prev')">
+      <input type="hidden" id="edit-comm-banner-url" value="${xss(comm.banner_url||'')}">
+    </div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px;">
       <button class="tbtn" onclick="this.closest('[style*=fixed]').remove()">Cancelar</button>
       <button class="post-btn" onclick="saveEditComm('${commId}',this)" style="font-size:11px;">✅ Salvar</button>
@@ -10040,11 +10084,24 @@ async function saveEditComm(commId,btn){
     }catch(e){}
     window._editCommImgFile=null;
   }
+  // Upload banner
+  let bannerUrl2=document.getElementById('edit-comm-banner-url')?.value||'';
+  const bannerFileEdit=window._commBannerFiles?.['edit-comm-banner-prev'];
+  if(bannerFileEdit){
+    try{
+      const ext3=bannerFileEdit.name.split('.').pop();
+      const path3=`comm/${commId}/banner-${Date.now()}.${ext3}`;
+      const{data:ud3}=await db.storage.from('media').upload(path3,bannerFileEdit,{upsert:true,contentType:bannerFileEdit.type});
+      if(ud3){const{data:u3}=db.storage.from('media').getPublicUrl(path3);bannerUrl2=u3.publicUrl;}
+    }catch(e){}
+    delete window._commBannerFiles['edit-comm-banner-prev'];
+  }
   const{error}=await db.from('communities').update({
     name:document.getElementById('edit-comm-name').value.trim(),
     description:document.getElementById('edit-comm-desc').value.trim(),
     visibility:document.getElementById('edit-comm-vis').value,
     avatar_url:avatarUrl||undefined,
+    banner_url:bannerUrl2||undefined,
     updated_at:new Date().toISOString()
   }).eq('id',commId).eq('owner_id',CU.id);
   if(error){showToast('Erro: '+error.message,'error');btn.disabled=false;btn.textContent='✅ Salvar';return;}
