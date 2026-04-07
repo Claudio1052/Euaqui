@@ -2468,9 +2468,11 @@ body.day-mode .notif-dot{ border-color:#f5f7fa; }
       <div style="text-align:center;margin-top:12px;"><button style="background:none;border:none;color:var(--text-muted);font-size:11px;cursor:pointer;font-family:'Space Mono',monospace;" onclick="showForgot()">Esqueci minha senha</button></div>
       <div id="oauth-setup-tip" style="display:none;margin-top:14px;background:rgba(255,204,0,.08);border:1px solid rgba(255,204,0,.3);border-radius:10px;padding:14px;font-size:10px;color:var(--neon-yellow);font-family:'Space Mono',monospace;line-height:1.8;">
         ⚙️ <strong>Para ativar login social:</strong><br>
-        1. Acesse <a href="https://supabase.com/dashboard/project/gpustnmwxlolgyevjjtf/auth/providers" target="_blank" style="color:var(--neon-cyan);">Supabase → Auth → Providers</a><br>
-        2. Ative <strong>Google</strong> e/ou <strong>GitHub</strong><br>
-        3. Cole a Callback URL no provedor:<br>
+        1. <a href="https://supabase.com/dashboard/project/gpustnmwxlolgyevjjtf/auth/url-configuration" target="_blank" style="color:var(--neon-cyan);">Supabase → Auth → URL Configuration</a><br>
+        &nbsp;&nbsp;→ <strong>Site URL</strong>: cole a URL onde o app está hospedado<br>
+        &nbsp;&nbsp;→ <strong>Redirect URLs</strong>: adicione a mesma URL<br>
+        2. <a href="https://supabase.com/dashboard/project/gpustnmwxlolgyevjjtf/auth/providers" target="_blank" style="color:var(--neon-cyan);">Auth → Providers</a>: ative Google/GitHub<br>
+        3. Cole no provedor (Google/GitHub):<br>
         <span style="color:white;word-break:break-all;">https://gpustnmwxlolgyevjjtf.supabase.co/auth/v1/callback</span>
       </div>
       <div id="sup-tip" class="sup-tip">💡 Para Google/GitHub: ative em <strong>Supabase → Auth → Providers</strong>. Para login sem confirmação de email: <strong>Auth → Settings → desmarcar "Confirm email"</strong>.</div>
@@ -3323,6 +3325,28 @@ document.addEventListener('error', function(e){
 
 document.addEventListener('DOMContentLoaded', async()=>{
   const minWait = new Promise(r=>setTimeout(r,1200));
+
+  // Detectar retorno de OAuth via hash #access_token=...&refresh_token=...
+  const hash = window.location.hash;
+  if(hash && hash.includes('access_token=')){
+    try{
+      const params = new URLSearchParams(hash.replace('#',''));
+      const access_token  = params.get('access_token');
+      const refresh_token = params.get('refresh_token');
+      if(access_token && refresh_token){
+        const {data, error} = await db.auth.setSession({access_token, refresh_token});
+        if(!error && data?.session){
+          // Limpar hash da URL sem recarregar
+          history.replaceState(null,'',window.location.pathname+window.location.search);
+          CU = data.session.user;
+          try{ await loadProfile(); }catch(e){}
+          try{ showApp(); }catch(e){ showAuth(); }
+          return;
+        }
+      }
+    }catch(e){ console.warn('OAuth hash parse:', e); }
+  }
+
   try{
     const [{data:{session}}] = await Promise.all([db.auth.getSession(), minWait]);
     if(session && session.user){
@@ -3413,9 +3437,26 @@ async function handleRegister(){
   }
 }
 async function handleOAuth(p){
-  const{error}=await db.auth.signInWithOAuth({provider:p,options:{redirectTo:window.location.href.split('?')[0]}});
-  if(error)showAErr('OAuth: '+error.message);
-  document.getElementById('sup-tip').style.display='block';
+  const btn = document.querySelector('.oauth-btn[onclick*="'+p+'"]');
+  const origHTML = btn ? btn.innerHTML : '';
+  if(btn){ btn.disabled=true; btn.innerHTML='⏳ Conectando...'; }
+  const redirectTo = window.location.href.split('#')[0].split('?')[0];
+  try{
+    const{error} = await db.auth.signInWithOAuth({
+      provider:p,
+      options:{
+        redirectTo,
+        queryParams: p==='google'?{access_type:'offline',prompt:'select_account'}:{}
+      }
+    });
+    if(error){
+      showAErr(p+': '+error.message);
+      if(btn){ btn.disabled=false; btn.innerHTML=origHTML; }
+    }
+  }catch(e){
+    showAErr('Erro: '+e.message);
+    if(btn){ btn.disabled=false; btn.innerHTML=origHTML; }
+  }
 }
 function showForgot(){
   const e=prompt('Digite seu email:');
