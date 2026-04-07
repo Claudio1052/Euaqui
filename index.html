@@ -2466,6 +2466,13 @@ body.day-mode .notif-dot{ border-color:#f5f7fa; }
       <button class="oauth-btn" onclick="handleOAuth('google')">🌐 Continuar com Google</button>
       <button class="oauth-btn" onclick="handleOAuth('github')">💻 Continuar com GitHub</button>
       <div style="text-align:center;margin-top:12px;"><button style="background:none;border:none;color:var(--text-muted);font-size:11px;cursor:pointer;font-family:'Space Mono',monospace;" onclick="showForgot()">Esqueci minha senha</button></div>
+      <div id="oauth-setup-tip" style="display:none;margin-top:14px;background:rgba(255,204,0,.08);border:1px solid rgba(255,204,0,.3);border-radius:10px;padding:14px;font-size:10px;color:var(--neon-yellow);font-family:'Space Mono',monospace;line-height:1.8;">
+        ⚙️ <strong>Para ativar login social:</strong><br>
+        1. Acesse <a href="https://supabase.com/dashboard/project/gpustnmwxlolgyevjjtf/auth/providers" target="_blank" style="color:var(--neon-cyan);">Supabase → Auth → Providers</a><br>
+        2. Ative <strong>Google</strong> e/ou <strong>GitHub</strong><br>
+        3. Cole a Callback URL no provedor:<br>
+        <span style="color:white;word-break:break-all;">https://gpustnmwxlolgyevjjtf.supabase.co/auth/v1/callback</span>
+      </div>
       <div id="sup-tip" class="sup-tip">💡 Para Google/GitHub: ative em <strong>Supabase → Auth → Providers</strong>. Para login sem confirmação de email: <strong>Auth → Settings → desmarcar "Confirm email"</strong>.</div>
     </div>
     <!-- REGISTER -->
