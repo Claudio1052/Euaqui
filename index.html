@@ -3462,7 +3462,24 @@ function showForgot(){
   const e=prompt('Digite seu email:');
   if(e)db.auth.resetPasswordForEmail(e).then(()=>showToast('Email enviado! 📧','success'));
 }
-async function handleLogout(){await db.auth.signOut();showToast('Até logo! 👋','success');}
+async function handleLogout(){
+  try{
+    // Limpar estado local imediatamente
+    CU = null; CP = null;
+    // Fechar canais realtime ativos
+    try{ if(window._callListenCh){ db.removeChannel(window._callListenCh); window._callListenCh=null; } }catch(e){}
+    try{ clearInterval(window._msgPollInterval); }catch(e){}
+    // Ir para a tela de login ANTES do signOut (garante velocidade)
+    showAuth();
+    showToast('Até logo! 👋','success');
+    // Fazer signOut em background
+    await db.auth.signOut();
+  }catch(e){
+    // Mesmo com erro, já foi para tela de login
+    showToast('Saindo...','');
+    setTimeout(()=>window.location.reload(), 1000);
+  }
+}
 function showAErr(m){const el=document.getElementById('aerr');el.textContent='⚠ '+m;el.style.color='';el.style.borderColor='';el.classList.add('show');document.getElementById('sup-tip').style.display='block';}
 function hideAErr(){document.getElementById('aerr').classList.remove('show');}
 
