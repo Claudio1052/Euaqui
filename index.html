@@ -276,7 +276,7 @@ nav{position:fixed;top:0;left:0;right:0;background:#0a0a2a;border-bottom:1px sol
 /* COMMUNITIES */
 .comm-card{background:var(--bg-card);border:1px solid rgba(255,255,255,.07);border-radius:12px;overflow:hidden;transition:border-color .2s;cursor:pointer;}
 .comm-card:hover{border-color:rgba(0,255,204,.2);}
-.comm-cover{height:70px;background:linear-gradient(135deg,var(--bg-mid),var(--bg-deep));display:flex;align-items:center;justify-content:center;font-size:28px;}
+.comm-cover{height:70px;background:linear-gradient(135deg,var(--bg-mid),var(--bg-deep));display:flex;align-items:center;justify-content:center;font-size:28px;overflow:hidden;position:relative;}
 .comm-info{padding:12px;}
 .comm-name{font-family:'Silkscreen',monospace;font-size:12px;color:var(--neon-cyan);margin-bottom:4px;}
 .comm-desc{font-size:11px;color:var(--text-muted);line-height:1.4;margin-bottom:8px;}
@@ -4783,14 +4783,18 @@ async function createCommunity(){
   // Clear form
   ['cm-name','cm-slug','cm-desc','cm-icon'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('comm-create-error')?.remove();
-  showToast('Comunidade criada! 🏘','success');
-  // Only reload 'mine' tab (uses owner_id - safe from RLS recursion)
-  // Switch to 'Minhas' tab first, then load
-  const myTab=document.querySelector('#comm-page-tabs .ptab[data-tab="cm-mine"]');
-  if(myTab) myTab.click();
-  else {
-    await loadCommGrid('mine');
-  }
+  // Popup de sucesso
+  const overlay=document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);z-index:5000;display:flex;align-items:center;justify-content:center;';
+  overlay.innerHTML=`<div style="background:var(--bg-mid);border:1px solid rgba(0,255,204,.4);border-radius:20px;padding:32px 28px;text-align:center;max-width:320px;width:90%;animation:authIn .3s ease;">
+    <div style="font-size:52px;margin-bottom:12px;">🏘</div>
+    <div style="font-family:'Silkscreen',monospace;font-size:14px;color:var(--neon-cyan);margin-bottom:8px;">COMUNIDADE CRIADA!</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px;">Sua comunidade foi criada com sucesso. Agora você pode convidar membros!</div>
+    <button class="post-btn" onclick="this.closest('[style*=fixed]').remove();document.querySelector('#comm-page-tabs .ptab[data-tab=\'cm-mine\']')?.click();" style="width:100%;">✓ Ver minha comunidade</button>
+  </div>`;
+  document.body.appendChild(overlay);
+  // Fechar automaticamente após 4s
+  setTimeout(()=>{ overlay.remove(); document.querySelector('#comm-page-tabs .ptab[data-tab="cm-mine"]')?.click(); }, 4000);
 }
 async function toggleJoinComm(commId,isMember,btn){
   if(!CU)return showToast('Faça login primeiro','error');
@@ -5732,7 +5736,7 @@ async function loadHomeComms(){
     (data||[]).forEach(c=>{
       const card=document.createElement('div');card.className='comm-card';
       const isMember=ms.has(c.id);
-      card.innerHTML='<div class="comm-cover">'+xss(c.avatar_url||'🏘')+'</div><div class="comm-info"><div class="comm-name">'+xss(c.name)+'</div><div class="comm-desc">'+xss(c.description||'')+'</div><div class="comm-meta"><span>👥 '+(c.members_count||0)+'</span></div><button class="comm-join '+(isMember?'joined':'')+'" style="margin-top:8px;width:100%;">'+(isMember?'✓ Membro':'+ Entrar')+'</button></div>';
+      card.innerHTML='<div class="comm-cover">'+((c.avatar_url&&c.avatar_url.startsWith('http'))?'<img src="'+xss(c.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;">':xss(c.avatar_url||'🏘'))+'</div><div class="comm-info"><div class="comm-name">'+xss(c.name)+'</div><div class="comm-desc">'+xss(c.description||'')+'</div><div class="comm-meta"><span>👥 '+(c.members_count||0)+'</span></div><button class="comm-join '+(isMember?'joined':'')+'" style="margin-top:8px;width:100%;">'+(isMember?'✓ Membro':'+ Entrar')+'</button></div>';
       card.onclick=()=>openCommDetail(c.id);
       card.querySelector('button').onclick=(e)=>{e.stopPropagation();toggleJoinComm(c.id,isMember,card.querySelector('button'));};
       grid.appendChild(card);
@@ -6617,7 +6621,7 @@ async function loadCommGrid(mode){
     const isMember = memberSet.has(comm.id);
     const card = document.createElement('div');
     card.className='comm-card';
-    card.innerHTML='<div class="comm-cover">'+xss(comm.avatar_url||'🏘')+'</div>'
+    card.innerHTML='<div class="comm-cover">'+((comm.avatar_url&&comm.avatar_url.startsWith('http'))?'<img src="'+xss(comm.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;">':xss(comm.avatar_url||'🏘'))+'</div>'
       +'<div class="comm-info">'
         +'<div class="comm-name">'+xss(comm.name)+'</div>'
         +'<div class="comm-desc">'+xss(comm.description||'')+'</div>'
