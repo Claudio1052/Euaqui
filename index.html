@@ -3891,6 +3891,10 @@ async function react(postId,reaction,btn){
       else{await db.from('likes').update({reaction_type:reaction}).eq('id',ex.id);}
     } else if(!wasActive){
       await db.from('likes').insert({post_id:postId,user_id:CU.id,reaction_type:reaction});
+      // XP por curtir em comunidade
+      const card=btn.closest('.post-card');
+      const commId=card?.dataset?.commid||card?.closest('[data-commid]')?.dataset?.commid;
+      if(commId&&commId!=='undefined') addCommXP(commId,CU.id,'like',2);
     }
   }catch(e){console.warn('react error:',e);}
 }
@@ -3998,6 +4002,10 @@ async function submitCmt(postId, btnEl){
   // Invalidate cache so count reflects on next full load
   cachedPostIds.delete(postId);
   cachedPosts={};
+  // XP por comentar em post de comunidade
+  const postCard = inp?.closest('.post-card');
+  const commIdCmt = postCard?.dataset?.commid;
+  if(commIdCmt && commIdCmt!=='undefined') addCommXP(commIdCmt,CU.id,'comment',5);
   const secEl = inp ? inp.closest('.comments-sec') : null;
   await loadCmts(postId, secEl);
 }
@@ -9778,7 +9786,15 @@ function switchCommInnerTab(commId, tabId, btn){
   });
   document.querySelectorAll(`#comm-inner-tabs-${commId} .comm-tab`)
     .forEach(b=>b.classList.toggle('active',b===btn));
-  if(tabId==='ct-chat') loadCommChat(commId);
+  if(tabId==='ct-chat'){
+    // Só recarrega se canal ainda não existe (preserva histórico ao trocar aba)
+    if(!_commChatPolls[commId]) loadCommChat(commId);
+    else {
+      // Apenas rolar para o fim sem recarregar
+      const el=document.getElementById('comm-chat-msgs-'+commId);
+      if(el) el.scrollTop=el.scrollHeight;
+    }
+  }
   if(tabId==='ct-members') loadCommMembersPanel(commId);
   if(tabId==='ct-xp') loadCommRanking(commId);
 }
@@ -9882,7 +9898,11 @@ async function loadCommPostsV2(commId,isMember,isMod){
   ]);
   const rxMap={};(rxRes.data||[]).forEach(r=>{if(!rxMap[r.post_id])rxMap[r.post_id]={};rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1;});
   const myRxMap={};(myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
-  el.innerHTML=posts.map(p=>renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||'')).join('');
+  el.innerHTML=posts.map(p=>{
+    const html=renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||'');
+    // Marcar com data-commid para XP de curtidas e comentários
+    return html.replace(`id="post-${p.id}"`,`id="post-${p.id}" data-commid="${commId}"`);
+  }).join('');
   updateCommentCounts(postIds);
 }
 
