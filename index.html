@@ -3860,20 +3860,19 @@ function adjustRxCount(btn,delta){
 
 // ===== COMMENTS =====
 async function toggleCmts(postId, btn){
-  // Primeiro tenta pelo botão clicado (evita conflito de IDs duplicados no DOM)
   let sec = btn ? btn.closest('.post-card')?.querySelector('.comments-sec') : null;
-  // Fallback para getElementById
   if(!sec) sec = document.getElementById('cmts-'+postId);
-  if(!sec){ console.warn('toggleCmts: sec não encontrado para', postId); return; }
+  if(!sec){ console.warn('toggleCmts: sec not found', postId); return; }
   if(sec.style.display==='none'||!sec.style.display){
     sec.style.display='block';
-    await loadCmts(postId);
+    await loadCmts(postId, sec);
   } else {
     sec.style.display='none';
   }
 }
-async function loadCmts(postId){
-  const sec=document.getElementById('cmts-'+postId);
+async function loadCmts(postId, sec){
+  if(!sec) sec=document.getElementById('cmts-'+postId);
+  if(!sec) return;
   sec.innerHTML='<div style="color:var(--text-muted);font-size:11px;text-align:center;padding:8px;">carregando...</div>';
   // Tenta buscar com colunas extras, fallback para básico
   // Busca comentários com todas as colunas (disponíveis após migração)
@@ -3900,7 +3899,7 @@ async function loadCmts(postId){
   const{data:postData}=await db.from('posts').select('user_id').eq('id',postId).maybeSingle();
   const isPostOwner=CU&&postData?.user_id===CU.id;
   const cmtHtml=(cmts||[]).map(c=>renderComment(c,myVotes[c.id]||'',isPostOwner,postId)).join('');
-  sec.innerHTML=cmtHtml+`<div class="cmt-input-wrap"><input class="cmt-input" id="cin-${postId}" type="text" placeholder="Comentar..." onkeydown="if(event.key==='Enter')submitCmt('${postId}')"><button class="cmt-sub" onclick="submitCmt('${postId}')">➤</button></div>`;
+  sec.innerHTML=cmtHtml+`<div class="cmt-input-wrap"><input class="cmt-input" id="cin-${postId}" type="text" placeholder="Comentar..." onkeydown="if(event.key==='Enter')submitCmt('${postId}',this)"><button class="cmt-sub" onclick="submitCmt('${postId}',this)">➤</button></div>`;
 }
 function renderComment(c,myVote,isPostOwner,postId){
   const prof=c.profiles||{};
@@ -3929,9 +3928,10 @@ function renderComment(c,myVote,isPostOwner,postId){
     </div>
   </div>`;
 }
-async function submitCmt(postId){
+async function submitCmt(postId, btnEl){
   if(!CU)return showToast('Faça login para comentar','error');
-  const inp=document.getElementById('cin-'+postId);
+  let inp = btnEl ? btnEl.closest('.comments-sec')?.querySelector('.cmt-input') : null;
+  if(!inp) inp=document.getElementById('cin-'+postId);
   const txt=inp?.value.trim();if(!txt)return;
   inp.disabled=true;
 
@@ -3955,7 +3955,9 @@ async function submitCmt(postId){
   // Invalidate cache so count reflects on next full load
   cachedPostIds.delete(postId);
   cachedPosts={};
-  await loadCmts(postId);
+  // Recarregar comentarios no sec correto
+  const secEl = inp ? inp.closest('.comments-sec') : null;
+  await loadCmts(postId, secEl);
 }
 async function deleteCmt(cmtId,postId){
   if(!confirm('Excluir este comentário?'))return;
