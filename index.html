@@ -9846,10 +9846,12 @@ async function postInCommV2(commId){
       if(ud){const{data:u}=db.storage.from('media').getPublicUrl(path);urls.push(u.publicUrl);mTypes.push(f.type.startsWith('video')?'video':'image');}
     }catch(e){}
   }
+  // visibility='community' — não aparece no feed global (feed filtra só public/friends)
   const{data:post,error}=await db.from('posts').insert({
     user_id:CU.id,content:txt||null,
     type:urls.length?(mTypes.includes('video')?'video':'image'):'text',
-    visibility:'public',media_urls:urls.length?urls:[],media_types:mTypes.length?mTypes:[]
+    visibility:'private',  // posts de comunidade ficam privados no feed geral
+    media_urls:urls.length?urls:[],media_types:mTypes.length?mTypes:[]
   }).select().maybeSingle();
   if(error){showToast('Erro: '+error.message,'error');if(btn){btn.disabled=false;btn.textContent='POSTAR ▶';}return;}
   if(post?.id) await db.from('community_posts').insert({community_id:commId,post_id:post.id});
@@ -9892,6 +9894,41 @@ async function delCommPost(commId,postId){
 }
 
 // ── Renderizar uma mensagem do chat ─────────────────────────
+// ── Timer do chat da comunidade (máx 1h, remove mensagens antigas) ──
+function commTimeAgo(ts){
+  if(!ts) return '';
+  const secs = Math.floor((Date.now()-new Date(ts))/1000);
+  if(secs < 60)  return secs+'s';
+  const mins = Math.floor(secs/60);
+  if(mins < 60)  return mins+'min';
+  return '1h';
+}
+
+function _startCommMsgTimer(commId){
+  // Atualizar timers a cada 10s e remover msgs > 1h
+  if(window._commTimers) clearInterval(window._commTimers[commId]);
+  if(!window._commTimers) window._commTimers={};
+  window._commTimers[commId] = setInterval(()=>{
+    const el = document.getElementById('comm-chat-msgs-'+commId);
+    if(!el) return;
+    const now = Date.now();
+    // Atualizar todos os timers visíveis
+    el.querySelectorAll('.cmsg-time[data-ts]').forEach(span=>{
+      const ts = span.dataset.ts;
+      const secs = Math.floor((now - new Date(ts))/1000);
+      if(secs >= 3600){
+        // Remover mensagem inteira (passou de 1h)
+        span.closest('[id^="cmsg-"]')?.remove();
+      } else {
+        span.textContent = commTimeAgo(ts);
+      }
+    });
+    // Se ficou vazio, mostrar placeholder
+    const remaining = el.querySelectorAll('[id^="cmsg-"]').length;
+    if(!remaining) el.innerHTML='<div style="text-align:center;color:var(--text-muted);font-size:11px;padding:20px;">Nenhuma mensagem na última hora</div>';
+  }, 10000);
+}
+
 function _renderCommMsg(m){
   const isMine = m.user_id===CU?.id;
   const av = m.profiles?.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(m.profiles?.username||'u');
@@ -9902,7 +9939,7 @@ function _renderCommMsg(m){
   return '<div class="comm-chat-msg '+(isMine?'mine':'')+'" id="cmsg-'+m.id+'">'
     +(!isMine ? imgHtml : '')
     +'<div>'+nameHtml
-    +'<div class="comm-chat-bubble">'+xss(m.content)+'<span style="font-size:9px;color:var(--text-muted);margin-left:6px;">'+timeAgo(m.created_at)+'</span></div>'
+    +'<div class="comm-chat-bubble">'+xss(m.content)+'<span class="cmsg-time" data-ts="'+m.created_at+'" style="font-size:9px;color:var(--text-muted);margin-left:6px;">'+commTimeAgo(m.created_at)+'</span></div>'
     +'</div>'
     +(isMine ? imgHtml : '')
     +'</div>';
@@ -9932,10 +9969,13 @@ async function loadCommChat(commId){
   const el = document.getElementById('comm-chat-msgs-'+commId);
   if(!el) return;
 
-  // Buscar histórico inicial
+  // Buscar histórico das últimas 1 hora
+  const oneHourAgo = new Date(Date.now()-3600000).toISOString();
   const{data:msgs}=await db.from('community_chat')
     .select('id,user_id,content,created_at,profiles(id,username,avatar_url)')
-    .eq('community_id',commId).order('created_at',{ascending:false}).limit(50);
+    .eq('community_id',commId)
+    .gte('created_at', oneHourAgo)
+    .order('created_at',{ascending:false}).limit(100);
   const list=(msgs||[]).reverse();
 
   if(!list.length){
@@ -9980,7 +10020,8 @@ async function loadCommChat(commId){
     })
     .subscribe();
 
-  _commChatPolls[commId] = channel; // guardar canal para remover depois
+  _commChatPolls[commId] = channel;
+  _startCommMsgTimer(commId);
 }
 async function sendCommChat(commId){
   if(!CU) return showToast('Faça login','error');
@@ -10219,11 +10260,49 @@ async function addCommXP(commId,userId,action,xpOverride){
   const uid=userId||CU?.id;
   if(!uid||!commId) return;
   const xp=xpOverride||COMM_XP_TABLE[action]||1;
+  // Campos de contagem por ação
+  const actionCounts={};
+  if(action==='post')   actionCounts.posts_count=1;
+  if(action==='chat')   actionCounts.chat_count=1;
+  if(action==='like')   actionCounts.likes_count=1;
   try{
-    const{data:ex}=await db.from('community_xp').select('id,xp').eq('community_id',commId).eq('user_id',uid).maybeSingle();
-    if(ex) await db.from('community_xp').update({xp:(ex.xp||0)+xp,updated_at:new Date().toISOString()}).eq('id',ex.id);
-    else await db.from('community_xp').insert({community_id:commId,user_id:uid,xp});
+    const{data:ex}=await db.from('community_xp')
+      .select('id,xp,posts_count,chat_count,likes_count')
+      .eq('community_id',commId).eq('user_id',uid).maybeSingle();
+    if(ex){
+      const upd={xp:(ex.xp||0)+xp,updated_at:new Date().toISOString()};
+      if(actionCounts.posts_count) upd.posts_count=(ex.posts_count||0)+1;
+      if(actionCounts.chat_count)  upd.chat_count=(ex.chat_count||0)+1;
+      if(actionCounts.likes_count) upd.likes_count=(ex.likes_count||0)+1;
+      await db.from('community_xp').update(upd).eq('id',ex.id);
+    } else {
+      await db.from('community_xp').insert({
+        community_id:commId,user_id:uid,xp,
+        posts_count:actionCounts.posts_count||0,
+        chat_count:actionCounts.chat_count||0,
+        likes_count:actionCounts.likes_count||0
+      });
+    }
   }catch(e){}
+}
+
+// ── Conquistas da comunidade ─────────────────────────────────
+const COMM_ACHIEVEMENTS = [
+  {id:'first_post',   icon:'📝', name:'Primeiro Post',    desc:'Postou na comunidade',      xp_req:0,  action:'post',  count:1},
+  {id:'chatter',      icon:'💬', name:'Falante',          desc:'10 mensagens no chat',       xp_req:0,  action:'chat',  count:10},
+  {id:'popular',      icon:'❤️', name:'Popular',          desc:'Recebeu 5 curtidas',         xp_req:0,  action:'like',  count:5},
+  {id:'active',       icon:'🔥', name:'Ativo',            desc:'50 XP acumulados',           xp_req:50, action:null,    count:0},
+  {id:'veteran',      icon:'⚡', name:'Veterano',         desc:'200 XP acumulados',          xp_req:200,action:null,    count:0},
+  {id:'legend',       icon:'👑', name:'Lenda',            desc:'500 XP acumulados',          xp_req:500,action:null,    count:0},
+  {id:'recruiter',    icon:'🎯', name:'Recrutador',       desc:'Convidou um membro',         xp_req:0,  action:'invite',count:1},
+  {id:'top3',         icon:'🏆', name:'Top 3',            desc:'Entre os 3 primeiros',       xp_req:0,  action:'rank',  count:3},
+];
+
+function getCommAchievements(xp, actions){
+  return COMM_ACHIEVEMENTS.filter(a=>{
+    if(a.xp_req > 0) return xp >= a.xp_req;
+    return true; // ações verificadas separadamente
+  });
 }
 
 function getCommLevel(xp){
@@ -10237,24 +10316,61 @@ function getCommLevel(xp){
 async function loadCommRanking(commId){
   const el=document.getElementById('comm-xp-list-'+commId);
   if(!el) return;
+  el.innerHTML = skeletons(3);
+
+  // Buscar XP dos membros
   const{data:rows}=await db.from('community_xp')
-    .select('user_id,xp,profiles(id,username,full_name,avatar_url)')
+    .select('user_id,xp,posts_count,chat_count,likes_count,profiles(id,username,full_name,avatar_url)')
     .eq('community_id',commId).order('xp',{ascending:false}).limit(20);
-  if(!rows?.length){el.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px;">Nenhum XP ainda. Seja ativo!</div>';return;}
+
+  if(!rows?.length){
+    el.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px;">Nenhum XP ainda — seja o primeiro a ser ativo!</div>';
+    return;
+  }
+
   const medals=['🥇','🥈','🥉'];
-  el.innerHTML='<div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-yellow);margin-bottom:12px;letter-spacing:1px;">🏆 RANKING DA COMUNIDADE</div>'
+  const myRank = rows.findIndex(r=>r.user_id===CU?.id);
+
+  el.innerHTML=
+    // Meu XP no topo (se não estiver no top 20)
+    (myRank < 0 ? '' : '') +
+    '<div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-yellow);margin-bottom:12px;letter-spacing:1px;">🏆 RANKING DA COMUNIDADE</div>'
+    +'<div style="font-size:10px;color:var(--text-muted);margin-bottom:12px;font-family:Space Mono,monospace;">📝 Post=+10xp · 💬 Chat=+2xp · ❤️ Curtida=+2xp · 🎯 Convite=+20xp</div>'
     +rows.map((r,i)=>{
-      const lvl=getCommLevel(r.xp||0);
-      const isMe=r.user_id===CU?.id;
-      return`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:${isMe?'rgba(0,255,204,.06)':'var(--glass)'};border:1px solid ${isMe?'rgba(0,255,204,.2)':'var(--border-glow)'};border-radius:10px;margin-bottom:8px;">
-        <div style="font-size:18px;width:28px;text-align:center;">${medals[i]||'#'+(i+1)}</div>
-        ${renderAvatar(r.profiles,36,'')}
+      const xp = r.xp||0;
+      const lvl = getCommLevel(xp);
+      const isMe = r.user_id===CU?.id;
+      const pct = Math.min(100,Math.round((xp/Math.max(rows[0]?.xp||1,1))*100));
+      // Conquistas baseadas no XP
+      const badges = COMM_ACHIEVEMENTS.filter(a=>a.xp_req>0&&xp>=a.xp_req);
+      // Top 3 conquista
+      if(i<3) badges.push({icon:medals[i],name:'Top '+(i+1)});
+      const badgeHtml = badges.map(b=>`<span title="${b.name}" style="font-size:14px;cursor:default;">${b.icon}</span>`).join('');
+      return`<div style="display:flex;align-items:center;gap:10px;padding:12px;background:${isMe?'rgba(0,255,204,.06)':'var(--glass)'};border:1px solid ${isMe?'rgba(0,255,204,.3)':'var(--border-glow)'};border-radius:12px;margin-bottom:8px;${isMe?'box-shadow:0 0 12px rgba(0,255,204,.1);':''}">
+        <div style="font-size:20px;width:30px;text-align:center;font-weight:bold;">${medals[i]||'<span style="font-size:12px;color:var(--text-muted);">#'+(i+1)+'</span>'}</div>
+        ${renderAvatar(r.profiles,40,'')}
         <div style="flex:1;min-width:0;">
-          <div style="font-size:12px;color:var(--text-light);">${xss(r.profiles?.full_name||r.profiles?.username||'?')}</div>
-          <span class="comm-rank-badge" style="color:${lvl.color};border-color:${lvl.color}40;">${lvl.icon} ${lvl.name}</span>
-          <div class="comm-xp-bar"><div class="comm-xp-fill" style="width:${Math.min(100,((r.xp||0)/500)*100)}%;"></div></div>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <div style="font-size:12px;color:var(--text-light);font-weight:600;">${xss(r.profiles?.full_name||r.profiles?.username||'?')}</div>
+            ${isMe?'<span style="font-size:9px;background:rgba(0,255,204,.1);color:var(--neon-cyan);padding:1px 6px;border-radius:8px;">você</span>':''}
+          </div>
+          <div style="display:flex;align-items:center;gap:4px;margin:3px 0;">
+            <span class="comm-rank-badge" style="color:${lvl.color};border-color:${lvl.color}40;">${lvl.icon} ${lvl.name}</span>
+            <span style="font-size:11px;margin-left:2px;">${badgeHtml}</span>
+          </div>
+          <div class="comm-xp-bar" style="margin-top:4px;">
+            <div class="comm-xp-fill" style="width:${pct}%;background:linear-gradient(90deg,${lvl.color},var(--neon-cyan));"></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:4px;font-size:9px;color:var(--text-muted);">
+            ${r.posts_count?'📝 '+r.posts_count+' posts · ':''}
+            ${r.chat_count?'💬 '+r.chat_count+' msgs · ':''}
+            ${r.likes_count?'❤️ '+r.likes_count+' curtidas':''}
+          </div>
         </div>
-        <div style="font-family:'VT323',monospace;font-size:20px;color:var(--neon-cyan);">${r.xp||0}<span style="font-size:10px;color:var(--text-muted);"> XP</span></div>
+        <div style="text-align:right;flex-shrink:0;">
+          <div style="font-family:'VT323',monospace;font-size:24px;color:var(--neon-cyan);line-height:1;">${xp}</div>
+          <div style="font-size:9px;color:var(--text-muted);">XP</div>
+        </div>
       </div>`;
     }).join('');
 }
