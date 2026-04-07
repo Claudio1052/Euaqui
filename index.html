@@ -2459,7 +2459,7 @@ body.day-mode .notif-dot{ border-color:#f5f7fa; }
     <div id="aerr" class="aerr"></div>
     <!-- LOGIN -->
     <div id="form-login">
-      <div class="igrp"><label class="ilbl">Email</label><input class="ainput" type="email" id="l-email" placeholder="seu@email.com"></div>
+      <div class="igrp"><label class="ilbl">Email</label><input class="ainput" type="email" id="l-email" placeholder="email ou @usuario"></div>
       <div class="igrp"><label class="ilbl">Senha</label><input class="ainput" type="password" id="l-pass" placeholder="••••••••" onkeydown="if(event.key==='Enter')handleLogin()"></div>
       <button class="asubmit" id="login-btn" onclick="handleLogin()">▶ ENTRAR NO SISTEMA</button>
       <div class="adiv"><div class="adiv-ln"></div><div class="adiv-tx">OU</div><div class="adiv-ln"></div></div>
@@ -2482,7 +2482,9 @@ body.day-mode .notif-dot{ border-color:#f5f7fa; }
       <div class="igrp"><label class="ilbl">Nome completo</label><input class="ainput" type="text" id="r-name" placeholder="Seu nome" oninput="vName()"><div class="vmsg" id="v-name"></div></div>
       <div class="igrp"><label class="ilbl">@usuário</label><input class="ainput" type="text" id="r-user" placeholder="seunome" oninput="vUser()"><div class="vmsg" id="v-user"></div></div>
       <div class="igrp"><label class="ilbl">Email</label><input class="ainput" type="email" id="r-email" placeholder="seu@email.com" oninput="vEmail()"><div class="vmsg" id="v-email"></div></div>
+      <div class="igrp"><label class="ilbl">Confirmar email</label><input class="ainput" type="email" id="r-email2" placeholder="Repita o email" oninput="vEmail2()"><div class="vmsg" id="v-email2"></div></div>
       <div class="igrp"><label class="ilbl">Senha</label><input class="ainput" type="password" id="r-pass" placeholder="Mín. 6 caracteres" oninput="vPass()" onkeydown="if(event.key==='Enter')handleRegister()"><div class="vmsg" id="v-pass"></div></div>
+      <div class="igrp"><label class="ilbl">Confirmar senha</label><input class="ainput" type="password" id="r-pass2" placeholder="Repita a senha" oninput="vPass2()"><div class="vmsg" id="v-pass2"></div></div>
       <button class="asubmit" id="reg-btn" onclick="handleRegister()">✦ CRIAR CONTA</button>
     </div>
   </div>
@@ -3385,11 +3387,22 @@ function switchAuthTab(t){
   hideAErr();
 }
 async function handleLogin(){
-  const email=document.getElementById('l-email').value.trim();
+  let input=document.getElementById('l-email').value.trim();
   const pass=document.getElementById('l-pass').value;
-  if(!email||!pass)return showAErr('Preencha todos os campos');
+  if(!input||!pass)return showAErr('Preencha todos os campos');
   const btn=document.getElementById('login-btn');
   btn.textContent='⏳ ENTRANDO...';btn.disabled=true;
+  let email=input;
+  if(!input.includes('@')){
+    const{data:prof}=await db.from('profiles')
+      .select('email').eq('username',input.toLowerCase()).maybeSingle();
+    if(!prof?.email){
+      showAErr('Usuário @'+input+' não encontrado');
+      btn.textContent='▶ ENTRAR NO SISTEMA';btn.disabled=false;
+      return;
+    }
+    email=prof.email;
+  }
   try{
     const{data,error}=await db.auth.signInWithPassword({email,password:pass});
     if(error){
@@ -3421,7 +3434,11 @@ async function handleRegister(){
   const uname=document.getElementById('r-user').value.trim().toLowerCase();
   const email=document.getElementById('r-email').value.trim();
   const pass=document.getElementById('r-pass').value;
+  const email2=document.getElementById('r-email2')?.value.trim()||'';
+  const pass2=document.getElementById('r-pass2')?.value||'';
   if(!name||!uname||!email||!pass)return showAErr('Preencha todos os campos');
+  if(email2 && email!==email2)return showAErr('Os emails não conferem');
+  if(pass2 && pass!==pass2)return showAErr('As senhas não conferem');
   if(!/^[a-z0-9_]{3,20}$/.test(uname))return showAErr('Username inválido (3-20 chars: letras, números, _)');
   if(pass.length<6)return showAErr('Senha mínima: 6 caracteres');
   const btn=document.getElementById('reg-btn');btn.textContent='⏳...';btn.disabled=true;
@@ -3891,9 +3908,9 @@ function renderComment(c,myVote,isPostOwner,postId){
   const likeCount=c.likes_count??0;
   const disCount=c.dislikes_count??0;
   return`<div class="cmt-item" id="cmt-${c.id}">
-    ${avHtml}
+    <div style="cursor:pointer;flex-shrink:0;" onclick="loadProfilePage('${prof.id||c.user_id}')">${avHtml}</div>
     <div class="cmt-bubble ${hiddenClass}">
-      <div class="cmt-user">@${xss(prof.username||'user')}${isHidden?' · <span style="color:var(--neon-pink);font-size:9px;">oculto</span>':''}</div>
+      <div class="cmt-user" style="cursor:pointer;" onclick="loadProfilePage('${prof.id||c.user_id}')">@${xss(prof.username||'user')}${isHidden?' · <span style="color:var(--neon-pink);font-size:9px;">oculto</span>':''}</div>
       <div class="cmt-text">${linkify(c.content)}</div>
       <div class="cmt-actions">
         <button class="cvbtn${myVote==='like'?' active-like':''}" onclick="voteCmt('${c.id}','like',this,'${postId}')">👍 <span>${likeCount>0?likeCount:''}</span></button>
@@ -6159,6 +6176,22 @@ function initTheme(){
 }
 
 // ===== VALIDATION =====
+function vPass2(){
+  const v=document.getElementById('r-pass')?.value||'';
+  const v2=document.getElementById('r-pass2')?.value||'';
+  const el=document.getElementById('v-pass2');
+  if(!el||!v2)return el&&(el.textContent='');
+  el.textContent=v!==v2?'⚠ Senhas não conferem':'✓ Senhas conferem';
+  el.className='vmsg '+(v!==v2?'err':'ok');
+}
+function vEmail2(){
+  const e=document.getElementById('r-email')?.value||'';
+  const e2=document.getElementById('r-email2')?.value||'';
+  const el=document.getElementById('v-email2');
+  if(!el||!e2)return el&&(el.textContent='');
+  el.textContent=e!==e2?'⚠ Emails não conferem':'✓ Emails conferem';
+  el.className='vmsg '+(e!==e2?'err':'ok');
+}
 function vName(){const v=document.getElementById('r-name').value;const el=document.getElementById('v-name');el.textContent=v.length>=2?'✓ OK!':'⚠ Mínimo 2 chars';el.className='vmsg '+(v.length>=2?'ok':'err');}
 function vUser(){const v=document.getElementById('r-user').value;const ok=/^[a-z0-9_]{3,20}$/.test(v);const el=document.getElementById('v-user');el.textContent=ok?'✓ OK!':'⚠ 3-20 chars: letras, números, _';el.className='vmsg '+(ok?'ok':'err');}
 function vEmail(){const v=document.getElementById('r-email').value;const ok=/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);const el=document.getElementById('v-email');el.textContent=ok?'✓ OK!':'⚠ Email inválido';el.className='vmsg '+(ok?'ok':'err');}
@@ -6193,7 +6226,7 @@ function linkify(t){
   // Mentions and hashtags
   result = result
     .replace(/@(\w+)/g,'<span class="mention" onclick="searchUser(\'$1\')">@$1</span>')
-    .replace(/#(\w+)/g,'<span class="htag">#$1</span>');
+    .replace(/#(\w+)/g,'<span class="htag" style="cursor:pointer;" onclick="searchHashtag(\'$1\')">#$1</span>');
   return result;
 }
 function searchUser(u){nav('explore');document.getElementById('exp-search').value=u;doSearch();}
@@ -9539,6 +9572,33 @@ async function _insertCallMsg(toUserId, text){
     if(homeChatUser?.id===toUserId) loadHomeMsgs(toUserId);
   }catch(e){}
 }
+
+async function searchHashtag(tag){
+  nav('explore');
+  const searchEl=document.getElementById('exp-search');
+  if(searchEl) searchEl.value='#'+tag;
+  const feed=document.getElementById('explore-feed');
+  if(!feed) return;
+  feed.innerHTML='<h3 style="font-family:\'Silkscreen\',monospace;font-size:12px;color:var(--neon-cyan);margin-bottom:14px;">#'+tag+'</h3>'+skeletons(3);
+  const{data:posts}=await db.from('posts')
+    .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url)')
+    .ilike('content','%#'+tag+'%')
+    .order('created_at',{ascending:false}).limit(20);
+  if(!posts?.length){
+    feed.innerHTML='<h3 style="font-family:\'Silkscreen\',monospace;font-size:12px;color:var(--neon-cyan);margin-bottom:14px;">#'+tag+'</h3><div style="text-align:center;padding:30px;color:var(--text-muted);">Nenhum post com esta hashtag ainda</div>';
+    return;
+  }
+  const postIds=posts.map(p=>p.id);
+  const[rxRes,myRxRes]=await Promise.all([
+    db.from('likes').select('post_id,reaction_type').in('post_id',postIds),
+    CU?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id):{data:[]}
+  ]);
+  const rxMap={};(rxRes.data||[]).forEach(r=>{if(!rxMap[r.post_id])rxMap[r.post_id]={};rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1;});
+  const myRxMap={};(myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
+  feed.innerHTML='<h3 style="font-family:\'Silkscreen\',monospace;font-size:12px;color:var(--neon-cyan);margin-bottom:14px;">🏷 #'+tag+' — '+posts.length+' post(s)</h3>'
+    +posts.map(p=>renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||'')).join('');
+}
+
 </script>
 </body>
 </html>
