@@ -4835,6 +4835,13 @@ async function toggleJoinComm(commId,isMember,btn){
 }
 async function openCommDetail(commId){
   nav('comm-detail');
+  // Limpar canal de chat de comunidade anterior (diferente da atual)
+  Object.keys(_commChatPolls).forEach(id=>{
+    if(id!==commId && _commChatPolls[id]){
+      try{ db.removeChannel(_commChatPolls[id]); }catch(e){}
+      _commChatPolls[id]=null;
+    }
+  });
   const el=document.getElementById('comm-detail-content');
   if(el) el.innerHTML=skeletons(2);
   const [{data:comm},{data:memRow}]=await Promise.all([
@@ -9967,29 +9974,47 @@ function _renderCommMsg(m){
 
 // ── Acrescentar mensagem sem redesenhar tudo ─────────────────
 function _appendCommMsg(commId, m){
-  const el = document.getElementById('comm-chat-msgs-'+commId);
+  // Salvar no cache (mesmo se DOM não estiver visível)
+  if(!window._commChatCache) window._commChatCache={};
+  if(!window._commChatCache[commId]) window._commChatCache[commId]=[];
+  if(m.id && !String(m.id).startsWith('tmp-')){
+    const already=window._commChatCache[commId].find(x=>x.id===m.id);
+    if(!already){
+      window._commChatCache[commId].push(m);
+      if(window._commChatCache[commId].length>100)
+        window._commChatCache[commId]=window._commChatCache[commId].slice(-100);
+    }
+  }
+  const el=document.getElementById('comm-chat-msgs-'+commId);
   if(!el) return;
-  // Remover placeholder "seja o primeiro"
-  const placeholder = el.querySelector('div[style*="padding:20px"]');
+  const placeholder=el.querySelector('div[style*="padding:20px"]');
   if(placeholder) placeholder.remove();
-  // Evitar duplicatas pelo ID
-  if(m.id && document.getElementById('cmsg-'+m.id)) return;
-  // Criar elemento e inserir
-  const wrap = document.createElement('div');
-  wrap.innerHTML = _renderCommMsg(m);
-  const node = wrap.firstElementChild || wrap;
+  if(m.id && !String(m.id).startsWith('tmp-') && document.getElementById('cmsg-'+m.id)) return;
+  const wrap=document.createElement('div');
+  wrap.innerHTML=_renderCommMsg(m);
+  const node=wrap.firstElementChild||wrap;
   el.appendChild(node);
-  // Auto-scroll sempre para mensagens próprias, ou se já estava no fundo
-  const isMine = m.user_id === CU?.id;
-  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
-  if(isMine || atBottom) el.scrollTop = el.scrollHeight;
+  const isMine=m.user_id===CU?.id;
+  const atBottom=el.scrollHeight-el.scrollTop-el.clientHeight<100;
+  if(isMine||atBottom) el.scrollTop=el.scrollHeight;
 }
+
+// Cache de mensagens do chat por comunidade
+if(!window._commChatCache) window._commChatCache = {};
 
 async function loadCommChat(commId){
   const el = document.getElementById('comm-chat-msgs-'+commId);
   if(!el) return;
 
-  // Buscar histórico das últimas 1 hora
+  // Se já tem canal ativo E cache, restaurar do cache (preserva ao trocar aba)
+  if(_commChatPolls[commId] && window._commChatCache[commId]?.length){
+    el.innerHTML = window._commChatCache[commId].map(m=>_renderCommMsg(m)).join('');
+    el.scrollTop = el.scrollHeight;
+    _startCommMsgTimer(commId);
+    return;
+  }
+
+  // Buscar histórico das últimas 1 hora do banco
   const oneHourAgo = new Date(Date.now()-3600000).toISOString();
   const{data:msgs}=await db.from('community_chat')
     .select('id,user_id,content,created_at,profiles(id,username,avatar_url)')
@@ -9997,6 +10022,9 @@ async function loadCommChat(commId){
     .gte('created_at', oneHourAgo)
     .order('created_at',{ascending:false}).limit(100);
   const list=(msgs||[]).reverse();
+
+  // Salvar no cache
+  window._commChatCache[commId] = list;
 
   if(!list.length){
     el.innerHTML='<div style="text-align:center;color:var(--text-muted);font-size:11px;padding:20px;">Seja o primeiro a falar!</div>';
