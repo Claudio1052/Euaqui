@@ -2469,8 +2469,8 @@ body.day-mode .notif-dot{ border-color:#f5f7fa; }
       <div id="oauth-setup-tip" style="display:none;margin-top:14px;background:rgba(255,204,0,.08);border:1px solid rgba(255,204,0,.3);border-radius:10px;padding:14px;font-size:10px;color:var(--neon-yellow);font-family:'Space Mono',monospace;line-height:1.8;">
         ⚙️ <strong>Para ativar login social:</strong><br>
         1. <a href="https://supabase.com/dashboard/project/gpustnmwxlolgyevjjtf/auth/url-configuration" target="_blank" style="color:var(--neon-cyan);">Supabase → Auth → URL Configuration</a><br>
-        &nbsp;&nbsp;→ <strong>Site URL</strong>: cole a URL onde o app está hospedado<br>
-        &nbsp;&nbsp;→ <strong>Redirect URLs</strong>: adicione a mesma URL<br>
+        &nbsp;&nbsp;→ <strong>Site URL</strong>: <strong>https://claudio1052.github.io/Euaqui/</strong><br>
+        &nbsp;&nbsp;→ <strong>Redirect URLs</strong>: <strong>https://claudio1052.github.io/Euaqui/</strong><br>
         2. <a href="https://supabase.com/dashboard/project/gpustnmwxlolgyevjjtf/auth/providers" target="_blank" style="color:var(--neon-cyan);">Auth → Providers</a>: ative Google/GitHub<br>
         3. Cole no provedor (Google/GitHub):<br>
         <span style="color:white;word-break:break-all;">https://gpustnmwxlolgyevjjtf.supabase.co/auth/v1/callback</span>
@@ -3440,7 +3440,7 @@ async function handleOAuth(p){
   const btn = document.querySelector('.oauth-btn[onclick*="'+p+'"]');
   const origHTML = btn ? btn.innerHTML : '';
   if(btn){ btn.disabled=true; btn.innerHTML='⏳ Conectando...'; }
-  const redirectTo = window.location.href.split('#')[0].split('?')[0];
+  const redirectTo = 'https://claudio1052.github.io/Euaqui/';
   try{
     const{error} = await db.auth.signInWithOAuth({
       provider:p,
