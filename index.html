@@ -4492,20 +4492,92 @@ async function loadExploreFeed(){
   feed.innerHTML='<h3 style="font-family:\'Silkscreen\',monospace;font-size:12px;color:var(--neon-cyan);margin-bottom:14px;margin-top:4px;">POSTS EM DESTAQUE</h3>'+((posts||[]).map(p=>renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||'')).join('')||'<div style="text-align:center;padding:30px;color:var(--text-muted);">Nenhum post ainda</div>');
 }
 async function doSearch(){
-  const q=document.getElementById('exp-search').value.trim();
-  const res=document.getElementById('search-res');
-  if(q.length<2){res.innerHTML='';return;}
-  const{data:users}=await db.from('profiles').select('id,username,full_name,avatar_url').or(`username.ilike.%${q}%,full_name.ilike.%${q}%`).limit(6);
-  res.innerHTML='<div style="font-family:\'Silkscreen\',monospace;font-size:10px;color:var(--neon-yellow);margin-bottom:8px;">PESSOAS</div>'+(users||[]).map(u=>`
-    <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--glass);border:1px solid var(--border-glow);border-radius:8px;margin-bottom:7px;cursor:pointer;" onclick="loadProfilePage('${u.id}')">
-      ${renderAvatar(u,38,'')}
-      <div>
-        <div style="font-family:'Silkscreen',monospace;font-size:10px;color:var(--text-light);">${xss(u.full_name||u.username)}</div>
-        <div style="font-size:10px;color:var(--neon-cyan);">@${xss(u.username)}</div>
-      </div>
-    </div>`).join('')||'<div style="color:var(--text-muted);font-size:11px;margin-bottom:12px;">Nenhuma pessoa encontrada</div>';
+  const raw = document.getElementById('exp-search').value.trim();
+  const res  = document.getElementById('search-res');
+  const feed = document.getElementById('explore-feed');
+  if(raw.length < 2){ res.innerHTML=''; return; }
+
+  // Detectar busca de hashtag
+  const isHashtag = raw.startsWith('#');
+  const q = isHashtag ? raw.slice(1) : raw;
+
+  res.innerHTML = '<div style="color:var(--text-muted);font-size:11px;padding:10px 0;">🔍 Buscando...</div>';
+
+  if(isHashtag){
+    // Busca somente posts com esta hashtag
+    res.innerHTML = '';
+    await searchHashtag(q);
+    return;
+  }
+
+  // Buscar PESSOAS — duas queries separadas para evitar bug do .or() do Supabase
+  const [{data:byUser}, {data:byName}] = await Promise.all([
+    db.from('profiles').select('id,username,full_name,avatar_url')
+      .ilike('username', '%'+q+'%').limit(8),
+    db.from('profiles').select('id,username,full_name,avatar_url')
+      .ilike('full_name', '%'+q+'%').limit(8)
+  ]);
+
+  // Deduplicar por id
+  const seen = new Set();
+  const users = [...(byUser||[]), ...(byName||[])].filter(u => {
+    if(seen.has(u.id)) return false;
+    seen.add(u.id); return true;
+  }).slice(0, 8);
+
+  // Buscar POSTS que contenham o termo
+  const {data:posts} = await db.from('posts')
+    .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url)')
+    .ilike('content', '%'+q+'%')
+    .order('created_at', {ascending:false})
+    .limit(10);
+
+  let html = '';
+
+  // Seção pessoas
+  if(users.length){
+    html += '<div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--neon-yellow);margin-bottom:8px;letter-spacing:1px;">👤 PESSOAS</div>';
+    html += users.map(u=>`
+      <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--glass);border:1px solid var(--border-glow);border-radius:8px;margin-bottom:7px;cursor:pointer;" onclick="loadProfilePage('${u.id}')">
+        ${renderAvatar(u,38,'')}
+        <div>
+          <div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--text-light);">${xss(u.full_name||u.username)}</div>
+          <div style="font-size:10px;color:var(--neon-cyan);">@${xss(u.username)}</div>
+        </div>
+      </div>`).join('');
+  }
+
+  // Seção posts
+  if(posts?.length){
+    html += '<div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--neon-yellow);margin:14px 0 8px;letter-spacing:1px;">📝 POSTS ('+posts.length+')</div>';
+    const postIds = posts.map(p=>p.id);
+    const [{data:rxData},{data:myRxData}] = await Promise.all([
+      db.from('likes').select('post_id,reaction_type').in('post_id',postIds),
+      CU ? db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id) : {data:[]}
+    ]);
+    const rxMap={};(rxData||[]).forEach(r=>{if(!rxMap[r.post_id])rxMap[r.post_id]={};rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1;});
+    const myRxMap={};(myRxData||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
+    html += posts.map(p=>renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||'')).join('');
+  }
+
+  if(!users.length && !posts?.length){
+    html = '<div style="text-align:center;padding:30px;color:var(--text-muted);">'
+      +'<div style="font-size:40px;margin-bottom:10px;">🔍</div>'
+      +'<div style="font-family:Silkscreen,monospace;font-size:14px;">Nenhum resultado para "'+xss(raw)+'"</div>'
+      +'<div style="font-size:11px;margin-top:6px;">Tente outro termo ou use #hashtag</div>'
+      +'</div>';
+  }
+
+  res.innerHTML = html;
+  // Limpar o feed de destaque enquanto há resultados
+  if(users.length || posts?.length) feed.innerHTML = '';
 }
-function quickSearch(){const v=document.getElementById('nav-search').value;document.getElementById('exp-search').value=v;if(v.length>=2)doSearch();}
+
+function quickSearch(){
+  const v=document.getElementById('nav-search').value;
+  document.getElementById('exp-search').value=v;
+  if(v.length>=2) doSearch();
+}
 
 // ===== FRIENDS =====
 // switchFriendTab — replaced by switchPageTab
