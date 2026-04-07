@@ -4842,6 +4842,8 @@ async function openCommDetail(commId){
       _commChatPolls[id]=null;
     }
   });
+  // Garantir que o membro tem entrada de XP ao entrar na comunidade
+  if(CU) setTimeout(()=>addCommXP(commId,CU.id,'join_invite',1).catch(()=>{}),1000);
   const el=document.getElementById('comm-detail-content');
   if(el) el.innerHTML=skeletons(2);
   const [{data:comm},{data:memRow}]=await Promise.all([
@@ -10306,47 +10308,42 @@ const COMM_XP_TABLE={post:10,comment:5,like:2,chat:2,invite:20,join_invite:5};
 
 async function addCommXP(commId,userId,action,xpOverride){
   const uid=userId||CU?.id;
-  if(!uid||!commId||commId==='undefined') return;
+  if(!uid||!commId||commId==='undefined'||commId==='null') return;
   const xp=xpOverride||COMM_XP_TABLE[action]||1;
 
   try{
-    // Verificar se já tem registro
+    // Buscar registro atual
     const{data:ex,error:selErr}=await db.from('community_xp')
-      .select('id,xp').eq('community_id',commId).eq('user_id',uid).maybeSingle();
+      .select('id,xp,posts_count,chat_count,likes_count')
+      .eq('community_id',commId).eq('user_id',uid).maybeSingle();
 
-    if(selErr && selErr.code==='42P01'){
-      // Tabela não existe — não faz nada
-      console.warn('community_xp table missing. Run SQL setup.');
+    if(selErr){
+      console.warn('[XP] Erro ao buscar:',selErr.message,'code:',selErr.code);
       return;
     }
 
-    if(ex){
-      // UPDATE: tentar com colunas extras, fallback sem elas
-      const updFull = {xp:(ex.xp||0)+xp, updated_at:new Date().toISOString()};
-      if(action==='post')    updFull.posts_count=(ex.posts_count||0)+1;
-      if(action==='chat')    updFull.chat_count=(ex.chat_count||0)+1;
-      if(action==='like'||action==='comment') updFull.likes_count=(ex.likes_count||0)+1;
+    const newXp = (ex?.xp||0)+xp;
 
-      const{error:updErr}=await db.from('community_xp').update(updFull).eq('id',ex.id);
-      if(updErr){
-        // Fallback: só XP básico
-        await db.from('community_xp').update({xp:(ex.xp||0)+xp}).eq('id',ex.id);
-      }
+    if(ex){
+      // Atualizar registro existente
+      const upd = {xp:newXp, updated_at:new Date().toISOString()};
+      if(action==='post')    upd.posts_count=(ex.posts_count||0)+1;
+      if(action==='chat')    upd.chat_count=(ex.chat_count||0)+1;
+      if(action==='like'||action==='comment') upd.likes_count=(ex.likes_count||0)+1;
+      const{error:updErr}=await db.from('community_xp').update(upd).eq('id',ex.id);
+      if(updErr) console.warn('[XP] Erro update:',updErr.message);
+      else console.log('[XP]',action,'+'+xp,'→ total:',newXp,'commId:',commId.slice(0,8));
     } else {
-      // INSERT: tentar com colunas extras, fallback sem elas
-      const insFull={
-        community_id:commId, user_id:uid, xp,
-        posts_count: action==='post'?1:0,
-        chat_count:  action==='chat'?1:0,
-        likes_count: (action==='like'||action==='comment')?1:0,
-      };
-      const{error:insErr}=await db.from('community_xp').insert(insFull);
-      if(insErr){
-        // Fallback: só colunas básicas
-        await db.from('community_xp').insert({community_id:commId,user_id:uid,xp});
-      }
+      // Criar novo registro
+      const ins={community_id:commId,user_id:uid,xp,
+        posts_count:action==='post'?1:0,
+        chat_count:action==='chat'?1:0,
+        likes_count:(action==='like'||action==='comment')?1:0};
+      const{error:insErr}=await db.from('community_xp').insert(ins);
+      if(insErr) console.warn('[XP] Erro insert:',insErr.message,'code:',insErr.code);
+      else console.log('[XP] Novo registro',action,'+'+xp,'commId:',commId.slice(0,8));
     }
-  }catch(e){ console.warn('addCommXP error:',e); }
+  }catch(e){ console.warn('[XP] Exception:',e?.message); }
 }
 
 // ── Conquistas da comunidade ─────────────────────────────────
