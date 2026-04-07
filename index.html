@@ -9952,31 +9952,31 @@ async function loadCommChat(commId){
   }
 
   // Supabase Realtime — receber mensagens instantaneamente
-  const channel = db.channel('comm-chat-'+commId)
-    .on('postgres_changes', {
-      event: 'INSERT',
-      schema: 'public',
-      table: 'community_chat',
-      filter: `community_id=eq.${commId}`
-    }, async (payload) => {
-      const msg = payload.new;
+  const channel = db.channel('comm-chat-'+commId, {config:{broadcast:{self:false}}})
+    // Broadcast: mensagens em tempo real enviadas pelos membros
+    .on('broadcast', {event:'new_msg'}, (payload) => {
+      const msg = payload.payload;
       if(!msg) return;
-      // Se for mensagem própria, remover a temporária (evita duplicata)
+      // Remover msg temporária própria se vier de volta
       if(msg.user_id === CU?.id){
-        // Remover msgs temporárias (id começa com 'tmp-')
         document.querySelectorAll('[id^="cmsg-tmp-"]').forEach(el=>el.remove());
       }
-      // Buscar perfil do remetente (com cache simples)
-      if(!window._profCache) window._profCache = {};
-      let prof = window._profCache[msg.user_id];
-      if(!prof){
-        const{data:p}=await db.from('profiles')
-          .select('id,username,avatar_url').eq('id',msg.user_id).maybeSingle();
-        prof = p||{};
-        window._profCache[msg.user_id] = prof;
-      }
-      msg.profiles = prof;
       _appendCommMsg(commId, msg);
+    })
+    // postgres_changes como fallback (para mensagens de outros abas/sessões)
+    .on('postgres_changes', {
+      event:'INSERT', schema:'public',
+      table:'community_chat',
+      filter:`community_id=eq.${commId}`
+    }, async (payload) => {
+      const raw = payload.new;
+      if(!raw?.id) return;
+      if(raw.user_id === CU?.id) return; // próprio já veio via broadcast
+      // Buscar msg completa com perfil
+      const{data:fullMsg}=await db.from('community_chat')
+        .select('id,user_id,content,created_at,profiles(id,username,avatar_url)')
+        .eq('id',raw.id).maybeSingle();
+      if(fullMsg) _appendCommMsg(commId, fullMsg);
     })
     .subscribe();
 
@@ -10001,10 +10001,21 @@ async function sendCommChat(commId){
   }
   const mod=await moderateContent(txt);
   if(!mod.allowed){showModerationError(mod.categories);return;}
-  const{error}=await db.from('community_chat').insert({community_id:commId,user_id:CU.id,content:txt});
+  const{data:newMsg,error}=await db.from('community_chat')
+    .insert({community_id:commId,user_id:CU.id,content:txt})
+    .select('id,user_id,content,created_at').maybeSingle();
   if(error){showToast('Erro: '+error.message,'error');return;}
   _commCooldowns[commId]=Date.now();
   inp.value='';
+  // Broadcast para todos via canal Supabase (mais confiável que postgres_changes)
+  if(newMsg && _commChatPolls[commId]){
+    try{
+      _commChatPolls[commId].send({
+        type:'broadcast', event:'new_msg',
+        payload:{...newMsg, profiles:{id:CU.id,username:CP?.username||'',avatar_url:CP?.avatar_url||''}}
+      });
+    }catch(e){}
+  }
   const cdEl=document.getElementById('comm-cooldown-'+commId);
   if(cdEl){cdEl.style.display='block';cdEl.textContent='⏳ Aguarde 30s para falar novamente';}
   addCommXP(commId,CU.id,'chat',2);
