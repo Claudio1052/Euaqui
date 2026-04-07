@@ -9783,6 +9783,14 @@ function switchCommInnerTab(commId, tabId, btn){
   if(tabId==='ct-xp') loadCommRanking(commId);
 }
 
+// Limpar canal Realtime do chat ao sair da comunidade
+function stopCommChatRealtime(commId){
+  if(_commChatPolls[commId]){
+    try{ db.removeChannel(_commChatPolls[commId]); }catch(e){}
+    _commChatPolls[commId]=null;
+  }
+}
+
 function previewCommBanner(input, prevId){
   const file = input.files[0]; if(!file) return;
   const url = URL.createObjectURL(file);
@@ -9883,32 +9891,81 @@ async function delCommPost(commId,postId){
   showToast('Post removido','success');
 }
 
-async function loadCommChat(commId){
-  const el=document.getElementById('comm-chat-msgs-'+commId);
+// ── Renderizar uma mensagem do chat ─────────────────────────
+function _renderCommMsg(m){
+  const isMine = m.user_id===CU?.id;
+  const av = m.profiles?.avatar_url||`https://api.dicebear.com/7.x/pixel-art/svg?seed=${m.profiles?.username||'u'}`;
+  const safeAv = xss(av);
+  return `<div class="comm-chat-msg ${isMine?'mine':''}" id="cmsg-${m.id}">
+    ${!isMine?`<img src="${safeAv}" style="width:30px;height:30px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=u'">`: ''}
+    <div>
+      ${!isMine?`<div style="font-size:9px;color:var(--neon-cyan);margin-bottom:3px;">@${xss(m.profiles?.username||'')}</div>`:''}
+      <div class="comm-chat-bubble">${xss(m.content)}<span style="font-size:9px;color:var(--text-muted);margin-left:6px;">${timeAgo(m.created_at)}</span></div>
+    </div>
+    ${isMine?`<img src="${safeAv}" style="width:30px;height:30px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=u'">`:''} 
+  </div>`;
+}
+
+// ── Acrescentar mensagem sem redesenhar tudo ─────────────────
+function _appendCommMsg(commId, m){
+  const el = document.getElementById('comm-chat-msgs-'+commId);
   if(!el) return;
+  // Remover placeholder "seja o primeiro"
+  const placeholder = el.querySelector('[style*="Seja o primeiro"]');
+  if(placeholder) placeholder.remove();
+  // Evitar duplicatas
+  if(document.getElementById('cmsg-'+m.id)) return;
+  const div = document.createElement('div');
+  div.innerHTML = _renderCommMsg(m);
+  el.appendChild(div.firstElementChild);
+  // Auto-scroll só se já estava no fundo
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  if(atBottom) el.scrollTop = el.scrollHeight;
+}
+
+async function loadCommChat(commId){
+  const el = document.getElementById('comm-chat-msgs-'+commId);
+  if(!el) return;
+
+  // Buscar histórico inicial
   const{data:msgs}=await db.from('community_chat')
     .select('id,user_id,content,created_at,profiles(id,username,avatar_url)')
     .eq('community_id',commId).order('created_at',{ascending:false}).limit(50);
   const list=(msgs||[]).reverse();
-  if(!list.length){el.innerHTML='<div style="text-align:center;color:var(--text-muted);font-size:11px;padding:20px;">Seja o primeiro a falar!</div>';return;}
-  el.innerHTML=list.map(m=>{
-    const isMine=m.user_id===CU?.id;
-    const av=m.profiles?.avatar_url||`https://api.dicebear.com/7.x/pixel-art/svg?seed=${m.profiles?.username||'u'}`;
-    return`<div class="comm-chat-msg ${isMine?'mine':''}">
-      ${!isMine?`<img src="${xss(av)}" style="width:30px;height:30px;border-radius:50%;object-fit:cover;flex-shrink:0;">`: ''}
-      <div>
-        ${!isMine?`<div style="font-size:9px;color:var(--neon-cyan);margin-bottom:3px;">@${xss(m.profiles?.username||'')}</div>`:''}
-        <div class="comm-chat-bubble">${xss(m.content)}<span style="font-size:9px;color:var(--text-muted);margin-left:6px;">${timeAgo(m.created_at)}</span></div>
-      </div>
-      ${isMine?`<img src="${xss(av)}" style="width:30px;height:30px;border-radius:50%;object-fit:cover;flex-shrink:0;">`:''}
-    </div>`;
-  }).join('');
-  el.scrollTop=el.scrollHeight;
-  if(!_commChatPolls[commId]){
-    _commChatPolls[commId]=setInterval(()=>loadCommChat(commId),5000);
-  }
-}
 
+  if(!list.length){
+    el.innerHTML='<div style="text-align:center;color:var(--text-muted);font-size:11px;padding:20px;">Seja o primeiro a falar!</div>';
+  } else {
+    el.innerHTML = list.map(m=>_renderCommMsg(m)).join('');
+    el.scrollTop = el.scrollHeight;
+  }
+
+  // Cancelar canal anterior se existir
+  if(_commChatPolls[commId]){
+    try{ db.removeChannel(_commChatPolls[commId]); }catch(e){}
+    _commChatPolls[commId] = null;
+  }
+
+  // Supabase Realtime — receber mensagens instantaneamente
+  const channel = db.channel('comm-chat-'+commId)
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'community_chat',
+      filter: `community_id=eq.${commId}`
+    }, async (payload) => {
+      const msg = payload.new;
+      if(!msg) return;
+      // Buscar perfil do remetente
+      const{data:prof}=await db.from('profiles')
+        .select('id,username,avatar_url').eq('id',msg.user_id).maybeSingle();
+      msg.profiles = prof||{};
+      _appendCommMsg(commId, msg);
+    })
+    .subscribe();
+
+  _commChatPolls[commId] = channel; // guardar canal para remover depois
+}
 async function sendCommChat(commId){
   if(!CU) return showToast('Faça login','error');
   const inp=document.getElementById('comm-chat-in-'+commId);
@@ -9935,7 +9992,14 @@ async function sendCommChat(commId){
   const cdEl=document.getElementById('comm-cooldown-'+commId);
   if(cdEl){cdEl.style.display='block';cdEl.textContent='⏳ Aguarde 30s para falar novamente';}
   addCommXP(commId,CU.id,'chat',2);
-  loadCommChat(commId);
+  // Mostrar mensagem do próprio usuário instantaneamente (sem esperar Realtime)
+  _appendCommMsg(commId, {
+    id: 'tmp-'+Date.now(),
+    user_id: CU.id,
+    content: txt,
+    created_at: new Date().toISOString(),
+    profiles: { id:CU.id, username:CP?.username||'', avatar_url:CP?.avatar_url||'' }
+  });
   let secs=30;
   const t=setInterval(()=>{secs--;if(cdEl&&secs>0)cdEl.textContent=`⏳ Aguarde ${secs}s para falar novamente`;else{clearInterval(t);if(cdEl)cdEl.style.display='none';}},1000);
 }
