@@ -5003,13 +5003,17 @@ async function loadProfilePage(userId){
         num.style.cssText = 'font-family:VT323,monospace;font-size:22px;color:var(--neon-cyan);line-height:1;';
         num.textContent = count;
         const lbl = document.createElement('div');
-        lbl.style.cssText = 'font-size:9px;color:var(--text-muted);'+(clickFn?'color:var(--neon-cyan);':'');
+        lbl.style.cssText = 'font-size:9px;letter-spacing:1px;color:'+(clickFn?'var(--neon-cyan)':'var(--text-muted)')+';';
         lbl.textContent = label;
         el.appendChild(num); el.appendChild(lbl);
         if(clickFn) el.addEventListener('click', clickFn);
         return el;
       };
-      pstatsBox.appendChild(makeStatEl(pRes.count||0,'Posts',null));
+      pstatsBox.appendChild(makeStatEl(pRes.count||0,'Posts',()=>{
+        // Scroll suave até os posts
+        document.querySelector('.pptab[data-tab="pp-posts"]')?.click();
+        document.getElementById('pp-posts')?.scrollIntoView({behavior:'smooth'});
+      }));
       pstatsBox.appendChild(makeStatEl(frRes.count||0,'Seguidores',()=>showFollowersList(_uid,'seguidores')));
       pstatsBox.appendChild(makeStatEl(fngRes.count||0,'Seguindo',()=>showFollowersList(_uid,'seguindo')));
       rightCol.appendChild(pstatsBox);
@@ -5068,6 +5072,8 @@ async function loadProfilePage(userId){
           try{ return renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||''); }
           catch(e){ console.warn('renderPost profile error:',e?.message,p?.id); return ''; }
         }).join('') || '<div style="text-align:center;padding:30px;color:var(--text-muted);">Nenhuma postagem ainda</div>';
+        // Atualizar contadores de comentário com valor real do banco
+        updateCommentCounts(postIds);
       }
     }
 
