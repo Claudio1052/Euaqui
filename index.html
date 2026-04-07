@@ -109,7 +109,7 @@ nav{position:fixed;top:0;left:0;right:0;background:#0a0a2a;border-bottom:1px sol
 .ftab.active{background:linear-gradient(135deg,rgba(0,255,204,.15),rgba(191,95,255,.15));color:var(--neon-cyan);}
 
 /* POST CARD */
-.post-card{background:var(--bg-card);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:16px;margin-bottom:12px;backdrop-filter:blur(20px);transition:border-color .3s;contain:layout style;}
+.post-card{background:var(--bg-card);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:16px;margin-bottom:12px;backdrop-filter:blur(20px);transition:border-color .3s;}
 .post-card:hover{border-color:rgba(0,255,204,.18);}
 @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 .ph{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
@@ -2559,8 +2559,8 @@ body.day-mode .notif-dot{ border-color:#f5f7fa; }
       <div class="ums" id="sl-status">✨ ...</div>
       <div class="umst">
         <div class="sti"><div class="stn" id="sl-posts">0</div><div class="stl">posts</div></div>
-        <div class="sti"><div class="stn" id="sl-followers">0</div><div class="stl">seguid.</div></div>
-        <div class="sti"><div class="stn" id="sl-following">0</div><div class="stl">seguindo</div></div>
+        <div class="sti" style="cursor:pointer;" onclick="if(CU)showFollowersList(CU.id,'seguidores')"><div class="stn" id="sl-followers">0</div><div class="stl" style="color:var(--neon-cyan);">seguid.</div></div>
+        <div class="sti" style="cursor:pointer;" onclick="if(CU)showFollowersList(CU.id,'seguindo')"><div class="stn" id="sl-following">0</div><div class="stl" style="color:var(--neon-cyan);">seguindo</div></div>
       </div>
     </div>
     <div class="slbl">Navegação</div>
@@ -3168,11 +3168,11 @@ body.day-mode .notif-dot{ border-color:#f5f7fa; }
     <div class="wcard"><div class="wtitle">Visitas ao Perfil</div><div class="vc"><div class="vcd" id="visit-ct">000000</div><div class="vcl">visitantes únicos</div></div></div>
     <div class="wcard">
       <div class="wtitle">Tendências</div>
-      <div class="titem"><div class="ttag">#EuAqui</div><div class="tcnt">1.2k posts</div></div>
-      <div class="titem"><div class="ttag">#nostalgia</div><div class="tcnt">894 posts</div></div>
-      <div class="titem"><div class="ttag">#vaporwave</div><div class="tcnt">567 posts</div></div>
-      <div class="titem"><div class="ttag">#retrotech</div><div class="tcnt">342 posts</div></div>
-      <div class="titem"><div class="ttag">#lofi</div><div class="tcnt">231 posts</div></div>
+      <div class="titem" onclick="searchHashtag('EuAqui')"><div class="ttag">#EuAqui</div><div class="tcnt">1.2k posts</div></div>
+      <div class="titem" onclick="searchHashtag('nostalgia')"><div class="ttag">#nostalgia</div><div class="tcnt">894 posts</div></div>
+      <div class="titem" onclick="searchHashtag('vaporwave')"><div class="ttag">#vaporwave</div><div class="tcnt">567 posts</div></div>
+      <div class="titem" onclick="searchHashtag('retrotech')"><div class="ttag">#retrotech</div><div class="tcnt">342 posts</div></div>
+      <div class="titem" onclick="searchHashtag('lofi')"><div class="ttag">#lofi</div><div class="tcnt">231 posts</div></div>
     </div>
   </aside>
 </div>
