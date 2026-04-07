@@ -3797,7 +3797,7 @@ function renderPost(post,rxCounts={},myRx=''){
     ${mediaHtml}
     <div class="preactions">${rxHtml}</div>
     <div class="pactions">
-      <button class="abtn" onclick="toggleCmts('${post.id}')">💬 <span id="cmtcnt-${post.id}">${cmtCnt}</span></button>
+      <button class="abtn" onclick="toggleCmts('${post.id}',this)">💬 <span id="cmtcnt-${post.id}">${cmtCnt}</span></button>
       <button class="abtn" onclick="sharePost('${post.id}','${xss(prof.full_name||prof.username||'')}','${xss((post.content||'').slice(0,80))}')">🔗 Compartilhar</button>
       <button class="abtn" onclick="savePost('${post.id}')">🔖 Salvar</button>
       ${!isOwn?`<button class="abtn" onclick="reportPost('${post.id}')">⚑ Reportar</button>`:''}
@@ -3859,10 +3859,18 @@ function adjustRxCount(btn,delta){
 }
 
 // ===== COMMENTS =====
-async function toggleCmts(postId){
-  const sec=document.getElementById('cmts-'+postId);
-  if(sec.style.display==='none'){sec.style.display='block';await loadCmts(postId);}
-  else sec.style.display='none';
+async function toggleCmts(postId, btn){
+  // Primeiro tenta pelo botão clicado (evita conflito de IDs duplicados no DOM)
+  let sec = btn ? btn.closest('.post-card')?.querySelector('.comments-sec') : null;
+  // Fallback para getElementById
+  if(!sec) sec = document.getElementById('cmts-'+postId);
+  if(!sec){ console.warn('toggleCmts: sec não encontrado para', postId); return; }
+  if(sec.style.display==='none'||!sec.style.display){
+    sec.style.display='block';
+    await loadCmts(postId);
+  } else {
+    sec.style.display='none';
+  }
 }
 async function loadCmts(postId){
   const sec=document.getElementById('cmts-'+postId);
