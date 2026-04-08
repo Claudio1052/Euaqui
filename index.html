@@ -2444,7 +2444,7 @@ body.day-mode .notif-dot{ border-color:#f5f7fa; }
 .comm-banner-overlay{position:absolute;inset:0;background:linear-gradient(to bottom,transparent 40%,rgba(0,0,0,.7));}
 .comm-avatar-big{width:72px;height:72px;border-radius:16px;border:3px solid var(--neon-cyan);object-fit:cover;background:rgba(0,255,204,.1);display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0;}
 .comm-header-bar{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;background:var(--bg-card);border:1px solid var(--border-glow);border-top:none;border-radius:0 0 14px 14px;margin-bottom:14px;}
-.comm-tabs{display:flex;gap:4px;border-bottom:1px solid var(--border-glow);margin-bottom:14px;overflow-x:auto;scrollbar-width:none;}
+.comm-tabs{display:flex;gap:4px;border-bottom:1px solid var(--border-glow);margin-bottom:14px;overflow-x:auto;overflow-y:visible;scrollbar-width:none;padding-top:10px;}
 .comm-tab{background:none;border:none;color:var(--text-muted);font-family:'Space Mono',monospace;font-size:11px;padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s;}
 .comm-tab.active{color:var(--neon-cyan);border-bottom-color:var(--neon-cyan);}
 .comm-chat-wrap{display:flex;flex-direction:column;height:420px;border:1px solid var(--border-glow);border-radius:12px;overflow:hidden;}
@@ -3467,6 +3467,11 @@ body.day-mode::before{
         <button class="ptab active" data-tab="cm-all" onclick="switchPageTab('communities',this)">🌍 Todas</button>
         <button class="ptab" data-tab="cm-mine" onclick="switchPageTab('communities',this)">⭐ Minhas</button>
         <button class="ptab" data-tab="cm-create" onclick="switchPageTab('communities',this)">✦ Criar</button>
+      </div>
+      <div id="comm-search-wrap" style="position:relative;margin:10px 0 8px;">
+        <span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:14px;opacity:.6;pointer-events:none;">🔍</span>
+        <input class="ainput" id="comm-search-input" type="text" placeholder="Buscar comunidades por nome, descrição ou slug..." oninput="filterCommunities()" style="width:100%;padding-left:38px;padding-right:38px;">
+        <button id="comm-search-clear" onclick="document.getElementById('comm-search-input').value='';filterCommunities();" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:16px;display:none;">✕</button>
       </div>
       <div class="tab-panel active" id="cm-all">
         <div id="comm-grid-all" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-top:4px;"></div>
@@ -5688,7 +5693,7 @@ async function openCommDetail(commId){
       <div class="comm-tabs" id="comm-inner-tabs-${commId}">
         <button class="comm-tab active" onclick="switchCommInnerTab('${commId}','ct-posts',this)">📝 Posts</button>
         <button class="comm-tab" onclick="switchCommInnerTab('${commId}','ct-chat',this)">💬 Chat</button>
-        <button class="comm-tab" onclick="switchCommInnerTab('${commId}','ct-live',this)">🎙 Live <span id="ct-live-badge-${commId}" style="display:none;background:var(--neon-pink);color:#fff;font-size:8px;padding:1px 5px;border-radius:8px;font-family:Silkscreen,monospace;margin-left:2px;animation:pulse 1.5s ease-in-out infinite;">AO VIVO</span></button>
+        <button class="comm-tab" onclick="switchCommInnerTab('${commId}','ct-live',this)" style="position:relative;">🎙 Live<span id="ct-live-badge-${commId}" style="display:none;position:absolute;top:-6px;left:50%;transform:translateX(-50%);background:var(--neon-pink);color:#fff;font-size:7px;padding:1px 5px;border-radius:6px;font-family:Silkscreen,monospace;animation:pulse 1.5s ease-in-out infinite;white-space:nowrap;box-shadow:0 2px 6px rgba(255,51,102,.5);">AO VIVO</span></button>
         <button class="comm-tab" onclick="switchCommInnerTab('${commId}','ct-members',this)">👥 Membros</button>
         <button class="comm-tab" onclick="switchCommInnerTab('${commId}','ct-xp',this)">🏆 Ranking</button>
       </div>
@@ -7262,6 +7267,11 @@ function switchPageTab(page, btn){
     else if(tabId === 'fl-following') loadFriendsList('following');
     else if(tabId === 'fl-followers') loadFriendsList('followers');
   } else if(page === 'communities'){
+    // Mostra ou esconde a barra de busca conforme a aba
+    const searchWrap = document.getElementById('comm-search-wrap');
+    if(searchWrap){
+      searchWrap.style.display = (tabId === 'cm-create') ? 'none' : 'block';
+    }
     if(tabId === 'cm-all') loadCommGrid('all');
     else if(tabId === 'cm-mine') loadCommGrid('mine');
     else if(tabId === 'cm-create') buildCommIconGrid();
@@ -7483,23 +7493,73 @@ async function loadCommGrid(mode){
   // Sort by creation date descending
   comms.sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
 
+  // ── Buscar contagem REAL de membros (counts em tempo real da tabela community_members) ──
+  // A coluna members_count no banco fica desatualizada; aqui contamos as linhas reais.
+  const realCountMap = {};
+  try{
+    const commIds = comms.map(c=>c.id);
+    // Buscar TODAS as linhas de community_members das comms exibidas (só community_id, leve)
+    const{data:allMems}=await db.from('community_members')
+      .select('community_id').in('community_id',commIds);
+    (allMems||[]).forEach(m=>{
+      realCountMap[m.community_id] = (realCountMap[m.community_id]||0)+1;
+    });
+  }catch(e){ console.warn('real member count:',e?.message); }
+
+  // ── Aplicar filtro de busca (se houver) ──
+  const searchInput = document.getElementById('comm-search-input');
+  const searchTerm = (searchInput?.value||'').trim().toLowerCase();
+  let commsToRender = comms;
+  if(searchTerm){
+    commsToRender = comms.filter(c=>{
+      const name = (c.name||'').toLowerCase();
+      const desc = (c.description||'').toLowerCase();
+      const slug = (c.slug||'').toLowerCase();
+      return name.includes(searchTerm) || desc.includes(searchTerm) || slug.includes(searchTerm);
+    });
+    if(!commsToRender.length){
+      grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px 20px;"><div style="font-size:40px;opacity:.4;margin-bottom:10px;">🔍</div><div style="font-family:VT323,monospace;font-size:20px;color:var(--text-muted);">Nenhuma comunidade encontrada</div><div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Busca: "<b>'+xss(searchTerm)+'</b>"</div></div>';
+      return;
+    }
+  }
+
   // Render
   grid.innerHTML='';
-  comms.forEach(comm=>{
+  commsToRender.forEach(comm=>{
     const isMember = memberSet.has(comm.id);
+    // Contagem real (fallback: members_count da coluna, fallback: 0)
+    const memberCount = realCountMap[comm.id] ?? (comm.members_count || 0);
     const card = document.createElement('div');
     card.className='comm-card';
     card.innerHTML='<div class="comm-cover">'+((comm.avatar_url&&comm.avatar_url.startsWith('http'))?'<img src="'+xss(comm.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;">':xss(comm.avatar_url||'🏘'))+'</div>'
       +'<div class="comm-info">'
         +'<div class="comm-name">'+xss(comm.name)+'</div>'
         +'<div class="comm-desc">'+xss(comm.description||'')+'</div>'
-        +'<div class="comm-meta"><span>👥 '+(comm.members_count||0)+'</span><span>'+(comm.visibility==='private'?'🔒 Privada':'🌍 Pública')+'</span>'+(comm.owner_id===CU?.id?'<span style="color:var(--neon-yellow);font-size:9px;">👑 Sua</span>':'')+'</div>'
+        +'<div class="comm-meta"><span data-commcount="'+comm.id+'">👥 '+memberCount+'</span><span>'+(comm.visibility==='private'?'🔒 Privada':'🌍 Pública')+'</span>'+(comm.owner_id===CU?.id?'<span style="color:var(--neon-yellow);font-size:9px;">👑 Sua</span>':'')+'</div>'
         +'<button class="comm-join '+(isMember?'joined':'')+'" style="margin-top:8px;width:100%;">'+(isMember?'✓ Membro':'+ Entrar')+'</button>'
       +'</div>';
     card.onclick=()=>openCommDetail(comm.id);
     card.querySelector('button').onclick=(e)=>{e.stopPropagation();toggleJoinComm(comm.id,isMember,card.querySelector('button'));};
     grid.appendChild(card);
   });
+}
+
+// ── Filtro de busca de comunidades (debounced) ──
+let _commSearchTimer = null;
+function filterCommunities(){
+  // Mostra/esconde o botão de limpar
+  const input = document.getElementById('comm-search-input');
+  const clearBtn = document.getElementById('comm-search-clear');
+  if(input && clearBtn){
+    clearBtn.style.display = input.value ? 'block' : 'none';
+  }
+  clearTimeout(_commSearchTimer);
+  _commSearchTimer = setTimeout(()=>{
+    // Recarrega o grid aplicando o filtro atual
+    const activeTab = document.querySelector('#comm-page-tabs .ptab.active');
+    const mode = (activeTab?.dataset.tab==='cm-mine') ? 'mine' : 'all';
+    loadCommGrid(mode);
+  }, 250);
 }
 
 function copySQLFix(el){
