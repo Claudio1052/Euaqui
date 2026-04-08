@@ -3735,19 +3735,6 @@ async function loadFeed(force=false){
   });
   const myRxMap={};
   (myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
-  // Pré-carregar avatares de comunidades para posts com [COMM:id:]
-  if(!window._commAvatarCache) window._commAvatarCache={};
-  const commPostIds=[...new Set(posts
-    .map(p=>{ const m=(p.content||'').match(/^\[COMM:([^:]+):/); return m?m[1]:null; })
-    .filter(Boolean)
-  )];
-  if(commPostIds.length){
-    const missingIds=commPostIds.filter(id=>!window._commAvatarCache[id]);
-    if(missingIds.length){
-      const{data:comms}=await db.from('communities').select('id,avatar_url').in('id',missingIds);
-      (comms||[]).forEach(cm=>{ window._commAvatarCache[cm.id]=cm.avatar_url||''; });
-    }
-  }
   const rendered = posts.map(p=>{
     try{ return renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||''); }
     catch(e){ console.warn('renderPost error:',e?.message,p?.id); return ''; }
@@ -3790,16 +3777,6 @@ function renderPost(post,rxCounts={},myRx=''){
   try{
   const prof=post.profiles||{};
 
-  // ── Detectar post de comunidade [COMM:id:nome:] ──
-  let commMeta = null;
-  let rawContent2 = post.content||'';
-  const commMatch = rawContent2.match(/^\[COMM:([^:]+):([^:]*?):\]/);
-  if(commMatch){
-    commMeta = { id: commMatch[1], name: decodeURIComponent(commMatch[2]||'') };
-    rawContent2 = rawContent2.replace(commMatch[0],'').trim();
-    post = {...post, content: rawContent2}; // remover prefixo do conteúdo exibido
-  }
-
   // ── Detectar post de loja (BIZ_PROMO) ──
   let bizMeta = null;
   let displayContent = post.content||'';
@@ -3830,12 +3807,10 @@ function renderPost(post,rxCounts={},myRx=''){
 
   // Avatar e nome — usa identidade da loja se for BIZ_PROMO
   const avUrl = (bizMeta && bizMeta.logo) ? bizMeta.logo : (prof.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'user'));
-  const displayName = commMeta ? commMeta.name
-    : (bizMeta?.name || prof.full_name||prof.username||'Usuário');
-  const displayHandle = commMeta ? '🏘 Comunidade'
-    : (bizMeta ? ('🏪 '+(bizMeta.name||'')) : ('@'+(prof.username||'user')));
-  const avBorderColor = commMeta ? 'var(--neon-cyan)' : bizMeta ? 'var(--neon-yellow)' : 'var(--neon-pink)';
-  const avHtml='<img src="'+xss(avUrl)+'" data-uid="'+post.user_id+'" data-fb="https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u')+'" style="width:42px;height:42px;border-radius:'+avBorderRadius+';object-fit:cover;border:2px solid '+(bizMeta?'rgba(255,204,0,.5)':'rgba(0,255,204,.25)')+';flex-shrink:0;cursor:pointer;" onclick="showPostAuthorProfile(this.dataset.uid,null)" onerror="this.src=this.dataset.fb">'; 
+  const displayName = (bizMeta && bizMeta.name) ? bizMeta.name : (prof.full_name||prof.username||'Usuário');
+  const displayHandle = bizMeta ? ('🏪 '+(bizMeta.name||'')) : ('@'+(prof.username||'user'));
+  const avBorderColor = bizMeta ? 'var(--neon-yellow)' : 'var(--neon-pink)';
+  const avHtml='<img src="'+xss(avUrl)+'" data-uid="'+post.user_id+'" data-fb="https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u')+'" style="width:42px;height:42px;border-radius:'+(bizMeta?'10px':'50%')+';object-fit:cover;border:2px solid '+(bizMeta?'rgba(255,204,0,.5)':'rgba(0,255,204,.25)')+';flex-shrink:0;cursor:pointer;" onclick="showPostAuthorProfile(this.dataset.uid,null)" onerror="this.src=this.dataset.fb">'; 
   const time=timeAgo(post.created_at);
   const content=linkify(displayContent);
   // Visibilidade (coluna pode não existir)
@@ -9913,13 +9888,11 @@ async function postInCommV2(commId){
   }
   // Buscar dados da comunidade para mostrar no post
   const{data:commData}=await db.from('communities').select('id,name,avatar_url,owner_id').eq('id',commId).maybeSingle();
-  // Marcar conteúdo com metadado da comunidade (prefixo oculto)
-  const commMeta='[COMM:'+commId+':'+encodeURIComponent(commData?.name||'')+':]';
-  const finalContent=(txt?commMeta+txt:commMeta).trim();
+  // Post exclusivo da comunidade
   const{data:post,error}=await db.from('posts').insert({
-    user_id:CU.id,content:finalContent,
+    user_id:CU.id,content:txt||null,
     type:urls.length?(mTypes.includes('video')?'video':'image'):'text',
-    visibility:'public',  // público — feed filtra por membros via metadado
+    visibility:'private',
     media_urls:urls.length?urls:[],media_types:mTypes.length?mTypes:[]
   }).select().maybeSingle();
   if(error){showToast('Erro: '+error.message,'error');if(btn){btn.disabled=false;btn.textContent='POSTAR ▶';}return;}
