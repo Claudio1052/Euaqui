@@ -176,6 +176,10 @@ nav{position:fixed;top:0;left:0;right:0;background:#0a0a2a;border-bottom:1px sol
 .cmt-input:focus{border-color:var(--border-glow);}
 .cmt-sub{background:linear-gradient(135deg,var(--neon-cyan),var(--neon-purple));border:none;color:var(--bg-deep);padding:7px 12px;border-radius:20px;cursor:pointer;font-weight:bold;font-size:13px;transition:all .2s;}
 .cmt-sub:hover{transform:scale(1.05);}
+/* Mention dropdown */
+#[id^="cmt-mention-drop-"]{scrollbar-width:thin;}
+[id^="cmt-mention-drop-"]::-webkit-scrollbar{width:3px;}
+[id^="cmt-mention-drop-"]::-webkit-scrollbar-thumb{background:var(--neon-cyan);border-radius:3px;}
 
 /* SIDEBAR RIGHT */
 .sr{position:sticky;top:var(--nav-h);height:calc(100vh - var(--nav-h));overflow-y:auto;padding:14px 12px;border-left:1px solid var(--border-glow);background:rgba(10,10,42,.6);}
@@ -4417,10 +4421,51 @@ async function loadFeed(force=false){
   }
   const{data:posts,error:fetchErr}=await q;
   if(fetchErr){console.error('Feed error:',fetchErr.message);if(feed.children.length===0)feed.innerHTML='<div style="text-align:center;padding:30px;color:var(--neon-pink);font-size:12px;">Erro ao carregar feed.<br>'+fetchErr.message+'</div>';return;}
+
+  // ── FILTRO DE VISIBILIDADE ──────────────────────────────────────────────────
+  // • public  → aparece para TODOS os usuários globais
+  // • friends → aparece APENAS para amigos e seguidores do autor
+  // • private → aparece APENAS para o próprio autor
+  let filteredPosts = posts || [];
+  try{
+    // Monta set de amigos/seguidores do usuário atual para checar posts "friends"
+    let myFriendSet = new Set();
+    let myFollowingSet = new Set();
+    if(CU){
+      const[frRes, folRes] = await Promise.all([
+        db.from('friends').select('friend_id').eq('user_id',CU.id),
+        db.from('follows').select('following_id').eq('follower_id',CU.id)
+      ]);
+      (frRes.data||[]).forEach(f=>myFriendSet.add(f.friend_id));
+      (folRes.data||[]).forEach(f=>myFollowingSet.add(f.following_id));
+    }
+
+    filteredPosts = filteredPosts.filter(p=>{
+      const vis = p.visibility || 'public';
+      const isOwn = CU && p.user_id === CU.id;
+
+      // Sempre mostra os próprios posts de qualquer visibilidade
+      if(isOwn) return true;
+
+      if(vis === 'public'){
+        // Público: aparece para todos
+        return true;
+      } else if(vis === 'friends'){
+        // Amigos: só para amigos e seguidores do autor
+        if(!CU) return false;
+        return myFriendSet.has(p.user_id) || myFollowingSet.has(p.user_id);
+      } else if(vis === 'private'){
+        // Privado: só para o próprio autor (já retornou true acima se isOwn)
+        return false;
+      }
+      return true; // fallback: público
+    });
+  }catch(e){ console.warn('Visibility filter:', e?.message); }
+  // ──────────────────────────────────────────────────────────────────────────
+
   // ── Filtro de posts de comunidade: só membros podem ver no feed principal ──
   // Detecta posts com marker [COMM_POST:commId:...] e remove do feed
   // se o usuário atual NÃO for membro daquela comunidade.
-  let filteredPosts = posts || [];
   try{
     const commPostMap = new Map(); // postIndex -> commId
     (filteredPosts).forEach((p,idx)=>{
@@ -4621,7 +4666,6 @@ function renderPost(post,rxCounts={},myRx=''){
       </div>
       <div style="display:flex;gap:4px;margin-left:auto;">
         ${isOwn?`<button class="abtn danger" onclick="deletePost('${post.id}')" title="Deletar">🗑</button>`:''}
-        <button class="abtn" onclick="sharePost('${post.id}')" title="Compartilhar">↗</button>
       </div>
     </div>
     ${content?`<div class="pcontent">${content}</div>`:''}
@@ -4629,8 +4673,7 @@ function renderPost(post,rxCounts={},myRx=''){
     <div class="preactions">${rxHtml}</div>
     <div class="pactions">
       <button class="abtn" onclick="toggleCmts('${post.id}',this)">💬 <span id="cmtcnt-${post.id}">${cmtCnt}</span></button>
-      <button class="abtn" onclick="sharePost('${post.id}','${xss(prof.full_name||prof.username||'')}','${xss((post.content||'').slice(0,80))}')">🔗 Compartilhar</button>
-      <button class="abtn" onclick="savePost('${post.id}')">🔖 Salvar</button>
+      <button class="abtn" onclick="openShareModal('${post.id}','${xss(prof.full_name||prof.username||'')}','${xss((post.content||'').slice(0,80)).replace(/'/g,'').replace(/\n/g,' ')}')">🔗 Compartilhar</button>
       ${!isOwn?`<button class="abtn" onclick="reportPost('${post.id}')">⚑ Reportar</button>`:''}
     </div>
     <div class="comments-sec" id="cmts-${post.id}" style="display:none;"></div>
@@ -4734,7 +4777,96 @@ async function loadCmts(postId, sec){
   const{data:postData}=await db.from('posts').select('user_id').eq('id',postId).maybeSingle();
   const isPostOwner=CU&&postData?.user_id===CU.id;
   const cmtHtml=(cmts||[]).map(c=>renderComment(c,myVotes[c.id]||'',isPostOwner,postId)).join('');
-  sec.innerHTML=cmtHtml+`<div class="cmt-input-wrap"><input class="cmt-input" id="cin-${postId}" type="text" placeholder="Comentar..." onkeydown="if(event.key==='Enter')submitCmt('${postId}',this)"><button class="cmt-sub" onclick="submitCmt('${postId}',this)">➤</button></div>`;
+  sec.innerHTML=cmtHtml+`
+    <div style="position:relative;" id="cmt-wrap-${postId}">
+      <div class="cmt-input-wrap">
+        <input class="cmt-input" id="cin-${postId}" type="text" placeholder="Comentar... use @ para mencionar alguém"
+          oninput="_cmtMentionCheck(this,'${postId}')"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();submitCmt('${postId}',this);}"
+          onblur="setTimeout(()=>_closeMentionDropdown('${postId}'),200)">
+        <button class="cmt-sub" onclick="submitCmt('${postId}',this)">➤</button>
+      </div>
+      <div id="cmt-mention-drop-${postId}" style="display:none;position:absolute;bottom:48px;left:0;right:0;background:var(--bg-card);border:1px solid var(--border-glow);border-radius:10px;max-height:180px;overflow-y:auto;z-index:200;box-shadow:0 -4px 20px rgba(0,0,0,.4);"></div>
+    </div>`;
+}
+
+// ── Mention dropdown no campo de comentário ──
+async function _cmtMentionCheck(inp, postId){
+  const val = inp.value;
+  const cursor = inp.selectionStart;
+  // Detecta @ antes do cursor
+  const before = val.slice(0, cursor);
+  const atMatch = before.match(/@(\w*)$/);
+  if(!atMatch){
+    _closeMentionDropdown(postId);
+    return;
+  }
+  const query = atMatch[1];
+  const drop = document.getElementById('cmt-mention-drop-'+postId);
+  if(!drop) return;
+
+  // Buscar usuários
+  let users = [];
+  try{
+    if(query.length >= 1){
+      const {data} = await db.from('profiles')
+        .select('id,username,full_name,avatar_url')
+        .ilike('username','%'+query+'%')
+        .limit(6);
+      users = data || [];
+    } else {
+      // Sem query: mostrar amigos
+      if(CU){
+        const {data:frs} = await db.from('friends')
+          .select('profiles!friends_friend_id_fkey(id,username,full_name,avatar_url)')
+          .eq('user_id',CU.id).limit(6);
+        users = (frs||[]).map(f=>f.profiles).filter(Boolean);
+      }
+    }
+  }catch(e){}
+
+  if(!users.length){ _closeMentionDropdown(postId); return; }
+  drop.style.display = 'block';
+  drop.innerHTML = users.map(u=>{
+    const av = u.avatar_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+(u.username||'u'));
+    const isE = av && av.length<=4 && !av.startsWith('http');
+    const avEl = isE
+      ? `<div style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">${av}</div>`
+      : `<img src="${xss(av)}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${u.username||'u'}'">`;
+    return `<div onclick="_insertMention('${postId}','${u.username}','${u.id}')"
+      style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;transition:background .15s;"
+      onmouseover="this.style.background='rgba(0,255,204,.08)'" onmouseout="this.style.background='transparent'">
+      ${avEl}
+      <div>
+        <div style="font-size:11px;color:var(--text-light);font-family:Silkscreen,monospace;">@${xss(u.username)}</div>
+        <div style="font-size:9px;color:var(--text-muted);">${xss(u.full_name||'')}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function _insertMention(postId, username, userId){
+  const inp = document.getElementById('cin-'+postId);
+  if(!inp) return;
+  const val = inp.value;
+  const cursor = inp.selectionStart;
+  const before = val.slice(0, cursor);
+  const after = val.slice(cursor);
+  // Substituir @query pelo @username completo
+  const replaced = before.replace(/@(\w*)$/, '@'+username+' ');
+  inp.value = replaced + after;
+  inp.focus();
+  const newPos = replaced.length;
+  inp.setSelectionRange(newPos, newPos);
+  // Guardar usuário mencionado para notificação
+  if(!inp._mentions) inp._mentions = {};
+  inp._mentions[username] = userId;
+  _closeMentionDropdown(postId);
+}
+
+function _closeMentionDropdown(postId){
+  const drop = document.getElementById('cmt-mention-drop-'+postId);
+  if(drop) drop.style.display = 'none';
 }
 function renderComment(c,myVote,isPostOwner,postId){
   const prof=c.profiles||{};
@@ -4781,6 +4913,34 @@ async function submitCmt(postId, btnEl){
   const{error}=await db.from('comments').insert({post_id:postId,user_id:CU.id,content:txt});
   inp.disabled=false;
   if(error)return showToast('Erro ao comentar: '+error.message,'error');
+
+  // ── Notificações de @menção ──
+  const mentionedUsers = inp._mentions || {};
+  const mentionMatches = [...txt.matchAll(/@(\w+)/g)];
+  for(const m of mentionMatches){
+    const uname = m[1];
+    // Tentar pegar id do cache do campo, senão buscar no banco
+    let mentionedId = mentionedUsers[uname];
+    if(!mentionedId){
+      try{
+        const{data:up}=await db.from('profiles').select('id').eq('username',uname).maybeSingle();
+        mentionedId = up?.id;
+      }catch(e){}
+    }
+    if(mentionedId && mentionedId !== CU.id){
+      try{
+        await db.from('notifications').insert({
+          user_id: mentionedId,
+          actor_id: CU.id,
+          type: 'mention',
+          content: `@${CP?.username||'alguém'} mencionou você em um comentário`,
+          read: false
+        });
+      }catch(e){}
+    }
+  }
+  inp._mentions = {};
+
   inp.value='';
   // Update counter visually on all elements showing this post
   document.querySelectorAll('[id="cmtcnt-'+postId+'"]').forEach(el=>{
@@ -6999,28 +7159,133 @@ async function showPostAuthorProfile(userId, triggerEl){
 }
 
 
-function sharePost(postId, authorName, preview){
+function openShareModal(postId, authorName, preview){
+  // Remove modal anterior se existir
+  document.getElementById('share-modal-overlay')?.remove();
+
   const url = window.location.origin + window.location.pathname + '?post=' + postId;
-  const text = (authorName ? authorName + ': ' : '') + (preview || 'Veja este post no EuAqui');
+  const text = (authorName ? '📌 ' + authorName + ': ' : '') + (preview || 'Veja este post no EuAqui!') + ' 🌐';
+  const encoded = encodeURIComponent(url);
+  const encodedText = encodeURIComponent(text + '\n' + url);
+
+  const overlay = document.createElement('div');
+  overlay.id = 'share-modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);z-index:5000;display:flex;align-items:flex-end;justify-content:center;padding:0 0 16px;';
+  overlay.innerHTML = `
+    <div style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:20px 20px 16px 16px;padding:20px 16px 16px;width:100%;max-width:480px;box-shadow:0 -8px 40px rgba(0,0,0,.5);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);">🔗 Compartilhar Post</div>
+        <button onclick="document.getElementById('share-modal-overlay').remove()" style="background:none;border:1px solid rgba(255,255,255,.12);color:var(--text-muted);width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;">✕</button>
+      </div>
+
+      <!-- Preview do post -->
+      <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px 12px;margin-bottom:16px;font-size:11px;color:var(--text-muted);line-height:1.5;max-height:56px;overflow:hidden;text-overflow:ellipsis;">
+        ${xss(preview || 'Post no EuAqui')}
+      </div>
+
+      <!-- Opções de compartilhamento -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
+        <!-- EuAqui (compartilhar internamente via repost) -->
+        <button onclick="_shareOnEuAqui('${postId}','${xss(preview||'').replace(/'/g,'').replace(/\n/g,' ')}')" style="background:linear-gradient(135deg,rgba(0,255,204,.12),rgba(191,95,255,.12));border:1px solid var(--border-glow);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:5px;transition:all .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+          <div style="font-size:22px;">🌐</div>
+          <div style="font-size:9px;color:var(--neon-cyan);font-family:Silkscreen,monospace;letter-spacing:.5px;">EuAqui</div>
+        </button>
+        <!-- WhatsApp -->
+        <button onclick="window.open('https://wa.me/?text=${encodedText}','_blank')" style="background:linear-gradient(135deg,rgba(37,211,102,.12),rgba(18,140,126,.12));border:1px solid rgba(37,211,102,.3);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:5px;transition:all .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+          <div style="font-size:22px;">💬</div>
+          <div style="font-size:9px;color:#25d366;font-family:Silkscreen,monospace;letter-spacing:.5px;">WhatsApp</div>
+        </button>
+        <!-- Telegram -->
+        <button onclick="window.open('https://t.me/share/url?url=${encoded}&text=${encodeURIComponent(text)}','_blank')" style="background:linear-gradient(135deg,rgba(36,161,222,.12),rgba(0,136,204,.12));border:1px solid rgba(36,161,222,.3);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:5px;transition:all .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+          <div style="font-size:22px;">✈️</div>
+          <div style="font-size:9px;color:#24a1de;font-family:Silkscreen,monospace;letter-spacing:.5px;">Telegram</div>
+        </button>
+        <!-- Twitter / X -->
+        <button onclick="window.open('https://twitter.com/intent/tweet?text=${encodedText}','_blank')" style="background:linear-gradient(135deg,rgba(29,161,242,.12),rgba(0,0,0,.12));border:1px solid rgba(29,161,242,.25);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:5px;transition:all .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+          <div style="font-size:22px;">𝕏</div>
+          <div style="font-size:9px;color:#1d9bf0;font-family:Silkscreen,monospace;letter-spacing:.5px;">Twitter</div>
+        </button>
+      </div>
+
+      <!-- Segunda linha: mais redes -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">
+        <!-- Facebook -->
+        <button onclick="window.open('https://www.facebook.com/sharer/sharer.php?u=${encoded}','_blank')" style="background:linear-gradient(135deg,rgba(24,119,242,.12),rgba(24,119,242,.06));border:1px solid rgba(24,119,242,.3);border-radius:12px;padding:10px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;transition:all .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+          <div style="font-size:20px;">📘</div>
+          <div style="font-size:9px;color:#1877f2;font-family:Silkscreen,monospace;">Facebook</div>
+        </button>
+        <!-- Instagram (só copia link pois IG não tem API de share web) -->
+        <button onclick="_copyAndToast('${url}','📸 Link copiado! Cole no Instagram')" style="background:linear-gradient(135deg,rgba(225,48,108,.12),rgba(193,53,132,.12));border:1px solid rgba(225,48,108,.3);border-radius:12px;padding:10px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;transition:all .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+          <div style="font-size:20px;">📸</div>
+          <div style="font-size:9px;color:#e1306c;font-family:Silkscreen,monospace;">Instagram</div>
+        </button>
+        <!-- Compartilhar nativo do SO -->
+        <button onclick="_nativeShare('${url}','${xss(text).replace(/'/g,'')}')" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;transition:all .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+          <div style="font-size:20px;">↗️</div>
+          <div style="font-size:9px;color:var(--text-muted);font-family:Silkscreen,monospace;">Mais</div>
+        </button>
+      </div>
+
+      <!-- Campo de copiar link -->
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input id="share-link-input" value="${url}" style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 12px;color:var(--text-muted);font-size:11px;font-family:'Space Mono',monospace;outline:none;" readonly onclick="this.select()">
+        <button onclick="_copyAndToast('${url}','🔗 Link copiado!')" style="background:linear-gradient(135deg,var(--neon-cyan),var(--neon-purple));border:none;color:var(--bg-deep);padding:8px 14px;border-radius:8px;cursor:pointer;font-family:Silkscreen,monospace;font-size:10px;white-space:nowrap;font-weight:bold;">Copiar</button>
+      </div>
+    </div>`;
+
+  overlay.onclick = e => { if(e.target === overlay) overlay.remove(); };
+  document.body.appendChild(overlay);
+  // Animação de entrada
+  const modal = overlay.querySelector('div');
+  modal.style.transform = 'translateY(100%)';
+  modal.style.transition = 'transform .3s cubic-bezier(.4,0,.2,1)';
+  requestAnimationFrame(()=>{ modal.style.transform = 'translateY(0)'; });
+}
+
+function _copyAndToast(url, msg){
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(url).then(()=>showToast(msg||'🔗 Copiado!','success'));
+  } else {
+    const el=document.createElement('textarea');
+    el.value=url; el.style.cssText='position:fixed;opacity:0;';
+    document.body.appendChild(el); el.select();
+    try{ document.execCommand('copy'); showToast(msg||'🔗 Copiado!','success'); }catch(e){}
+    document.body.removeChild(el);
+  }
+  document.getElementById('share-modal-overlay')?.remove();
+}
+
+function _nativeShare(url, text){
   if(navigator.share){
     navigator.share({title:'EuAqui', text: text, url: url})
-      .catch(()=>{ copyShareLink(url); });
+      .then(()=>document.getElementById('share-modal-overlay')?.remove())
+      .catch(()=>_copyAndToast(url,'🔗 Link copiado!'));
   } else {
-    copyShareLink(url);
+    _copyAndToast(url,'🔗 Link copiado!');
+  }
+}
+
+function _shareOnEuAqui(postId, preview){
+  document.getElementById('share-modal-overlay')?.remove();
+  // Navega para home e abre o composer com o link do post pré-preenchido
+  nav('home');
+  const url = window.location.origin + window.location.pathname + '?post=' + postId;
+  const txt = document.getElementById('post-txt');
+  if(txt){
+    txt.value = '🔁 Compartilhando: ' + url + '\n' + (preview ? '"' + preview + '"' : '');
+    txt.focus();
+    updateChar();
+    showToast('✏️ Escreva algo e publique!','success');
   }
 }
 
 function copyShareLink(url){
-  if(navigator.clipboard){
-    navigator.clipboard.writeText(url).then(()=>showToast('🔗 Link copiado!','success'));
-  } else {
-    // Fallback for older browsers
-    const el=document.createElement('textarea');
-    el.value=url; el.style.position='fixed'; el.style.opacity='0';
-    document.body.appendChild(el); el.select();
-    document.execCommand('copy'); document.body.removeChild(el);
-    showToast('🔗 Link copiado!','success');
-  }
+  _copyAndToast(url,'🔗 Link copiado!');
+}
+
+// Manter sharePost como alias para compatibilidade
+function sharePost(postId, authorName, preview){
+  openShareModal(postId, authorName, preview);
 }
 
 
@@ -12125,18 +12390,22 @@ function _insertCommChatEmoji(commId,emoji){
 
 // ── Picker de GIF para o chat (lista curada, sem depender de API externa) ─
 const COMM_CHAT_GIFS = [
-  {q:'hello',   url:'https://media.tenor.com/uXhchFIcy14AAAAC/hello-hi.gif'},
-  {q:'lol',     url:'https://media.tenor.com/rrV2aRZWvQYAAAAC/laughing-lol.gif'},
-  {q:'ok',      url:'https://media.tenor.com/hbfkgVzX8H4AAAAC/thumbs-up-like.gif'},
-  {q:'love',    url:'https://media.tenor.com/eqrW9wnUeucAAAAC/heart-love.gif'},
-  {q:'wow',     url:'https://media.tenor.com/nWmd9SLuSBwAAAAC/shocked-omg.gif'},
-  {q:'sad',     url:'https://media.tenor.com/JYc0qQRtWgEAAAAC/sad-cry.gif'},
-  {q:'dance',   url:'https://media.tenor.com/7SXwVwJhGYYAAAAC/dance-happy.gif'},
-  {q:'clap',    url:'https://media.tenor.com/ZIpeyz7FfrkAAAAC/clap-clapping.gif'},
-  {q:'fire',    url:'https://media.tenor.com/CqnKxLc3ErUAAAAC/fire-burn.gif'},
-  {q:'party',   url:'https://media.tenor.com/2roX3uxz_68AAAAC/cat-party.gif'},
-  {q:'thinking',url:'https://media.tenor.com/HwCMRsRPLAUAAAAC/think-thinking.gif'},
-  {q:'mind blown',url:'https://media.tenor.com/P2wY0GG9jjEAAAAC/mind-blown-explosion.gif'},
+  {q:'hello',      url:'https://media.giphy.com/media/3oEjI6SIIHBdRxXI40/giphy.gif'},
+  {q:'lol',        url:'https://media.giphy.com/media/ZqlvCTNHpqrio/giphy.gif'},
+  {q:'ok',         url:'https://media.giphy.com/media/111ebonMs90YLu/giphy.gif'},
+  {q:'love',       url:'https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif'},
+  {q:'wow',        url:'https://media.giphy.com/media/5p2wQFyu8GsFO/giphy.gif'},
+  {q:'sad',        url:'https://media.giphy.com/media/ISOckXUybVfQ4/giphy.gif'},
+  {q:'dance',      url:'https://media.giphy.com/media/l0MYGb1LuZ3n7dRnO/giphy.gif'},
+  {q:'clap',       url:'https://media.giphy.com/media/l0Exk8EUzSLsrErEQ/giphy.gif'},
+  {q:'fire',       url:'https://media.giphy.com/media/YqBqKSGaFRGfS/giphy.gif'},
+  {q:'party',      url:'https://media.giphy.com/media/l0MYC0LajbaPoEADu/giphy.gif'},
+  {q:'thinking',   url:'https://media.giphy.com/media/kPtv3UIPrv36cjxqLs/giphy.gif'},
+  {q:'mind blown', url:'https://media.giphy.com/media/xT0xeJpnrWC4XWblEk/giphy.gif'},
+  {q:'sim',        url:'https://media.giphy.com/media/XreQmk7ETCak0/giphy.gif'},
+  {q:'nao',        url:'https://media.giphy.com/media/l1J9yApnGts8EXYoo/giphy.gif'},
+  {q:'incrivel',   url:'https://media.giphy.com/media/3oz8xAFtqoOUUrsh7W/giphy.gif'},
+  {q:'choro',      url:'https://media.giphy.com/media/OPU6wzx8JrHna/giphy.gif'},
 ];
 function openCommChatGif(commId){
   const overlay=document.createElement('div');
@@ -12266,10 +12535,11 @@ async function loadCommMembersPanel(commId,_ignoredIsMod,_ignoredIsOwner){
     const userName=(m.profiles?.full_name||m.profiles?.username||'?').replace(/'/g,'').replace(/"/g,'');
     // ── Regras de moderação ──
     // Owner pode moderar TODOS (exceto ele mesmo).
-    // Mod pode moderar MEMBROS comuns (não pode moderar owner, outros mods, nem ele mesmo).
+    // Mod pode moderar apenas MEMBROS COMUNS (não pode moderar owner, outros mods, nem ele mesmo).
+    // NINGUÉM pode banir ou kitar o Dono da Comunidade.
     let canModerate = false;
-    if(isOwner && !isMe) canModerate = true;
-    else if(isMod && !isMe && m.role!=='owner' && m.role!=='mod') canModerate = true;
+    if(isOwner && !isMe && m.role!=='owner') canModerate = true;
+    else if(isMod && !isOwner && !isMe && m.role!=='owner' && m.role!=='mod') canModerate = true;
     // Botões específicos de owner (promover/despromover)
     const ownerButtons = isOwner && !isMe && m.role!=='owner' ? (
       m.role==='mod'
