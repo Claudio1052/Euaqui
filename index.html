@@ -3312,6 +3312,34 @@ let mediaFiles=[],mediaTypes=[];
 let currentChatUser=null;
 let avatarFile=null,retroIconSelected=null;
 let cachedPosts={},cachedPostIds=new Set(),lastFeedLoad=0;
+// Cache de dados de comunidade (id -> {name, avatar_url}) para hidratar avatares de posts COMM_POST
+let _commCache={};
+async function _hydrateCommAvatars(commIds){
+  const need=[...new Set(commIds)].filter(id=>id&&!_commCache[id]);
+  if(need.length){
+    try{
+      const{data}=await db.from('communities').select('id,name,avatar_url').in('id',need);
+      (data||[]).forEach(c=>{ _commCache[c.id]=c; });
+    }catch(e){ console.warn('hydrate comm:',e?.message); }
+  }
+  // Atualiza no DOM todos os elementos marcados com data-comm-avatar
+  document.querySelectorAll('[data-comm-avatar]').forEach(img=>{
+    const cid=img.getAttribute('data-comm-avatar');
+    const c=_commCache[cid];
+    if(c&&c.avatar_url){
+      img.src=c.avatar_url;
+      img.removeAttribute('data-comm-avatar');
+    }
+  });
+  document.querySelectorAll('[data-comm-name]').forEach(el=>{
+    const cid=el.getAttribute('data-comm-name');
+    const c=_commCache[cid];
+    if(c&&c.name){
+      el.textContent=c.name;
+      el.removeAttribute('data-comm-name');
+    }
+  });
+}
 const CACHE_TTL=60000;
 
 // ===== DB — iniciado imediatamente (SDK já está no <head>) =====
@@ -3775,6 +3803,16 @@ async function loadFeed(force=false){
   filteredPosts.forEach(p=>cachedPostIds.add(p.id));
   cachedPosts[cacheKey]=html;
   updateCommentCounts(filteredPosts.map(p=>p.id));
+  // Hidrata avatares/nomes das comunidades em posts COMM_POST
+  const commIdsInFeed=[];
+  filteredPosts.forEach(p=>{
+    const c=p?.content||'';
+    if(c.startsWith('[COMM_POST:')){
+      const e=c.indexOf(']');
+      if(e>11){const inner=c.substring(11,e);const col=inner.indexOf(':');if(col>0)commIdsInFeed.push(inner.substring(0,col));}
+    }
+  });
+  if(commIdsInFeed.length) _hydrateCommAvatars(commIdsInFeed);
 }
 
 async function updateCommentCounts(postIds){
@@ -3858,10 +3896,15 @@ function renderPost(post,rxCounts={},myRx=''){
   }catch(e){ bizMeta=null; displayContent=post.content||''; }
 
   // Avatar e nome — usa identidade da comunidade (COMM_POST), depois loja (BIZ_PROMO), senão usuário
-  const avUrl = commMeta && commMeta.icon ? commMeta.icon
+  // Para COMM_POST: se cache já tem, usa direto; senão usa o icon do marker como fallback
+  // e marca data-comm-avatar/data-comm-name para hidratação assíncrona
+  const cachedComm = commMeta ? _commCache[commMeta.id] : null;
+  const commAvatarFallback = (cachedComm && cachedComm.avatar_url) || (commMeta && commMeta.icon) || ('https://api.dicebear.com/7.x/shapes/svg?seed=comm-'+(commMeta?.id||'x')+'&backgroundColor=00ffcc');
+  const commNameFallback = (cachedComm && cachedComm.name) || (commMeta && commMeta.name) || 'Comunidade';
+  const avUrl = commMeta ? commAvatarFallback
               : (bizMeta && bizMeta.logo) ? bizMeta.logo
               : (prof.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'user'));
-  const displayName = commMeta ? commMeta.name
+  const displayName = commMeta ? commNameFallback
               : (bizMeta && bizMeta.name) ? bizMeta.name
               : (prof.full_name||prof.username||'Usuário');
   const displayHandle = commMeta ? ('🏘 Comunidade · por @'+(prof.username||'user'))
@@ -3870,8 +3913,9 @@ function renderPost(post,rxCounts={},myRx=''){
   const avBorderColor = commMeta ? 'var(--neon-cyan)' : (bizMeta ? 'var(--neon-yellow)' : 'var(--neon-pink)');
   const avRadius = commMeta ? '12px' : (bizMeta?'10px':'50%');
   const avBorderRgba = commMeta ? 'rgba(0,255,204,.55)' : (bizMeta?'rgba(255,204,0,.5)':'rgba(0,255,204,.25)');
-  const avClickUid = commMeta ? post.user_id : post.user_id; // clique no avatar leva ao autor; nome leva à comunidade
-  const avHtml='<img src="'+xss(avUrl)+'" data-uid="'+post.user_id+'" data-fb="https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u')+'" style="width:42px;height:42px;border-radius:'+avRadius+';object-fit:cover;border:2px solid '+avBorderRgba+';flex-shrink:0;cursor:pointer;" onclick="'+(commMeta?`openCommDetail('${commMeta.id}')`:`showPostAuthorProfile(this.dataset.uid,null)`)+'" onerror="this.src=this.dataset.fb">';
+  // Atributos extras para hidratação assíncrona dos dados da comunidade
+  const commHydrAttr = (commMeta && !cachedComm) ? ` data-comm-avatar="${commMeta.id}"` : '';
+  const avHtml='<img src="'+xss(avUrl)+'"'+commHydrAttr+' data-uid="'+post.user_id+'" data-fb="https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u')+'" style="width:42px;height:42px;border-radius:'+avRadius+';object-fit:cover;border:2px solid '+avBorderRgba+';flex-shrink:0;cursor:pointer;background:#0a0e27;" onclick="'+(commMeta?`openCommDetail('${commMeta.id}')`:`showPostAuthorProfile(this.dataset.uid,null)`)+'" onerror="this.onerror=null;this.src=this.dataset.fb">';
   const time=timeAgo(post.created_at);
   const content=linkify(displayContent);
   // Visibilidade (coluna pode não existir)
@@ -3894,7 +3938,7 @@ function renderPost(post,rxCounts={},myRx=''){
     <div class="ph">
       ${avHtml}
       <div class="pmeta">
-        <div class="pun" style="cursor:pointer;" data-uid="${post.user_id}" data-bizid="${bizMeta && bizMeta.id ? bizMeta.id : ''}" data-commid="${commMeta && commMeta.id ? commMeta.id : ''}" onclick="${commMeta?`openCommDetail('${commMeta.id}')`:`handlePostClick(this)`}">${xss(displayName)}</div>
+        <div class="pun" style="cursor:pointer;" data-uid="${post.user_id}" data-bizid="${bizMeta && bizMeta.id ? bizMeta.id : ''}" data-commid="${commMeta && commMeta.id ? commMeta.id : ''}"${commMeta && !cachedComm ? ` data-comm-name="${commMeta.id}"` : ''} onclick="${commMeta?`openCommDetail('${commMeta.id}')`:`handlePostClick(this)`}">${xss(displayName)}</div>
         <div class="pt"><span>${xss(displayHandle)}</span> · ${time} ${visBadge}</div>
       </div>
       <div style="display:flex;gap:4px;margin-left:auto;">
@@ -9950,6 +9994,8 @@ async function postInCommV2(commId){
   }
   // Buscar dados da comunidade para mostrar no post (nome + avatar/ícone)
   const{data:commData}=await db.from('communities').select('id,name,avatar_url,icon,owner_id').eq('id',commId).maybeSingle();
+  // Popular cache global para hidratação imediata em renderPost
+  if(commData) _commCache[commId]={id:commData.id,name:commData.name,avatar_url:commData.avatar_url||commData.icon||''};
   // Marker de identidade da comunidade — detectado por renderPost
   // Formato: [COMM_POST:commId:Nome|iconUrl]  (| no nome no lugar de : para evitar conflito)
   const commIcon = (commData?.avatar_url || commData?.icon || '').replace(/\|/g,'');
@@ -9981,6 +10027,13 @@ async function loadCommPostsV2(commId,isMember,isMod){
   const el=document.getElementById('comm-posts-list-'+commId);
   if(!el) return;
   el.innerHTML=skeletons(2);
+  // Pré-carrega dados da comunidade no cache para que renderPost mostre avatar correto de primeira
+  if(!_commCache[commId]){
+    try{
+      const{data:cd}=await db.from('communities').select('id,name,avatar_url').eq('id',commId).maybeSingle();
+      if(cd) _commCache[commId]=cd;
+    }catch(e){}
+  }
   const{data:cps}=await db.from('community_posts')
     .select('posts(id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url))')
     .eq('community_id',commId).order('created_at',{ascending:false}).limit(20);
