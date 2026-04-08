@@ -2461,6 +2461,218 @@ body.day-mode .notif-dot{ border-color:#f5f7fa; }
 .mod-badge{font-size:9px;color:var(--neon-yellow);font-family:'Silkscreen',monospace;margin-left:4px;}
 .ban-badge{font-size:9px;color:var(--neon-pink);font-family:'Silkscreen',monospace;margin-left:4px;}
 
+/* ═══════════════════════════════════════════════════════════
+   🎙 LIVE / SPACE — sala de voz ao vivo estilo Twitter Spaces
+   ═══════════════════════════════════════════════════════════ */
+.live-room{
+  position:relative;
+  background:linear-gradient(135deg,#1a0b2e 0%,#0f0820 100%);
+  border:1px solid var(--border-glow);
+  border-radius:16px;
+  padding:18px;
+  overflow:hidden;
+  min-height:380px;
+}
+.live-room::before{
+  content:'';
+  position:absolute;inset:0;
+  background:radial-gradient(circle at 30% 10%, rgba(225,29,116,.12), transparent 50%),
+             radial-gradient(circle at 70% 90%, rgba(124,58,237,.12), transparent 50%);
+  pointer-events:none;
+}
+.live-header{
+  display:flex;align-items:center;gap:10px;margin-bottom:16px;position:relative;
+}
+.live-onair{
+  display:inline-flex;align-items:center;gap:6px;
+  background:linear-gradient(135deg,#ff3366,#c2185b);
+  color:#fff;padding:4px 10px;border-radius:12px;
+  font-family:'Silkscreen',monospace;font-size:10px;
+  box-shadow:0 4px 14px rgba(255,51,102,.45);
+  animation:livePulse 1.8s ease-in-out infinite;
+}
+.live-onair::before{
+  content:'';width:8px;height:8px;border-radius:50%;background:#fff;
+  box-shadow:0 0 8px #fff;animation:livePulse 1.5s ease-in-out infinite;
+}
+@keyframes livePulse{
+  0%,100%{opacity:1;}
+  50%{opacity:.6;}
+}
+@keyframes pulse{
+  0%,100%{opacity:1;}
+  50%{opacity:.55;}
+}
+.live-title{
+  font-family:'Silkscreen',monospace;font-size:13px;color:var(--neon-cyan);flex:1;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.live-listeners-count{
+  font-size:10px;color:var(--text-muted);
+  background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.1);
+  padding:3px 8px;border-radius:10px;
+}
+.live-speakers-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(90px,1fr));
+  gap:14px;
+  margin-bottom:20px;
+  position:relative;
+}
+.live-speaker{
+  display:flex;flex-direction:column;align-items:center;gap:6px;
+  position:relative;
+  cursor:pointer;
+}
+.live-speaker-av{
+  width:70px;height:70px;border-radius:50%;
+  border:3px solid var(--border-glow);
+  object-fit:cover;
+  background:#0a0e27;
+  transition:all .3s ease;
+}
+.live-speaker.host .live-speaker-av{ border-color:var(--neon-yellow); box-shadow:0 0 20px rgba(255,204,0,.4); }
+.live-speaker.speaking .live-speaker-av{
+  border-color:var(--neon-cyan);
+  box-shadow:0 0 0 4px rgba(0,255,204,.25), 0 0 20px rgba(0,255,204,.5);
+  transform:scale(1.05);
+}
+.live-speaker.muted .live-speaker-av{ filter:grayscale(.6); opacity:.75; }
+.live-speaker-name{
+  font-size:10px;color:var(--text-light);font-weight:600;
+  max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;
+}
+.live-speaker-role{
+  font-size:8px;color:var(--neon-cyan);font-family:'Silkscreen',monospace;
+}
+.live-speaker-role.host{ color:var(--neon-yellow); }
+.live-speaker-mic{
+  position:absolute;bottom:26px;right:0;
+  width:22px;height:22px;border-radius:50%;
+  background:var(--bg-card);
+  border:2px solid var(--border-glow);
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;
+}
+.live-speaker.muted .live-speaker-mic{ background:#2a0a14;border-color:var(--neon-pink);color:var(--neon-pink); }
+.live-speaker-hand{
+  position:absolute;top:-4px;right:-4px;
+  width:22px;height:22px;border-radius:50%;
+  background:var(--neon-yellow);color:#1a1033;
+  display:flex;align-items:center;justify-content:center;font-size:12px;
+  animation:handWave 1.5s ease-in-out infinite;
+}
+@keyframes handWave{
+  0%,100%{transform:rotate(-15deg);}
+  50%{transform:rotate(15deg);}
+}
+.live-section-title{
+  font-size:10px;color:var(--text-muted);font-family:'Silkscreen',monospace;
+  letter-spacing:1px;margin:14px 0 10px;
+}
+.live-listeners-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(48px,1fr));
+  gap:10px;
+  margin-bottom:16px;
+}
+.live-listener{
+  display:flex;flex-direction:column;align-items:center;gap:4px;
+  cursor:pointer;
+}
+.live-listener img{
+  width:40px;height:40px;border-radius:50%;
+  border:2px solid rgba(255,255,255,.15);
+  object-fit:cover;
+}
+.live-listener span{
+  font-size:8px;color:var(--text-muted);
+  max-width:50px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.live-controls{
+  display:flex;gap:8px;padding:12px;margin-top:14px;
+  background:rgba(0,0,0,.35);border:1px solid var(--border-glow);border-radius:12px;
+  flex-wrap:wrap;align-items:center;justify-content:center;
+}
+.live-ctrl-btn{
+  display:flex;align-items:center;gap:6px;
+  background:var(--bg-card);border:1px solid var(--border-glow);
+  color:var(--text-light);padding:9px 14px;border-radius:24px;
+  cursor:pointer;font-size:11px;font-weight:600;transition:all .2s;
+  font-family:'Space Mono',monospace;
+}
+.live-ctrl-btn:hover{
+  border-color:var(--neon-cyan);
+  background:rgba(0,255,204,.08);
+  transform:translateY(-1px);
+}
+.live-ctrl-btn.danger{ background:linear-gradient(135deg,#ff3366,#c2185b);border-color:transparent;color:#fff;}
+.live-ctrl-btn.danger:hover{ box-shadow:0 6px 20px rgba(255,51,102,.5);}
+.live-ctrl-btn.primary{ background:linear-gradient(135deg,#00ffcc,#7c3aed);border-color:transparent;color:#0a0a2a;font-weight:800;}
+.live-ctrl-btn.primary:hover{ box-shadow:0 6px 20px rgba(0,255,204,.45);}
+.live-ctrl-btn.mic-off{ background:rgba(255,51,102,.15);border-color:var(--neon-pink);color:var(--neon-pink);}
+.live-react-row{
+  display:flex;gap:8px;justify-content:center;margin-top:10px;flex-wrap:wrap;
+}
+.live-react-btn{
+  width:46px;height:46px;border-radius:50%;
+  background:rgba(255,255,255,.06);border:1px solid var(--border-glow);
+  font-size:22px;cursor:pointer;transition:all .15s;
+  display:flex;align-items:center;justify-content:center;
+}
+.live-react-btn:hover{ transform:scale(1.15) translateY(-2px); border-color:var(--neon-cyan); }
+.live-react-btn:active{ transform:scale(.9);}
+/* Reações flutuantes */
+.live-reactions-layer{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  overflow:hidden;
+  z-index:10;
+}
+.live-floating-reaction{
+  position:absolute;
+  bottom:10%;
+  font-size:34px;
+  animation:floatUp 3s ease-out forwards;
+  pointer-events:none;
+  will-change:transform,opacity;
+  text-shadow:0 2px 12px rgba(0,0,0,.5);
+}
+@keyframes floatUp{
+  0%{ transform:translateY(0) scale(.6) rotate(0deg); opacity:0;}
+  10%{ opacity:1; transform:translateY(-20px) scale(1) rotate(-5deg);}
+  50%{ transform:translateY(-150px) scale(1.1) rotate(8deg);}
+  100%{ transform:translateY(-340px) scale(.9) rotate(-3deg); opacity:0;}
+}
+.live-chat-overlay{
+  max-height:180px;overflow-y:auto;
+  display:flex;flex-direction:column;gap:6px;
+  padding:10px;margin-top:14px;
+  background:rgba(0,0,0,.35);border:1px solid var(--border-glow);border-radius:10px;
+}
+.live-chat-msg{
+  display:flex;gap:6px;align-items:flex-start;
+  font-size:11px;color:var(--text-light);
+  animation:fadeInUp .3s ease-out;
+}
+@keyframes fadeInUp{
+  from{opacity:0;transform:translateY(8px);}
+  to{opacity:1;transform:translateY(0);}
+}
+.live-chat-msg img{ width:22px;height:22px;border-radius:50%;object-fit:cover;flex-shrink:0;}
+.live-chat-msg b{ color:var(--neon-cyan);font-size:10px;margin-right:4px;}
+.live-empty{
+  text-align:center;padding:40px 20px;
+  color:var(--text-muted);font-size:12px;
+  font-family:'Space Mono',monospace;
+}
+.live-empty-big{font-size:48px;margin-bottom:10px;opacity:.6;}
+body.day-mode .live-room{ background:linear-gradient(135deg,#fff5f7,#f0f9ff); }
+body.day-mode .live-speaker-mic{ background:#fff; }
+body.day-mode .live-chat-msg{ color:#1a1033; }
+
 /* ============================================================
    ☀️ DAY MODE V2 — Sunset Coral / Sky Lavender Theme
    Vibrant, friendly, high-contrast daytime identity.
@@ -5476,6 +5688,7 @@ async function openCommDetail(commId){
       <div class="comm-tabs" id="comm-inner-tabs-${commId}">
         <button class="comm-tab active" onclick="switchCommInnerTab('${commId}','ct-posts',this)">📝 Posts</button>
         <button class="comm-tab" onclick="switchCommInnerTab('${commId}','ct-chat',this)">💬 Chat</button>
+        <button class="comm-tab" onclick="switchCommInnerTab('${commId}','ct-live',this)">🎙 Live <span id="ct-live-badge-${commId}" style="display:none;background:var(--neon-pink);color:#fff;font-size:8px;padding:1px 5px;border-radius:8px;font-family:Silkscreen,monospace;margin-left:2px;animation:pulse 1.5s ease-in-out infinite;">AO VIVO</span></button>
         <button class="comm-tab" onclick="switchCommInnerTab('${commId}','ct-members',this)">👥 Membros</button>
         <button class="comm-tab" onclick="switchCommInnerTab('${commId}','ct-xp',this)">🏆 Ranking</button>
       </div>
@@ -5511,6 +5724,7 @@ async function openCommDetail(commId){
           </div>`:`<div style="padding:10px;text-align:center;font-size:11px;color:var(--text-muted);">${isBanned?'🚫 Banido':'Entre na comunidade para participar'}</div>`}
         </div>
       </div>
+      <div id="ct-live-${commId}" style="display:none;"><div id="comm-live-content-${commId}">${skeletons(2)}</div></div>
       <div id="ct-members-${commId}" style="display:none;"><div id="comm-members-list-${commId}">${skeletons(3)}</div></div>
       <div id="ct-xp-${commId}" style="display:none;"><div id="comm-xp-list-${commId}">${skeletons(3)}</div></div>
     </div>`;
@@ -10419,21 +10633,20 @@ async function loadCommChatCooldown(commId){
 }
 
 function switchCommInnerTab(commId, tabId, btn){
-  ['ct-posts','ct-chat','ct-members','ct-xp'].forEach(t=>{
+  ['ct-posts','ct-chat','ct-live','ct-members','ct-xp'].forEach(t=>{
     const el=document.getElementById(t+'-'+commId);
     if(el) el.style.display=t===tabId?'block':'none';
   });
   document.querySelectorAll(`#comm-inner-tabs-${commId} .comm-tab`)
     .forEach(b=>b.classList.toggle('active',b===btn));
   if(tabId==='ct-chat'){
-    // Só recarrega se canal ainda não existe (preserva histórico ao trocar aba)
     if(!_commChatPolls[commId]) loadCommChat(commId);
     else {
-      // Apenas rolar para o fim sem recarregar
       const el=document.getElementById('comm-chat-msgs-'+commId);
       if(el) el.scrollTop=el.scrollHeight;
     }
   }
+  if(tabId==='ct-live') loadCommLive(commId);
   if(tabId==='ct-members') loadCommMembersPanel(commId);
   if(tabId==='ct-xp') loadCommRanking(commId);
 }
@@ -10659,6 +10872,544 @@ function _appendCommMsg(commId, m){
 
 // Cache de mensagens do chat por comunidade
 if(!window._commChatCache) window._commChatCache = {};
+
+// ═════════════════════════════════════════════════════════════
+// 🎙 LIVE / SPACE — sala de voz ao vivo estilo Twitter Spaces
+// Arquitetura: WebRTC mesh P2P com Supabase Realtime como signaling
+// - Host (dono da comunidade) abre a sala
+// - Membros podem entrar como ouvintes
+// - Host promove ouvintes a oradores (com mic)
+// - Todos podem mandar reações flutuantes e chat
+// ═════════════════════════════════════════════════════════════
+
+const LIVE_STATE = {
+  // commId atual da live ativa (sendo transmitida ou assistida)
+  activeCommId: null,
+  // Papel: 'host' | 'speaker' | 'listener' | null
+  role: null,
+  // Canal Supabase Realtime de signaling
+  channel: null,
+  // Stream local de áudio (só host e oradores)
+  localStream: null,
+  // Conexões WebRTC: { peerId: RTCPeerConnection }
+  peers: {},
+  // Participantes: { userId: {username, avatar_url, role, muted, handRaised} }
+  participants: {},
+  // Mic mutado?
+  muted: false,
+  // ID da live atual (usado no canal)
+  liveId: null,
+};
+
+const LIVE_ICE_SERVERS = [
+  {urls:'stun:stun.l.google.com:19302'},
+  {urls:'stun:stun1.l.google.com:19302'},
+];
+
+async function loadCommLive(commId){
+  const el=document.getElementById('comm-live-content-'+commId);
+  if(!el) return;
+  // Buscar owner para saber quem pode iniciar a live
+  const{data:comm}=await db.from('communities').select('owner_id,name').eq('id',commId).maybeSingle();
+  const isOwner = CU?.id===comm?.owner_id;
+  // Verificar se já existe uma live ativa para esta comunidade
+  const isLiveActive = LIVE_STATE.activeCommId===commId;
+  // Verificar se há broadcast de outro host (via localStorage marker — ping Supabase)
+  let hostLiveActive = false;
+  try{
+    const{data:liveRow}=await db.from('communities').select('live_active,live_title').eq('id',commId).maybeSingle();
+    hostLiveActive = !!liveRow?.live_active;
+    if(hostLiveActive) LIVE_STATE._liveTitle = liveRow?.live_title || 'Live da Comunidade';
+  }catch(e){ /* coluna pode não existir; ignora */ }
+  if(!isLiveActive && !hostLiveActive){
+    // Sem live rolando agora
+    if(isOwner){
+      el.innerHTML=`
+        <div class="live-room">
+          <div class="live-empty">
+            <div class="live-empty-big">🎙</div>
+            <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);margin-bottom:6px;">INICIAR LIVE DE VOZ</div>
+            <div style="font-size:11px;margin-bottom:18px;">Abra uma sala de voz ao vivo para os membros da comunidade. Você é o host.</div>
+            <div style="max-width:340px;margin:0 auto 12px;">
+              <input class="ainput" id="live-title-${commId}" placeholder="Título da live (ex: Papo de quarta à noite)" maxlength="80" style="text-align:center;">
+            </div>
+            <button class="live-ctrl-btn primary" onclick="startCommLive('${commId}')">🎙 GO LIVE</button>
+            <div style="font-size:9px;color:var(--text-muted);margin-top:12px;">Será solicitada permissão de microfone</div>
+          </div>
+        </div>`;
+    } else {
+      el.innerHTML=`
+        <div class="live-room">
+          <div class="live-empty">
+            <div class="live-empty-big">🎙</div>
+            <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);margin-bottom:6px;">SEM LIVE NO AR</div>
+            <div style="font-size:11px;">Quando o dono iniciar uma live de voz, ela aparecerá aqui.</div>
+          </div>
+        </div>`;
+    }
+    return;
+  }
+  // Live ativa — mostrar interface de sala
+  renderLiveRoom(commId, isOwner);
+}
+
+function renderLiveRoom(commId, isOwner){
+  const el=document.getElementById('comm-live-content-'+commId);
+  if(!el) return;
+  const role = LIVE_STATE.role;
+  const isInRoom = LIVE_STATE.activeCommId===commId && role;
+  const speakers = Object.entries(LIVE_STATE.participants).filter(([_,p])=>p.role==='host'||p.role==='speaker');
+  const listeners = Object.entries(LIVE_STATE.participants).filter(([_,p])=>p.role==='listener');
+  const title = LIVE_STATE._liveTitle || 'Live da Comunidade';
+  const speakersHtml = speakers.length ? speakers.map(([uid,p])=>{
+    const classes = ['live-speaker'];
+    if(p.role==='host') classes.push('host');
+    if(p.speaking) classes.push('speaking');
+    if(p.muted) classes.push('muted');
+    const av = p.avatar_url || 'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(p.username||uid);
+    const canManage = isOwner && uid!==CU?.id && p.role==='speaker';
+    return `<div class="${classes.join(' ')}" onclick="${canManage?`openLiveUserMenu('${commId}','${uid}')`:''}">
+      ${p.handRaised?'<div class="live-speaker-hand">✋</div>':''}
+      <img class="live-speaker-av" src="${xss(av)}" alt="${xss(p.username||'')}">
+      <div class="live-speaker-mic">${p.muted?'🔇':'🎙'}</div>
+      <div class="live-speaker-name">${xss(p.username||'usuário')}</div>
+      <div class="live-speaker-role ${p.role==='host'?'host':''}">${p.role==='host'?'👑 HOST':'🎙 ORADOR'}</div>
+    </div>`;
+  }).join('') : '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);font-size:11px;padding:20px;">Aguardando oradores...</div>';
+  const listenersHtml = listeners.length ? listeners.map(([uid,p])=>{
+    const av = p.avatar_url || 'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(p.username||uid);
+    const canPromote = isOwner && uid!==CU?.id;
+    const handIcon = p.handRaised ? '<span style="position:absolute;top:-2px;right:-2px;font-size:12px;">✋</span>' : '';
+    return `<div class="live-listener" style="position:relative;" onclick="${canPromote?`promoteLiveToSpeaker('${commId}','${uid}')`:''}" title="${canPromote?'Promover a orador':''}">
+      <div style="position:relative;">${handIcon}<img src="${xss(av)}" alt="${xss(p.username||'')}"></div>
+      <span>${xss(p.username||'?')}</span>
+    </div>`;
+  }).join('') : '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);font-size:10px;padding:10px;">Nenhum ouvinte ainda</div>';
+  // Controles
+  let controlsHtml = '';
+  if(isInRoom){
+    if(role==='host'){
+      controlsHtml = `
+        <button class="live-ctrl-btn ${LIVE_STATE.muted?'mic-off':''}" onclick="toggleLiveMic()">${LIVE_STATE.muted?'🔇 Mic OFF':'🎙 Mic ON'}</button>
+        <button class="live-ctrl-btn danger" onclick="endCommLive('${commId}')">🛑 Encerrar Live</button>
+      `;
+    } else if(role==='speaker'){
+      controlsHtml = `
+        <button class="live-ctrl-btn ${LIVE_STATE.muted?'mic-off':''}" onclick="toggleLiveMic()">${LIVE_STATE.muted?'🔇 Mic OFF':'🎙 Mic ON'}</button>
+        <button class="live-ctrl-btn" onclick="leaveLiveRoom()">🚪 Sair</button>
+      `;
+    } else {
+      // Listener
+      controlsHtml = `
+        <button class="live-ctrl-btn" onclick="raiseLiveHand()">✋ ${LIVE_STATE.participants[CU?.id]?.handRaised?'Baixar mão':'Pedir para falar'}</button>
+        <button class="live-ctrl-btn" onclick="leaveLiveRoom()">🚪 Sair</button>
+      `;
+    }
+  } else {
+    // Ainda não entrou na sala — só botão de entrar
+    controlsHtml = `<button class="live-ctrl-btn primary" onclick="joinCommLive('${commId}')">🎧 Entrar na Live</button>`;
+  }
+  const reactionsRow = isInRoom ? `
+    <div class="live-react-row">
+      <button class="live-react-btn" onclick="sendLiveReaction('❤️')" title="Coração">❤️</button>
+      <button class="live-react-btn" onclick="sendLiveReaction('👏')" title="Palmas">👏</button>
+      <button class="live-react-btn" onclick="sendLiveReaction('👍')" title="Legal">👍</button>
+      <button class="live-react-btn" onclick="sendLiveReaction('😂')" title="Rir">😂</button>
+      <button class="live-react-btn" onclick="sendLiveReaction('🔥')" title="Fogo">🔥</button>
+      <button class="live-react-btn" onclick="sendLiveReaction('✨')" title="Brilho">✨</button>
+    </div>
+  ` : '';
+  const chatHtml = isInRoom ? `
+    <div class="live-section-title">💬 CHAT DA LIVE</div>
+    <div class="live-chat-overlay" id="live-chat-${commId}"></div>
+    <div style="display:flex;gap:6px;margin-top:8px;">
+      <input class="ainput" id="live-chat-in-${commId}" placeholder="Comente..." style="flex:1;font-size:11px;" onkeydown="if(event.key==='Enter')sendLiveChat('${commId}')">
+      <button class="live-ctrl-btn" onclick="sendLiveChat('${commId}')" style="padding:8px 14px;">➤</button>
+    </div>
+  ` : '';
+  el.innerHTML = `
+    <div class="live-room">
+      <div class="live-reactions-layer" id="live-reactions-${commId}"></div>
+      <div class="live-header">
+        <span class="live-onair">AO VIVO</span>
+        <div class="live-title">${xss(title)}</div>
+        <div class="live-listeners-count">👥 ${Object.keys(LIVE_STATE.participants).length||0}</div>
+      </div>
+      <div class="live-section-title">🎙 ORADORES (${speakers.length})</div>
+      <div class="live-speakers-grid">${speakersHtml}</div>
+      <div class="live-section-title">🎧 OUVINTES (${listeners.length})${isOwner&&listeners.length?' — toque para promover':''}</div>
+      <div class="live-listeners-grid">${listenersHtml}</div>
+      <div class="live-controls">${controlsHtml}</div>
+      ${reactionsRow}
+      ${chatHtml}
+    </div>
+  `;
+  // Atualizar badge da aba
+  const badge = document.getElementById('ct-live-badge-'+commId);
+  if(badge) badge.style.display = 'inline-block';
+}
+
+// ── HOST inicia a live ──
+async function startCommLive(commId){
+  if(!CU) return showToast('Faça login','error');
+  const titleInp = document.getElementById('live-title-'+commId);
+  const title = (titleInp?.value||'').trim() || 'Live da Comunidade';
+  // Solicitar permissão de microfone
+  let stream;
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
+  }catch(e){
+    showToast('🎙 Acesso ao microfone negado','error');
+    console.error('getUserMedia error:',e);
+    return;
+  }
+  LIVE_STATE.activeCommId = commId;
+  LIVE_STATE.role = 'host';
+  LIVE_STATE.localStream = stream;
+  LIVE_STATE.muted = false;
+  LIVE_STATE._liveTitle = title;
+  LIVE_STATE.liveId = 'live_'+commId+'_'+Date.now();
+  // Adicionar o próprio host aos participantes
+  LIVE_STATE.participants = {};
+  LIVE_STATE.participants[CU.id] = {
+    username: CP?.username||'host',
+    avatar_url: CP?.avatar_url||'',
+    role:'host', muted:false, handRaised:false, speaking:false
+  };
+  // Marcar no banco que a live está ativa (opcional — falha silenciosamente se coluna não existir)
+  try{
+    await db.from('communities').update({live_active:true, live_title:title}).eq('id',commId);
+  }catch(e){ console.warn('live_active column missing:',e?.message); }
+  // Conectar canal Realtime
+  await _connectLiveChannel(commId);
+  // Anunciar presença
+  _livePresenceAnnounce();
+  showToast('🎙 Live iniciada!','success');
+  renderLiveRoom(commId, true);
+}
+
+// ── LISTENER/SPEAKER entra na live ──
+async function joinCommLive(commId){
+  if(!CU) return showToast('Faça login','error');
+  LIVE_STATE.activeCommId = commId;
+  LIVE_STATE.role = 'listener';
+  LIVE_STATE.muted = true; // ouvinte começa mutado (sem mic)
+  LIVE_STATE.participants = {};
+  LIVE_STATE.participants[CU.id] = {
+    username: CP?.username||'user',
+    avatar_url: CP?.avatar_url||'',
+    role:'listener', muted:true, handRaised:false, speaking:false
+  };
+  // Buscar título da live do banco
+  try{
+    const{data:cr}=await db.from('communities').select('live_title,owner_id').eq('id',commId).maybeSingle();
+    LIVE_STATE._liveTitle = cr?.live_title || 'Live da Comunidade';
+    // Marcar host nos participantes se soubermos
+    if(cr?.owner_id){
+      // Buscar dados do host
+      try{
+        const{data:hp}=await db.from('profiles').select('id,username,avatar_url').eq('id',cr.owner_id).maybeSingle();
+        if(hp){
+          LIVE_STATE.participants[hp.id]={username:hp.username,avatar_url:hp.avatar_url,role:'host',muted:false,handRaised:false,speaking:false};
+        }
+      }catch(e){}
+    }
+  }catch(e){}
+  await _connectLiveChannel(commId);
+  _livePresenceAnnounce();
+  // Pedir a lista de participantes atuais ao host
+  _liveBroadcast('request_roster',{});
+  const isOwner = false; // quem entra via joinCommLive nunca é owner
+  renderLiveRoom(commId, isOwner);
+}
+
+// ── Conectar canal Supabase Realtime para signaling + chat ──
+async function _connectLiveChannel(commId){
+  if(LIVE_STATE.channel){
+    try{ db.removeChannel(LIVE_STATE.channel); }catch(e){}
+  }
+  const channelName = 'live-'+commId;
+  const channel = db.channel(channelName, {config:{broadcast:{self:false}}});
+  channel.on('broadcast',{event:'live_event'}, (payload)=>{
+    _handleLiveEvent(commId, payload.payload);
+  });
+  channel.subscribe((status)=>{
+    console.log('[live] channel status:',status);
+  });
+  LIVE_STATE.channel = channel;
+}
+
+function _liveBroadcast(type, data){
+  if(!LIVE_STATE.channel) return;
+  try{
+    LIVE_STATE.channel.send({
+      type:'broadcast', event:'live_event',
+      payload:{type, from:CU?.id, fromName:CP?.username||'', fromAvatar:CP?.avatar_url||'', ...data}
+    });
+  }catch(e){ console.warn('[live] broadcast err:',e); }
+}
+
+function _livePresenceAnnounce(){
+  const p = LIVE_STATE.participants[CU?.id];
+  if(!p) return;
+  _liveBroadcast('presence',{
+    role:p.role,
+    muted:p.muted,
+    handRaised:p.handRaised,
+    username:p.username,
+    avatar_url:p.avatar_url
+  });
+}
+
+// ── Handler de eventos recebidos via broadcast ──
+function _handleLiveEvent(commId, ev){
+  if(!ev || ev.from===CU?.id) return;
+  const type=ev.type;
+  switch(type){
+    case 'presence': {
+      LIVE_STATE.participants[ev.from] = {
+        username: ev.username||'user',
+        avatar_url: ev.avatar_url||'',
+        role: ev.role||'listener',
+        muted: !!ev.muted,
+        handRaised: !!ev.handRaised,
+        speaking:false
+      };
+      _refreshLiveUI(commId);
+      // Se eu sou host, responder com roster completo
+      if(LIVE_STATE.role==='host'){
+        _liveBroadcast('roster',{roster:LIVE_STATE.participants});
+      }
+      break;
+    }
+    case 'request_roster': {
+      if(LIVE_STATE.role==='host'){
+        _liveBroadcast('roster',{roster:LIVE_STATE.participants});
+      }
+      break;
+    }
+    case 'roster': {
+      // Mesclar roster recebido com participantes locais
+      const incoming = ev.roster||{};
+      Object.entries(incoming).forEach(([uid,p])=>{
+        if(!LIVE_STATE.participants[uid]) LIVE_STATE.participants[uid]=p;
+      });
+      _refreshLiveUI(commId);
+      break;
+    }
+    case 'role_change': {
+      // Host promoveu ou rebaixou alguém
+      const {target,newRole} = ev;
+      if(LIVE_STATE.participants[target]){
+        LIVE_STATE.participants[target].role = newRole;
+      }
+      // Se sou o alvo, atualizar meu próprio papel
+      if(target===CU?.id){
+        LIVE_STATE.role = newRole;
+        if(newRole==='speaker'){
+          // Solicitar mic
+          navigator.mediaDevices.getUserMedia({audio:true,video:false}).then(s=>{
+            LIVE_STATE.localStream=s;
+            LIVE_STATE.muted=false;
+            showToast('🎙 Você é orador agora!','success');
+            _livePresenceAnnounce();
+            _refreshLiveUI(commId);
+          }).catch(e=>{
+            showToast('Mic negado','error');
+            LIVE_STATE.role='listener';
+          });
+        } else if(newRole==='listener'){
+          if(LIVE_STATE.localStream){
+            LIVE_STATE.localStream.getTracks().forEach(t=>t.stop());
+            LIVE_STATE.localStream=null;
+          }
+          LIVE_STATE.muted=true;
+          showToast('🎧 Você voltou a ser ouvinte','success');
+        }
+      }
+      _refreshLiveUI(commId);
+      break;
+    }
+    case 'leave': {
+      delete LIVE_STATE.participants[ev.from];
+      _refreshLiveUI(commId);
+      break;
+    }
+    case 'end_live': {
+      // Host encerrou
+      if(LIVE_STATE.activeCommId===commId){
+        showToast('🛑 Live encerrada pelo host','success');
+        _cleanupLiveState();
+        loadCommLive(commId);
+      }
+      break;
+    }
+    case 'reaction': {
+      _spawnFloatingReaction(commId, ev.emoji||'❤️');
+      break;
+    }
+    case 'chat': {
+      _appendLiveChatMsg(commId, {
+        username: ev.fromName||'user',
+        avatar_url: ev.fromAvatar||'',
+        content: ev.text||''
+      });
+      break;
+    }
+    case 'hand': {
+      if(LIVE_STATE.participants[ev.from]){
+        LIVE_STATE.participants[ev.from].handRaised = !!ev.raised;
+      }
+      _refreshLiveUI(commId);
+      break;
+    }
+    case 'mute': {
+      if(LIVE_STATE.participants[ev.from]){
+        LIVE_STATE.participants[ev.from].muted = !!ev.muted;
+      }
+      _refreshLiveUI(commId);
+      break;
+    }
+  }
+}
+
+function _refreshLiveUI(commId){
+  if(LIVE_STATE.activeCommId!==commId) return;
+  const container = document.getElementById('comm-live-content-'+commId);
+  if(!container) return;
+  // Verificar se o usuário é owner
+  const ownerIdCache = _liveCache?.ownerId;
+  const isOwner = CU?.id===ownerIdCache || LIVE_STATE.role==='host';
+  renderLiveRoom(commId, isOwner);
+}
+
+let _liveCache = {};
+
+// ── Ações do usuário ──
+function toggleLiveMic(){
+  if(!LIVE_STATE.localStream) return showToast('Sem mic ativo','error');
+  LIVE_STATE.muted = !LIVE_STATE.muted;
+  LIVE_STATE.localStream.getAudioTracks().forEach(t=>{t.enabled = !LIVE_STATE.muted;});
+  if(LIVE_STATE.participants[CU?.id]) LIVE_STATE.participants[CU.id].muted = LIVE_STATE.muted;
+  _liveBroadcast('mute',{muted:LIVE_STATE.muted});
+  _refreshLiveUI(LIVE_STATE.activeCommId);
+}
+
+function raiseLiveHand(){
+  const me = LIVE_STATE.participants[CU?.id];
+  if(!me) return;
+  me.handRaised = !me.handRaised;
+  _liveBroadcast('hand',{raised:me.handRaised});
+  _refreshLiveUI(LIVE_STATE.activeCommId);
+  showToast(me.handRaised?'✋ Mão levantada':'Mão baixada','success');
+}
+
+async function promoteLiveToSpeaker(commId, userId){
+  if(LIVE_STATE.role!=='host') return;
+  if(!confirm('Promover este usuário a orador? Ele poderá falar na live.')) return;
+  if(LIVE_STATE.participants[userId]){
+    LIVE_STATE.participants[userId].role='speaker';
+    LIVE_STATE.participants[userId].handRaised=false;
+  }
+  _liveBroadcast('role_change',{target:userId,newRole:'speaker'});
+  _refreshLiveUI(commId);
+  showToast('🎙 Promovido a orador','success');
+}
+
+function openLiveUserMenu(commId, userId){
+  // Menu simples: rebaixar orador a ouvinte
+  if(LIVE_STATE.role!=='host') return;
+  if(!confirm('Remover este orador? Ele voltará a ser ouvinte.')) return;
+  if(LIVE_STATE.participants[userId]){
+    LIVE_STATE.participants[userId].role='listener';
+  }
+  _liveBroadcast('role_change',{target:userId,newRole:'listener'});
+  _refreshLiveUI(commId);
+  showToast('🎧 Rebaixado a ouvinte','success');
+}
+
+function sendLiveReaction(emoji){
+  if(!LIVE_STATE.activeCommId) return;
+  _spawnFloatingReaction(LIVE_STATE.activeCommId, emoji);
+  _liveBroadcast('reaction',{emoji});
+}
+
+function _spawnFloatingReaction(commId, emoji){
+  const layer = document.getElementById('live-reactions-'+commId);
+  if(!layer) return;
+  const el = document.createElement('div');
+  el.className='live-floating-reaction';
+  el.textContent=emoji;
+  // Posição aleatória na largura
+  const left = 10 + Math.random()*80;
+  el.style.left = left+'%';
+  layer.appendChild(el);
+  setTimeout(()=>el.remove(), 3100);
+}
+
+function sendLiveChat(commId){
+  const inp=document.getElementById('live-chat-in-'+commId);
+  if(!inp) return;
+  const text=inp.value.trim();
+  if(!text) return;
+  inp.value='';
+  _appendLiveChatMsg(commId,{username:CP?.username||'você',avatar_url:CP?.avatar_url||'',content:text});
+  _liveBroadcast('chat',{text});
+}
+
+function _appendLiveChatMsg(commId, msg){
+  const box=document.getElementById('live-chat-'+commId);
+  if(!box) return;
+  const div=document.createElement('div');
+  div.className='live-chat-msg';
+  const av = msg.avatar_url || 'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(msg.username||'u');
+  div.innerHTML=`<img src="${xss(av)}" alt=""><div><b>${xss(msg.username||'')}</b>${xss(msg.content||'')}</div>`;
+  box.appendChild(div);
+  box.scrollTop=box.scrollHeight;
+  // Limitar a 50 msgs no DOM
+  while(box.children.length>50) box.removeChild(box.firstChild);
+}
+
+async function leaveLiveRoom(){
+  const commId = LIVE_STATE.activeCommId;
+  _liveBroadcast('leave',{});
+  _cleanupLiveState();
+  if(commId) loadCommLive(commId);
+  showToast('🚪 Você saiu da live','success');
+}
+
+async function endCommLive(commId){
+  if(LIVE_STATE.role!=='host') return;
+  if(!confirm('Encerrar a live para todos?')) return;
+  _liveBroadcast('end_live',{});
+  try{
+    await db.from('communities').update({live_active:false,live_title:null}).eq('id',commId);
+  }catch(e){}
+  _cleanupLiveState();
+  loadCommLive(commId);
+  showToast('🛑 Live encerrada','success');
+  // Esconder badge
+  const badge=document.getElementById('ct-live-badge-'+commId);
+  if(badge) badge.style.display='none';
+}
+
+function _cleanupLiveState(){
+  if(LIVE_STATE.localStream){
+    LIVE_STATE.localStream.getTracks().forEach(t=>t.stop());
+  }
+  if(LIVE_STATE.channel){
+    try{ db.removeChannel(LIVE_STATE.channel); }catch(e){}
+  }
+  Object.values(LIVE_STATE.peers).forEach(pc=>{try{pc.close();}catch(e){}});
+  LIVE_STATE.activeCommId=null;
+  LIVE_STATE.role=null;
+  LIVE_STATE.channel=null;
+  LIVE_STATE.localStream=null;
+  LIVE_STATE.peers={};
+  LIVE_STATE.participants={};
+  LIVE_STATE.muted=false;
+  LIVE_STATE.liveId=null;
+}
 
 async function loadCommChat(commId){
   const el = document.getElementById('comm-chat-msgs-'+commId);
