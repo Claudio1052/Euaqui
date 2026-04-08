@@ -10407,34 +10407,25 @@ async function loadCommRanking(commId){
       const lvl=getCommLevel(xp);
       const isMe=r.user_id===CU?.id;
       const pct=Math.min(100,Math.round((xp/maxXp)*100));
-      const medal=i<3?medals[i]:'<span style="font-size:12px;color:var(--text-muted);">#'+(i+1)+'</span>';
-      const roleBadge=r.role==='owner'?'<span style="font-size:9px;color:var(--neon-yellow);margin-left:4px;">👑</span>':
-                      r.role==='mod'  ?'<span style="font-size:9px;color:var(--neon-cyan);margin-left:4px;">🛡</span>':'';
-      return'<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;'+
-        'background:'+(isMe?'rgba(0,255,204,.08)':'var(--glass)')+';'+
-        'border:1px solid '+(isMe?'rgba(0,255,204,.3)':'var(--border-glow)')+';'+
-        'border-radius:12px;margin-bottom:8px;'+
-        (isMe?'box-shadow:0 0 10px rgba(0,255,204,.1);':'')+'>'+
-        // Medalha
-        '<div style="font-size:18px;width:24px;text-align:center;flex-shrink:0;">'+medal+'</div>'+
-        // Avatar
-        '<div style="flex-shrink:0;">'+renderAvatar(r.profiles,38,'')+'</div>'+
-        // Nome + nivel + barra — coluna do meio
-        '<div style="flex:1;min-width:0;overflow:hidden;">'+
-          '<div style="display:flex;align-items:center;gap:4px;">'+
-            '<span style="font-size:12px;color:var(--text-light);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+xss(r.profiles?.full_name||r.profiles?.username||'?')+'</span>'+
-            roleBadge+
-            (isMe?'<span style="font-size:9px;background:rgba(0,255,204,.15);color:var(--neon-cyan);padding:1px 5px;border-radius:6px;white-space:nowrap;">você</span>':'')+
-          '</div>'+
-          '<span class="comm-rank-badge" style="color:'+lvl.color+';border-color:'+lvl.color+'40;font-size:8px;">'+lvl.icon+' '+lvl.name+'</span>'+
-          '<div class="comm-xp-bar" style="margin-top:4px;"><div class="comm-xp-fill" style="width:'+(xp===0?'2':pct)+'%;"></div></div>'+
-        '</div>'+
-        // XP — coluna direita, fixo
-        '<div style="flex-shrink:0;text-align:right;min-width:44px;">'+
-          '<div style="font-family:VT323,monospace;font-size:24px;color:'+(xp>0?'var(--neon-cyan)':'var(--text-muted)')+';line-height:1;">'+xp+'</div>'+
-          '<div style="font-size:9px;color:var(--text-muted);">XP</div>'+
-        '</div>'+
-      '</div>';
+      const medal=i<3?medals[i]:'#'+(i+1);
+      const av=r.profiles?.avatar_url||('https://api.dicebear.com/7.x/pixel-art/svg?seed='+(r.profiles?.username||'u'));
+      const name=xss(r.profiles?.full_name||r.profiles?.username||'?');
+      const roleIcon=r.role==='owner'?'👑':r.role==='mod'?'🛡':'';
+      const bg=isMe?'rgba(0,255,204,.08)':'rgba(255,255,255,.03)';
+      const border=isMe?'rgba(0,255,204,.3)':'rgba(255,255,255,.08)';
+      return `<div style="display:flex;flex-direction:row;align-items:center;gap:8px;padding:10px 12px;background:${bg};border:1px solid ${border};border-radius:12px;margin-bottom:8px;">
+        <span style="font-size:16px;width:22px;flex-shrink:0;text-align:center;">${medal}</span>
+        <img src="${av}" style="width:38px;height:38px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid ${lvl.color}40;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=u'">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;color:var(--text-light);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${name}${roleIcon?` <span style="font-size:10px;">${roleIcon}</span>`:''} ${isMe?'<span style="font-size:9px;background:rgba(0,255,204,.15);color:var(--neon-cyan);padding:1px 5px;border-radius:5px;">você</span>':''}</div>
+          <div style="font-size:9px;font-family:Silkscreen,monospace;color:${lvl.color};margin:2px 0;">${lvl.icon} ${lvl.name}</div>
+          <div style="height:4px;background:rgba(255,255,255,.08);border-radius:2px;margin-top:3px;"><div style="height:100%;width:${xp===0?2:pct}%;background:linear-gradient(90deg,${lvl.color},var(--neon-cyan));border-radius:2px;"></div></div>
+        </div>
+        <div style="flex-shrink:0;text-align:right;min-width:40px;">
+          <div style="font-family:VT323,monospace;font-size:24px;color:${xp>0?'var(--neon-cyan)':'var(--text-muted)'};line-height:1;">${xp}</div>
+          <div style="font-size:9px;color:var(--text-muted);">XP</div>
+        </div>
+      </div>`;
     }).join('');
 }
 
