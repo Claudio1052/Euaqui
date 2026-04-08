@@ -10311,39 +10311,24 @@ async function addCommXP(commId,userId,action,xpOverride){
   if(!uid||!commId||commId==='undefined'||commId==='null') return;
   const xp=xpOverride||COMM_XP_TABLE[action]||1;
 
+  // Cache local imediato
+  const lsKey=`cxp_${commId}_${uid}`;
+  const localXp=(parseInt(localStorage.getItem(lsKey))||0)+xp;
+  localStorage.setItem(lsKey, localXp);
+
+  // Tentar salvar no Supabase
   try{
-    // Buscar registro atual
-    const{data:ex,error:selErr}=await db.from('community_xp')
-      .select('id,xp,posts_count,chat_count,likes_count')
-      .eq('community_id',commId).eq('user_id',uid).maybeSingle();
-
-    if(selErr){
-      console.warn('[XP] Erro ao buscar:',selErr.message,'code:',selErr.code);
-      return;
-    }
-
-    const newXp = (ex?.xp||0)+xp;
-
+    const{data:ex}=await db.from('community_xp')
+      .select('id,xp').eq('community_id',commId).eq('user_id',uid).maybeSingle();
     if(ex){
-      // Atualizar registro existente
-      const upd = {xp:newXp, updated_at:new Date().toISOString()};
-      if(action==='post')    upd.posts_count=(ex.posts_count||0)+1;
-      if(action==='chat')    upd.chat_count=(ex.chat_count||0)+1;
-      if(action==='like'||action==='comment') upd.likes_count=(ex.likes_count||0)+1;
-      const{error:updErr}=await db.from('community_xp').update(upd).eq('id',ex.id);
-      if(updErr) console.warn('[XP] Erro update:',updErr.message);
-      else console.log('[XP]',action,'+'+xp,'→ total:',newXp,'commId:',commId.slice(0,8));
+      await db.from('community_xp').update({xp:(ex.xp||0)+xp}).eq('id',ex.id);
     } else {
-      // Criar novo registro
-      const ins={community_id:commId,user_id:uid,xp,
-        posts_count:action==='post'?1:0,
-        chat_count:action==='chat'?1:0,
-        likes_count:(action==='like'||action==='comment')?1:0};
-      const{error:insErr}=await db.from('community_xp').insert(ins);
-      if(insErr) console.warn('[XP] Erro insert:',insErr.message,'code:',insErr.code);
-      else console.log('[XP] Novo registro',action,'+'+xp,'commId:',commId.slice(0,8));
+      await db.from('community_xp').insert({community_id:commId,user_id:uid,xp});
     }
-  }catch(e){ console.warn('[XP] Exception:',e?.message); }
+  }catch(e){
+    // Se falhar, tudo bem — o XP local já foi salvo
+    console.log('[XP local]',action,'+'+xp,'total:',localXp);
+  }
 }
 
 // ── Conquistas da comunidade ─────────────────────────────────
@@ -10376,62 +10361,68 @@ function getCommLevel(xp){
 async function loadCommRanking(commId){
   const el=document.getElementById('comm-xp-list-'+commId);
   if(!el) return;
-  el.innerHTML = skeletons(3);
+  el.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:11px;">⏳ Carregando ranking...</div>';
 
-  // Buscar XP dos membros
-  const{data:rows}=await db.from('community_xp')
-    .select('user_id,xp,posts_count,chat_count,likes_count,profiles(id,username,full_name,avatar_url)')
-    .eq('community_id',commId).order('xp',{ascending:false}).limit(20);
+  let rows=[];
+  let fromDB=false;
 
-  if(!rows?.length){
-    el.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px;">Nenhum XP ainda — seja o primeiro a ser ativo!</div>';
+  // Tentar buscar do Supabase
+  try{
+    const{data,error}=await db.from('community_xp')
+      .select('user_id,xp,profiles(id,username,full_name,avatar_url)')
+      .eq('community_id',commId).order('xp',{ascending:false}).limit(20);
+    if(!error && data?.length){
+      rows=data;
+      fromDB=true;
+    }
+  }catch(e){}
+
+  // Fallback: localStorage — mostrar pelo menos o usuário atual
+  if(!fromDB && CU){
+    const lsKey=`cxp_${commId}_${CU.id}`;
+    const myXp=parseInt(localStorage.getItem(lsKey))||0;
+    if(myXp>0){
+      rows=[{user_id:CU.id,xp:myXp,profiles:{id:CU.id,username:CP?.username,full_name:CP?.full_name,avatar_url:CP?.avatar_url}}];
+    }
+  }
+
+  if(!rows.length){
+    el.innerHTML='<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">'+
+      '<div style="font-size:36px;margin-bottom:10px;">🏆</div>'+
+      '<div>Nenhum XP ainda — seja o primeiro a ser ativo!</div>'+
+      '<div style="font-size:10px;margin-top:8px;color:var(--text-muted);">Poste (+10xp), comente (+5xp), curta (+2xp), fale no chat (+2xp)</div>'+
+      '</div>';
     return;
   }
 
   const medals=['🥇','🥈','🥉'];
-  const myRank = rows.findIndex(r=>r.user_id===CU?.id);
-
   el.innerHTML=
-    // Meu XP no topo (se não estiver no top 20)
-    (myRank < 0 ? '' : '') +
-    '<div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-yellow);margin-bottom:12px;letter-spacing:1px;">🏆 RANKING DA COMUNIDADE</div>'
-    +'<div style="font-size:10px;color:var(--text-muted);margin-bottom:12px;font-family:Space Mono,monospace;">📝 Post=+10xp · 💬 Chat=+2xp · ❤️ Curtida=+2xp · 🎯 Convite=+20xp</div>'
-    +rows.map((r,i)=>{
-      const xp = r.xp||0;
-      const lvl = getCommLevel(xp);
-      const isMe = r.user_id===CU?.id;
-      const pct = Math.min(100,Math.round((xp/Math.max(rows[0]?.xp||1,1))*100));
-      // Conquistas baseadas no XP
-      const badges = COMM_ACHIEVEMENTS.filter(a=>a.xp_req>0&&xp>=a.xp_req);
-      // Top 3 conquista
-      if(i<3) badges.push({icon:medals[i],name:'Top '+(i+1)});
-      const badgeHtml = badges.map(b=>`<span title="${b.name}" style="font-size:14px;cursor:default;">${b.icon}</span>`).join('');
-      return`<div style="display:flex;align-items:center;gap:10px;padding:12px;background:${isMe?'rgba(0,255,204,.06)':'var(--glass)'};border:1px solid ${isMe?'rgba(0,255,204,.3)':'var(--border-glow)'};border-radius:12px;margin-bottom:8px;${isMe?'box-shadow:0 0 12px rgba(0,255,204,.1);':''}">
-        <div style="font-size:20px;width:30px;text-align:center;font-weight:bold;">${medals[i]||'<span style="font-size:12px;color:var(--text-muted);">#'+(i+1)+'</span>'}</div>
-        ${renderAvatar(r.profiles,40,'')}
-        <div style="flex:1;min-width:0;">
-          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-            <div style="font-size:12px;color:var(--text-light);font-weight:600;">${xss(r.profiles?.full_name||r.profiles?.username||'?')}</div>
-            ${isMe?'<span style="font-size:9px;background:rgba(0,255,204,.1);color:var(--neon-cyan);padding:1px 6px;border-radius:8px;">você</span>':''}
-          </div>
-          <div style="display:flex;align-items:center;gap:4px;margin:3px 0;">
-            <span class="comm-rank-badge" style="color:${lvl.color};border-color:${lvl.color}40;">${lvl.icon} ${lvl.name}</span>
-            <span style="font-size:11px;margin-left:2px;">${badgeHtml}</span>
-          </div>
-          <div class="comm-xp-bar" style="margin-top:4px;">
-            <div class="comm-xp-fill" style="width:${pct}%;background:linear-gradient(90deg,${lvl.color},var(--neon-cyan));"></div>
-          </div>
-          <div style="display:flex;gap:8px;margin-top:4px;font-size:9px;color:var(--text-muted);">
-            ${r.posts_count?'📝 '+r.posts_count+' posts · ':''}
-            ${r.chat_count?'💬 '+r.chat_count+' msgs · ':''}
-            ${r.likes_count?'❤️ '+r.likes_count+' curtidas':''}
-          </div>
-        </div>
-        <div style="text-align:right;flex-shrink:0;">
-          <div style="font-family:'VT323',monospace;font-size:24px;color:var(--neon-cyan);line-height:1;">${xp}</div>
-          <div style="font-size:9px;color:var(--text-muted);">XP</div>
-        </div>
-      </div>`;
+    '<div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-yellow);margin-bottom:8px;letter-spacing:1px;">🏆 RANKING</div>'+
+    '<div style="font-size:10px;color:var(--text-muted);margin-bottom:12px;">📝+10 · 💬+5 · ❤️+2 · 🗨️+2 · 🎯+20</div>'+
+    rows.map((r,i)=>{
+      const xp=r.xp||0;
+      const lvl=getCommLevel(xp);
+      const isMe=r.user_id===CU?.id;
+      const pct=Math.min(100,Math.round((xp/Math.max(rows[0]?.xp||1,1))*100));
+      const medal=medals[i]||(i+1+'°');
+      return'<div style="display:flex;align-items:center;gap:10px;padding:12px;'+
+        'background:'+(isMe?'rgba(0,255,204,.08)':'var(--glass)')+';'+
+        'border:1px solid '+(isMe?'rgba(0,255,204,.3)':'var(--border-glow)')+';'+
+        'border-radius:12px;margin-bottom:8px;">'+
+        '<div style="font-size:18px;width:28px;text-align:center;">'+medal+'</div>'+
+        renderAvatar(r.profiles,40,'')+
+        '<div style="flex:1;min-width:0;">'+
+          '<div style="font-size:12px;color:var(--text-light);">'+xss(r.profiles?.full_name||r.profiles?.username||'?')+
+            (isMe?'<span style="font-size:9px;background:rgba(0,255,204,.15);color:var(--neon-cyan);padding:1px 6px;border-radius:8px;margin-left:6px;">você</span>':'')+
+          '</div>'+
+          '<span class="comm-rank-badge" style="color:'+lvl.color+';border-color:'+lvl.color+'40;">'+lvl.icon+' '+lvl.name+'</span>'+
+          '<div class="comm-xp-bar" style="margin-top:5px;"><div class="comm-xp-fill" style="width:'+pct+'%;"></div></div>'+
+        '</div>'+
+        '<div style="text-align:right;flex-shrink:0;">'+
+          '<div style="font-family:VT323,monospace;font-size:26px;color:var(--neon-cyan);line-height:1;">'+xp+'</div>'+
+          '<div style="font-size:9px;color:var(--text-muted);">XP</div>'+
+        '</div>'+
+      '</div>';
     }).join('');
 }
 
