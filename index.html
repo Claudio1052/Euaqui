@@ -10685,8 +10685,10 @@ async function loadCommChat(commId){
   }catch(e){}
 
   // Buscar histórico persistente (últimas 200 mensagens, estilo Discord)
+  // IMPORTANTE: não fazemos join com profiles aqui porque a FK pode não existir
+  // no schema do Supabase. Buscamos perfis separadamente e juntamos no cliente.
   const{data:msgs, error:chatErr}=await db.from('community_chat')
-    .select('id,user_id,content,created_at,profiles(id,username,avatar_url)')
+    .select('id,user_id,content,created_at')
     .eq('community_id',commId)
     .order('created_at',{ascending:false}).limit(200);
   if(chatErr){
@@ -10707,7 +10709,24 @@ async function loadCommChat(commId){
     el.innerHTML=`<div style="text-align:center;color:var(--neon-pink);font-size:10px;padding:20px;line-height:1.5;">⚠ Erro ao carregar chat:<br>${xss(chatErr.message)}<br><br><span style="color:var(--text-muted);">Verifique as políticas RLS da tabela community_chat no Supabase.</span></div>`;
     return;
   }
-  const list=(msgs||[]).reverse();
+  const rawList=(msgs||[]).reverse();
+  // ── Hidratar profiles separadamente (sem depender de FK no schema) ──
+  let list = rawList;
+  if(rawList.length){
+    const uniqueUserIds = [...new Set(rawList.map(m=>m.user_id).filter(Boolean))];
+    if(uniqueUserIds.length){
+      try{
+        const{data:profs}=await db.from('profiles')
+          .select('id,username,avatar_url,full_name')
+          .in('id',uniqueUserIds);
+        const profMap={};
+        (profs||[]).forEach(p=>{profMap[p.id]=p;});
+        list = rawList.map(m=>({...m, profiles: profMap[m.user_id]||null}));
+      }catch(e){
+        console.warn('[comm chat] Erro ao hidratar profiles:',e?.message);
+      }
+    }
+  }
   console.log('[comm chat] carregadas', list.length, 'mensagens do histórico para comunidade', commId);
   // Salva no localStorage como backup (últimas 200)
   try{ localStorage.setItem('commchat_'+commId, JSON.stringify(list.slice(-200))); }catch(e){}
@@ -10749,11 +10768,13 @@ async function loadCommChat(commId){
       const raw = payload.new;
       if(!raw?.id) return;
       if(raw.user_id === CU?.id) return; // próprio já veio via broadcast
-      // Buscar msg completa com perfil
-      const{data:fullMsg}=await db.from('community_chat')
-        .select('id,user_id,content,created_at,profiles(id,username,avatar_url)')
-        .eq('id',raw.id).maybeSingle();
-      if(fullMsg) _appendCommMsg(commId, fullMsg);
+      // Buscar perfil do autor separadamente (sem depender de FK no schema)
+      let profile=null;
+      try{
+        const{data:p}=await db.from('profiles').select('id,username,avatar_url,full_name').eq('id',raw.user_id).maybeSingle();
+        profile=p;
+      }catch(e){}
+      _appendCommMsg(commId, {...raw, profiles: profile});
     })
     .subscribe();
 
