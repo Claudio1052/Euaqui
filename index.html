@@ -10849,23 +10849,29 @@ async function sendCommChat(commId, contentOverride){
   }
 }
 
-async function loadCommMembersPanel(commId,isMod,isOwner){
+async function loadCommMembersPanel(commId,_ignoredIsMod,_ignoredIsOwner){
   const el=document.getElementById('comm-members-list-'+commId);
   if(!el) return;
-  if(isMod===undefined){
-    const{data:me}=await db.from('community_members').select('role').eq('community_id',commId).eq('user_id',CU?.id||'').maybeSingle();
-    const{data:comm}=await db.from('communities').select('owner_id').eq('id',commId).maybeSingle();
-    isOwner=CU?.id===comm?.owner_id;
-    isMod=isOwner||me?.role==='mod';
-  }
+  // Sempre recalcular role e ownership do banco (ignora params cacheados).
+  // Isso garante que quem foi recém-promovido a mod veja as opções ao recarregar a aba.
+  let isMod=false, isOwner=false;
+  try{
+    const[{data:me},{data:comm}]=await Promise.all([
+      db.from('community_members').select('role,banned_until').eq('community_id',commId).eq('user_id',CU?.id||'').maybeSingle(),
+      db.from('communities').select('owner_id').eq('id',commId).maybeSingle()
+    ]);
+    isOwner = CU?.id===comm?.owner_id;
+    isMod   = isOwner || me?.role==='mod';
+  }catch(e){ console.warn('role check:',e?.message); }
   const{data:members}=await db.from('community_members')
     .select('id,user_id,role,banned_until,joined_at,profiles(id,username,full_name,avatar_url)')
     .eq('community_id',commId).order('joined_at');
   if(!members?.length){el.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px;">Nenhum membro</div>';return;}
   // Header com ferramentas de mod/owner
   const modHeader = isMod ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:10px;background:rgba(0,255,204,.05);border:1px solid rgba(0,255,204,.2);border-radius:10px;margin-bottom:12px;">
-    <span style="font-size:10px;color:var(--neon-cyan);font-family:Silkscreen,monospace;flex:1;">🛡 FERRAMENTAS DE MOD</span>
-    <button class="tbtn" style="font-size:10px;" onclick="openChatCooldownConfig('${commId}')">⏱ Cooldown do chat</button>
+    <span style="font-size:10px;color:var(--neon-cyan);font-family:Silkscreen,monospace;flex:1;">🛡 FERRAMENTAS DE ${isOwner?'DONO':'MOD'}</span>
+    <button class="tbtn" style="font-size:10px;" onclick="openChatCooldownConfig('${commId}')">⏱ Cooldown</button>
+    <button class="tbtn" style="font-size:10px;" onclick="loadCommMembersPanel('${commId}')">🔄 Atualizar</button>
   </div>` : '';
   el.innerHTML = modHeader + members.map(m=>{
     const isBannedM=m.banned_until&&new Date(m.banned_until)>new Date();
@@ -11287,7 +11293,55 @@ async function loadCommRanking(commId){
   const medals=['🥇','🥈','🥉'];
   const maxXp = combined[0]?.xp||1;
 
-  el.innerHTML=
+  // ── Checklist de metas diárias do usuário atual (só para membros) ──
+  let dailyChecklist = '';
+  const myMembership = members.find(m=>m.user_id===CU?.id);
+  if(CU && myMembership){
+    const goals = [
+      {action:'like',    icon:'❤️', label:'Curtir posts',        xp:2},
+      {action:'comment', icon:'💬', label:'Comentar em posts',   xp:5},
+      {action:'chat',    icon:'🗨️', label:'Usar o chat',         xp:2},
+      {action:'invite',  icon:'🎯', label:'Convidar amigos',     xp:20},
+    ];
+    const rows = goals.map(g=>{
+      const used = _getXpDailyCount(commId, CU.id, g.action);
+      const done = Math.min(used, COMM_XP_DAILY_LIMIT);
+      const complete = done>=COMM_XP_DAILY_LIMIT;
+      const pct = Math.round((done/COMM_XP_DAILY_LIMIT)*100);
+      // 3 checkboxes visuais
+      const boxes = Array.from({length:COMM_XP_DAILY_LIMIT},(_,i)=>{
+        const filled = i<done;
+        return `<span style="display:inline-block;width:18px;height:18px;border-radius:5px;border:2px solid ${filled?'var(--neon-cyan)':'rgba(255,255,255,.2)'};background:${filled?'var(--neon-cyan)':'transparent'};color:#0a0a2a;font-size:12px;text-align:center;line-height:14px;font-weight:900;">${filled?'✓':''}</span>`;
+      }).join('');
+      const earnedXp = done*g.xp;
+      const maxXpGoal = COMM_XP_DAILY_LIMIT*g.xp;
+      return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:${complete?'rgba(0,255,204,.08)':'rgba(255,255,255,.03)'};border:1px solid ${complete?'rgba(0,255,204,.35)':'rgba(255,255,255,.08)'};border-radius:10px;margin-bottom:6px;">
+        <div style="font-size:20px;flex-shrink:0;">${g.icon}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:11px;color:var(--text-light);font-weight:700;display:flex;align-items:center;gap:6px;">
+            ${g.label}
+            ${complete?'<span style="font-size:9px;color:var(--neon-cyan);font-family:Silkscreen,monospace;">✓ COMPLETA</span>':''}
+          </div>
+          <div style="font-size:9px;color:var(--text-muted);margin-top:2px;">+${g.xp} XP por ação · ${done}/${COMM_XP_DAILY_LIMIT} hoje · ${earnedXp}/${maxXpGoal} XP</div>
+        </div>
+        <div style="display:flex;gap:3px;flex-shrink:0;">${boxes}</div>
+      </div>`;
+    }).join('');
+    const totalDone = goals.reduce((a,g)=>a+Math.min(_getXpDailyCount(commId,CU.id,g.action),COMM_XP_DAILY_LIMIT),0);
+    const totalMax = goals.length*COMM_XP_DAILY_LIMIT;
+    const allDone = totalDone>=totalMax;
+    dailyChecklist = `<div style="margin-bottom:16px;padding:12px;background:linear-gradient(135deg,rgba(0,255,204,.06),rgba(124,58,237,.06));border:1px solid var(--border-glow);border-radius:14px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+        <span style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);letter-spacing:1px;flex:1;">📋 METAS DIÁRIAS</span>
+        <span style="font-size:10px;color:${allDone?'var(--neon-cyan)':'var(--text-muted)'};font-family:Silkscreen,monospace;">${totalDone}/${totalMax}</span>
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);margin-bottom:10px;line-height:1.5;">Bata 3 metas de cada ação para ganhar XP máximo hoje. Metas resetam à meia-noite.</div>
+      ${rows}
+      ${allDone?'<div style="text-align:center;margin-top:8px;font-size:11px;color:var(--neon-yellow);font-family:Silkscreen,monospace;">🎉 TODAS AS METAS BATIDAS HOJE!</div>':''}
+    </div>`;
+  }
+
+  el.innerHTML= dailyChecklist +
     '<div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-yellow);margin-bottom:8px;letter-spacing:1px;">🏆 RANKING DA COMUNIDADE</div>'+
     '<div style="font-size:10px;color:var(--text-muted);margin-bottom:14px;">📝+10xp · 💬+5xp · ❤️+2xp · 🗨️+2xp · 🎯+20xp</div>'+
     combined.map((r,i)=>{
