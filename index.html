@@ -181,6 +181,23 @@ nav{position:fixed;top:0;left:0;right:0;background:#0a0a2a;border-bottom:1px sol
 [id^="cmt-mention-drop-"]::-webkit-scrollbar{width:3px;}
 [id^="cmt-mention-drop-"]::-webkit-scrollbar-thumb{background:var(--neon-cyan);border-radius:3px;}
 
+/* ===== REPOST CARD EMBUTIDO ===== */
+.repost-embed-card{
+  transition:border-color .2s, background .2s;
+}
+.repost-embed-card:hover{
+  background:rgba(0,255,204,.06)!important;
+  border-color:rgba(0,255,204,.35)!important;
+}
+body.day-mode .repost-embed-card{
+  background:rgba(0,139,158,.04)!important;
+  border-color:rgba(0,139,158,.2)!important;
+}
+body.day-mode .repost-embed-card:hover{
+  background:rgba(0,139,158,.08)!important;
+  border-color:rgba(0,139,158,.4)!important;
+}
+
 /* SIDEBAR RIGHT */
 .sr{position:sticky;top:var(--nav-h);height:calc(100vh - var(--nav-h));overflow-y:auto;padding:14px 12px;border-left:1px solid var(--border-glow);background:rgba(10,10,42,.6);}
 .sr::-webkit-scrollbar{width:3px;}
@@ -4567,11 +4584,34 @@ function renderPost(post,rxCounts={},myRx=''){
   try{
   const prof=post.profiles||{};
 
+  // ── Detectar REPOST ──
+  // Formato: [REPOST:originalPostId:originalAuthorId:originalAuthorName]\ncomentário
+  let repostMeta = null;
+  let displayContent = post.content||'';
+  try{
+    const raw0 = post.content||'';
+    if(raw0.startsWith('[REPOST:')){
+      const end = raw0.indexOf(']');
+      if(end > 0){
+        const inner = raw0.substring(8, end); // após "[REPOST:"
+        const parts = inner.split(':');
+        if(parts.length >= 3){
+          repostMeta = {
+            originalPostId: parts[0],
+            originalAuthorId: parts[1],
+            originalAuthorName: parts.slice(2).join(':') // nome pode ter ":"
+          };
+          displayContent = raw0.substring(end+1).replace(/^\n/,'');
+        }
+      }
+    }
+  }catch(e){ repostMeta=null; }
+
   // ── Detectar post de comunidade (COMM_POST) ──
   let commMeta = null;
   // ── Detectar post de loja (BIZ_PROMO) ──
   let bizMeta = null;
-  let displayContent = post.content||'';
+  if(!repostMeta) displayContent = post.content||'';
   // COMM_POST: [COMM_POST:commId:Nome|iconUrl]
   try{
     const raw0 = post.content||'';
@@ -4654,9 +4694,49 @@ function renderPost(post,rxCounts={},myRx=''){
   // Mídia
   const mediaUrls=Array.isArray(post.media_urls)?post.media_urls.filter(Boolean):[];
   const mediaTyps=Array.isArray(post.media_types)?post.media_types:[];
-  const mediaHtml=renderMedia(mediaUrls,mediaTyps);
+  // Não exibe mídia duplicada se é repost (a mídia já aparece no card original embutido)
+  const mediaHtml = repostMeta ? '' : renderMedia(mediaUrls,mediaTyps);
   const cmtCnt=post.comments_count||0;
   const isOwn=CU&&CU.id===post.user_id;
+
+  // ── Card do post original embutido (só para reposts) ──
+  let repostCardHtml = '';
+  if(repostMeta){
+    const origImgHtml = (mediaUrls.length > 0)
+      ? `<div style="margin-top:8px;border-radius:8px;overflow:hidden;"><img src="${xss(mediaUrls[0])}" style="width:100%;max-height:180px;object-fit:cover;display:block;" loading="lazy" onerror="this.style.display='none'"></div>`
+      : '';
+    repostCardHtml = `
+      <div class="repost-embed-card" onclick="void(0)" style="
+        background:rgba(255,255,255,.04);
+        border:1px solid rgba(0,255,204,.2);
+        border-radius:12px;
+        padding:12px;
+        margin:8px 0 10px;
+        cursor:default;
+        position:relative;
+        overflow:hidden;
+      ">
+        <div style="position:absolute;top:0;left:0;width:3px;height:100%;background:linear-gradient(180deg,var(--neon-cyan),var(--neon-purple));border-radius:3px 0 0 3px;"></div>
+        <div style="padding-left:6px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+            <span style="font-size:10px;color:var(--neon-cyan);font-family:Silkscreen,monospace;">🔁 Post original de</span>
+            <span style="font-size:10px;color:var(--neon-pink);font-family:Silkscreen,monospace;cursor:pointer;" onclick="loadProfilePage('${xss(repostMeta.originalAuthorId)}')">@${xss(repostMeta.originalAuthorName)}</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-light);line-height:1.6;word-break:break-word;">${linkify(displayContent.trim() ? '' : '') || ''}${xss(
+            // conteúdo limpo do post original — displayContent é o comentário do compartilhador
+            // o conteúdo original fica no card embutido via _hydrateRepostCard
+            ''
+          )}</div>
+          <div id="repost-orig-${post.id}" style="font-size:12px;color:var(--text-light);line-height:1.6;word-break:break-word;">
+            <span style="color:var(--text-muted);font-size:11px;">⏳ Carregando post original...</span>
+          </div>
+          ${origImgHtml}
+        </div>
+      </div>`;
+    // Hidratar o conteúdo original de forma assíncrona
+    setTimeout(()=>_hydrateRepostCard(post.id, repostMeta.originalPostId), 0);
+  }
+
   return`<div class="post-card" id="post-${post.id}">
     <div class="ph">
       ${avHtml}
@@ -4668,7 +4748,11 @@ function renderPost(post,rxCounts={},myRx=''){
         ${isOwn?`<button class="abtn danger" onclick="deletePost('${post.id}')" title="Deletar">🗑</button>`:''}
       </div>
     </div>
-    ${content?`<div class="pcontent">${content}</div>`:''}
+    ${repostMeta
+      ? (displayContent ? `<div class="pcontent" style="margin-bottom:4px;">${linkify(displayContent)}</div>` : '')
+      : (content?`<div class="pcontent">${content}</div>`:'')
+    }
+    ${repostCardHtml}
     ${mediaHtml}
     <div class="preactions">${rxHtml}</div>
     <div class="pactions">
@@ -4681,6 +4765,38 @@ function renderPost(post,rxCounts={},myRx=''){
   }catch(err){
     console.error('renderPost fatal error:', err?.message, 'post:', post?.id, post?.content?.slice?.(0,80));
     return '';
+  }
+}
+
+// ── Hidrata o card embutido do repost com o conteúdo do post original ──
+async function _hydrateRepostCard(repostPostId, originalPostId){
+  const el = document.getElementById('repost-orig-'+repostPostId);
+  if(!el) return;
+  try{
+    const{data:op} = await db.from('posts')
+      .select('id,content,media_urls,media_types,user_id,profiles(id,username,full_name,avatar_url)')
+      .eq('id', originalPostId).maybeSingle();
+
+    if(!op){ el.innerHTML='<span style="color:var(--text-muted);font-size:11px;font-style:italic;">Post original não encontrado.</span>'; return; }
+
+    // Limpar marcadores internos
+    let cleanContent = (op.content||'')
+      .replace(/^\[COMM_POST:[^\]]*\]\n?/, '')
+      .replace(/^\[BIZ_PROMO:[^\]]*\]\n?/, '')
+      .replace(/^\[REPOST:[^\]]*\]\n?/, '')
+      .trim();
+
+    // Mídia do original
+    const origMediaUrls = Array.isArray(op.media_urls) ? op.media_urls.filter(Boolean) : [];
+    const origMediaHtml = origMediaUrls.length
+      ? `<div style="margin-top:8px;border-radius:8px;overflow:hidden;max-height:200px;">
+          <img src="${xss(origMediaUrls[0])}" style="width:100%;max-height:200px;object-fit:cover;display:block;" loading="lazy" onerror="this.style.display='none'">
+         </div>`
+      : '';
+
+    el.innerHTML = (cleanContent ? `<div style="font-size:12px;color:var(--text-light);line-height:1.6;word-break:break-word;">${linkify(cleanContent)}</div>` : '') + origMediaHtml;
+  }catch(e){
+    if(el) el.innerHTML='<span style="color:var(--text-muted);font-size:11px;font-style:italic;">Não foi possível carregar o post original.</span>';
   }
 }
 
@@ -7265,17 +7381,146 @@ function _nativeShare(url, text){
   }
 }
 
-function _shareOnEuAqui(postId, preview){
+async function _shareOnEuAqui(postId, _ignored){
+  if(!CU){ showToast('Faça login para compartilhar','error'); return; }
   document.getElementById('share-modal-overlay')?.remove();
-  // Navega para home e abre o composer com o link do post pré-preenchido
-  nav('home');
-  const url = window.location.origin + window.location.pathname + '?post=' + postId;
-  const txt = document.getElementById('post-txt');
-  if(txt){
-    txt.value = '🔁 Compartilhando: ' + url + '\n' + (preview ? '"' + preview + '"' : '');
-    txt.focus();
-    updateChar();
-    showToast('✏️ Escreva algo e publique!','success');
+
+  // Buscar post original completo no banco
+  let originalPost = null;
+  try{
+    const{data} = await db.from('posts')
+      .select('id,user_id,content,media_urls,media_types,visibility,profiles(id,username,full_name,avatar_url)')
+      .eq('id', postId).maybeSingle();
+    originalPost = data;
+  }catch(e){}
+
+  if(!originalPost){ showToast('Post não encontrado','error'); return; }
+
+  // Limpar marcadores internos do conteúdo ([COMM_POST:...], [BIZ_PROMO:...], [REPOST:...])
+  let cleanContent = originalPost.content || '';
+  cleanContent = cleanContent.replace(/^\[COMM_POST:[^\]]*\]\n?/, '');
+  cleanContent = cleanContent.replace(/^\[BIZ_PROMO:[^\]]*\]\n?/, '');
+  cleanContent = cleanContent.replace(/^\[REPOST:[^\]]*\]\n?/, '');
+  cleanContent = cleanContent.trim();
+
+  const originalAuthor = originalPost.profiles?.username || originalPost.profiles?.full_name || 'usuário';
+  const originalAuthorId = originalPost.user_id;
+
+  // Abrir modal de repost para o usuário adicionar comentário
+  const overlay = document.createElement('div');
+  overlay.id = 'repost-modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(8px);z-index:6000;display:flex;align-items:center;justify-content:center;padding:16px;';
+
+  const originalAvUrl = originalPost.profiles?.avatar_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+originalAuthor);
+
+  overlay.innerHTML = `
+    <div style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:18px;padding:20px;width:100%;max-width:500px;box-shadow:0 20px 60px rgba(0,0,0,.6);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);">🔁 Repostar no EuAqui</div>
+        <button onclick="document.getElementById('repost-modal-overlay').remove()" style="background:none;border:1px solid rgba(255,255,255,.12);color:var(--text-muted);width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;">✕</button>
+      </div>
+
+      <!-- Campo de comentário do compartilhador -->
+      <textarea id="repost-comment-txt" placeholder="Adicione um comentário ao compartilhar... (opcional)" style="width:100%;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:10px 12px;color:var(--text-light);font-family:'Space Mono',monospace;font-size:12px;resize:none;outline:none;line-height:1.5;margin-bottom:12px;min-height:70px;" maxlength="300"></textarea>
+
+      <!-- Card do post original -->
+      <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:12px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <img src="${xss(originalAvUrl)}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:1px solid rgba(0,255,204,.3);" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${xss(originalAuthor)}'">
+          <div>
+            <div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--neon-cyan);">${xss(originalPost.profiles?.full_name || originalAuthor)}</div>
+            <div style="font-size:9px;color:var(--text-muted);">@${xss(originalAuthor)}</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--text-light);line-height:1.5;max-height:80px;overflow:hidden;word-break:break-word;">${xss(cleanContent || '(sem texto)')}</div>
+        ${(Array.isArray(originalPost.media_urls) && originalPost.media_urls[0]) ? `<div style="margin-top:8px;border-radius:8px;overflow:hidden;max-height:100px;"><img src="${xss(originalPost.media_urls[0])}" style="width:100%;height:100px;object-fit:cover;display:block;"></div>` : ''}
+      </div>
+
+      <!-- Visibilidade -->
+      <div style="display:flex;gap:6px;margin-bottom:14px;">
+        <button class="vis-opt sel" data-v="public" onclick="document.querySelectorAll('#repost-modal-overlay .vis-opt').forEach(o=>o.classList.remove('sel'));this.classList.add('sel')" style="flex:1;padding:7px 4px;text-align:center;border-radius:6px;font-size:10px;font-family:'Space Mono',monospace;cursor:pointer;border:1px solid rgba(255,255,255,.07);">🌍 Público</button>
+        <button class="vis-opt" data-v="friends" onclick="document.querySelectorAll('#repost-modal-overlay .vis-opt').forEach(o=>o.classList.remove('sel'));this.classList.add('sel')" style="flex:1;padding:7px 4px;text-align:center;border-radius:6px;font-size:10px;font-family:'Space Mono',monospace;cursor:pointer;border:1px solid rgba(255,255,255,.07);">👥 Amigos</button>
+        <button class="vis-opt" data-v="private" onclick="document.querySelectorAll('#repost-modal-overlay .vis-opt').forEach(o=>o.classList.remove('sel'));this.classList.add('sel')" style="flex:1;padding:7px 4px;text-align:center;border-radius:6px;font-size:10px;font-family:'Space Mono',monospace;cursor:pointer;border:1px solid rgba(255,255,255,.07);">🔒 Privado</button>
+      </div>
+
+      <button onclick="_confirmRepost('${postId}','${xss(originalAuthorId)}','${xss(originalAuthor)}')" style="width:100%;background:linear-gradient(135deg,var(--neon-pink),var(--neon-purple));border:none;color:#fff;padding:12px;border-radius:10px;cursor:pointer;font-family:Silkscreen,monospace;font-size:11px;letter-spacing:1px;">🔁 REPOSTAR AGORA</button>
+    </div>`;
+
+  overlay.onclick = e => { if(e.target === overlay) overlay.remove(); };
+  document.body.appendChild(overlay);
+  document.getElementById('repost-comment-txt')?.focus();
+}
+
+async function _confirmRepost(originalPostId, originalAuthorId, originalAuthorName){
+  if(!CU){ showToast('Faça login','error'); return; }
+
+  const commentTxt = document.getElementById('repost-comment-txt')?.value.trim() || '';
+  const visEl = document.querySelector('#repost-modal-overlay .vis-opt.sel');
+  const vis = visEl?.dataset?.v || 'public';
+
+  // Buscar post original novamente para garantir conteúdo limpo
+  let cleanContent = '';
+  let mediaUrls = [];
+  let mediaTypes = [];
+  try{
+    const{data:op} = await db.from('posts')
+      .select('content,media_urls,media_types')
+      .eq('id', originalPostId).maybeSingle();
+    if(op){
+      cleanContent = (op.content||'')
+        .replace(/^\[COMM_POST:[^\]]*\]\n?/, '')
+        .replace(/^\[BIZ_PROMO:[^\]]*\]\n?/, '')
+        .replace(/^\[REPOST:[^\]]*\]\n?/, '')
+        .trim();
+      mediaUrls = Array.isArray(op.media_urls) ? op.media_urls.filter(Boolean) : [];
+      mediaTypes = Array.isArray(op.media_types) ? op.media_types : [];
+    }
+  }catch(e){}
+
+  // Montar conteúdo do repost com marcador especial na primeira linha
+  // [REPOST:postId:autorOriginalUsername] para renderPost identificar
+  const repostMarker = `[REPOST:${originalPostId}:${originalAuthorId}:${originalAuthorName}]`;
+  const fullContent = repostMarker + (commentTxt ? '\n' + commentTxt : '');
+
+  const btn = document.querySelector('#repost-modal-overlay button:last-child');
+  if(btn){ btn.textContent='⏳ Repostando...'; btn.disabled=true; }
+
+  try{
+    const{error} = await db.from('posts').insert({
+      user_id: CU.id,
+      content: fullContent,
+      media_urls: mediaUrls.length ? mediaUrls : null,
+      media_types: mediaTypes.length ? mediaTypes : null,
+      type: 'text',
+      visibility: vis
+    });
+
+    if(error){ showToast('Erro ao repostar: '+error.message,'error'); return; }
+
+    // Notificar o autor original
+    if(originalAuthorId && originalAuthorId !== CU.id){
+      try{
+        await db.from('notifications').insert({
+          user_id: originalAuthorId,
+          actor_id: CU.id,
+          type: 'share',
+          content: `@${CP?.username||'alguém'} compartilhou sua postagem`,
+          read: false
+        });
+      }catch(e){}
+    }
+
+    document.getElementById('repost-modal-overlay')?.remove();
+    showToast('🔁 Repostado com sucesso!','success');
+    // Recarregar feed
+    cachedPostIds.clear(); cachedPosts={};
+    if(document.getElementById('page-home')?.classList.contains('active')){
+      loadFeed(true);
+    } else {
+      nav('home');
+    }
+  }catch(e){
+    showToast('Erro inesperado: '+e.message,'error');
   }
 }
 
