@@ -10906,6 +10906,182 @@ const LIVE_ICE_SERVERS = [
   {urls:'stun:stun1.l.google.com:19302'},
 ];
 
+// ── WebRTC peer connection mesh ─────────────────────────────
+// Cada participante mantém UMA RTCPeerConnection por outro participante.
+// Quem tem `localStream` (host/speakers) anexa suas tracks; ouvintes apenas recebem.
+// Convenção pra evitar dupla offer: o lado com userId "menor" lexicograficamente
+// é quem cria a offer (impolite), o outro é polite e responde.
+
+function _liveCreatePeer(remoteUserId){
+  // Se já existe, reaproveita
+  if(LIVE_STATE.peers[remoteUserId]) return LIVE_STATE.peers[remoteUserId];
+  console.log('[live webrtc] criando peer para', remoteUserId);
+  const pc = new RTCPeerConnection({iceServers: LIVE_ICE_SERVERS});
+  // Anexar tracks locais se houver (host e speakers enviam áudio)
+  if(LIVE_STATE.localStream){
+    LIVE_STATE.localStream.getTracks().forEach(track=>{
+      try{ pc.addTrack(track, LIVE_STATE.localStream); }
+      catch(e){ console.warn('[live webrtc] addTrack err:',e); }
+    });
+  }
+  // Receber tracks remotas → criar <audio> escondido para reproduzir
+  pc.ontrack = (ev)=>{
+    console.log('[live webrtc] ontrack de',remoteUserId, ev.streams);
+    const stream = ev.streams[0];
+    if(!stream) return;
+    let audioEl = document.getElementById('live-audio-'+remoteUserId);
+    if(!audioEl){
+      audioEl = document.createElement('audio');
+      audioEl.id = 'live-audio-'+remoteUserId;
+      audioEl.autoplay = true;
+      audioEl.playsInline = true;
+      audioEl.style.display = 'none';
+      document.body.appendChild(audioEl);
+    }
+    audioEl.srcObject = stream;
+    // Em alguns navegadores, o autoplay pode falhar — tentar play() explicitamente
+    audioEl.play().catch(e=>{
+      console.warn('[live webrtc] autoplay bloqueado, tentando contornar:', e);
+      // Mostrar um toast pedindo interação
+      showToast('🔊 Toque na tela para ouvir a live','success');
+      const resume = ()=>{
+        audioEl.play().then(()=>{
+          document.removeEventListener('click',resume);
+          document.removeEventListener('touchstart',resume);
+        }).catch(()=>{});
+      };
+      document.addEventListener('click',resume,{once:false});
+      document.addEventListener('touchstart',resume,{once:false});
+    });
+    // Detectar atividade de voz para destacar quem está falando
+    try{ _liveAttachVoiceDetector(remoteUserId, stream); }catch(e){}
+  };
+  // Trickle ICE — enviar candidates ao peer remoto
+  pc.onicecandidate = (ev)=>{
+    if(ev.candidate){
+      _liveBroadcast('webrtc_ice',{
+        target: remoteUserId,
+        candidate: ev.candidate
+      });
+    }
+  };
+  pc.onconnectionstatechange = ()=>{
+    console.log('[live webrtc] state',remoteUserId,'=',pc.connectionState);
+    if(pc.connectionState==='failed' || pc.connectionState==='closed' || pc.connectionState==='disconnected'){
+      // Limpar elemento de áudio
+      const a=document.getElementById('live-audio-'+remoteUserId);
+      if(a){ try{a.srcObject=null; a.remove();}catch(e){} }
+    }
+  };
+  LIVE_STATE.peers[remoteUserId] = pc;
+  return pc;
+}
+
+// Decide quem inicia a offer pra evitar colisão (glare).
+// Quem tem o id "menor" lexicograficamente envia a offer.
+function _liveShouldInitiateOffer(remoteUserId){
+  return (CU?.id||'') < remoteUserId;
+}
+
+async function _liveStartNegotiation(remoteUserId){
+  if(!_liveShouldInitiateOffer(remoteUserId)) return;
+  const pc = _liveCreatePeer(remoteUserId);
+  try{
+    const offer = await pc.createOffer({offerToReceiveAudio:true});
+    await pc.setLocalDescription(offer);
+    _liveBroadcast('webrtc_offer',{
+      target: remoteUserId,
+      sdp: pc.localDescription
+    });
+    console.log('[live webrtc] offer enviada para',remoteUserId);
+  }catch(e){
+    console.error('[live webrtc] offer err:',e);
+  }
+}
+
+async function _liveHandleOffer(fromUserId, sdp){
+  console.log('[live webrtc] offer recebida de',fromUserId);
+  const pc = _liveCreatePeer(fromUserId);
+  try{
+    await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    _liveBroadcast('webrtc_answer',{
+      target: fromUserId,
+      sdp: pc.localDescription
+    });
+    console.log('[live webrtc] answer enviada para',fromUserId);
+  }catch(e){
+    console.error('[live webrtc] handleOffer err:',e);
+  }
+}
+
+async function _liveHandleAnswer(fromUserId, sdp){
+  console.log('[live webrtc] answer recebida de',fromUserId);
+  const pc = LIVE_STATE.peers[fromUserId];
+  if(!pc) return;
+  try{
+    await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+  }catch(e){
+    console.error('[live webrtc] handleAnswer err:',e);
+  }
+}
+
+async function _liveHandleIce(fromUserId, candidate){
+  const pc = LIVE_STATE.peers[fromUserId];
+  if(!pc) return;
+  try{
+    await pc.addIceCandidate(new RTCIceCandidate(candidate));
+  }catch(e){
+    console.warn('[live webrtc] addIceCandidate err:',e);
+  }
+}
+
+// ── Voice activity detection: destaca o avatar de quem está falando ──
+function _liveAttachVoiceDetector(userId, stream){
+  if(!window.AudioContext && !window.webkitAudioContext) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if(!LIVE_STATE._audioCtx){ LIVE_STATE._audioCtx = new AC(); }
+  const ctx = LIVE_STATE._audioCtx;
+  const source = ctx.createMediaStreamSource(stream);
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 256;
+  source.connect(analyser);
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  let lastSpeaking = false;
+  const tick = ()=>{
+    if(!LIVE_STATE.peers[userId] && userId!==CU?.id){ return; }
+    analyser.getByteFrequencyData(data);
+    let sum=0;
+    for(let i=0;i<data.length;i++) sum+=data[i];
+    const avg = sum/data.length;
+    const speaking = avg > 18;
+    if(speaking !== lastSpeaking){
+      lastSpeaking = speaking;
+      if(LIVE_STATE.participants[userId]){
+        LIVE_STATE.participants[userId].speaking = speaking;
+        // Atualização leve no DOM (sem rerender completo)
+        const cards = document.querySelectorAll('.live-speaker');
+        cards.forEach(c=>{
+          const img = c.querySelector('.live-speaker-av');
+          const nameEl = c.querySelector('.live-speaker-name');
+          if(nameEl && nameEl.textContent === (LIVE_STATE.participants[userId].username||'')){
+            c.classList.toggle('speaking', speaking);
+          }
+        });
+      }
+    }
+    requestAnimationFrame(tick);
+  };
+  tick();
+}
+
+// Anexa detector pro próprio mic local (do host/speaker)
+function _liveAttachLocalVoiceDetector(){
+  if(!LIVE_STATE.localStream) return;
+  try{ _liveAttachVoiceDetector(CU?.id, LIVE_STATE.localStream); }catch(e){}
+}
+
 async function loadCommLive(commId){
   const el=document.getElementById('comm-live-content-'+commId);
   if(!el) return;
@@ -11084,6 +11260,8 @@ async function startCommLive(commId){
   await _connectLiveChannel(commId);
   // Anunciar presença
   _livePresenceAnnounce();
+  // Detector de voz local pro próprio host
+  _liveAttachLocalVoiceDetector();
   showToast('🎙 Live iniciada!','success');
   renderLiveRoom(commId, true);
 }
@@ -11133,8 +11311,14 @@ async function _connectLiveChannel(commId){
   channel.on('broadcast',{event:'live_event'}, (payload)=>{
     _handleLiveEvent(commId, payload.payload);
   });
-  channel.subscribe((status)=>{
-    console.log('[live] channel status:',status);
+  // Aguardar subscribe completar antes de retornar
+  await new Promise((resolve)=>{
+    channel.subscribe((status)=>{
+      console.log('[live] channel status:',status);
+      if(status==='SUBSCRIBED') resolve();
+    });
+    // Failsafe: resolver depois de 3s mesmo sem SUBSCRIBED
+    setTimeout(resolve, 3000);
   });
   LIVE_STATE.channel = channel;
 }
@@ -11167,6 +11351,7 @@ function _handleLiveEvent(commId, ev){
   const type=ev.type;
   switch(type){
     case 'presence': {
+      const wasKnown = !!LIVE_STATE.participants[ev.from];
       LIVE_STATE.participants[ev.from] = {
         username: ev.username||'user',
         avatar_url: ev.avatar_url||'',
@@ -11180,21 +11365,53 @@ function _handleLiveEvent(commId, ev){
       if(LIVE_STATE.role==='host'){
         _liveBroadcast('roster',{roster:LIVE_STATE.participants});
       }
+      // ── WebRTC: iniciar negociação com o novo participante ──
+      // Todo mundo que pode enviar áudio (host/speaker) ou receber (qualquer um)
+      // estabelece uma peer connection com o novato. Dedupe via _liveShouldInitiateOffer.
+      if(!wasKnown && ev.from){
+        // Pequeno delay pra garantir que o novato já configurou o canal
+        setTimeout(()=>_liveStartNegotiation(ev.from), 300);
+      }
       break;
     }
     case 'request_roster': {
       if(LIVE_STATE.role==='host'){
         _liveBroadcast('roster',{roster:LIVE_STATE.participants});
       }
+      // Mesmo quem não é host: anunciar presença pra novato me conhecer
+      _livePresenceAnnounce();
       break;
     }
     case 'roster': {
       // Mesclar roster recebido com participantes locais
       const incoming = ev.roster||{};
       Object.entries(incoming).forEach(([uid,p])=>{
-        if(!LIVE_STATE.participants[uid]) LIVE_STATE.participants[uid]=p;
+        if(uid===CU?.id) return;
+        if(!LIVE_STATE.participants[uid]){
+          LIVE_STATE.participants[uid]=p;
+          // Iniciar negociação WebRTC com cada um do roster
+          setTimeout(()=>_liveStartNegotiation(uid), 300);
+        }
       });
       _refreshLiveUI(commId);
+      break;
+    }
+    case 'webrtc_offer': {
+      if(ev.target===CU?.id){
+        _liveHandleOffer(ev.from, ev.sdp);
+      }
+      break;
+    }
+    case 'webrtc_answer': {
+      if(ev.target===CU?.id){
+        _liveHandleAnswer(ev.from, ev.sdp);
+      }
+      break;
+    }
+    case 'webrtc_ice': {
+      if(ev.target===CU?.id){
+        _liveHandleIce(ev.from, ev.candidate);
+      }
       break;
     }
     case 'role_change': {
@@ -11208,15 +11425,25 @@ function _handleLiveEvent(commId, ev){
         LIVE_STATE.role = newRole;
         if(newRole==='speaker'){
           // Solicitar mic
-          navigator.mediaDevices.getUserMedia({audio:true,video:false}).then(s=>{
+          navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false}).then(s=>{
             LIVE_STATE.localStream=s;
             LIVE_STATE.muted=false;
             showToast('🎙 Você é orador agora!','success');
             _livePresenceAnnounce();
+            _liveAttachLocalVoiceDetector();
+            // ── Renegociar todas as peer connections existentes para incluir minhas tracks ──
+            Object.keys(LIVE_STATE.peers).forEach(remoteId=>{
+              const oldPc = LIVE_STATE.peers[remoteId];
+              try{ oldPc.close(); }catch(e){}
+              delete LIVE_STATE.peers[remoteId];
+              setTimeout(()=>_liveStartNegotiation(remoteId), 200);
+            });
             _refreshLiveUI(commId);
           }).catch(e=>{
-            showToast('Mic negado','error');
+            showToast('🎙 Mic negado','error');
+            console.error('mic err:',e);
             LIVE_STATE.role='listener';
+            _refreshLiveUI(commId);
           });
         } else if(newRole==='listener'){
           if(LIVE_STATE.localStream){
@@ -11225,12 +11452,24 @@ function _handleLiveEvent(commId, ev){
           }
           LIVE_STATE.muted=true;
           showToast('🎧 Você voltou a ser ouvinte','success');
+          // Renegociar para parar de enviar áudio
+          Object.keys(LIVE_STATE.peers).forEach(remoteId=>{
+            const oldPc = LIVE_STATE.peers[remoteId];
+            try{ oldPc.close(); }catch(e){}
+            delete LIVE_STATE.peers[remoteId];
+            setTimeout(()=>_liveStartNegotiation(remoteId), 200);
+          });
         }
       }
       _refreshLiveUI(commId);
       break;
     }
     case 'leave': {
+      // Limpar peer connection do participante que saiu
+      const pc = LIVE_STATE.peers[ev.from];
+      if(pc){ try{pc.close();}catch(e){} delete LIVE_STATE.peers[ev.from]; }
+      const audioEl = document.getElementById('live-audio-'+ev.from);
+      if(audioEl){ try{audioEl.srcObject=null; audioEl.remove();}catch(e){} }
       delete LIVE_STATE.participants[ev.from];
       _refreshLiveUI(commId);
       break;
@@ -11401,6 +11640,15 @@ function _cleanupLiveState(){
     try{ db.removeChannel(LIVE_STATE.channel); }catch(e){}
   }
   Object.values(LIVE_STATE.peers).forEach(pc=>{try{pc.close();}catch(e){}});
+  // Remover todos os elementos <audio> remotos criados
+  document.querySelectorAll('audio[id^="live-audio-"]').forEach(a=>{
+    try{ a.srcObject=null; a.remove(); }catch(e){}
+  });
+  // Fechar AudioContext do detector de voz
+  if(LIVE_STATE._audioCtx){
+    try{ LIVE_STATE._audioCtx.close(); }catch(e){}
+    LIVE_STATE._audioCtx = null;
+  }
   LIVE_STATE.activeCommId=null;
   LIVE_STATE.role=null;
   LIVE_STATE.channel=null;
