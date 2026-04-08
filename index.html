@@ -3732,6 +3732,19 @@ async function loadFeed(force=false){
   });
   const myRxMap={};
   (myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
+  // Pré-carregar avatares de comunidades para posts com [COMM:id:]
+  if(!window._commAvatarCache) window._commAvatarCache={};
+  const commPostIds=[...new Set(posts
+    .map(p=>{ const m=(p.content||'').match(/^\[COMM:([^:]+):/); return m?m[1]:null; })
+    .filter(Boolean)
+  )];
+  if(commPostIds.length){
+    const missingIds=commPostIds.filter(id=>!window._commAvatarCache[id]);
+    if(missingIds.length){
+      const{data:comms}=await db.from('communities').select('id,avatar_url').in('id',missingIds);
+      (comms||[]).forEach(cm=>{ window._commAvatarCache[cm.id]=cm.avatar_url||''; });
+    }
+  }
   const rendered = posts.map(p=>{
     try{ return renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||''); }
     catch(e){ console.warn('renderPost error:',e,p?.id); return ''; }
@@ -3773,6 +3786,16 @@ function renderPost(post,rxCounts={},myRx=''){
   try{
   const prof=post.profiles||{};
 
+  // ── Detectar post de comunidade [COMM:id:nome:] ──
+  let commMeta = null;
+  let rawContent2 = post.content||'';
+  const commMatch = rawContent2.match(/^\[COMM:([^:]+):([^:]*?):\]/);
+  if(commMatch){
+    commMeta = { id: commMatch[1], name: decodeURIComponent(commMatch[2]||'') };
+    rawContent2 = rawContent2.replace(commMatch[0],'').trim();
+    post = {...post, content: rawContent2}; // remover prefixo do conteúdo exibido
+  }
+
   // ── Detectar post de loja (BIZ_PROMO) ──
   let bizMeta = null;
   let displayContent = post.content||'';
@@ -3803,10 +3826,12 @@ function renderPost(post,rxCounts={},myRx=''){
 
   // Avatar e nome — usa identidade da loja se for BIZ_PROMO
   const avUrl = (bizMeta && bizMeta.logo) ? bizMeta.logo : (prof.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'user'));
-  const displayName = (bizMeta && bizMeta.name) ? bizMeta.name : (prof.full_name||prof.username||'Usuário');
-  const displayHandle = bizMeta ? ('🏪 '+(bizMeta.name||'')) : ('@'+(prof.username||'user'));
-  const avBorderColor = bizMeta ? 'var(--neon-yellow)' : 'var(--neon-pink)';
-  const avHtml='<img src="'+xss(avUrl)+'" data-uid="'+post.user_id+'" data-fb="https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u')+'" style="width:42px;height:42px;border-radius:'+(bizMeta?'10px':'50%')+';object-fit:cover;border:2px solid '+(bizMeta?'rgba(255,204,0,.5)':'rgba(0,255,204,.25)')+';flex-shrink:0;cursor:pointer;" onclick="showPostAuthorProfile(this.dataset.uid,null)" onerror="this.src=this.dataset.fb">'; 
+  const displayName = commMeta ? commMeta.name
+    : (bizMeta?.name || prof.full_name||prof.username||'Usuário');
+  const displayHandle = commMeta ? '🏘 Comunidade'
+    : (bizMeta ? ('🏪 '+(bizMeta.name||'')) : ('@'+(prof.username||'user')));
+  const avBorderColor = commMeta ? 'var(--neon-cyan)' : bizMeta ? 'var(--neon-yellow)' : 'var(--neon-pink)';
+  const avHtml='<img src="'+xss(avUrl)+'" data-uid="'+post.user_id+'" data-fb="https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u')+'" style="width:42px;height:42px;border-radius:'+avBorderRadius+';object-fit:cover;border:2px solid '+(bizMeta?'rgba(255,204,0,.5)':'rgba(0,255,204,.25)')+';flex-shrink:0;cursor:pointer;" onclick="showPostAuthorProfile(this.dataset.uid,null)" onerror="this.src=this.dataset.fb">'; 
   const time=timeAgo(post.created_at);
   const content=linkify(displayContent);
   // Visibilidade (coluna pode não existir)
@@ -4888,7 +4913,15 @@ async function openCommDetail(commId){
         <button class="comm-tab" onclick="switchCommInnerTab('${commId}','ct-xp',this)">🏆 Ranking</button>
       </div>
       <div id="ct-posts-${commId}">
-        ${isMember&&!isBanned?`<div style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:12px;padding:14px;margin-bottom:14px;">
+        ${isBanned?`<div style="background:rgba(255,51,102,.1);border:1px solid rgba(255,51,102,.3);border-radius:10px;padding:14px;margin-bottom:14px;text-align:center;font-size:12px;color:var(--neon-pink);">🚫 Banido até ${bannedUntil?.toLocaleDateString('pt-BR')}</div>`:''}
+        ${isOwner?`<div style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:12px;padding:14px;margin-bottom:14px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+            ${isImgAvatar?`<img src="${xss(comm.avatar_url)}" style="width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid var(--neon-cyan)40;">`:`<div style="width:36px;height:36px;border-radius:10px;background:rgba(0,255,204,.1);display:flex;align-items:center;justify-content:center;font-size:18px;">${comm.avatar_url||'🏘'}</div>`}
+            <div>
+              <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);">${xss(comm.name)}</div>
+              <div style="font-size:9px;color:var(--text-muted);">Postando como comunidade</div>
+            </div>
+          </div>
           <textarea class="ainput" id="comm-post-txt-${commId}" rows="3" placeholder="Compartilhe algo com a comunidade..." style="resize:none;margin-bottom:8px;"></textarea>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <button class="tbtn" onclick="document.getElementById('comm-media-${commId}').click()">📷 Foto/Vídeo</button>
@@ -4896,7 +4929,7 @@ async function openCommDetail(commId){
             <div id="comm-media-prev-${commId}" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
             <button class="post-btn" style="margin-left:auto;font-size:11px;" onclick="postInCommV2('${commId}')">POSTAR ▶</button>
           </div>
-        </div>`:isBanned?`<div style="background:rgba(255,51,102,.1);border:1px solid rgba(255,51,102,.3);border-radius:10px;padding:14px;margin-bottom:14px;text-align:center;font-size:12px;color:var(--neon-pink);">🚫 Banido até ${bannedUntil.toLocaleDateString('pt-BR')}</div>`:''}
+        </div>`:isMember?`<div style="padding:12px;background:rgba(255,255,255,.02);border:1px solid var(--border-glow);border-radius:10px;margin-bottom:14px;text-align:center;font-size:11px;color:var(--text-muted);">Somente o criador da comunidade pode publicar posts.</div>`:''}
         <div id="comm-posts-list-${commId}">${skeletons(2)}</div>
       </div>
       <div id="ct-chat-${commId}" style="display:none;">
@@ -4912,6 +4945,9 @@ async function openCommDetail(commId){
       <div id="ct-members-${commId}" style="display:none;"><div id="comm-members-list-${commId}">${skeletons(3)}</div></div>
       <div id="ct-xp-${commId}" style="display:none;"><div id="comm-xp-list-${commId}">${skeletons(3)}</div></div>
     </div>`;
+  // Guardar avatar da comunidade no cache para renderPost
+  if(!window._commAvatarCache) window._commAvatarCache={};
+  window._commAvatarCache[commId] = comm.avatar_url||'';
   loadCommPostsV2(commId,isMember,isMod);
   loadCommChat(commId);
   loadCommMembersPanel(commId,isMod,isOwner);
@@ -9871,11 +9907,15 @@ async function postInCommV2(commId){
       if(ud){const{data:u}=db.storage.from('media').getPublicUrl(path);urls.push(u.publicUrl);mTypes.push(f.type.startsWith('video')?'video':'image');}
     }catch(e){}
   }
-  // visibility='community' — não aparece no feed global (feed filtra só public/friends)
+  // Buscar dados da comunidade para mostrar no post
+  const{data:commData}=await db.from('communities').select('id,name,avatar_url,owner_id').eq('id',commId).maybeSingle();
+  // Marcar conteúdo com metadado da comunidade (prefixo oculto)
+  const commMeta='[COMM:'+commId+':'+encodeURIComponent(commData?.name||'')+':]';
+  const finalContent=(txt?commMeta+txt:commMeta).trim();
   const{data:post,error}=await db.from('posts').insert({
-    user_id:CU.id,content:txt||null,
+    user_id:CU.id,content:finalContent,
     type:urls.length?(mTypes.includes('video')?'video':'image'):'text',
-    visibility:'private',  // posts de comunidade ficam privados no feed geral
+    visibility:'public',  // público — feed filtra por membros via metadado
     media_urls:urls.length?urls:[],media_types:mTypes.length?mTypes:[]
   }).select().maybeSingle();
   if(error){showToast('Erro: '+error.message,'error');if(btn){btn.disabled=false;btn.textContent='POSTAR ▶';}return;}
