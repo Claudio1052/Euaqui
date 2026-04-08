@@ -3711,19 +3711,49 @@ async function loadFeed(force=false){
   }
   const{data:posts,error:fetchErr}=await q;
   if(fetchErr){console.error('Feed error:',fetchErr.message);if(feed.children.length===0)feed.innerHTML='<div style="text-align:center;padding:30px;color:var(--neon-pink);font-size:12px;">Erro ao carregar feed.<br>'+fetchErr.message+'</div>';return;}
-  if(!posts?.length&&feed.children.length===0){
+  // ── Filtro de posts de comunidade: só membros podem ver no feed principal ──
+  // Detecta posts com marker [COMM_POST:commId:...] e remove do feed
+  // se o usuário atual NÃO for membro daquela comunidade.
+  let filteredPosts = posts || [];
+  try{
+    const commPostMap = new Map(); // postIndex -> commId
+    (filteredPosts).forEach((p,idx)=>{
+      const c = p?.content||'';
+      if(c.startsWith('[COMM_POST:')){
+        const end = c.indexOf(']');
+        if(end>11){
+          const inner = c.substring(11,end);
+          const colon = inner.indexOf(':');
+          if(colon>0) commPostMap.set(idx, inner.substring(0,colon));
+        }
+      }
+    });
+    if(commPostMap.size>0){
+      const allCommIds=[...new Set([...commPostMap.values()])];
+      let myCommSet = new Set();
+      if(CU){
+        const{data:myMems}=await db.from('community_members')
+          .select('community_id').eq('user_id',CU.id).in('community_id',allCommIds);
+        (myMems||[]).forEach(m=>myCommSet.add(m.community_id));
+      }
+      filteredPosts = filteredPosts.filter((p,idx)=>{
+        const cId = commPostMap.get(idx);
+        if(!cId) return true;             // não é post de comunidade → mantém
+        return myCommSet.has(cId);        // é post de comunidade → só se for membro
+      });
+    }
+  }catch(e){ console.warn('Comm filter:',e?.message); }
+  if(!filteredPosts?.length&&feed.children.length===0){
     feed.innerHTML='<div style="text-align:center;padding:40px;color:var(--text-muted);font-family:\'VT323\',monospace;font-size:20px;">SEM POSTS AINDA ✨<br><span style="font-size:14px;font-family:\'Space Mono\',monospace;">Seja o primeiro!</span></div>';
     return;
   }
-  if(!posts?.length)return;
+  if(!filteredPosts?.length)return;
   // Incremental: não re-renderiza posts que já estão na tela
-  // Verificar se há posts novos para decidir se re-renderiza
   const newPosts=[];
-  for(const p of posts){if(!cachedPostIds.has(p.id))newPosts.push(p);}
-  // Só pula se não há posts novos E o feed já tem conteúdo E não é reload forçado
+  for(const p of filteredPosts){if(!cachedPostIds.has(p.id))newPosts.push(p);}
   if(newPosts.length===0&&feed.children.length>0&&!force)return;
   // Busca reações para todos os posts de uma vez
-  const postIds=posts.map(p=>p.id);
+  const postIds=filteredPosts.map(p=>p.id);
   const[rxRes,myRxRes]=await Promise.all([
     db.from('likes').select('post_id,reaction_type').in('post_id',postIds),
     CU?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id):{data:[]}
@@ -3735,17 +3765,16 @@ async function loadFeed(force=false){
   });
   const myRxMap={};
   (myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
-  const rendered = posts.map(p=>{
+  const rendered = filteredPosts.map(p=>{
     try{ return renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||''); }
     catch(e){ console.warn('renderPost error:',e?.message,p?.id); return ''; }
   });
   const validPosts = rendered.filter(h=>h.length>0);
   const html = validPosts.join('');
   feed.innerHTML = html || '<div style="text-align:center;padding:40px;color:var(--text-muted);"><div style="font-size:40px;margin-bottom:12px;">📭</div><div style="font-family:VT323,monospace;font-size:20px;">Nenhuma postagem ainda</div></div>';
-  posts.forEach(p=>cachedPostIds.add(p.id));
+  filteredPosts.forEach(p=>cachedPostIds.add(p.id));
   cachedPosts[cacheKey]=html;
-  // Update comment counts with real DB values (handles cases where trigger hasn't run)
-  updateCommentCounts(posts.map(p=>p.id));
+  updateCommentCounts(filteredPosts.map(p=>p.id));
 }
 
 async function updateCommentCounts(postIds){
@@ -3777,9 +3806,32 @@ function renderPost(post,rxCounts={},myRx=''){
   try{
   const prof=post.profiles||{};
 
+  // ── Detectar post de comunidade (COMM_POST) ──
+  let commMeta = null;
   // ── Detectar post de loja (BIZ_PROMO) ──
   let bizMeta = null;
   let displayContent = post.content||'';
+  // COMM_POST: [COMM_POST:commId:Nome|iconUrl]
+  try{
+    const raw0 = post.content||'';
+    const cStart = raw0.indexOf('[COMM_POST:');
+    if(cStart >= 0 && cStart < 20){
+      const cEnd = raw0.indexOf(']', cStart);
+      if(cEnd > cStart){
+        const meta = raw0.substring(cStart+11, cEnd); // após "[COMM_POST:"
+        const c1 = meta.indexOf(':');
+        if(c1 > 0){
+          const cId   = meta.substring(0, c1);
+          const rest  = meta.substring(c1+1);
+          const pipe  = rest.indexOf('|');
+          const cName = (pipe>=0 ? rest.substring(0,pipe) : rest).replace(/\|/g,':');
+          const cIcon = pipe>=0 ? rest.substring(pipe+1) : '';
+          commMeta = { id:cId, name:cName, icon:cIcon };
+          displayContent = raw0.substring(cEnd+1).replace(/^\n/,'');
+        }
+      }
+    }
+  }catch(e){ commMeta=null; displayContent=post.content||''; }
   try{
     const rawContent = post.content||'';
     // Find BIZ_PROMO marker anywhere in first 200 chars
@@ -3805,18 +3857,28 @@ function renderPost(post,rxCounts={},myRx=''){
     }
   }catch(e){ bizMeta=null; displayContent=post.content||''; }
 
-  // Avatar e nome — usa identidade da loja se for BIZ_PROMO
-  const avUrl = (bizMeta && bizMeta.logo) ? bizMeta.logo : (prof.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'user'));
-  const displayName = (bizMeta && bizMeta.name) ? bizMeta.name : (prof.full_name||prof.username||'Usuário');
-  const displayHandle = bizMeta ? ('🏪 '+(bizMeta.name||'')) : ('@'+(prof.username||'user'));
-  const avBorderColor = bizMeta ? 'var(--neon-yellow)' : 'var(--neon-pink)';
-  const avHtml='<img src="'+xss(avUrl)+'" data-uid="'+post.user_id+'" data-fb="https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u')+'" style="width:42px;height:42px;border-radius:'+(bizMeta?'10px':'50%')+';object-fit:cover;border:2px solid '+(bizMeta?'rgba(255,204,0,.5)':'rgba(0,255,204,.25)')+';flex-shrink:0;cursor:pointer;" onclick="showPostAuthorProfile(this.dataset.uid,null)" onerror="this.src=this.dataset.fb">'; 
+  // Avatar e nome — usa identidade da comunidade (COMM_POST), depois loja (BIZ_PROMO), senão usuário
+  const avUrl = commMeta && commMeta.icon ? commMeta.icon
+              : (bizMeta && bizMeta.logo) ? bizMeta.logo
+              : (prof.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'user'));
+  const displayName = commMeta ? commMeta.name
+              : (bizMeta && bizMeta.name) ? bizMeta.name
+              : (prof.full_name||prof.username||'Usuário');
+  const displayHandle = commMeta ? ('🏘 Comunidade · por @'+(prof.username||'user'))
+              : bizMeta ? ('🏪 '+(bizMeta.name||''))
+              : ('@'+(prof.username||'user'));
+  const avBorderColor = commMeta ? 'var(--neon-cyan)' : (bizMeta ? 'var(--neon-yellow)' : 'var(--neon-pink)');
+  const avRadius = commMeta ? '12px' : (bizMeta?'10px':'50%');
+  const avBorderRgba = commMeta ? 'rgba(0,255,204,.55)' : (bizMeta?'rgba(255,204,0,.5)':'rgba(0,255,204,.25)');
+  const avClickUid = commMeta ? post.user_id : post.user_id; // clique no avatar leva ao autor; nome leva à comunidade
+  const avHtml='<img src="'+xss(avUrl)+'" data-uid="'+post.user_id+'" data-fb="https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u')+'" style="width:42px;height:42px;border-radius:'+avRadius+';object-fit:cover;border:2px solid '+avBorderRgba+';flex-shrink:0;cursor:pointer;" onclick="'+(commMeta?`openCommDetail('${commMeta.id}')`:`showPostAuthorProfile(this.dataset.uid,null)`)+'" onerror="this.src=this.dataset.fb">';
   const time=timeAgo(post.created_at);
   const content=linkify(displayContent);
   // Visibilidade (coluna pode não existir)
   const vis=post.visibility||'public';
   let visBadge=vis==='friends'?`<span class="vis-badge vis-fri">👥 Amigos</span>`:vis==='private'?`<span class="vis-badge vis-prv">🔒 Privado</span>`:`<span class="vis-badge vis-pub">🌍 Público</span>`;
   if(bizMeta) visBadge='<span style="background:rgba(255,204,0,.15);color:var(--neon-yellow);border:1px solid rgba(255,204,0,.3);border-radius:6px;font-size:9px;padding:2px 7px;">🏪 Publicidade</span>';
+  if(commMeta) visBadge='<span style="background:rgba(0,255,204,.12);color:var(--neon-cyan);border:1px solid rgba(0,255,204,.35);border-radius:6px;font-size:9px;padding:2px 7px;cursor:pointer;" onclick="openCommDetail(\''+commMeta.id+'\')">🏘 '+xss(commMeta.name)+' · Membros</span>';
   const REACTIONS=['👍','❤️','😂','😮','😢'];
   const rxHtml=REACTIONS.map(r=>{
     const cnt=rxCounts[r]||0;
@@ -3832,7 +3894,7 @@ function renderPost(post,rxCounts={},myRx=''){
     <div class="ph">
       ${avHtml}
       <div class="pmeta">
-        <div class="pun" style="cursor:pointer;" data-uid="${post.user_id}" data-bizid="${bizMeta && bizMeta.id ? bizMeta.id : ''}" onclick="handlePostClick(this)">${xss(displayName)}</div>
+        <div class="pun" style="cursor:pointer;" data-uid="${post.user_id}" data-bizid="${bizMeta && bizMeta.id ? bizMeta.id : ''}" data-commid="${commMeta && commMeta.id ? commMeta.id : ''}" onclick="${commMeta?`openCommDetail('${commMeta.id}')`:`handlePostClick(this)`}">${xss(displayName)}</div>
         <div class="pt"><span>${xss(displayHandle)}</span> · ${time} ${visBadge}</div>
       </div>
       <div style="display:flex;gap:4px;margin-left:auto;">
@@ -9886,13 +9948,20 @@ async function postInCommV2(commId){
       if(ud){const{data:u}=db.storage.from('media').getPublicUrl(path);urls.push(u.publicUrl);mTypes.push(f.type.startsWith('video')?'video':'image');}
     }catch(e){}
   }
-  // Buscar dados da comunidade para mostrar no post
-  const{data:commData}=await db.from('communities').select('id,name,avatar_url,owner_id').eq('id',commId).maybeSingle();
-  // Post exclusivo da comunidade
+  // Buscar dados da comunidade para mostrar no post (nome + avatar/ícone)
+  const{data:commData}=await db.from('communities').select('id,name,avatar_url,icon,owner_id').eq('id',commId).maybeSingle();
+  // Marker de identidade da comunidade — detectado por renderPost
+  // Formato: [COMM_POST:commId:Nome|iconUrl]  (| no nome no lugar de : para evitar conflito)
+  const commIcon = (commData?.avatar_url || commData?.icon || '').replace(/\|/g,'');
+  const commName = (commData?.name || 'Comunidade').replace(/:/g,'|');
+  const marker   = `[COMM_POST:${commId}:${commName}|${commIcon}]`;
+  const finalContent = marker + (txt ? '\n'+txt : '');
+  // Post da comunidade — visibility 'public' para aparecer no feed também,
+  // porém filtrado em loadFeed para que somente membros da comunidade vejam
   const{data:post,error}=await db.from('posts').insert({
-    user_id:CU.id,content:txt||null,
+    user_id:CU.id,content:finalContent,
     type:urls.length?(mTypes.includes('video')?'video':'image'):'text',
-    visibility:'private',
+    visibility:'public',
     media_urls:urls.length?urls:[],media_types:mTypes.length?mTypes:[]
   }).select().maybeSingle();
   if(error){showToast('Erro: '+error.message,'error');if(btn){btn.disabled=false;btn.textContent='POSTAR ▶';}return;}
