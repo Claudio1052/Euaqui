@@ -11090,15 +11090,34 @@ async function loadCommLive(commId){
   const isOwner = CU?.id===comm?.owner_id;
   // Verificar se já existe uma live ativa para esta comunidade
   const isLiveActive = LIVE_STATE.activeCommId===commId;
-  // Verificar se há broadcast de outro host (via localStorage marker — ping Supabase)
+  // Verificar se há broadcast de outro host (via flag no banco)
   let hostLiveActive = false;
   try{
     const{data:liveRow}=await db.from('communities').select('live_active,live_title').eq('id',commId).maybeSingle();
     hostLiveActive = !!liveRow?.live_active;
     if(hostLiveActive) LIVE_STATE._liveTitle = liveRow?.live_title || 'Live da Comunidade';
   }catch(e){ /* coluna pode não existir; ignora */ }
+  // ── CASO 1: Live marcada como ativa mas eu sou o owner e NÃO estou nela ──
+  // Significa que fechei a aba antes ou recarreguei. Ofereço retomar como host ou encerrar.
+  if(hostLiveActive && isOwner && !isLiveActive){
+    el.innerHTML=`
+      <div class="live-room">
+        <div class="live-empty">
+          <div class="live-empty-big">🎙</div>
+          <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-yellow);margin-bottom:6px;">LIVE ATIVA SEM HOST</div>
+          <div style="font-size:11px;margin-bottom:6px;">Você tem uma live aberta nesta comunidade que não foi encerrada corretamente.</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:18px;">Título: <b style="color:var(--text-light);">${xss(LIVE_STATE._liveTitle||'Live da Comunidade')}</b></div>
+          <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+            <button class="live-ctrl-btn primary" onclick="resumeCommLive('${commId}')">🎙 Retomar como Host</button>
+            <button class="live-ctrl-btn danger" onclick="forceEndCommLive('${commId}')">🛑 Encerrar Live</button>
+          </div>
+          <div style="font-size:9px;color:var(--text-muted);margin-top:12px;">Retomar irá pedir o microfone novamente</div>
+        </div>
+      </div>`;
+    return;
+  }
+  // ── CASO 2: Sem live rolando ──
   if(!isLiveActive && !hostLiveActive){
-    // Sem live rolando agora
     if(isOwner){
       el.innerHTML=`
         <div class="live-room">
@@ -11127,6 +11146,65 @@ async function loadCommLive(commId){
   }
   // Live ativa — mostrar interface de sala
   renderLiveRoom(commId, isOwner);
+}
+
+// ── Retomar uma live abandonada (owner volta) ──
+async function resumeCommLive(commId){
+  if(!CU) return showToast('Faça login','error');
+  // Confirma que ainda sou owner
+  const{data:comm}=await db.from('communities').select('owner_id,live_title').eq('id',commId).maybeSingle();
+  if(comm?.owner_id !== CU?.id) return showToast('Apenas o dono pode retomar','error');
+  // Pede mic
+  let stream;
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
+  }catch(e){
+    showToast('🎙 Acesso ao microfone negado','error');
+    return;
+  }
+  // Reinicia estado como host
+  LIVE_STATE.activeCommId = commId;
+  LIVE_STATE.role = 'host';
+  LIVE_STATE.localStream = stream;
+  LIVE_STATE.muted = false;
+  LIVE_STATE._liveTitle = comm?.live_title || 'Live da Comunidade';
+  LIVE_STATE.liveId = 'live_'+commId+'_'+Date.now();
+  LIVE_STATE.participants = {};
+  LIVE_STATE.participants[CU.id] = {
+    username: CP?.username||'host',
+    avatar_url: CP?.avatar_url||'',
+    role:'host', muted:false, handRaised:false, speaking:false
+  };
+  await _connectLiveChannel(commId);
+  _livePresenceAnnounce();
+  _liveAttachLocalVoiceDetector();
+  _liveStartHeartbeat(commId);
+  showToast('🎙 Live retomada','success');
+  renderLiveRoom(commId, true);
+}
+
+// ── Forçar encerramento de live abandonada (sem entrar nela) ──
+async function forceEndCommLive(commId){
+  if(!CU) return;
+  if(!confirm('Encerrar a live abandonada?')) return;
+  try{
+    await db.from('communities').update({live_active:false,live_title:null}).eq('id',commId);
+  }catch(e){}
+  // Tentar avisar via canal (caso ainda haja gente conectada)
+  try{
+    const tmpChannel = db.channel('live-'+commId, {config:{broadcast:{self:false}}});
+    await new Promise(resolve=>{
+      tmpChannel.subscribe(s=>{ if(s==='SUBSCRIBED') resolve(); });
+      setTimeout(resolve, 1500);
+    });
+    tmpChannel.send({type:'broadcast',event:'live_event',payload:{type:'end_live',from:CU?.id}});
+    setTimeout(()=>{ try{db.removeChannel(tmpChannel);}catch(e){} }, 500);
+  }catch(e){}
+  showToast('🛑 Live encerrada','success');
+  loadCommLive(commId);
+  // Esconder badge
+  const badge=document.getElementById('ct-live-badge-'+commId);
+  if(badge) badge.style.display='none';
 }
 
 function renderLiveRoom(commId, isOwner){
@@ -11262,8 +11340,59 @@ async function startCommLive(commId){
   _livePresenceAnnounce();
   // Detector de voz local pro próprio host
   _liveAttachLocalVoiceDetector();
+  // Heartbeat + handler de fechamento de aba para não deixar live órfã
+  _liveStartHeartbeat(commId);
   showToast('🎙 Live iniciada!','success');
   renderLiveRoom(commId, true);
+}
+
+// ── Heartbeat: garante que se o host fechar a aba, a live é encerrada ──
+function _liveStartHeartbeat(commId){
+  if(LIVE_STATE._heartbeatInt){
+    clearInterval(LIVE_STATE._heartbeatInt);
+  }
+  // Reanuncia presença a cada 20s para manter participantes sincronizados
+  LIVE_STATE._heartbeatInt = setInterval(()=>{
+    if(LIVE_STATE.role==='host'){
+      _livePresenceAnnounce();
+    }
+  }, 20000);
+  // Handler de unload: tenta encerrar a live antes de fechar a aba
+  if(!LIVE_STATE._unloadHandlerSet){
+    window.addEventListener('beforeunload', _liveBeforeUnload);
+    window.addEventListener('pagehide', _liveBeforeUnload);
+    LIVE_STATE._unloadHandlerSet = true;
+  }
+}
+
+function _liveBeforeUnload(){
+  if(LIVE_STATE.role!=='host' || !LIVE_STATE.activeCommId) return;
+  const commId = LIVE_STATE.activeCommId;
+  // Avisa via broadcast (best-effort)
+  try{
+    if(LIVE_STATE.channel){
+      LIVE_STATE.channel.send({
+        type:'broadcast', event:'live_event',
+        payload:{type:'end_live', from:CU?.id}
+      });
+    }
+  }catch(e){}
+  // Tenta limpar a flag no banco com fetch keepalive (sobrevive ao unload)
+  try{
+    const url = (typeof SUPABASE_URL!=='undefined'?SUPABASE_URL:'') + '/rest/v1/communities?id=eq.'+encodeURIComponent(commId);
+    const token = db?.auth?.session?.()?.access_token || (typeof SUPABASE_ANON_KEY!=='undefined'?SUPABASE_ANON_KEY:'');
+    fetch(url, {
+      method:'PATCH',
+      headers:{
+        'Content-Type':'application/json',
+        'apikey': (typeof SUPABASE_ANON_KEY!=='undefined'?SUPABASE_ANON_KEY:''),
+        'Authorization':'Bearer '+token,
+        'Prefer':'return=minimal'
+      },
+      body: JSON.stringify({live_active:false, live_title:null}),
+      keepalive: true
+    }).catch(()=>{});
+  }catch(e){}
 }
 
 // ── LISTENER/SPEAKER entra na live ──
@@ -11648,6 +11777,11 @@ function _cleanupLiveState(){
   if(LIVE_STATE._audioCtx){
     try{ LIVE_STATE._audioCtx.close(); }catch(e){}
     LIVE_STATE._audioCtx = null;
+  }
+  // Limpar heartbeat
+  if(LIVE_STATE._heartbeatInt){
+    clearInterval(LIVE_STATE._heartbeatInt);
+    LIVE_STATE._heartbeatInt = null;
   }
   LIVE_STATE.activeCommId=null;
   LIVE_STATE.role=null;
