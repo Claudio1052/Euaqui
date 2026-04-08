@@ -10363,63 +10363,73 @@ async function loadCommRanking(commId){
   if(!el) return;
   el.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:11px;">⏳ Carregando ranking...</div>';
 
-  let rows=[];
-  let fromDB=false;
+  // 1. Buscar TODOS os membros da comunidade
+  const{data:members}=await db.from('community_members')
+    .select('user_id,role,profiles(id,username,full_name,avatar_url)')
+    .eq('community_id',commId).limit(50);
 
-  // Tentar buscar do Supabase
-  try{
-    const{data,error}=await db.from('community_xp')
-      .select('user_id,xp,profiles(id,username,full_name,avatar_url)')
-      .eq('community_id',commId).order('xp',{ascending:false}).limit(20);
-    if(!error && data?.length){
-      rows=data;
-      fromDB=true;
-    }
-  }catch(e){}
-
-  // Fallback: localStorage — mostrar pelo menos o usuário atual
-  if(!fromDB && CU){
-    const lsKey=`cxp_${commId}_${CU.id}`;
-    const myXp=parseInt(localStorage.getItem(lsKey))||0;
-    if(myXp>0){
-      rows=[{user_id:CU.id,xp:myXp,profiles:{id:CU.id,username:CP?.username,full_name:CP?.full_name,avatar_url:CP?.avatar_url}}];
-    }
-  }
-
-  if(!rows.length){
-    el.innerHTML='<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">'+
-      '<div style="font-size:36px;margin-bottom:10px;">🏆</div>'+
-      '<div>Nenhum XP ainda — seja o primeiro a ser ativo!</div>'+
-      '<div style="font-size:10px;margin-top:8px;color:var(--text-muted);">Poste (+10xp), comente (+5xp), curta (+2xp), fale no chat (+2xp)</div>'+
-      '</div>';
+  if(!members?.length){
+    el.innerHTML='<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhum membro ainda.</div>';
     return;
   }
 
+  // 2. Buscar XP de cada membro (pode não ter entrada)
+  const{data:xpRows}=await db.from('community_xp')
+    .select('user_id,xp').eq('community_id',commId);
+  const xpMap={};
+  (xpRows||[]).forEach(r=>xpMap[r.user_id]=r.xp||0);
+
+  // 3. Combinar: todos os membros + XP (0 se não tiver)
+  // Também verificar localStorage para XP local não sincronizado
+  const combined = members.map(m=>{
+    const lsKey=`cxp_${commId}_${m.user_id}`;
+    const lsXp = parseInt(localStorage.getItem(lsKey))||0;
+    const dbXp = xpMap[m.user_id]||0;
+    return {
+      user_id: m.user_id,
+      role: m.role,
+      xp: Math.max(dbXp, lsXp), // usar o maior entre banco e local
+      profiles: m.profiles
+    };
+  });
+
+  // 4. Ordenar do maior para o menor XP
+  combined.sort((a,b)=>b.xp-a.xp);
+
   const medals=['🥇','🥈','🥉'];
+  const maxXp = combined[0]?.xp||1;
+
   el.innerHTML=
-    '<div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-yellow);margin-bottom:8px;letter-spacing:1px;">🏆 RANKING</div>'+
-    '<div style="font-size:10px;color:var(--text-muted);margin-bottom:12px;">📝+10 · 💬+5 · ❤️+2 · 🗨️+2 · 🎯+20</div>'+
-    rows.map((r,i)=>{
+    '<div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-yellow);margin-bottom:8px;letter-spacing:1px;">🏆 RANKING DA COMUNIDADE</div>'+
+    '<div style="font-size:10px;color:var(--text-muted);margin-bottom:14px;">📝+10xp · 💬+5xp · ❤️+2xp · 🗨️+2xp · 🎯+20xp</div>'+
+    combined.map((r,i)=>{
       const xp=r.xp||0;
       const lvl=getCommLevel(xp);
       const isMe=r.user_id===CU?.id;
-      const pct=Math.min(100,Math.round((xp/Math.max(rows[0]?.xp||1,1))*100));
-      const medal=medals[i]||(i+1+'°');
+      const pct=Math.min(100,Math.round((xp/maxXp)*100));
+      const medal=i<3?medals[i]:'<span style="font-size:12px;color:var(--text-muted);">#'+(i+1)+'</span>';
+      const roleBadge=r.role==='owner'?'<span style="font-size:9px;color:var(--neon-yellow);margin-left:4px;">👑</span>':
+                      r.role==='mod'  ?'<span style="font-size:9px;color:var(--neon-cyan);margin-left:4px;">🛡</span>':'';
       return'<div style="display:flex;align-items:center;gap:10px;padding:12px;'+
         'background:'+(isMe?'rgba(0,255,204,.08)':'var(--glass)')+';'+
         'border:1px solid '+(isMe?'rgba(0,255,204,.3)':'var(--border-glow)')+';'+
-        'border-radius:12px;margin-bottom:8px;">'+
-        '<div style="font-size:18px;width:28px;text-align:center;">'+medal+'</div>'+
-        renderAvatar(r.profiles,40,'')+
+        'border-radius:12px;margin-bottom:8px;'+
+        (isMe?'box-shadow:0 0 10px rgba(0,255,204,.1);':'')+'>'+
+        '<div style="font-size:20px;width:30px;text-align:center;">'+medal+'</div>'+
+        renderAvatar(r.profiles,42,'')+
         '<div style="flex:1;min-width:0;">'+
-          '<div style="font-size:12px;color:var(--text-light);">'+xss(r.profiles?.full_name||r.profiles?.username||'?')+
-            (isMe?'<span style="font-size:9px;background:rgba(0,255,204,.15);color:var(--neon-cyan);padding:1px 6px;border-radius:8px;margin-left:6px;">você</span>':'')+
+          '<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">'+
+            '<span style="font-size:12px;color:var(--text-light);font-weight:600;">'+xss(r.profiles?.full_name||r.profiles?.username||'?')+'</span>'+
+            roleBadge+
+            (isMe?'<span style="font-size:9px;background:rgba(0,255,204,.15);color:var(--neon-cyan);padding:1px 6px;border-radius:8px;">você</span>':'')+
           '</div>'+
-          '<span class="comm-rank-badge" style="color:'+lvl.color+';border-color:'+lvl.color+'40;">'+lvl.icon+' '+lvl.name+'</span>'+
-          '<div class="comm-xp-bar" style="margin-top:5px;"><div class="comm-xp-fill" style="width:'+pct+'%;"></div></div>'+
+          '<span class="comm-rank-badge" style="color:'+lvl.color+';border-color:'+lvl.color+'40;margin-top:3px;display:inline-block;">'+lvl.icon+' '+lvl.name+'</span>'+
+          '<div class="comm-xp-bar" style="margin-top:6px;">'+
+            '<div class="comm-xp-fill" style="width:'+(xp===0?'2':pct)+'%;"></div>'+
+          '</div>'+
         '</div>'+
         '<div style="text-align:right;flex-shrink:0;">'+
-          '<div style="font-family:VT323,monospace;font-size:26px;color:var(--neon-cyan);line-height:1;">'+xp+'</div>'+
+          '<div style="font-family:VT323,monospace;font-size:28px;color:'+(xp>0?'var(--neon-cyan)':'var(--text-muted)')+';line-height:1;">'+xp+'</div>'+
           '<div style="font-size:9px;color:var(--text-muted);">XP</div>'+
         '</div>'+
       '</div>';
