@@ -5403,6 +5403,27 @@ async function toggleJoinComm(commId,isMember,btn){
   if(!CU)return showToast('Faça login primeiro','error');
   if(isMember){await db.from('community_members').delete().eq('community_id',commId).eq('user_id',CU.id);btn.textContent='+ Entrar';btn.classList.remove('joined');showToast('Saiu da comunidade','success');}
   else{await db.from('community_members').insert({community_id:commId,user_id:CU.id,role:'member'});btn.textContent='✓ Membro';btn.classList.add('joined');showToast('Entrou na comunidade! 🎉','success');}
+  // ── Atualizar contador de membros (count em tempo real + cache na tabela) ──
+  try{
+    const{count}=await db.from('community_members')
+      .select('id',{count:'exact',head:true}).eq('community_id',commId);
+    const realCount=count||0;
+    // Tentar atualizar o cache (pode falhar por RLS em não-donos, tudo bem)
+    try{ await db.from('communities').update({members_count:realCount}).eq('id',commId); }catch(e){}
+    // Atualizar DOM
+    document.querySelectorAll(`[data-commcount="${commId}"]`).forEach(el=>{el.textContent=realCount;});
+  }catch(e){ console.warn('member count:',e?.message); }
+}
+
+// ── Recalcula e retorna contagem real de membros (usado ao abrir detalhe) ──
+async function refreshCommMemberCount(commId){
+  try{
+    const{count}=await db.from('community_members')
+      .select('id',{count:'exact',head:true}).eq('community_id',commId);
+    const n=count||0;
+    document.querySelectorAll(`[data-commcount="${commId}"]`).forEach(el=>{el.textContent=n;});
+    return n;
+  }catch(e){ return null; }
 }
 async function openCommDetail(commId){
   nav('comm-detail');
@@ -5442,7 +5463,7 @@ async function openCommDetail(commId){
         ${avatarHtml}
         <div style="flex:1;min-width:0;">
           <div style="font-family:'Silkscreen',monospace;font-size:15px;color:var(--neon-cyan);">${xss(comm.name)}</div>
-          <div style="font-size:10px;color:var(--text-muted);margin:2px 0;">👥 ${comm.members_count||0} membros · ${comm.visibility==='private'?'🔒 Privada':'🌍 Pública'} · @${xss(comm.profiles?.username||'')}</div>
+          <div style="font-size:10px;color:var(--text-muted);margin:2px 0;">👥 <span data-commcount="${commId}">${comm.members_count||0}</span> membros · ${comm.visibility==='private'?'🔒 Privada':'🌍 Pública'} · @${xss(comm.profiles?.username||'')}</div>
           ${comm.description?`<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${xss(comm.description)}</div>`:''}
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">
@@ -5483,6 +5504,8 @@ async function openCommDetail(commId){
           <div class="comm-chat-msgs" id="comm-chat-msgs-${commId}"><div style="text-align:center;color:var(--text-muted);font-size:11px;padding:20px;">Carregando chat...</div></div>
           ${isMember&&!isBanned?`<div id="comm-cooldown-${commId}" class="comm-cooldown" style="display:none;"></div>
           <div class="comm-chat-input-wrap">
+            <button class="tbtn" style="padding:6px 10px;font-size:14px;" onclick="openCommChatEmoji('${commId}')" title="Emoji">😊</button>
+            <button class="tbtn" style="padding:6px 10px;font-size:12px;" onclick="openCommChatGif('${commId}')" title="GIF">🎬 GIF</button>
             <input class="ainput" id="comm-chat-in-${commId}" placeholder="Mensagem para a comunidade..." style="flex:1;" onkeydown="if(event.key==='Enter')sendCommChat('${commId}')">
             <button class="post-btn" style="font-size:11px;padding:8px 14px;" onclick="sendCommChat('${commId}')">➤</button>
           </div>`:`<div style="padding:10px;text-align:center;font-size:11px;color:var(--text-muted);">${isBanned?'🚫 Banido':'Entre na comunidade para participar'}</div>`}
@@ -5498,6 +5521,10 @@ async function openCommDetail(commId){
   loadCommChat(commId);
   loadCommMembersPanel(commId,isMod,isOwner);
   loadCommRanking(commId);
+  // Atualiza contador de membros com o valor real (count em community_members)
+  refreshCommMemberCount(commId);
+  // Carrega config de cooldown do chat (fallback 30s se coluna não existir)
+  loadCommChatCooldown(commId);
 }
 async function postInComm(commId){
   if(!CU)return;
@@ -10374,6 +10401,22 @@ window._commImgFile = null;
 const _commCooldowns = {};
 let _commChatPolls = {};
 let _commMediaFiles = {};
+// Cooldown configurável por comunidade (em segundos). Default 30s.
+// Populado quando a comunidade é aberta, via coluna communities.chat_cooldown_seconds.
+const _commChatCooldownCfg = {};
+function getCommChatCooldown(commId){
+  // Retorna em ms (default 30000 = 30s)
+  const s = _commChatCooldownCfg[commId];
+  return (typeof s==='number' && s>=0) ? s*1000 : 30000;
+}
+async function loadCommChatCooldown(commId){
+  try{
+    const{data}=await db.from('communities').select('chat_cooldown_seconds').eq('id',commId).maybeSingle();
+    if(data && typeof data.chat_cooldown_seconds==='number'){
+      _commChatCooldownCfg[commId]=data.chat_cooldown_seconds;
+    }
+  }catch(e){ /* coluna pode não existir; usa default */ }
+}
 
 function switchCommInnerTab(commId, tabId, btn){
   ['ct-posts','ct-chat','ct-members','ct-xp'].forEach(t=>{
@@ -10531,36 +10574,30 @@ async function delCommPost(commId,postId){
 // ── Timer do chat da comunidade (máx 1h, remove mensagens antigas) ──
 function commTimeAgo(ts){
   if(!ts) return '';
-  const secs = Math.floor((Date.now()-new Date(ts))/1000);
+  const d=new Date(ts);
+  const secs = Math.floor((Date.now()-d)/1000);
   if(secs < 60)  return secs+'s';
   const mins = Math.floor(secs/60);
   if(mins < 60)  return mins+'min';
-  return '1h';
+  const hrs = Math.floor(mins/60);
+  if(hrs < 24)   return hrs+'h';
+  const days = Math.floor(hrs/24);
+  if(days < 7)   return days+'d';
+  // Data curta (ex: 08/04)
+  return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0');
 }
 
 function _startCommMsgTimer(commId){
-  // Atualizar timers a cada 10s e remover msgs > 1h
+  // Atualizar os timestamps visíveis a cada 30s (sem apagar — chat persistente estilo Discord)
   if(window._commTimers) clearInterval(window._commTimers[commId]);
   if(!window._commTimers) window._commTimers={};
   window._commTimers[commId] = setInterval(()=>{
     const el = document.getElementById('comm-chat-msgs-'+commId);
     if(!el) return;
-    const now = Date.now();
-    // Atualizar todos os timers visíveis
     el.querySelectorAll('.cmsg-time[data-ts]').forEach(span=>{
-      const ts = span.dataset.ts;
-      const secs = Math.floor((now - new Date(ts))/1000);
-      if(secs >= 3600){
-        // Remover mensagem inteira (passou de 1h)
-        span.closest('[id^="cmsg-"]')?.remove();
-      } else {
-        span.textContent = commTimeAgo(ts);
-      }
+      span.textContent = commTimeAgo(span.dataset.ts);
     });
-    // Se ficou vazio, mostrar placeholder
-    const remaining = el.querySelectorAll('[id^="cmsg-"]').length;
-    if(!remaining) el.innerHTML='<div style="text-align:center;color:var(--text-muted);font-size:11px;padding:20px;">Nenhuma mensagem na última hora</div>';
-  }, 10000);
+  }, 30000);
 }
 
 function _renderCommMsg(m){
@@ -10570,10 +10607,19 @@ function _renderCommMsg(m){
   const fallback = 'https://api.dicebear.com/7.x/pixel-art/svg?seed=u';
   const imgHtml = `<img src="${safeAv}" style="width:30px;height:30px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.src='${fallback}'">`;
   const nameHtml = !isMine ? `<div style="font-size:9px;color:var(--neon-cyan);margin-bottom:3px;">@${xss(m.profiles?.username||'')}</div>` : '';
+  // Detectar marker de GIF: [GIF:url]
+  let bodyHtml = '';
+  const raw = m.content || '';
+  const gifMatch = raw.match(/^\[GIF:(https?:\/\/[^\]]+)\]$/);
+  if(gifMatch){
+    bodyHtml = `<img src="${xss(gifMatch[1])}" style="max-width:220px;max-height:220px;border-radius:8px;display:block;" loading="lazy">`;
+  } else {
+    bodyHtml = xss(raw);
+  }
   return '<div class="comm-chat-msg '+(isMine?'mine':'')+'" id="cmsg-'+m.id+'">'
     +(!isMine ? imgHtml : '')
     +'<div>'+nameHtml
-    +'<div class="comm-chat-bubble">'+xss(m.content)+'<span class="cmsg-time" data-ts="'+m.created_at+'" style="font-size:9px;color:var(--text-muted);margin-left:6px;">'+commTimeAgo(m.created_at)+'</span></div>'
+    +'<div class="comm-chat-bubble">'+bodyHtml+'<span class="cmsg-time" data-ts="'+m.created_at+'" style="font-size:9px;color:var(--text-muted);margin-left:6px;display:block;margin-top:4px;">'+commTimeAgo(m.created_at)+'</span></div>'
     +'</div>'
     +(isMine ? imgHtml : '')
     +'</div>';
@@ -10621,20 +10667,18 @@ async function loadCommChat(commId){
     return;
   }
 
-  // Buscar histórico das últimas 1 hora do banco
-  const oneHourAgo = new Date(Date.now()-3600000).toISOString();
+  // Buscar histórico persistente (últimas 200 mensagens, estilo Discord)
   const{data:msgs}=await db.from('community_chat')
     .select('id,user_id,content,created_at,profiles(id,username,avatar_url)')
     .eq('community_id',commId)
-    .gte('created_at', oneHourAgo)
-    .order('created_at',{ascending:false}).limit(100);
+    .order('created_at',{ascending:false}).limit(200);
   const list=(msgs||[]).reverse();
 
   // Salvar no cache
   window._commChatCache[commId] = list;
 
   if(!list.length){
-    el.innerHTML='<div style="text-align:center;color:var(--text-muted);font-size:11px;padding:20px;">Seja o primeiro a falar!</div>';
+    el.innerHTML='<div style="text-align:center;color:var(--text-muted);font-size:11px;padding:30px;">💬 Chat vazio. Seja o primeiro a falar!</div>';
   } else {
     el.innerHTML = list.map(m=>_renderCommMsg(m)).join('');
     el.scrollTop = el.scrollHeight;
@@ -10678,18 +10722,90 @@ async function loadCommChat(commId){
   _commChatPolls[commId] = channel;
   _startCommMsgTimer(commId);
 }
-async function sendCommChat(commId){
+// ── Picker de Emoji para o chat da comunidade ─────────────────
+function openCommChatEmoji(commId){
+  const existing=document.getElementById('comm-emoji-pop-'+commId);
+  if(existing){ existing.remove(); return; }
+  const EMOJI_SET=['😀','😂','🥹','😍','🤩','😎','🤔','😅','😭','😤','🤪','😴','🥳','🥺','😈','👾','🤖','👻','💀','🔥','✨','💯','❤️','💔','🎉','🎊','🎮','🎵','🌈','⚡','💫','🌟','👑','🏆','💎','🚀','👍','👎','👏','🙏','🤝','💪','🤟','✌️','🫶','🌹','☕','🍕','🍔','🎂','🥂','🎁','📸','🎧','🎸'];
+  const pop=document.createElement('div');
+  pop.id='comm-emoji-pop-'+commId;
+  pop.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg-card);border:1px solid var(--border-glow);border-radius:12px;padding:10px;z-index:3000;box-shadow:0 12px 32px rgba(0,0,0,.4);max-width:320px;display:grid;grid-template-columns:repeat(9,1fr);gap:4px;backdrop-filter:blur(20px);';
+  pop.innerHTML=EMOJI_SET.map(e=>`<button style="background:none;border:none;font-size:20px;cursor:pointer;padding:4px;border-radius:6px;" onmouseover="this.style.background='rgba(0,255,204,.15)'" onmouseout="this.style.background='none'" onclick="_insertCommChatEmoji('${commId}','${e}')">${e}</button>`).join('');
+  document.body.appendChild(pop);
+  setTimeout(()=>{
+    const close=(ev)=>{
+      if(!pop.contains(ev.target) && !ev.target.closest('[onclick*="openCommChatEmoji"]')){
+        pop.remove();
+        document.removeEventListener('click',close);
+      }
+    };
+    document.addEventListener('click',close);
+  },100);
+}
+function _insertCommChatEmoji(commId,emoji){
+  const inp=document.getElementById('comm-chat-in-'+commId);
+  if(inp){ inp.value += emoji; inp.focus(); }
+  document.getElementById('comm-emoji-pop-'+commId)?.remove();
+}
+
+// ── Picker de GIF para o chat (lista curada, sem depender de API externa) ─
+const COMM_CHAT_GIFS = [
+  {q:'hello',   url:'https://media.tenor.com/uXhchFIcy14AAAAC/hello-hi.gif'},
+  {q:'lol',     url:'https://media.tenor.com/rrV2aRZWvQYAAAAC/laughing-lol.gif'},
+  {q:'ok',      url:'https://media.tenor.com/hbfkgVzX8H4AAAAC/thumbs-up-like.gif'},
+  {q:'love',    url:'https://media.tenor.com/eqrW9wnUeucAAAAC/heart-love.gif'},
+  {q:'wow',     url:'https://media.tenor.com/nWmd9SLuSBwAAAAC/shocked-omg.gif'},
+  {q:'sad',     url:'https://media.tenor.com/JYc0qQRtWgEAAAAC/sad-cry.gif'},
+  {q:'dance',   url:'https://media.tenor.com/7SXwVwJhGYYAAAAC/dance-happy.gif'},
+  {q:'clap',    url:'https://media.tenor.com/ZIpeyz7FfrkAAAAC/clap-clapping.gif'},
+  {q:'fire',    url:'https://media.tenor.com/CqnKxLc3ErUAAAAC/fire-burn.gif'},
+  {q:'party',   url:'https://media.tenor.com/2roX3uxz_68AAAAC/cat-party.gif'},
+  {q:'thinking',url:'https://media.tenor.com/HwCMRsRPLAUAAAAC/think-thinking.gif'},
+  {q:'mind blown',url:'https://media.tenor.com/P2wY0GG9jjEAAAAC/mind-blown-explosion.gif'},
+];
+function openCommChatGif(commId){
+  const overlay=document.createElement('div');
+  overlay.id='comm-gif-modal-'+commId;
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(6px);z-index:4000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.innerHTML=`<div class="modal" style="max-width:480px;width:100%;max-height:80vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+      <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);flex:1;">🎬 Escolher GIF</div>
+      <button class="tbtn" style="font-size:10px;" onclick="this.closest('[id^=comm-gif-modal]').remove()">✕</button>
+    </div>
+    <input class="ainput" id="comm-gif-search-${commId}" placeholder="Buscar GIF (ex: hello, lol, fire)..." oninput="_filterCommGifs('${commId}')">
+    <div id="comm-gif-grid-${commId}" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;overflow-y:auto;flex:1;padding:4px;">
+      ${COMM_CHAT_GIFS.map(g=>`<div data-q="${g.q}" style="cursor:pointer;border-radius:8px;overflow:hidden;border:2px solid transparent;transition:border-color .2s;" onmouseover="this.style.borderColor='var(--neon-cyan)'" onmouseout="this.style.borderColor='transparent'" onclick="_sendCommGif('${commId}','${g.url}')"><img src="${g.url}" style="width:100%;height:110px;object-fit:cover;display:block;background:#222;" loading="lazy"></div>`).join('')}
+    </div>
+    <div style="font-size:9px;color:var(--text-muted);margin-top:8px;text-align:center;">Digite para filtrar ou clique para enviar</div>
+  </div>`;
+  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+  document.body.appendChild(overlay);
+}
+function _filterCommGifs(commId){
+  const q=document.getElementById('comm-gif-search-'+commId).value.toLowerCase().trim();
+  document.querySelectorAll('#comm-gif-grid-'+commId+' [data-q]').forEach(el=>{
+    el.style.display = (!q || el.dataset.q.includes(q)) ? 'block' : 'none';
+  });
+}
+function _sendCommGif(commId,url){
+  document.getElementById('comm-gif-modal-'+commId)?.remove();
+  sendCommChat(commId, '[GIF:'+url+']');
+}
+
+async function sendCommChat(commId, contentOverride){
   if(!CU) return showToast('Faça login','error');
   const inp=document.getElementById('comm-chat-in-'+commId);
-  const txt=inp?.value.trim(); if(!txt) return;
+  const txt = (contentOverride!=null ? contentOverride : (inp?.value||'')).trim();
+  if(!txt) return;
+  const COOLDOWN_MS = getCommChatCooldown(commId);
   const now=Date.now();
   const last=_commCooldowns[commId]||0;
-  const remaining=Math.ceil((30000-(now-last))/1000);
-  if(remaining>0){
+  const remaining=Math.ceil((COOLDOWN_MS-(now-last))/1000);
+  if(COOLDOWN_MS>0 && remaining>0){
     const cdEl=document.getElementById('comm-cooldown-'+commId);
     if(cdEl){cdEl.style.display='block';cdEl.textContent=`⏳ Aguarde ${remaining}s para falar novamente`;}
     const timer=setInterval(()=>{
-      const r2=Math.ceil((30000-(Date.now()-last))/1000);
+      const r2=Math.ceil((COOLDOWN_MS-(Date.now()-last))/1000);
       if(r2<=0){clearInterval(timer);if(cdEl)cdEl.style.display='none';}
       else if(cdEl) cdEl.textContent=`⏳ Aguarde ${r2}s para falar novamente`;
     },1000);
@@ -10702,8 +10818,8 @@ async function sendCommChat(commId){
     .select('id,user_id,content,created_at').maybeSingle();
   if(error){showToast('Erro: '+error.message,'error');return;}
   _commCooldowns[commId]=Date.now();
-  inp.value='';
-  // Broadcast para todos via canal Supabase (mais confiável que postgres_changes)
+  if(contentOverride==null && inp) inp.value='';
+  // Broadcast para todos via canal Supabase
   if(newMsg && _commChatPolls[commId]){
     try{
       _commChatPolls[commId].send({
@@ -10713,9 +10829,13 @@ async function sendCommChat(commId){
     }catch(e){}
   }
   const cdEl=document.getElementById('comm-cooldown-'+commId);
-  if(cdEl){cdEl.style.display='block';cdEl.textContent='⏳ Aguarde 30s para falar novamente';}
+  if(COOLDOWN_MS>0 && cdEl){
+    cdEl.style.display='block';
+    const initSec=Math.ceil(COOLDOWN_MS/1000);
+    cdEl.textContent=`⏳ Aguarde ${initSec}s para falar novamente`;
+  }
   addCommXP(commId,CU.id,'chat',2);
-  // Mostrar mensagem do próprio usuário instantaneamente (sem esperar Realtime)
+  // Mostrar mensagem do próprio usuário instantaneamente
   _appendCommMsg(commId, {
     id: 'tmp-'+Date.now(),
     user_id: CU.id,
@@ -10723,8 +10843,10 @@ async function sendCommChat(commId){
     created_at: new Date().toISOString(),
     profiles: { id:CU.id, username:CP?.username||'', avatar_url:CP?.avatar_url||'' }
   });
-  let secs=30;
-  const t=setInterval(()=>{secs--;if(cdEl&&secs>0)cdEl.textContent=`⏳ Aguarde ${secs}s para falar novamente`;else{clearInterval(t);if(cdEl)cdEl.style.display='none';}},1000);
+  if(COOLDOWN_MS>0){
+    let secs=Math.ceil(COOLDOWN_MS/1000);
+    const t=setInterval(()=>{secs--;if(cdEl&&secs>0)cdEl.textContent=`⏳ Aguarde ${secs}s para falar novamente`;else{clearInterval(t);if(cdEl)cdEl.style.display='none';}},1000);
+  }
 }
 
 async function loadCommMembersPanel(commId,isMod,isOwner){
@@ -10740,22 +10862,31 @@ async function loadCommMembersPanel(commId,isMod,isOwner){
     .select('id,user_id,role,banned_until,joined_at,profiles(id,username,full_name,avatar_url)')
     .eq('community_id',commId).order('joined_at');
   if(!members?.length){el.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px;">Nenhum membro</div>';return;}
-  el.innerHTML=members.map(m=>{
+  // Header com ferramentas de mod/owner
+  const modHeader = isMod ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:10px;background:rgba(0,255,204,.05);border:1px solid rgba(0,255,204,.2);border-radius:10px;margin-bottom:12px;">
+    <span style="font-size:10px;color:var(--neon-cyan);font-family:Silkscreen,monospace;flex:1;">🛡 FERRAMENTAS DE MOD</span>
+    <button class="tbtn" style="font-size:10px;" onclick="openChatCooldownConfig('${commId}')">⏱ Cooldown do chat</button>
+  </div>` : '';
+  el.innerHTML = modHeader + members.map(m=>{
     const isBannedM=m.banned_until&&new Date(m.banned_until)>new Date();
     const roleBadge=m.role==='owner'?'<span class="mod-badge">👑 Dono</span>':m.role==='mod'?'<span class="mod-badge">🛡 Mod</span>':'';
     const banBadge=isBannedM?'<span class="ban-badge">🚫 banido</span>':'';
     const isMe=m.user_id===CU?.id;
+    const userName=(m.profiles?.full_name||m.profiles?.username||'?').replace(/'/g,'');
     return`<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05);">
       ${renderAvatar(m.profiles,38,'')}
       <div style="flex:1;min-width:0;">
         <div style="font-size:12px;color:var(--text-light);">${xss(m.profiles?.full_name||m.profiles?.username||'?')}${roleBadge}${banBadge}</div>
         <div style="font-size:10px;color:var(--text-muted);">@${xss(m.profiles?.username||'')}</div>
       </div>
-      ${isMod&&!isMe&&m.role!=='owner'?`<div style="display:flex;gap:4px;">
+      ${isMod&&!isMe&&m.role!=='owner'?`<div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;">
         ${isOwner&&m.role!=='mod'?`<button class="tbtn" style="font-size:9px;" onclick="promoteToMod('${commId}','${m.user_id}')">🛡 Mod</button>`:''}
         ${isOwner&&m.role==='mod'?`<button class="tbtn" style="font-size:9px;color:var(--neon-pink);" onclick="demoteMod('${commId}','${m.user_id}')">❌ Mod</button>`:''}
-        <button class="tbtn" style="font-size:9px;color:var(--neon-yellow);" onclick="banMember('${commId}','${m.user_id}')">⏱ Ban</button>
-        <button class="tbtn" style="font-size:9px;color:var(--neon-pink);" onclick="kickMember('${commId}','${m.user_id}')">👢 Kick</button>
+        ${isBannedM
+          ? `<button class="tbtn" style="font-size:9px;color:var(--neon-cyan);" onclick="unbanMember('${commId}','${m.user_id}')">✓ Desbanir</button>`
+          : `<button class="tbtn" style="font-size:9px;color:var(--neon-yellow);" onclick="banMember('${commId}','${m.user_id}','${userName}')">⏱ Banir</button>`
+        }
+        <button class="tbtn" style="font-size:9px;color:var(--neon-pink);" onclick="kickMember('${commId}','${m.user_id}','${userName}')">👢 Kick</button>
       </div>`:''}
     </div>`;
   }).join('');
@@ -10763,8 +10894,129 @@ async function loadCommMembersPanel(commId,isMod,isOwner){
 
 async function promoteToMod(commId,userId){if(!confirm('Promover a moderador?'))return;await db.from('community_members').update({role:'mod'}).eq('community_id',commId).eq('user_id',userId);showToast('🛡 Promovido!','success');loadCommMembersPanel(commId);}
 async function demoteMod(commId,userId){if(!confirm('Remover moderador?'))return;await db.from('community_members').update({role:'member'}).eq('community_id',commId).eq('user_id',userId);showToast('Removido de mod','success');loadCommMembersPanel(commId);}
-async function banMember(commId,userId){const days=prompt('Banir por quantos dias? (0=permanente)');if(days===null)return;const n=parseInt(days)||0;const until=n>0?new Date(Date.now()+n*86400000).toISOString():new Date('2099-01-01').toISOString();await db.from('community_members').update({banned_until:until}).eq('community_id',commId).eq('user_id',userId);await db.from('notifications').insert({user_id:userId,actor_id:CU.id,type:'system',content:`Banido por ${n>0?n+' dia(s)':'tempo indefinido'}`,read:false});showToast('🚫 Banido','success');loadCommMembersPanel(commId);}
-async function kickMember(commId,userId){if(!confirm('Remover membro?'))return;await db.from('community_members').delete().eq('community_id',commId).eq('user_id',userId);showToast('👢 Removido','success');loadCommMembersPanel(commId);}
+
+// ── Modal de banimento com dias/horas/minutos ──
+function banMember(commId,userId,userName){
+  const name = userName || 'este usuário';
+  const overlay=document.createElement('div');
+  overlay.id='ban-modal-overlay';
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(6px);z-index:4000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.innerHTML=`<div class="modal" style="max-width:420px;width:100%;">
+    <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-pink);margin-bottom:6px;">🚫 Banir Membro</div>
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;">Banindo <b style="color:var(--text-light);">${xss(name)}</b> da comunidade</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;">
+      <div><label style="font-size:9px;color:var(--text-muted);display:block;margin-bottom:4px;">DIAS</label><input type="number" id="ban-days" class="ainput" min="0" max="365" value="0" style="text-align:center;"></div>
+      <div><label style="font-size:9px;color:var(--text-muted);display:block;margin-bottom:4px;">HORAS</label><input type="number" id="ban-hours" class="ainput" min="0" max="23" value="1" style="text-align:center;"></div>
+      <div><label style="font-size:9px;color:var(--text-muted);display:block;margin-bottom:4px;">MINUTOS</label><input type="number" id="ban-mins" class="ainput" min="0" max="59" value="0" style="text-align:center;"></div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+      <button class="tbtn" style="font-size:10px;" onclick="_setBanPreset(0,1,0)">1h</button>
+      <button class="tbtn" style="font-size:10px;" onclick="_setBanPreset(0,6,0)">6h</button>
+      <button class="tbtn" style="font-size:10px;" onclick="_setBanPreset(0,24,0)">1 dia</button>
+      <button class="tbtn" style="font-size:10px;" onclick="_setBanPreset(7,0,0)">1 semana</button>
+      <button class="tbtn" style="font-size:10px;" onclick="_setBanPreset(30,0,0)">1 mês</button>
+    </div>
+    <div style="background:rgba(255,51,102,.08);border:1px solid rgba(255,51,102,.25);border-radius:8px;padding:10px;font-size:10px;color:var(--text-muted);margin-bottom:14px;">
+      ⚠ O membro banido não poderá enviar mensagens, postar ou comentar até o fim do período. Deixe tudo em 0 para banimento permanente.
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="tbtn" onclick="document.getElementById('ban-modal-overlay').remove()">Cancelar</button>
+      <button class="post-btn" style="background:linear-gradient(135deg,#ff3366,#c2185b);" onclick="_confirmBan('${commId}','${userId}','${xss(name).replace(/'/g,'')}')">🚫 Banir</button>
+    </div>
+  </div>`;
+  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+  document.body.appendChild(overlay);
+}
+function _setBanPreset(d,h,m){
+  document.getElementById('ban-days').value=d;
+  document.getElementById('ban-hours').value=h;
+  document.getElementById('ban-mins').value=m;
+}
+async function _confirmBan(commId,userId,name){
+  const d=parseInt(document.getElementById('ban-days').value)||0;
+  const h=parseInt(document.getElementById('ban-hours').value)||0;
+  const m=parseInt(document.getElementById('ban-mins').value)||0;
+  const totalMs=(d*86400+h*3600+m*60)*1000;
+  const until = totalMs>0 ? new Date(Date.now()+totalMs).toISOString() : new Date('2099-01-01').toISOString();
+  const label = totalMs>0 ? `${d>0?d+'d ':''}${h>0?h+'h ':''}${m>0?m+'min':''}`.trim() : 'permanente';
+  await db.from('community_members').update({banned_until:until}).eq('community_id',commId).eq('user_id',userId);
+  try{
+    await db.from('notifications').insert({user_id:userId,actor_id:CU.id,type:'system',content:`Você foi banido por ${label}`,read:false});
+  }catch(e){}
+  document.getElementById('ban-modal-overlay')?.remove();
+  showToast(`🚫 ${name} banido (${label})`,'success');
+  loadCommMembersPanel(commId);
+}
+
+// ── Kick: remove definitivamente (pode voltar a entrar depois) ──
+async function kickMember(commId,userId,userName){
+  const name=userName||'este usuário';
+  if(!confirm(`Remover ${name} da comunidade?\n\nEle poderá voltar a entrar depois. Para bloquear definitivamente, use "Banir".`))return;
+  await db.from('community_members').delete().eq('community_id',commId).eq('user_id',userId);
+  try{
+    await db.from('notifications').insert({user_id:userId,actor_id:CU.id,type:'system',content:'Você foi removido de uma comunidade',read:false});
+  }catch(e){}
+  showToast('👢 '+name+' removido','success');
+  loadCommMembersPanel(commId);
+  refreshCommMemberCount(commId);
+}
+
+// ── Desbanir membro ──
+async function unbanMember(commId,userId){
+  if(!confirm('Desbanir este membro?'))return;
+  await db.from('community_members').update({banned_until:null}).eq('community_id',commId).eq('user_id',userId);
+  showToast('✓ Desbanido','success');
+  loadCommMembersPanel(commId);
+}
+
+// ── Configuração do cooldown do chat (apenas mod/owner) ──
+function openChatCooldownConfig(commId){
+  const current = Math.round(getCommChatCooldown(commId)/1000);
+  const overlay=document.createElement('div');
+  overlay.id='cooldown-cfg-overlay';
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(6px);z-index:4000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.innerHTML=`<div class="modal" style="max-width:380px;width:100%;">
+    <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);margin-bottom:6px;">⏱ Cooldown do Chat</div>
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;">Tempo mínimo de espera entre mensagens (aplica-se a todos os membros).</div>
+    <div style="margin-bottom:12px;">
+      <label style="font-size:9px;color:var(--text-muted);display:block;margin-bottom:4px;">SEGUNDOS</label>
+      <input type="number" id="cooldown-secs" class="ainput" min="0" max="600" value="${current}" style="text-align:center;font-size:16px;">
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+      <button class="tbtn" style="font-size:10px;" onclick="document.getElementById('cooldown-secs').value=0">Sem limite</button>
+      <button class="tbtn" style="font-size:10px;" onclick="document.getElementById('cooldown-secs').value=5">5s</button>
+      <button class="tbtn" style="font-size:10px;" onclick="document.getElementById('cooldown-secs').value=15">15s</button>
+      <button class="tbtn" style="font-size:10px;" onclick="document.getElementById('cooldown-secs').value=30">30s</button>
+      <button class="tbtn" style="font-size:10px;" onclick="document.getElementById('cooldown-secs').value=60">1min</button>
+      <button class="tbtn" style="font-size:10px;" onclick="document.getElementById('cooldown-secs').value=300">5min</button>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="tbtn" onclick="document.getElementById('cooldown-cfg-overlay').remove()">Cancelar</button>
+      <button class="post-btn" onclick="_saveChatCooldown('${commId}')">💾 Salvar</button>
+    </div>
+  </div>`;
+  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+  document.body.appendChild(overlay);
+}
+async function _saveChatCooldown(commId){
+  const secs=parseInt(document.getElementById('cooldown-secs').value);
+  if(isNaN(secs)||secs<0){showToast('Valor inválido','error');return;}
+  // Atualiza cache local imediatamente (funciona mesmo se a coluna não existir no banco)
+  _commChatCooldownCfg[commId]=secs;
+  try{
+    const{error}=await db.from('communities').update({chat_cooldown_seconds:secs}).eq('id',commId);
+    if(error){
+      // Coluna provavelmente não existe — avisar apenas para owner e manter local
+      console.warn('chat_cooldown_seconds:',error.message);
+      showToast('⚠ Cooldown aplicado localmente. Execute o SQL para persistir.','success');
+    } else {
+      showToast(`✓ Cooldown definido: ${secs}s`,'success');
+    }
+  }catch(e){
+    showToast('⚠ Cooldown local: '+secs+'s','success');
+  }
+  document.getElementById('cooldown-cfg-overlay')?.remove();
+}
 
 function copyCommInvite(commId,name){
   const url=`${window.location.href.split('#')[0].split('?')[0]}?comm=${commId}`;
@@ -10911,16 +11163,48 @@ async function deleteComm(commId){
 
 const COMM_XP_TABLE={post:10,comment:5,like:2,chat:2,invite:20,join_invite:5};
 
+// Limite diário de XP por ação (meta diária por comunidade)
+const COMM_XP_DAILY_LIMIT = 3;
+function _todayKey(){
+  const d=new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function _getXpDailyCount(commId,userId,action){
+  const k=`cxpd_${commId}_${userId}_${action}_${_todayKey()}`;
+  return parseInt(localStorage.getItem(k))||0;
+}
+function _incXpDailyCount(commId,userId,action){
+  const k=`cxpd_${commId}_${userId}_${action}_${_todayKey()}`;
+  const n=(parseInt(localStorage.getItem(k))||0)+1;
+  localStorage.setItem(k,n);
+  return n;
+}
+
 async function addCommXP(commId,userId,action,xpOverride){
   const uid=userId||CU?.id;
   if(!uid||!commId||commId==='undefined'||commId==='null') return;
+  // ── Verificar membership: XP só conta para membros ativos da comunidade ──
+  try{
+    const{data:mem}=await db.from('community_members')
+      .select('id,banned_until').eq('community_id',commId).eq('user_id',uid).maybeSingle();
+    if(!mem) return; // não é membro, não ganha XP
+    if(mem.banned_until && new Date(mem.banned_until)>new Date()) return; // banido
+  }catch(e){ /* se a checagem falhar, seguimos */ }
+  // ── Limite diário: 3× por tipo de ação por dia por comunidade ──
+  const dailyActions=['like','comment','chat','invite'];
+  if(dailyActions.includes(action)){
+    const used=_getXpDailyCount(commId,uid,action);
+    if(used>=COMM_XP_DAILY_LIMIT){
+      // Meta já batida hoje — não concede mais XP desta ação
+      return;
+    }
+    _incXpDailyCount(commId,uid,action);
+  }
   const xp=xpOverride||COMM_XP_TABLE[action]||1;
-
   // Cache local imediato
   const lsKey=`cxp_${commId}_${uid}`;
   const localXp=(parseInt(localStorage.getItem(lsKey))||0)+xp;
   localStorage.setItem(lsKey, localXp);
-
   // Tentar salvar no Supabase
   try{
     const{data:ex}=await db.from('community_xp')
@@ -10931,7 +11215,6 @@ async function addCommXP(commId,userId,action,xpOverride){
       await db.from('community_xp').insert({community_id:commId,user_id:uid,xp});
     }
   }catch(e){
-    // Se falhar, tudo bem — o XP local já foi salvo
     console.log('[XP local]',action,'+'+xp,'total:',localXp);
   }
 }
