@@ -10627,20 +10627,25 @@ function _renderCommMsg(m){
 
 // ── Acrescentar mensagem sem redesenhar tudo ─────────────────
 function _appendCommMsg(commId, m){
-  // Salvar no cache (mesmo se DOM não estiver visível)
+  // Salvar no cache em memória (mesmo se DOM não estiver visível)
   if(!window._commChatCache) window._commChatCache={};
   if(!window._commChatCache[commId]) window._commChatCache[commId]=[];
   if(m.id && !String(m.id).startsWith('tmp-')){
     const already=window._commChatCache[commId].find(x=>x.id===m.id);
     if(!already){
       window._commChatCache[commId].push(m);
-      if(window._commChatCache[commId].length>100)
-        window._commChatCache[commId]=window._commChatCache[commId].slice(-100);
+      // Manter últimas 200 msgs (estilo Discord)
+      if(window._commChatCache[commId].length>200)
+        window._commChatCache[commId]=window._commChatCache[commId].slice(-200);
+      // Persistir também no localStorage como backup para sobreviver a reloads
+      try{
+        localStorage.setItem('commchat_'+commId, JSON.stringify(window._commChatCache[commId]));
+      }catch(e){ /* quota cheia — ignora */ }
     }
   }
   const el=document.getElementById('comm-chat-msgs-'+commId);
   if(!el) return;
-  const placeholder=el.querySelector('div[style*="padding:20px"]');
+  const placeholder=el.querySelector('div[style*="padding:20px"]')||el.querySelector('div[style*="padding:30px"]');
   if(placeholder) placeholder.remove();
   if(m.id && !String(m.id).startsWith('tmp-') && document.getElementById('cmsg-'+m.id)) return;
   const wrap=document.createElement('div');
@@ -10659,7 +10664,7 @@ async function loadCommChat(commId){
   const el = document.getElementById('comm-chat-msgs-'+commId);
   if(!el) return;
 
-  // Se já tem canal ativo E cache, restaurar do cache (preserva ao trocar aba)
+  // Se já tem canal ativo E cache em memória, restaurar do cache (preserva ao trocar aba)
   if(_commChatPolls[commId] && window._commChatCache[commId]?.length){
     el.innerHTML = window._commChatCache[commId].map(m=>_renderCommMsg(m)).join('');
     el.scrollTop = el.scrollHeight;
@@ -10667,12 +10672,45 @@ async function loadCommChat(commId){
     return;
   }
 
+  // ── Mostrar cache local IMEDIATAMENTE (sobrevive a reloads) ──
+  // Isso garante que o usuário sempre veja suas últimas mensagens, mesmo se o banco demorar ou falhar.
+  try{
+    const lsKey='commchat_'+commId;
+    const cached=JSON.parse(localStorage.getItem(lsKey)||'[]');
+    if(cached.length){
+      window._commChatCache[commId]=cached;
+      el.innerHTML=cached.map(m=>_renderCommMsg(m)).join('');
+      el.scrollTop=el.scrollHeight;
+    }
+  }catch(e){}
+
   // Buscar histórico persistente (últimas 200 mensagens, estilo Discord)
-  const{data:msgs}=await db.from('community_chat')
+  const{data:msgs, error:chatErr}=await db.from('community_chat')
     .select('id,user_id,content,created_at,profiles(id,username,avatar_url)')
     .eq('community_id',commId)
     .order('created_at',{ascending:false}).limit(200);
+  if(chatErr){
+    console.error('[comm chat] Erro ao carregar histórico:', chatErr.message);
+    // Fallback: tentar localStorage
+    const lsKey='commchat_'+commId;
+    try{
+      const cached=JSON.parse(localStorage.getItem(lsKey)||'[]');
+      if(cached.length){
+        console.log('[comm chat] usando cache local:',cached.length,'msgs');
+        window._commChatCache[commId]=cached;
+        el.innerHTML = cached.map(m=>_renderCommMsg(m)).join('')
+          +'<div style="text-align:center;color:var(--neon-yellow);font-size:9px;padding:10px;">⚠ Exibindo cache local. Erro ao carregar do banco: '+xss(chatErr.message)+'</div>';
+        el.scrollTop = el.scrollHeight;
+        return;
+      }
+    }catch(e){}
+    el.innerHTML=`<div style="text-align:center;color:var(--neon-pink);font-size:10px;padding:20px;line-height:1.5;">⚠ Erro ao carregar chat:<br>${xss(chatErr.message)}<br><br><span style="color:var(--text-muted);">Verifique as políticas RLS da tabela community_chat no Supabase.</span></div>`;
+    return;
+  }
   const list=(msgs||[]).reverse();
+  console.log('[comm chat] carregadas', list.length, 'mensagens do histórico para comunidade', commId);
+  // Salva no localStorage como backup (últimas 200)
+  try{ localStorage.setItem('commchat_'+commId, JSON.stringify(list.slice(-200))); }catch(e){}
 
   // Salvar no cache
   window._commChatCache[commId] = list;
@@ -10816,7 +10854,14 @@ async function sendCommChat(commId, contentOverride){
   const{data:newMsg,error}=await db.from('community_chat')
     .insert({community_id:commId,user_id:CU.id,content:txt})
     .select('id,user_id,content,created_at').maybeSingle();
-  if(error){showToast('Erro: '+error.message,'error');return;}
+  if(error){
+    console.error('[comm chat] Erro ao enviar:', error);
+    showToast('Erro ao enviar: '+error.message,'error');
+    return;
+  }
+  if(!newMsg){
+    console.warn('[comm chat] Insert ok mas sem retorno — possível RLS bloqueando SELECT após insert');
+  }
   _commCooldowns[commId]=Date.now();
   if(contentOverride==null && inp) inp.value='';
   // Broadcast para todos via canal Supabase
@@ -10852,20 +10897,23 @@ async function sendCommChat(commId, contentOverride){
 async function loadCommMembersPanel(commId,_ignoredIsMod,_ignoredIsOwner){
   const el=document.getElementById('comm-members-list-'+commId);
   if(!el) return;
-  // Sempre recalcular role e ownership do banco (ignora params cacheados).
-  // Isso garante que quem foi recém-promovido a mod veja as opções ao recarregar a aba.
-  let isMod=false, isOwner=false;
-  try{
-    const[{data:me},{data:comm}]=await Promise.all([
-      db.from('community_members').select('role,banned_until').eq('community_id',commId).eq('user_id',CU?.id||'').maybeSingle(),
-      db.from('communities').select('owner_id').eq('id',commId).maybeSingle()
-    ]);
-    isOwner = CU?.id===comm?.owner_id;
-    isMod   = isOwner || me?.role==='mod';
-  }catch(e){ console.warn('role check:',e?.message); }
-  const{data:members}=await db.from('community_members')
-    .select('id,user_id,role,banned_until,joined_at,profiles(id,username,full_name,avatar_url)')
-    .eq('community_id',commId).order('joined_at');
+  // Buscar owner e lista de membros primeiro
+  const[{data:comm},{data:members}]=await Promise.all([
+    db.from('communities').select('owner_id').eq('id',commId).maybeSingle(),
+    db.from('community_members')
+      .select('id,user_id,role,banned_until,joined_at,profiles(id,username,full_name,avatar_url)')
+      .eq('community_id',commId).order('joined_at')
+  ]);
+  // ── Calcular isOwner/isMod do usuário logado ──
+  // Estratégia robusta: usa a lista de membros carregada (evita segunda query que pode falhar por RLS).
+  let isOwner = CU?.id===comm?.owner_id;
+  let isMod = isOwner;
+  if(!isMod && CU && members){
+    const meRow = members.find(mm=>mm.user_id===CU.id);
+    if(meRow && meRow.role==='mod') isMod = true;
+  }
+  // Debug no console (ajuda a diagnosticar se ainda houver problema)
+  console.log('[mod panel]', {me:CU?.id, commId, isOwner, isMod, myRow: members?.find(mm=>mm.user_id===CU?.id)});
   if(!members?.length){el.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px;">Nenhum membro</div>';return;}
   // Header com ferramentas de mod/owner
   const modHeader = isMod ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:10px;background:rgba(0,255,204,.05);border:1px solid rgba(0,255,204,.2);border-radius:10px;margin-bottom:12px;">
@@ -10878,22 +10926,35 @@ async function loadCommMembersPanel(commId,_ignoredIsMod,_ignoredIsOwner){
     const roleBadge=m.role==='owner'?'<span class="mod-badge">👑 Dono</span>':m.role==='mod'?'<span class="mod-badge">🛡 Mod</span>':'';
     const banBadge=isBannedM?'<span class="ban-badge">🚫 banido</span>':'';
     const isMe=m.user_id===CU?.id;
-    const userName=(m.profiles?.full_name||m.profiles?.username||'?').replace(/'/g,'');
+    const userName=(m.profiles?.full_name||m.profiles?.username||'?').replace(/'/g,'').replace(/"/g,'');
+    // ── Regras de moderação ──
+    // Owner pode moderar TODOS (exceto ele mesmo).
+    // Mod pode moderar MEMBROS comuns (não pode moderar owner, outros mods, nem ele mesmo).
+    let canModerate = false;
+    if(isOwner && !isMe) canModerate = true;
+    else if(isMod && !isMe && m.role!=='owner' && m.role!=='mod') canModerate = true;
+    // Botões específicos de owner (promover/despromover)
+    const ownerButtons = isOwner && !isMe && m.role!=='owner' ? (
+      m.role==='mod'
+        ? `<button class="tbtn" style="font-size:9px;color:var(--neon-pink);" onclick="demoteMod('${commId}','${m.user_id}')">❌ Mod</button>`
+        : `<button class="tbtn" style="font-size:9px;" onclick="promoteToMod('${commId}','${m.user_id}')">🛡 Mod</button>`
+    ) : '';
+    // Botões de ban/kick (owner em todos, mod em membros comuns)
+    const modButtons = canModerate ? `
+      ${isBannedM
+        ? `<button class="tbtn" style="font-size:9px;color:var(--neon-cyan);" onclick="unbanMember('${commId}','${m.user_id}')">✓ Desbanir</button>`
+        : `<button class="tbtn" style="font-size:9px;color:var(--neon-yellow);" onclick="banMember('${commId}','${m.user_id}','${userName}')">⏱ Banir</button>`
+      }
+      <button class="tbtn" style="font-size:9px;color:var(--neon-pink);" onclick="kickMember('${commId}','${m.user_id}','${userName}')">👢 Kick</button>
+    ` : '';
+    const actionsHtml = (ownerButtons || modButtons) ? `<div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;">${ownerButtons}${modButtons}</div>` : '';
     return`<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05);">
       ${renderAvatar(m.profiles,38,'')}
       <div style="flex:1;min-width:0;">
         <div style="font-size:12px;color:var(--text-light);">${xss(m.profiles?.full_name||m.profiles?.username||'?')}${roleBadge}${banBadge}</div>
         <div style="font-size:10px;color:var(--text-muted);">@${xss(m.profiles?.username||'')}</div>
       </div>
-      ${isMod&&!isMe&&m.role!=='owner'?`<div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;">
-        ${isOwner&&m.role!=='mod'?`<button class="tbtn" style="font-size:9px;" onclick="promoteToMod('${commId}','${m.user_id}')">🛡 Mod</button>`:''}
-        ${isOwner&&m.role==='mod'?`<button class="tbtn" style="font-size:9px;color:var(--neon-pink);" onclick="demoteMod('${commId}','${m.user_id}')">❌ Mod</button>`:''}
-        ${isBannedM
-          ? `<button class="tbtn" style="font-size:9px;color:var(--neon-cyan);" onclick="unbanMember('${commId}','${m.user_id}')">✓ Desbanir</button>`
-          : `<button class="tbtn" style="font-size:9px;color:var(--neon-yellow);" onclick="banMember('${commId}','${m.user_id}','${userName}')">⏱ Banir</button>`
-        }
-        <button class="tbtn" style="font-size:9px;color:var(--neon-pink);" onclick="kickMember('${commId}','${m.user_id}','${userName}')">👢 Kick</button>
-      </div>`:''}
+      ${actionsHtml}
     </div>`;
   }).join('');
 }
@@ -11252,6 +11313,18 @@ function getCommLevel(xp){
   return{name:'NOVATO',icon:'🌱',color:'var(--text-muted)'};
 }
 
+// ── Toggle expand/collapse do checklist de metas diárias ──
+function _toggleChecklist(commId){
+  const body=document.getElementById('chk-body-'+commId);
+  const arrow=document.getElementById('chk-arrow-'+commId);
+  if(!body||!arrow) return;
+  const isHidden = body.style.display==='none';
+  body.style.display = isHidden ? 'block' : 'none';
+  arrow.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(-90deg)';
+  // Persistir estado
+  localStorage.setItem('commchecklist_collapsed_'+commId, isHidden ? '0' : '1');
+}
+
 async function loadCommRanking(commId){
   const el=document.getElementById('comm-xp-list-'+commId);
   if(!el) return;
@@ -11330,14 +11403,20 @@ async function loadCommRanking(commId){
     const totalDone = goals.reduce((a,g)=>a+Math.min(_getXpDailyCount(commId,CU.id,g.action),COMM_XP_DAILY_LIMIT),0);
     const totalMax = goals.length*COMM_XP_DAILY_LIMIT;
     const allDone = totalDone>=totalMax;
+    // Estado de expansão persistido em localStorage (padrão: colapsado)
+    const collapsedKey='commchecklist_collapsed_'+commId;
+    const isCollapsed = localStorage.getItem(collapsedKey)!=='0'; // padrão colapsado
     dailyChecklist = `<div style="margin-bottom:16px;padding:12px;background:linear-gradient(135deg,rgba(0,255,204,.06),rgba(124,58,237,.06));border:1px solid var(--border-glow);border-radius:14px;">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+      <div onclick="_toggleChecklist('${commId}')" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;${isCollapsed?'':'margin-bottom:10px;'}">
+        <span id="chk-arrow-${commId}" style="font-size:12px;color:var(--neon-cyan);transition:transform .2s;transform:rotate(${isCollapsed?'-90':'0'}deg);display:inline-block;">▼</span>
         <span style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);letter-spacing:1px;flex:1;">📋 METAS DIÁRIAS</span>
-        <span style="font-size:10px;color:${allDone?'var(--neon-cyan)':'var(--text-muted)'};font-family:Silkscreen,monospace;">${totalDone}/${totalMax}</span>
+        <span style="font-size:10px;color:${allDone?'var(--neon-cyan)':'var(--text-muted)'};font-family:Silkscreen,monospace;">${totalDone}/${totalMax} ${allDone?'🎉':''}</span>
       </div>
-      <div style="font-size:10px;color:var(--text-muted);margin-bottom:10px;line-height:1.5;">Bata 3 metas de cada ação para ganhar XP máximo hoje. Metas resetam à meia-noite.</div>
-      ${rows}
-      ${allDone?'<div style="text-align:center;margin-top:8px;font-size:11px;color:var(--neon-yellow);font-family:Silkscreen,monospace;">🎉 TODAS AS METAS BATIDAS HOJE!</div>':''}
+      <div id="chk-body-${commId}" style="display:${isCollapsed?'none':'block'};">
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:10px;line-height:1.5;">Bata 3 metas de cada ação para ganhar XP máximo hoje. Metas resetam à meia-noite.</div>
+        ${rows}
+        ${allDone?'<div style="text-align:center;margin-top:8px;font-size:11px;color:var(--neon-yellow);font-family:Silkscreen,monospace;">🎉 TODAS AS METAS BATIDAS HOJE!</div>':''}
+      </div>
     </div>`;
   }
 
