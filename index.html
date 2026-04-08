@@ -10964,7 +10964,47 @@ const LIVE_STATE = {
 const LIVE_ICE_SERVERS = [
   {urls:'stun:stun.l.google.com:19302'},
   {urls:'stun:stun1.l.google.com:19302'},
+  // TURN server público (OpenRelay by Metered) — essencial para NATs simétricos de operadoras móveis
+  {urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'},
+  {urls:'turn:openrelay.metered.ca:443',username:'openrelayproject',credential:'openrelayproject'},
+  {urls:'turn:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'},
 ];
+
+// ── Flag global: áudio foi destravado por gesto do usuário? ──
+let _liveAudioUnlocked = false;
+// Set de elementos <audio> remotos que esperam destravamento
+const _livePendingAudio = new Set();
+
+// Instala listeners globais de destravamento de áudio (uma vez só)
+function _liveInstallAudioUnlock(){
+  if(window._liveUnlockInstalled) return;
+  window._liveUnlockInstalled = true;
+  const unlock = ()=>{
+    _liveAudioUnlocked = true;
+    console.log('[live audio] Destravado por gesto do usuário');
+    // Tocar todos os elementos pendentes
+    _livePendingAudio.forEach(el=>{
+      try{
+        el.muted = false;
+        el.volume = 1;
+        el.play().then(()=>{
+          console.log('[live audio] ✓ play destravado para', el.id);
+        }).catch(e=>{
+          console.warn('[live audio] ✗ play falhou mesmo após gesto:', el.id, e);
+        });
+      }catch(e){}
+    });
+    _livePendingAudio.clear();
+    // Resumir AudioContext do VAD se existir
+    if(LIVE_STATE._audioCtx && LIVE_STATE._audioCtx.state==='suspended'){
+      LIVE_STATE._audioCtx.resume().catch(()=>{});
+    }
+  };
+  // Escutar em múltiplos eventos para cobrir mobile
+  ['click','touchstart','touchend','keydown'].forEach(ev=>{
+    document.addEventListener(ev, unlock, {capture:true, once:false});
+  });
+}
 
 // ── WebRTC peer connection mesh ─────────────────────────────
 // Cada participante mantém UMA RTCPeerConnection por outro participante.
@@ -10975,44 +11015,71 @@ const LIVE_ICE_SERVERS = [
 function _liveCreatePeer(remoteUserId){
   // Se já existe, reaproveita
   if(LIVE_STATE.peers[remoteUserId]) return LIVE_STATE.peers[remoteUserId];
-  console.log('[live webrtc] criando peer para', remoteUserId);
-  const pc = new RTCPeerConnection({iceServers: LIVE_ICE_SERVERS});
+  console.log('[live webrtc] criando peer para', remoteUserId, 'meu role=', LIVE_STATE.role);
+  const pc = new RTCPeerConnection({iceServers: LIVE_ICE_SERVERS, iceCandidatePoolSize:4});
   // Anexar tracks locais se houver (host e speakers enviam áudio)
   if(LIVE_STATE.localStream){
     LIVE_STATE.localStream.getTracks().forEach(track=>{
-      try{ pc.addTrack(track, LIVE_STATE.localStream); }
+      try{
+        pc.addTrack(track, LIVE_STATE.localStream);
+        console.log('[live webrtc] ✓ addTrack',track.kind,'→',remoteUserId);
+      }
       catch(e){ console.warn('[live webrtc] addTrack err:',e); }
     });
+  } else {
+    // Ouvinte puro — precisa declarar que QUER receber áudio, senão nada trafega
+    try{
+      pc.addTransceiver('audio', {direction:'recvonly'});
+      console.log('[live webrtc] ✓ addTransceiver recvonly →',remoteUserId);
+    }catch(e){ console.warn('[live webrtc] addTransceiver err:',e); }
   }
   // Receber tracks remotas → criar <audio> escondido para reproduzir
   pc.ontrack = (ev)=>{
-    console.log('[live webrtc] ontrack de',remoteUserId, ev.streams);
+    console.log('[live webrtc] 🎧 ontrack de',remoteUserId,'streams:',ev.streams?.length,'track:',ev.track?.kind);
     const stream = ev.streams[0];
-    if(!stream) return;
+    if(!stream){
+      console.warn('[live webrtc] ontrack sem stream — ignorando');
+      return;
+    }
     let audioEl = document.getElementById('live-audio-'+remoteUserId);
     if(!audioEl){
+      // IMPORTANTE: configurar todos os atributos ANTES de atribuir srcObject
       audioEl = document.createElement('audio');
       audioEl.id = 'live-audio-'+remoteUserId;
       audioEl.autoplay = true;
+      audioEl.setAttribute('autoplay','');
+      audioEl.setAttribute('playsinline',''); // iOS exige
       audioEl.playsInline = true;
-      audioEl.style.display = 'none';
+      audioEl.controls = false;
+      audioEl.muted = false; // GARANTIR que NÃO está mutado
+      audioEl.volume = 1.0;
+      audioEl.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;';
       document.body.appendChild(audioEl);
+      console.log('[live webrtc] ✓ elemento <audio> criado:',audioEl.id);
     }
     audioEl.srcObject = stream;
-    // Em alguns navegadores, o autoplay pode falhar — tentar play() explicitamente
-    audioEl.play().catch(e=>{
-      console.warn('[live webrtc] autoplay bloqueado, tentando contornar:', e);
-      // Mostrar um toast pedindo interação
-      showToast('🔊 Toque na tela para ouvir a live','success');
-      const resume = ()=>{
-        audioEl.play().then(()=>{
-          document.removeEventListener('click',resume);
-          document.removeEventListener('touchstart',resume);
-        }).catch(()=>{});
-      };
-      document.addEventListener('click',resume,{once:false});
-      document.addEventListener('touchstart',resume,{once:false});
-    });
+    // Garantir volume e unmute (Safari às vezes reseta)
+    audioEl.muted = false;
+    audioEl.volume = 1.0;
+    // Tentar play() imediato
+    const tryPlay = ()=>{
+      const p = audioEl.play();
+      if(p && typeof p.then==='function'){
+        p.then(()=>{
+          console.log('[live webrtc] ✓ play() OK para',remoteUserId);
+        }).catch(e=>{
+          console.warn('[live webrtc] ✗ play() bloqueado para',remoteUserId,'-',e.name,e.message);
+          // Adicionar à fila de pending — será destravado no próximo gesto
+          _livePendingAudio.add(audioEl);
+          if(!_liveAudioUnlocked){
+            showToast('🔊 Toque na tela para ouvir a live','success');
+          }
+        });
+      }
+    };
+    // Tentar 2x com pequeno delay (iOS às vezes precisa)
+    tryPlay();
+    setTimeout(tryPlay, 500);
     // Detectar atividade de voz para destacar quem está falando
     try{ _liveAttachVoiceDetector(remoteUserId, stream); }catch(e){}
   };
@@ -11038,9 +11105,20 @@ function _liveCreatePeer(remoteUserId){
 }
 
 // Decide quem inicia a offer pra evitar colisão (glare).
-// Quem tem o id "menor" lexicograficamente envia a offer.
+// Regra: quem TEM localStream (host/speaker) sempre oferece para quem NÃO tem.
+// Se ambos têm, o de id lexicograficamente menor oferece.
+// Se nenhum tem (dois ouvintes), nada acontece — sem sentido conectar.
 function _liveShouldInitiateOffer(remoteUserId){
-  return (CU?.id||'') < remoteUserId;
+  const iHaveStream = !!LIVE_STATE.localStream;
+  const remote = LIVE_STATE.participants[remoteUserId];
+  const remoteHasStream = remote && (remote.role==='host' || remote.role==='speaker');
+  if(iHaveStream && !remoteHasStream) return true;   // eu envio, ele só recebe → eu ofereço
+  if(!iHaveStream && remoteHasStream) return false;  // ele envia, eu só recebo → ele oferece
+  if(iHaveStream && remoteHasStream){
+    // Ambos têm áudio — desempate lexicográfico
+    return (CU?.id||'') < remoteUserId;
+  }
+  return false; // dois ouvintes — ninguém oferece
 }
 
 async function _liveStartNegotiation(remoteUserId){
@@ -11211,6 +11289,8 @@ async function loadCommLive(commId){
 // ── Retomar uma live abandonada (owner volta) ──
 async function resumeCommLive(commId){
   if(!CU) return showToast('Faça login','error');
+  _liveInstallAudioUnlock();
+  _liveAudioUnlocked = true;
   // Confirma que ainda sou owner
   const{data:comm}=await db.from('communities').select('owner_id,live_title').eq('id',commId).maybeSingle();
   if(comm?.owner_id !== CU?.id) return showToast('Apenas o dono pode retomar','error');
@@ -11305,17 +11385,20 @@ function renderLiveRoom(commId, isOwner){
     if(role==='host'){
       controlsHtml = `
         <button class="live-ctrl-btn ${LIVE_STATE.muted?'mic-off':''}" onclick="toggleLiveMic()">${LIVE_STATE.muted?'🔇 Mic OFF':'🎙 Mic ON'}</button>
+        <button class="live-ctrl-btn" onclick="liveForceAudioUnlock()">🔊 Ativar som</button>
         <button class="live-ctrl-btn danger" onclick="endCommLive('${commId}')">🛑 Encerrar Live</button>
       `;
     } else if(role==='speaker'){
       controlsHtml = `
         <button class="live-ctrl-btn ${LIVE_STATE.muted?'mic-off':''}" onclick="toggleLiveMic()">${LIVE_STATE.muted?'🔇 Mic OFF':'🎙 Mic ON'}</button>
+        <button class="live-ctrl-btn" onclick="liveForceAudioUnlock()">🔊 Ativar som</button>
         <button class="live-ctrl-btn" onclick="leaveLiveRoom()">🚪 Sair</button>
       `;
     } else {
       // Listener
       controlsHtml = `
         <button class="live-ctrl-btn" onclick="raiseLiveHand()">✋ ${LIVE_STATE.participants[CU?.id]?.handRaised?'Baixar mão':'Pedir para falar'}</button>
+        <button class="live-ctrl-btn" onclick="liveForceAudioUnlock()">🔊 Ativar som</button>
         <button class="live-ctrl-btn" onclick="leaveLiveRoom()">🚪 Sair</button>
       `;
     }
@@ -11366,8 +11449,11 @@ function renderLiveRoom(commId, isOwner){
 // ── HOST inicia a live ──
 async function startCommLive(commId){
   if(!CU) return showToast('Faça login','error');
+  _liveInstallAudioUnlock();
   const titleInp = document.getElementById('live-title-'+commId);
   const title = (titleInp?.value||'').trim() || 'Live da Comunidade';
+  // Como o usuário clicou em "GO LIVE", isso conta como gesto — áudio está destravado
+  _liveAudioUnlocked = true;
   // Solicitar permissão de microfone
   let stream;
   try{
@@ -11458,6 +11544,9 @@ function _liveBeforeUnload(){
 // ── LISTENER/SPEAKER entra na live ──
 async function joinCommLive(commId){
   if(!CU) return showToast('Faça login','error');
+  _liveInstallAudioUnlock();
+  // Clicar em "Entrar na Live" conta como gesto de destravamento
+  _liveAudioUnlocked = true;
   LIVE_STATE.activeCommId = commId;
   LIVE_STATE.role = 'listener';
   LIVE_STATE.muted = true; // ouvinte começa mutado (sem mic)
@@ -11714,6 +11803,40 @@ function _refreshLiveUI(commId){
 let _liveCache = {};
 
 // ── Ações do usuário ──
+// ── Destrava manualmente o áudio: força play() em todos os elementos ──
+function liveForceAudioUnlock(){
+  _liveAudioUnlocked = true;
+  const elems = document.querySelectorAll('audio[id^="live-audio-"]');
+  console.log('[live audio] Forçando unlock em',elems.length,'elementos');
+  let playedOk = 0;
+  elems.forEach(el=>{
+    try{
+      el.muted = false;
+      el.volume = 1.0;
+      const p = el.play();
+      if(p && typeof p.then==='function'){
+        p.then(()=>{
+          playedOk++;
+          console.log('[live audio] ✓ forced play',el.id);
+        }).catch(e=>{
+          console.warn('[live audio] ✗ forced play falhou',el.id,e);
+        });
+      }
+    }catch(e){}
+  });
+  // Resumir AudioContext
+  if(LIVE_STATE._audioCtx && LIVE_STATE._audioCtx.state==='suspended'){
+    LIVE_STATE._audioCtx.resume().then(()=>{
+      console.log('[live audio] AudioContext resumed');
+    }).catch(()=>{});
+  }
+  if(elems.length===0){
+    showToast('⚠ Nenhuma conexão de áudio ativa ainda','error');
+  } else {
+    showToast('🔊 Som ativado','success');
+  }
+}
+
 function toggleLiveMic(){
   if(!LIVE_STATE.localStream) return showToast('Sem mic ativo','error');
   LIVE_STATE.muted = !LIVE_STATE.muted;
