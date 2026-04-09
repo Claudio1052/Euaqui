@@ -5048,12 +5048,29 @@ function renderComment(c,myVote,isPostOwner,postId){
       <div class="cmt-actions">
         <button class="cvbtn${myVote==='like'?' active-like':''}" onclick="voteCmt('${c.id}','like',this,'${postId}')">👍 <span>${likeCount>0?likeCount:''}</span></button>
         <button class="cvbtn cv-dis${myVote==='dislike'?' active-dis':''}" onclick="voteCmt('${c.id}','dislike',this,'${postId}')">👎 <span>${disCount>0?disCount:''}</span></button>
+        ${CU?`<button class="cvbtn" style="color:var(--neon-cyan);opacity:.8;" onclick="replyToCmt('${postId}','${xss(prof.username||'user')}')">↩ Responder</button>`:''}
         ${isOwn?`<button class="cmt-mod-btn" onclick="deleteCmt('${c.id}','${postId}')">🗑</button>`:''}
         ${isPostOwner&&!isOwn?`<button class="cmt-mod-btn" onclick="toggleHideCmt('${c.id}','${postId}',${isHidden})">${isHidden?'👁':'🙈'}</button>`:''}
       </div>
     </div>
   </div>`;
 }
+function replyToCmt(postId, username){
+  const inp = document.getElementById('cin-'+postId);
+  if(!inp) return;
+  const mention = '@'+username+' ';
+  // Evita duplicar a menção se já estiver lá
+  if(!inp.value.startsWith(mention)){
+    inp.value = mention + inp.value.replace(/^@\S+\s?/, '');
+  }
+  inp.focus();
+  // Coloca cursor no final
+  const len = inp.value.length;
+  inp.setSelectionRange(len, len);
+  // Scroll suave até o campo
+  inp.scrollIntoView({behavior:'smooth', block:'center'});
+}
+
 async function submitCmt(postId, btnEl){
   if(!CU)return showToast('Faça login para comentar','error');
   let inp = btnEl ? btnEl.closest('.comments-sec')?.querySelector('.cmt-input') : null;
