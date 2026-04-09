@@ -6331,6 +6331,30 @@ async function loadProfilePage(userId){
         postsPanel.innerHTML='<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px;">Nenhum post ainda</div>';
       } else {
         const postIds=posts.map(p=>p.id);
+
+        // Identificar reposts e buscar posts originais de uma vez
+        const repostOrigIds = [];
+        posts.forEach(p=>{
+          const raw = p.content||'';
+          if(raw.startsWith('[REPOST:')){
+            const end = raw.indexOf(']');
+            if(end>0){
+              const parts = raw.substring(8,end).split(':');
+              if(parts[0]) repostOrigIds.push(parts[0]);
+            }
+          }
+        });
+        // Pre-fetch dos posts originais para evitar "carregando..." no perfil
+        const origPostMap = {};
+        if(repostOrigIds.length){
+          try{
+            const{data:origPosts} = await db.from('posts')
+              .select('id,content,media_urls,media_types,user_id,profiles(id,username,full_name,avatar_url)')
+              .in('id', repostOrigIds);
+            (origPosts||[]).forEach(op=>{ origPostMap[op.id]=op; });
+          }catch(e){}
+        }
+
         const[rxRes,myRxRes]=await Promise.all([
           db.from('likes').select('post_id,reaction_type').in('post_id',postIds),
           CU?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id):{data:[]}
@@ -6341,7 +6365,56 @@ async function loadProfilePage(userId){
           try{ return renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||''); }
           catch(e){ console.warn('renderPost profile error:',e?.message,p?.id); return ''; }
         }).join('') || '<div style="text-align:center;padding:30px;color:var(--text-muted);">Nenhuma postagem ainda</div>';
-        _hydrateAllReposts(postsPanel);
+
+        // Hidratar reposts usando dados já carregados (sem nova requisição)
+        if(repostOrigIds.length){
+          posts.forEach(p=>{
+            const raw = p.content||'';
+            if(!raw.startsWith('[REPOST:')) return;
+            const end = raw.indexOf(']');
+            if(end<=0) return;
+            const parts = raw.substring(8,end).split(':');
+            const origId = parts[0];
+            const op = origPostMap[origId];
+            if(!op) return;
+            // Preencher diretamente sem nova requisição ao banco
+            const elAv   = document.getElementById('repost-av-'+p.id);
+            const elName = document.getElementById('repost-name-'+p.id);
+            const elCont = document.getElementById('repost-content-'+p.id);
+            const elOrig = document.getElementById('repost-orig-'+p.id);
+            if(!elCont) return;
+            const prof = op.profiles||{};
+            const av = prof.avatar_url||('https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u'));
+            const name = prof.full_name||prof.username||'Usuário';
+            const user = prof.username||'';
+            const isEmoji = av && av.length<=4 && !av.startsWith('http');
+            if(elAv){
+              elAv.innerHTML = isEmoji
+                ? `<span style="font-size:16px;">${av}</span>`
+                : `<img src="${xss(av)}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;display:block;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${xss(user)}'">`;
+              elAv.style.cursor='pointer';
+              elAv.onclick=()=>loadProfilePage(op.user_id);
+            }
+            if(elName){
+              elName.innerHTML=`<span style="cursor:pointer;color:var(--neon-cyan);" onclick="loadProfilePage('${xss(op.user_id)}')">${xss(name)}</span> <span style="color:var(--text-muted);font-size:9px;">@${xss(user)}</span>`;
+            }
+            let cleanContent=(op.content||'')
+              .replace(/^\[COMM_POST:[^\]]*\]\n?/,'')
+              .replace(/^\[BIZ_PROMO:[^\]]*\]\n?/,'')
+              .replace(/^\[REPOST:[^\]]*\]\n?/,'')
+              .trim();
+            const mediaUrls=Array.isArray(op.media_urls)?op.media_urls.filter(Boolean):[];
+            const mediaHtml=mediaUrls.length
+              ? `<div style="margin-top:8px;border-radius:8px;overflow:hidden;"><img src="${xss(mediaUrls[0])}" style="width:100%;max-height:220px;object-fit:cover;display:block;border-radius:8px;" loading="lazy" onerror="this.style.display='none'"></div>`
+              : '';
+            elCont.innerHTML=(cleanContent?`<div style="font-size:13px;color:var(--text-light);line-height:1.6;word-break:break-word;margin-bottom:4px;">${linkify(cleanContent)}</div>`:'') + mediaHtml;
+            if(elOrig){
+              const card=elOrig.closest('.repost-embed-card');
+              if(card){ card.onclick=function(e){e.stopPropagation();_goToOriginalPost(origId);}; }
+            }
+          });
+        }
+
         updateCommentCounts(postIds);
       }
     }
