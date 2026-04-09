@@ -4828,9 +4828,14 @@ async function _hydrateRepostCard(repostPostId, originalPostId, originalAuthorId
         : '') + origMediaHtml;
     }
 
-    // Tornar o card clicável para ir ao post original
-    if(elOrig){
-      elOrig.closest('.repost-embed-card')?.setAttribute('onclick', `openShareModal('${originalPostId}','')`);
+    // Tornar o card clicável para ir ao post original no feed
+    const card = elOrig ? elOrig.closest('.repost-embed-card') : null;
+    if(card){
+      card.setAttribute('data-orig-post-id', originalPostId);
+      card.onclick = function(e){
+        e.stopPropagation();
+        _goToOriginalPost(originalPostId);
+      };
     }
 
   }catch(e){
@@ -6515,6 +6520,21 @@ async function loadMsgs(userId){
     area.innerHTML='<div class="chat-empty"><div class="chat-empty-icon">💬</div><div class="chat-empty-txt">Início da conversa</div><div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Diga olá! 👋</div></div>';
     return;
   }
+
+  // Coletar IDs de posts compartilhados para pré-buscar
+  const postShareIds = [...new Set(msgs
+    .map(m=>_extractPostShareId(m.content))
+    .filter(Boolean))];
+  const postShareMap = {};
+  if(postShareIds.length){
+    try{
+      const{data:sharedPosts} = await db.from('posts')
+        .select('id,content,media_urls,user_id,profiles(id,username,full_name,avatar_url)')
+        .in('id', postShareIds);
+      (sharedPosts||[]).forEach(p=>{ postShareMap[p.id]=p; });
+    }catch(e){}
+  }
+
   let lastDate='', html='';
   for(const m of msgs){
     const isSent = m.sender_id===CU.id;
@@ -6523,7 +6543,6 @@ async function loadMsgs(userId){
       lastDate=msgDate;
       html += '<div class="msg-date-sep">— '+msgDate+' —</div>';
     }
-    // Build media HTML safely without nesting quotes
     let mediaHtml='';
     if(m.media_url){
       const safeUrl = xss(m.media_url);
@@ -6534,11 +6553,16 @@ async function loadMsgs(userId){
         mediaHtml = '<div class="mb-media" data-src="'+safeUrl+'" onclick="openLightbox(this.dataset.src)"><img src="'+safeUrl+'" alt="imagem" style="display:block;width:100%;border-radius:8px;"></div>';
       }
     }
-    // Mensagens de chamada: estilo centralizado especial
-    const isCallMsg = m.content && /^[📞📹📵✅]/.test(m.content) &&
+    // Verificar se é post compartilhado [POST_SHARE:id]
+    const sharedPostId = _extractPostShareId(m.content);
+    const isCallMsg = !sharedPostId && m.content && /^[📞📹📵✅]/.test(m.content) &&
       (m.content.includes('Chamada') || m.content.includes('ligou'));
     let contentHtml = '';
-    if(isCallMsg){
+    if(sharedPostId){
+      const sharedPost = postShareMap[sharedPostId];
+      const extraMsg = (m.content||'').replace(/^\[POST_SHARE:[^\]]*\]\n?/,'').trim();
+      contentHtml = _renderPostShareBubble(sharedPostId, sharedPost, extraMsg, isSent);
+    } else if(isCallMsg){
       const isRej = m.content.includes('rejeitada') || m.content.includes('não atendida');
       const color = isRej ? '#ef4444' : m.content.includes('atendida') ? '#22c55e' : '#f59e0b';
       contentHtml = '<div style="font-size:12px;color:'+color+';text-align:center;padding:6px 12px;background:rgba(255,255,255,.05);border-radius:20px;border:1px solid '+color+'40;">'+xss(m.content)+'</div>';
@@ -6554,12 +6578,88 @@ async function loadMsgs(userId){
   }
   area.innerHTML = html;
   area.scrollTop = area.scrollHeight;
-  // Marcar msgs como lidas e apagar bolinha
   db.from('messages').update({read:true}).eq('receiver_id',CU.id).eq('sender_id',userId).eq('read',false)
     .then(()=>{ document.getElementById('bnav-msg-dot')?.classList.remove('active'); })
     .catch(()=>{});
 }
 
+// ── Extrai o postId de uma mensagem com marcador [POST_SHARE:id] ──
+function _extractPostShareId(content){
+  if(!content) return null;
+  const m = content.match(/^\[POST_SHARE:([^\]]+)\]/);
+  return m ? m[1] : null;
+}
+
+// ── Renderiza o mini card de post compartilhado no chat ──
+function _renderPostShareBubble(postId, post, extraMsg, isSent){
+  const accentColor = isSent ? 'var(--neon-cyan)' : 'rgba(191,95,255,.9)';
+  const bubbleBg    = isSent ? 'rgba(0,255,204,.08)' : 'rgba(255,255,255,.06)';
+  const borderColor = isSent ? 'rgba(0,255,204,.35)' : 'rgba(191,95,255,.35)';
+
+  if(!post){
+    // Post não carregado — botão para abrir mesmo assim
+    return `<div style="
+        background:${bubbleBg};border:1px solid ${borderColor};
+        border-left:3px solid ${accentColor};
+        border-radius:12px;padding:10px 12px;
+        max-width:260px;cursor:pointer;
+      " onclick="_goToOriginalPost('${xss(postId)}')">
+      <div style="font-size:9px;color:${accentColor};font-family:Silkscreen,monospace;margin-bottom:6px;letter-spacing:.5px;">📎 POST COMPARTILHADO</div>
+      <div style="font-size:11px;color:var(--text-muted);font-style:italic;">Toque para ver o post</div>
+      ${extraMsg?`<div style="margin-top:6px;font-size:12px;color:var(--text-light);border-top:1px solid rgba(255,255,255,.08);padding-top:6px;">${xss(extraMsg)}</div>`:''}
+    </div>`;
+  }
+
+  // Dados do post
+  const prof = post.profiles||{};
+  const authorName = prof.full_name || prof.username || 'Usuário';
+  const authorUser = prof.username || '';
+  const av = prof.avatar_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+(authorUser||'u'));
+  const isEmoji = av && av.length<=4 && !av.startsWith('http');
+  const avEl = isEmoji
+    ? `<div style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;">${av}</div>`
+    : `<img src="${xss(av)}" style="width:26px;height:26px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${xss(authorUser||'u')}'">`;
+
+  // Conteúdo limpo
+  let cleanContent = (post.content||'')
+    .replace(/^\[COMM_POST:[^\]]*\]\n?/,'')
+    .replace(/^\[BIZ_PROMO:[^\]]*\]\n?/,'')
+    .replace(/^\[REPOST:[^\]]*\]\n?/,'')
+    .replace(/^\[POST_SHARE:[^\]]*\]\n?/,'')
+    .trim();
+  const preview = cleanContent.slice(0,120)+(cleanContent.length>120?'...':'');
+
+  // Thumbnail de mídia
+  const mediaUrls = Array.isArray(post.media_urls)?post.media_urls.filter(Boolean):[];
+  const thumbHtml = mediaUrls[0]
+    ? `<div style="border-radius:8px;overflow:hidden;margin-top:8px;max-height:140px;">
+         <img src="${xss(mediaUrls[0])}" style="width:100%;max-height:140px;object-fit:cover;display:block;" loading="lazy" onerror="this.style.display='none'">
+       </div>`
+    : '';
+
+  return `<div style="
+      background:${bubbleBg};
+      border:1px solid ${borderColor};
+      border-left:3px solid ${accentColor};
+      border-radius:12px;padding:10px 12px;
+      max-width:260px;cursor:pointer;
+      transition:opacity .15s;
+    " onclick="_goToOriginalPost('${xss(postId)}')"
+      onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
+    <div style="font-size:9px;color:${accentColor};font-family:Silkscreen,monospace;margin-bottom:8px;letter-spacing:.5px;">📎 POST COMPARTILHADO</div>
+    <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px;">
+      ${avEl}
+      <div>
+        <div style="font-size:10px;color:var(--text-light);font-family:Silkscreen,monospace;">${xss(authorName)}</div>
+        <div style="font-size:9px;color:var(--text-muted);">@${xss(authorUser)}</div>
+      </div>
+    </div>
+    ${preview?`<div style="font-size:12px;color:var(--text-light);line-height:1.5;word-break:break-word;">${xss(preview)}</div>`:''}
+    ${thumbHtml}
+    ${extraMsg?`<div style="margin-top:8px;font-size:12px;color:var(--text-light);border-top:1px solid rgba(255,255,255,.1);padding-top:8px;font-style:italic;">"${xss(extraMsg)}"</div>`:''}
+    <div style="margin-top:8px;font-size:9px;color:${accentColor};opacity:.7;">👆 Toque para ver o post</div>
+  </div>`;
+}
 
 async function sendMsg(){
   // Close any open emoji picker
@@ -7036,6 +7136,17 @@ async function loadHomeMsgs(userId){
   if(!area) return;
   const{data:msgs}=await db.from('messages').select('id,sender_id,content,media_url,media_type,created_at').or('and(sender_id.eq.'+CU.id+',receiver_id.eq.'+userId+'),and(sender_id.eq.'+userId+',receiver_id.eq.'+CU.id+')').order('created_at');
   if(!msgs?.length){area.innerHTML='<div style="text-align:center;color:var(--text-muted);font-size:11px;padding:20px;">Início da conversa 👋</div>';return;}
+
+  // Pré-buscar posts compartilhados
+  const postShareIds=[...new Set(msgs.map(m=>_extractPostShareId(m.content)).filter(Boolean))];
+  const postShareMap={};
+  if(postShareIds.length){
+    try{
+      const{data:sp}=await db.from('posts').select('id,content,media_urls,user_id,profiles(id,username,full_name,avatar_url)').in('id',postShareIds);
+      (sp||[]).forEach(p=>{postShareMap[p.id]=p;});
+    }catch(e){}
+  }
+
   let html='';
   for(const m of msgs){
     const sent=m.sender_id===CU.id;
@@ -7045,7 +7156,15 @@ async function loadHomeMsgs(userId){
       mh=isVid?'<div class="mb-media"><video src="'+xss(m.media_url)+'" controls style="width:100%;max-height:160px;border-radius:8px;display:block;"></video></div>'
               :'<div class="mb-media" data-src="'+xss(m.media_url)+'" onclick="openLightbox(this.dataset.src)"><img src="'+xss(m.media_url)+'" style="width:100%;border-radius:8px;" class="img-safe"></div>';
     }
-    html+='<div class="mb '+(sent?'sent':'recv')+'">'+mh+(m.content?'<div class="mb-bubble">'+xss(m.content)+'</div>':'')+'<div class="mb-time">'+timeAgo(m.created_at)+'</div></div>';
+    const sharedPostId=_extractPostShareId(m.content);
+    let contentHtml='';
+    if(sharedPostId){
+      const extraMsg=(m.content||'').replace(/^\[POST_SHARE:[^\]]*\]\n?/,'').trim();
+      contentHtml=_renderPostShareBubble(sharedPostId,postShareMap[sharedPostId],extraMsg,sent);
+    } else if(m.content){
+      contentHtml='<div class="mb-bubble">'+xss(m.content)+'</div>';
+    }
+    html+='<div class="mb '+(sent?'sent':'recv')+'">'+mh+contentHtml+'<div class="mb-time">'+timeAgo(m.created_at)+'</div></div>';
   }
   area.innerHTML=html;
   area.scrollTop=area.scrollHeight;
@@ -7312,6 +7431,62 @@ async function showPostAuthorProfile(userId, triggerEl){
   document.body.appendChild(popup);
 }
 
+
+// ── Navega até o post original no feed (usado ao clicar no card de repost) ──
+async function _goToOriginalPost(postId){
+  // 1. Navegar para o feed principal
+  nav('home');
+  // 2. Esperar o feed carregar, depois tentar encontrar o post
+  await new Promise(r=>setTimeout(r,400));
+  // 3. Verificar se o post já está no DOM
+  let el = document.getElementById('post-'+postId);
+  if(el){
+    el.scrollIntoView({behavior:'smooth', block:'center'});
+    // Highlight breve
+    el.style.transition='box-shadow .3s';
+    el.style.boxShadow='0 0 0 3px var(--neon-cyan), 0 0 24px rgba(0,255,204,.4)';
+    setTimeout(()=>{ el.style.boxShadow=''; }, 1800);
+    return;
+  }
+  // 4. Post não está no feed — buscar e renderizar diretamente
+  try{
+    const{data:p} = await db.from('posts')
+      .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url,status_message)')
+      .eq('id', postId).maybeSingle();
+    if(!p){ showToast('Post original não encontrado','error'); return; }
+
+    const[rxRes, myRxRes] = await Promise.all([
+      db.from('likes').select('post_id,reaction_type').eq('post_id',postId),
+      CU ? db.from('likes').select('post_id,reaction_type').eq('post_id',postId).eq('user_id',CU.id) : {data:[]}
+    ]);
+    const rxMap={};
+    (rxRes.data||[]).forEach(r=>{ if(!rxMap[r.post_id])rxMap[r.post_id]={}; rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1; });
+    const myRxMap={};
+    (myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
+
+    const feed = document.getElementById('feed');
+    if(!feed) return;
+    // Inserir no topo do feed com destaque
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = renderPost(p, rxMap[p.id]||{}, myRxMap[p.id]||'');
+    const postEl = wrapper.firstElementChild;
+    if(!postEl) return;
+    postEl.style.border = '2px solid var(--neon-cyan)';
+    postEl.style.boxShadow = '0 0 24px rgba(0,255,204,.35)';
+    // Adicionar badge "Post original"
+    const badge = document.createElement('div');
+    badge.style.cssText = 'font-family:Silkscreen,monospace;font-size:9px;color:var(--neon-cyan);letter-spacing:1px;padding:4px 10px 6px;';
+    badge.textContent = '📌 POST ORIGINAL';
+    postEl.prepend(badge);
+    feed.prepend(postEl);
+    window.scrollTo({top:0, behavior:'smooth'});
+    setTimeout(()=>{
+      postEl.style.transition='border .8s, box-shadow .8s';
+      postEl.style.border='';
+      postEl.style.boxShadow='';
+    }, 1800);
+  }catch(e){ showToast('Erro ao carregar post original','error'); }
+}
 
 function openShareModal(postId, authorName, preview){
   // Remove modal anterior se existir
@@ -7709,8 +7884,11 @@ async function _confirmSendToFriend(postId){
   const overlay = document.getElementById('send-friend-modal');
   if(!overlay || !overlay._selected?.size) return;
   const msg = document.getElementById('sfm-msg')?.value.trim();
-  const url = window.location.origin + window.location.pathname + '?post=' + postId;
-  const msgContent = (msg ? msg + '\n' : '') + '📎 Post compartilhado: ' + url;
+
+  // Usar marcador especial para o mini card no chat
+  // Formato: [POST_SHARE:postId]\nMensagem opcional
+  const shareMarker = `[POST_SHARE:${postId}]`;
+  const msgContent = shareMarker + (msg ? '\n' + msg : '');
 
   const btn = document.getElementById('sfm-send-btn');
   if(btn){ btn.textContent='⏳ Enviando...'; btn.disabled=true; }
@@ -7718,14 +7896,12 @@ async function _confirmSendToFriend(postId){
   let sentCount = 0;
   for(const friendId of overlay._selected){
     try{
-      // Enviar mensagem no chat
       await db.from('messages').insert({
         sender_id: CU.id,
         receiver_id: friendId,
         content: msgContent,
         read: false
       });
-      // Notificar
       await db.from('notifications').insert({
         user_id: friendId,
         actor_id: CU.id,
