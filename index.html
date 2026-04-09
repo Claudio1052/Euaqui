@@ -176,27 +176,6 @@ nav{position:fixed;top:0;left:0;right:0;background:#0a0a2a;border-bottom:1px sol
 .cmt-input:focus{border-color:var(--border-glow);}
 .cmt-sub{background:linear-gradient(135deg,var(--neon-cyan),var(--neon-purple));border:none;color:var(--bg-deep);padding:7px 12px;border-radius:20px;cursor:pointer;font-weight:bold;font-size:13px;transition:all .2s;}
 .cmt-sub:hover{transform:scale(1.05);}
-/* Mention dropdown */
-#[id^="cmt-mention-drop-"]{scrollbar-width:thin;}
-[id^="cmt-mention-drop-"]::-webkit-scrollbar{width:3px;}
-[id^="cmt-mention-drop-"]::-webkit-scrollbar-thumb{background:var(--neon-cyan);border-radius:3px;}
-
-/* ===== REPOST CARD EMBUTIDO ===== */
-.repost-embed-card{
-  transition:border-color .2s, background .2s;
-}
-.repost-embed-card:hover{
-  background:rgba(0,255,204,.06)!important;
-  border-color:rgba(0,255,204,.35)!important;
-}
-body.day-mode .repost-embed-card{
-  background:rgba(0,139,158,.04)!important;
-  border-color:rgba(0,139,158,.2)!important;
-}
-body.day-mode .repost-embed-card:hover{
-  background:rgba(0,139,158,.08)!important;
-  border-color:rgba(0,139,158,.4)!important;
-}
 
 /* SIDEBAR RIGHT */
 .sr{position:sticky;top:var(--nav-h);height:calc(100vh - var(--nav-h));overflow-y:auto;padding:14px 12px;border-left:1px solid var(--border-glow);background:rgba(10,10,42,.6);}
@@ -4422,67 +4401,67 @@ async function loadFeed(force=false){
   if(force){ cachedPostIds.clear(); cachedPosts={}; }
   // Select seguro — sem colunas que podem não existir
   const SEL='id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url,status_message)';
+
+  // ── Carrega set de amigos uma vez pra aplicar filtros de visibility ──
+  let friendSet = new Set();
+  if(CU){
+    try{
+      const{data:fws}=await db.from('friends').select('friend_id').eq('user_id',CU.id);
+      (fws||[]).forEach(f=>friendSet.add(f.friend_id));
+    }catch(e){}
+  }
+
   let q;
   if(feedTab==='popular'){
-    q=db.from('posts').select(SEL).order('likes_count',{ascending:false}).range(0,24);
+    q=db.from('posts').select(SEL).order('likes_count',{ascending:false}).range(0,40);
   } else if(feedTab==='friends'&&CU){
-    const{data:fws}=await db.from('friends').select('friend_id').eq('user_id',CU.id);
-    const ids=(fws||[]).map(f=>f.friend_id);
+    const ids=[...friendSet];
     if(!ids.length){
       if(feed.children.length===0)feed.innerHTML='<div style="text-align:center;padding:40px;color:var(--text-muted);font-family:\'VT323\',monospace;font-size:20px;">Adicione amigos para ver os posts deles aqui!</div>';
       return;
     }
-    q=db.from('posts').select(SEL).in('user_id',[...ids,CU.id]).order('created_at',{ascending:false}).range(0,24);
+    q=db.from('posts').select(SEL).in('user_id',[...ids,CU.id]).order('created_at',{ascending:false}).range(0,40);
   } else {
-    q=db.from('posts').select(SEL).order('created_at',{ascending:false}).range(0,24);
+    q=db.from('posts').select(SEL).order('created_at',{ascending:false}).range(0,40);
   }
   const{data:posts,error:fetchErr}=await q;
   if(fetchErr){console.error('Feed error:',fetchErr.message);if(feed.children.length===0)feed.innerHTML='<div style="text-align:center;padding:30px;color:var(--neon-pink);font-size:12px;">Erro ao carregar feed.<br>'+fetchErr.message+'</div>';return;}
 
-  // ── FILTRO DE VISIBILIDADE ──────────────────────────────────────────────────
-  // • public  → aparece para TODOS os usuários globais
-  // • friends → aparece APENAS para amigos e seguidores do autor
-  // • private → aparece APENAS para o próprio autor
-  let filteredPosts = posts || [];
-  try{
-    // Monta set de amigos/seguidores do usuário atual para checar posts "friends"
-    let myFriendSet = new Set();
-    let myFollowingSet = new Set();
-    if(CU){
-      const[frRes, folRes] = await Promise.all([
-        db.from('friends').select('friend_id').eq('user_id',CU.id),
-        db.from('follows').select('following_id').eq('follower_id',CU.id)
-      ]);
-      (frRes.data||[]).forEach(f=>myFriendSet.add(f.friend_id));
-      (folRes.data||[]).forEach(f=>myFollowingSet.add(f.following_id));
+  // ══════════════════════════════════════════════════════════════
+  // FILTRO DE VISIBILITY — regra principal:
+  //  - public:  todos veem
+  //  - friends: só o autor + amigos do autor (checado via friendSet do CU)
+  //  - private: SOMENTE o próprio autor + pessoas @mencionadas no conteúdo
+  //  - (sem valor): tratado como public para compatibilidade
+  // ══════════════════════════════════════════════════════════════
+  // Pré-computa meu username (para checar menções em posts privados)
+  const myUsername = (CP?.username||'').toLowerCase();
+  let visibilityFiltered = (posts||[]).filter(p=>{
+    const vis = p.visibility || 'public';
+    // Próprios posts: sempre vê
+    if(CU && p.user_id === CU.id) return true;
+    // Público: todos veem
+    if(vis === 'public') return true;
+    // Amigos: só se o AUTOR está no friendSet do usuário atual
+    if(vis === 'friends'){
+      return CU && friendSet.has(p.user_id);
     }
-
-    filteredPosts = filteredPosts.filter(p=>{
-      const vis = p.visibility || 'public';
-      const isOwn = CU && p.user_id === CU.id;
-
-      // Sempre mostra os próprios posts de qualquer visibilidade
-      if(isOwn) return true;
-
-      if(vis === 'public'){
-        // Público: aparece para todos
-        return true;
-      } else if(vis === 'friends'){
-        // Amigos: só para amigos e seguidores do autor
-        if(!CU) return false;
-        return myFriendSet.has(p.user_id) || myFollowingSet.has(p.user_id);
-      } else if(vis === 'private'){
-        // Privado: só para o próprio autor (já retornou true acima se isOwn)
-        return false;
-      }
-      return true; // fallback: público
-    });
-  }catch(e){ console.warn('Visibility filter:', e?.message); }
-  // ──────────────────────────────────────────────────────────────────────────
+    // Privado: só autor OU mencionados no conteúdo via @username
+    if(vis === 'private'){
+      if(!myUsername) return false;
+      const content = (p.content||'').toLowerCase();
+      // Regex: @ seguido do meu username, com boundary
+      const mentionRegex = new RegExp('@'+myUsername.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b');
+      return mentionRegex.test(content);
+    }
+    // Fallback desconhecido: esconde por segurança
+    return false;
+  });
 
   // ── Filtro de posts de comunidade: só membros podem ver no feed principal ──
   // Detecta posts com marker [COMM_POST:commId:...] e remove do feed
   // se o usuário atual NÃO for membro daquela comunidade.
+  let filteredPosts = visibilityFiltered;
   try{
     const commPostMap = new Map(); // postIndex -> commId
     (filteredPosts).forEach((p,idx)=>{
@@ -4584,34 +4563,11 @@ function renderPost(post,rxCounts={},myRx=''){
   try{
   const prof=post.profiles||{};
 
-  // ── Detectar REPOST ──
-  // Formato: [REPOST:originalPostId:originalAuthorId:originalAuthorName]\ncomentário
-  let repostMeta = null;
-  let displayContent = post.content||'';
-  try{
-    const raw0 = post.content||'';
-    if(raw0.startsWith('[REPOST:')){
-      const end = raw0.indexOf(']');
-      if(end > 0){
-        const inner = raw0.substring(8, end); // após "[REPOST:"
-        const parts = inner.split(':');
-        if(parts.length >= 3){
-          repostMeta = {
-            originalPostId: parts[0],
-            originalAuthorId: parts[1],
-            originalAuthorName: parts.slice(2).join(':') // nome pode ter ":"
-          };
-          displayContent = raw0.substring(end+1).replace(/^\n/,'');
-        }
-      }
-    }
-  }catch(e){ repostMeta=null; }
-
   // ── Detectar post de comunidade (COMM_POST) ──
   let commMeta = null;
   // ── Detectar post de loja (BIZ_PROMO) ──
   let bizMeta = null;
-  if(!repostMeta) displayContent = post.content||'';
+  let displayContent = post.content||'';
   // COMM_POST: [COMM_POST:commId:Nome|iconUrl]
   try{
     const raw0 = post.content||'';
@@ -4694,69 +4650,26 @@ function renderPost(post,rxCounts={},myRx=''){
   // Mídia
   const mediaUrls=Array.isArray(post.media_urls)?post.media_urls.filter(Boolean):[];
   const mediaTyps=Array.isArray(post.media_types)?post.media_types:[];
-  // Não exibe mídia duplicada se é repost (a mídia já aparece no card original embutido)
-  const mediaHtml = repostMeta ? '' : renderMedia(mediaUrls,mediaTyps);
+  const mediaHtml=renderMedia(mediaUrls,mediaTyps);
   const cmtCnt=post.comments_count||0;
   const isOwn=CU&&CU.id===post.user_id;
-
-  // ── Card do post original embutido (só para reposts) ──
-  // FIX 2: O conteúdo carregado assíncronamente agora funciona corretamente via _hydrateRepostCard
-  let repostCardHtml = '';
-  if(repostMeta){
-    repostCardHtml = `
-      <div class="repost-embed-card" style="
-        background:rgba(255,255,255,.04);
-        border:1px solid rgba(0,255,204,.2);
-        border-left:3px solid var(--neon-cyan);
-        border-radius:12px;
-        padding:12px 12px 12px 14px;
-        margin:8px 0 10px;
-        cursor:pointer;
-        position:relative;
-        overflow:hidden;
-      " onclick="void(0)">
-        <div id="repost-orig-${post.id}">
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
-            <div id="repost-av-${post.id}" style="width:28px;height:28px;border-radius:50%;background:rgba(0,255,204,.15);border:1px solid rgba(0,255,204,.3);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;">
-              <span style="font-size:12px;color:var(--neon-cyan);">⏳</span>
-            </div>
-            <div>
-              <div id="repost-name-${post.id}" style="font-family:Silkscreen,monospace;font-size:10px;color:var(--text-light);">Carregando...</div>
-              <div style="font-size:9px;color:var(--text-muted);">Post original</div>
-            </div>
-          </div>
-          <div id="repost-content-${post.id}" style="font-size:12px;color:var(--text-muted);line-height:1.5;">⏳ Carregando post original...</div>
-        </div>
-      </div>`;
-    // Hidratar conteúdo original de forma assíncrona
-    setTimeout(()=>_hydrateRepostCard(post.id, repostMeta.originalPostId, repostMeta.originalAuthorId, repostMeta.originalAuthorName), 0);
-  }
-
   return`<div class="post-card" id="post-${post.id}">
     <div class="ph">
       ${avHtml}
       <div class="pmeta">
         <div class="pun" style="cursor:pointer;" data-uid="${post.user_id}" data-bizid="${bizMeta && bizMeta.id ? bizMeta.id : ''}" data-commid="${commMeta && commMeta.id ? commMeta.id : ''}"${commMeta && !cachedComm ? ` data-comm-name="${commMeta.id}"` : ''} onclick="${commMeta?`openCommDetail('${commMeta.id}')`:`handlePostClick(this)`}">${xss(displayName)}</div>
-        <div class="pt">
-          <span>${xss(displayHandle)}</span> · ${time} ${visBadge}
-          ${repostMeta ? `<span style="font-size:9px;color:var(--neon-cyan);margin-left:4px;">🔁 compartilhou</span>` : ''}
-        </div>
+        <div class="pt"><span>${xss(displayHandle)}</span> · ${time} ${visBadge}</div>
       </div>
       <div style="display:flex;gap:4px;margin-left:auto;">
         ${isOwn?`<button class="abtn danger" onclick="deletePost('${post.id}')" title="Deletar">🗑</button>`:''}
       </div>
     </div>
-    ${repostMeta
-      ? (displayContent ? `<div class="pcontent" style="margin-bottom:6px;">${linkify(displayContent)}</div>` : '')
-      : (content?`<div class="pcontent">${content}</div>`:'')
-    }
-    ${repostCardHtml}
+    ${content?`<div class="pcontent">${content}</div>`:''}
     ${mediaHtml}
     <div class="preactions">${rxHtml}</div>
     <div class="pactions">
       <button class="abtn" onclick="toggleCmts('${post.id}',this)">💬 <span id="cmtcnt-${post.id}">${cmtCnt}</span></button>
-      <button class="abtn" onclick="openShareModal('${post.id}','${xss(prof.full_name||prof.username||'')}','${xss((post.content||'').slice(0,80)).replace(/'/g,'').replace(/\n/g,' ')}')">🔗 Compartilhar</button>
-      <button class="abtn" onclick="openSendToFriendModal('${post.id}')" title="Enviar para amigo">📤 Enviar</button>
+      <button class="abtn" onclick="sharePost('${post.id}','${xss(prof.full_name||prof.username||'')}','${xss((post.content||'').slice(0,80))}')">🔗 Compartilhar</button>
       ${!isOwn?`<button class="abtn" onclick="reportPost('${post.id}')">⚑ Reportar</button>`:''}
     </div>
     <div class="comments-sec" id="cmts-${post.id}" style="display:none;"></div>
@@ -4764,77 +4677,6 @@ function renderPost(post,rxCounts={},myRx=''){
   }catch(err){
     console.error('renderPost fatal error:', err?.message, 'post:', post?.id, post?.content?.slice?.(0,80));
     return '';
-  }
-}
-
-// ── Hidrata o card embutido do repost com o conteúdo do post original ──
-async function _hydrateRepostCard(repostPostId, originalPostId, originalAuthorId, originalAuthorName){
-  const elOrig   = document.getElementById('repost-orig-'+repostPostId);
-  const elAv     = document.getElementById('repost-av-'+repostPostId);
-  const elName   = document.getElementById('repost-name-'+repostPostId);
-  const elCont   = document.getElementById('repost-content-'+repostPostId);
-  if(!elCont) return;
-
-  try{
-    const{data:op} = await db.from('posts')
-      .select('id,content,media_urls,media_types,user_id,profiles(id,username,full_name,avatar_url)')
-      .eq('id', originalPostId).maybeSingle();
-
-    if(!op){
-      if(elCont) elCont.innerHTML='<span style="color:var(--text-muted);font-size:11px;font-style:italic;">Post original não encontrado.</span>';
-      return;
-    }
-
-    // Avatar do autor original
-    const origProf = op.profiles || {};
-    const origAv   = origProf.avatar_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+(origProf.username||originalAuthorName||'u'));
-    const origName = origProf.full_name || origProf.username || originalAuthorName || 'Usuário';
-    const origUser = origProf.username || originalAuthorName || '';
-    const origId   = op.user_id || originalAuthorId;
-
-    // Atualizar avatar
-    if(elAv){
-      const isEmoji = origAv && origAv.length <= 4 && !origAv.startsWith('http');
-      elAv.innerHTML = isEmoji
-        ? `<span style="font-size:16px;">${origAv}</span>`
-        : `<img src="${xss(origAv)}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;display:block;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${xss(origUser)}'">`;
-      elAv.style.cursor = 'pointer';
-      elAv.onclick = ()=>loadProfilePage(origId);
-    }
-
-    // Atualizar nome
-    if(elName){
-      elName.innerHTML = `<span style="cursor:pointer;color:var(--neon-cyan);" onclick="loadProfilePage('${xss(origId)}')">${xss(origName)}</span> <span style="color:var(--text-muted);font-size:9px;">@${xss(origUser)}</span>`;
-    }
-
-    // Limpar marcadores internos do conteúdo
-    let cleanContent = (op.content||'')
-      .replace(/^\[COMM_POST:[^\]]*\]\n?/, '')
-      .replace(/^\[BIZ_PROMO:[^\]]*\]\n?/, '')
-      .replace(/^\[REPOST:[^\]]*\]\n?/, '')
-      .trim();
-
-    // Mídia do original
-    const origMediaUrls = Array.isArray(op.media_urls) ? op.media_urls.filter(Boolean) : [];
-    const origMediaHtml = origMediaUrls.length
-      ? `<div style="margin-top:8px;border-radius:8px;overflow:hidden;">
-           <img src="${xss(origMediaUrls[0])}" style="width:100%;max-height:220px;object-fit:cover;display:block;border-radius:8px;" loading="lazy" onerror="this.style.display='none'">
-         </div>`
-      : '';
-
-    if(elCont){
-      elCont.innerHTML = (cleanContent
-        ? `<div style="font-size:13px;color:var(--text-light);line-height:1.6;word-break:break-word;margin-bottom:4px;">${linkify(cleanContent)}</div>`
-        : '') + origMediaHtml;
-    }
-
-    // Tornar o card clicável para ir ao post original
-    if(elOrig){
-      elOrig.closest('.repost-embed-card')?.setAttribute('onclick', `openShareModal('${originalPostId}','')`);
-    }
-
-  }catch(e){
-    if(elCont) elCont.innerHTML='<span style="color:var(--text-muted);font-size:11px;font-style:italic;">Não foi possível carregar o post original.</span>';
   }
 }
 
@@ -4902,6 +4744,125 @@ async function toggleCmts(postId, btn){
     sec.style.display='none';
   }
 }
+// ═══════════════════════════════════════════════════════════
+// ✦ SISTEMA DE MENÇÕES @ EM COMENTÁRIOS
+// ═══════════════════════════════════════════════════════════
+
+// Cache de buscas recentes para evitar spam
+let _mentionSearchTimer = null;
+const _mentionCache = {};
+
+// Handler de input — detecta "@" no texto e abre autocomplete
+function _handleCmtInput(inp, postId){
+  const val = inp.value || '';
+  const cursorPos = inp.selectionStart || val.length;
+  // Procura o último "@" antes do cursor, sem espaços entre ele e o cursor
+  const before = val.substring(0, cursorPos);
+  const atMatch = before.match(/@([a-zA-Z0-9_]{0,20})$/);
+  const pop = document.getElementById('mpop-'+postId);
+  if(!pop) return;
+  if(!atMatch){
+    pop.style.display = 'none';
+    pop.innerHTML = '';
+    return;
+  }
+  const query = atMatch[1].toLowerCase();
+  // Debounce: 200ms
+  clearTimeout(_mentionSearchTimer);
+  _mentionSearchTimer = setTimeout(()=>_searchMentionUsers(query, postId), 200);
+}
+
+async function _searchMentionUsers(query, postId){
+  const pop = document.getElementById('mpop-'+postId);
+  if(!pop) return;
+  // Cache hit
+  if(_mentionCache[query]){
+    _renderMentionResults(pop, _mentionCache[query], postId);
+    return;
+  }
+  // Busca usuários cujo username começa com a query
+  try{
+    let q = db.from('profiles').select('id,username,full_name,avatar_url').limit(8);
+    if(query){
+      q = q.ilike('username', query+'%');
+    } else {
+      // Sem texto após @: mostra sugestões — amigos recentes ou perfis populares
+      q = q.order('username').limit(8);
+    }
+    const{data, error} = await q;
+    if(error){ console.warn('[mention] search err:', error.message); return; }
+    const list = data || [];
+    _mentionCache[query] = list;
+    _renderMentionResults(pop, list, postId);
+  }catch(e){ console.warn('[mention] err:',e); }
+}
+
+function _renderMentionResults(pop, list, postId){
+  if(!list.length){
+    pop.style.display = 'block';
+    pop.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-muted);font-size:11px;">Nenhum usuário encontrado</div>';
+    return;
+  }
+  pop.style.display = 'block';
+  pop.innerHTML = list.map(u=>{
+    const av = u.avatar_url || 'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(u.username||'u');
+    const name = xss(u.full_name || u.username || '?');
+    const uname = xss(u.username || '');
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.05);transition:background .15s;" onmouseover="this.style.background='rgba(0,255,204,.08)'" onmouseout="this.style.background='transparent'" onclick="_pickMention('${postId}','${uname.replace(/'/g,'')}')">
+      <img src="${xss(av)}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:1px solid var(--border-glow);" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=u'">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;color:var(--text-light);font-weight:600;">${name}</div>
+        <div style="font-size:10px;color:var(--neon-cyan);">@${uname}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Insere a menção escolhida no input e fecha o popup
+function _pickMention(postId, username){
+  const inp = document.getElementById('cin-'+postId);
+  if(!inp) return;
+  const val = inp.value || '';
+  const cursorPos = inp.selectionStart || val.length;
+  const before = val.substring(0, cursorPos);
+  const after = val.substring(cursorPos);
+  // Substitui o "@fragmento" pelo "@username " completo
+  const replaced = before.replace(/@([a-zA-Z0-9_]{0,20})$/, '@'+username+' ');
+  inp.value = replaced + after;
+  // Move o cursor pro fim do nome inserido
+  const newPos = replaced.length;
+  inp.focus();
+  inp.setSelectionRange(newPos, newPos);
+  // Fecha popup
+  const pop = document.getElementById('mpop-'+postId);
+  if(pop){ pop.style.display = 'none'; pop.innerHTML = ''; }
+}
+
+// Botão "Responder" em cada comentário — prepopula com @username
+function replyToCmt(postId, username){
+  const inp = document.getElementById('cin-'+postId);
+  if(!inp) return;
+  // Só adiciona se ainda não tem essa menção no início
+  if(!inp.value.startsWith('@'+username)){
+    inp.value = '@'+username+' ' + (inp.value||'');
+  }
+  inp.focus();
+  inp.setSelectionRange(inp.value.length, inp.value.length);
+  // Scroll até o input
+  inp.scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+// Extrai todos os @usernames de um texto
+function _extractMentions(text){
+  const regex = /@([a-zA-Z0-9_]{2,20})/g;
+  const matches = [];
+  let m;
+  while((m = regex.exec(text||''))!==null){
+    if(!matches.includes(m[1])) matches.push(m[1]);
+  }
+  return matches;
+}
+
 async function loadCmts(postId, sec){
   if(!sec) sec=document.getElementById('cmts-'+postId);
   if(!sec) return;
@@ -4931,96 +4892,7 @@ async function loadCmts(postId, sec){
   const{data:postData}=await db.from('posts').select('user_id').eq('id',postId).maybeSingle();
   const isPostOwner=CU&&postData?.user_id===CU.id;
   const cmtHtml=(cmts||[]).map(c=>renderComment(c,myVotes[c.id]||'',isPostOwner,postId)).join('');
-  sec.innerHTML=cmtHtml+`
-    <div style="position:relative;" id="cmt-wrap-${postId}">
-      <div class="cmt-input-wrap">
-        <input class="cmt-input" id="cin-${postId}" type="text" placeholder="Comentar... use @ para mencionar alguém"
-          oninput="_cmtMentionCheck(this,'${postId}')"
-          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();submitCmt('${postId}',this);}"
-          onblur="setTimeout(()=>_closeMentionDropdown('${postId}'),200)">
-        <button class="cmt-sub" onclick="submitCmt('${postId}',this)">➤</button>
-      </div>
-      <div id="cmt-mention-drop-${postId}" style="display:none;position:absolute;bottom:48px;left:0;right:0;background:var(--bg-card);border:1px solid var(--border-glow);border-radius:10px;max-height:180px;overflow-y:auto;z-index:200;box-shadow:0 -4px 20px rgba(0,0,0,.4);"></div>
-    </div>`;
-}
-
-// ── Mention dropdown no campo de comentário ──
-async function _cmtMentionCheck(inp, postId){
-  const val = inp.value;
-  const cursor = inp.selectionStart;
-  // Detecta @ antes do cursor
-  const before = val.slice(0, cursor);
-  const atMatch = before.match(/@(\w*)$/);
-  if(!atMatch){
-    _closeMentionDropdown(postId);
-    return;
-  }
-  const query = atMatch[1];
-  const drop = document.getElementById('cmt-mention-drop-'+postId);
-  if(!drop) return;
-
-  // Buscar usuários
-  let users = [];
-  try{
-    if(query.length >= 1){
-      const {data} = await db.from('profiles')
-        .select('id,username,full_name,avatar_url')
-        .ilike('username','%'+query+'%')
-        .limit(6);
-      users = data || [];
-    } else {
-      // Sem query: mostrar amigos
-      if(CU){
-        const {data:frs} = await db.from('friends')
-          .select('profiles!friends_friend_id_fkey(id,username,full_name,avatar_url)')
-          .eq('user_id',CU.id).limit(6);
-        users = (frs||[]).map(f=>f.profiles).filter(Boolean);
-      }
-    }
-  }catch(e){}
-
-  if(!users.length){ _closeMentionDropdown(postId); return; }
-  drop.style.display = 'block';
-  drop.innerHTML = users.map(u=>{
-    const av = u.avatar_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+(u.username||'u'));
-    const isE = av && av.length<=4 && !av.startsWith('http');
-    const avEl = isE
-      ? `<div style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">${av}</div>`
-      : `<img src="${xss(av)}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${u.username||'u'}'">`;
-    return `<div onclick="_insertMention('${postId}','${u.username}','${u.id}')"
-      style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;transition:background .15s;"
-      onmouseover="this.style.background='rgba(0,255,204,.08)'" onmouseout="this.style.background='transparent'">
-      ${avEl}
-      <div>
-        <div style="font-size:11px;color:var(--text-light);font-family:Silkscreen,monospace;">@${xss(u.username)}</div>
-        <div style="font-size:9px;color:var(--text-muted);">${xss(u.full_name||'')}</div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function _insertMention(postId, username, userId){
-  const inp = document.getElementById('cin-'+postId);
-  if(!inp) return;
-  const val = inp.value;
-  const cursor = inp.selectionStart;
-  const before = val.slice(0, cursor);
-  const after = val.slice(cursor);
-  // Substituir @query pelo @username completo
-  const replaced = before.replace(/@(\w*)$/, '@'+username+' ');
-  inp.value = replaced + after;
-  inp.focus();
-  const newPos = replaced.length;
-  inp.setSelectionRange(newPos, newPos);
-  // Guardar usuário mencionado para notificação
-  if(!inp._mentions) inp._mentions = {};
-  inp._mentions[username] = userId;
-  _closeMentionDropdown(postId);
-}
-
-function _closeMentionDropdown(postId){
-  const drop = document.getElementById('cmt-mention-drop-'+postId);
-  if(drop) drop.style.display = 'none';
+  sec.innerHTML=cmtHtml+`<div class="cmt-input-wrap" style="position:relative;"><input class="cmt-input" id="cin-${postId}" type="text" placeholder="Comentar... use @ para marcar alguém" oninput="_handleCmtInput(this,'${postId}')" onkeydown="if(event.key==='Enter')submitCmt('${postId}',this)"><button class="cmt-sub" onclick="submitCmt('${postId}',this)">➤</button><div class="mention-pop" id="mpop-${postId}" style="display:none;position:absolute;bottom:100%;left:0;right:40px;background:var(--bg-card);border:1px solid var(--border-glow);border-radius:10px;max-height:200px;overflow-y:auto;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.4);margin-bottom:6px;"></div></div>`;
 }
 function renderComment(c,myVote,isPostOwner,postId){
   const prof=c.profiles||{};
@@ -5043,6 +4915,7 @@ function renderComment(c,myVote,isPostOwner,postId){
       <div class="cmt-actions">
         <button class="cvbtn${myVote==='like'?' active-like':''}" onclick="voteCmt('${c.id}','like',this,'${postId}')">👍 <span>${likeCount>0?likeCount:''}</span></button>
         <button class="cvbtn cv-dis${myVote==='dislike'?' active-dis':''}" onclick="voteCmt('${c.id}','dislike',this,'${postId}')">👎 <span>${disCount>0?disCount:''}</span></button>
+        ${!isOwn?`<button class="cvbtn" onclick="replyToCmt('${postId}','${xss(prof.username||'').replace(/'/g,'')}')">↩ Responder</button>`:''}
         ${isOwn?`<button class="cmt-mod-btn" onclick="deleteCmt('${c.id}','${postId}')">🗑</button>`:''}
         ${isPostOwner&&!isOwn?`<button class="cmt-mod-btn" onclick="toggleHideCmt('${c.id}','${postId}',${isHidden})">${isHidden?'👁':'🙈'}</button>`:''}
       </div>
@@ -5067,35 +4940,10 @@ async function submitCmt(postId, btnEl){
   const{error}=await db.from('comments').insert({post_id:postId,user_id:CU.id,content:txt});
   inp.disabled=false;
   if(error)return showToast('Erro ao comentar: '+error.message,'error');
-
-  // ── Notificações de @menção ──
-  const mentionedUsers = inp._mentions || {};
-  const mentionMatches = [...txt.matchAll(/@(\w+)/g)];
-  for(const m of mentionMatches){
-    const uname = m[1];
-    // Tentar pegar id do cache do campo, senão buscar no banco
-    let mentionedId = mentionedUsers[uname];
-    if(!mentionedId){
-      try{
-        const{data:up}=await db.from('profiles').select('id').eq('username',uname).maybeSingle();
-        mentionedId = up?.id;
-      }catch(e){}
-    }
-    if(mentionedId && mentionedId !== CU.id){
-      try{
-        await db.from('notifications').insert({
-          user_id: mentionedId,
-          actor_id: CU.id,
-          type: 'mention',
-          content: `@${CP?.username||'alguém'} mencionou você em um comentário`,
-          read: false
-        });
-      }catch(e){}
-    }
-  }
-  inp._mentions = {};
-
   inp.value='';
+  // Fecha popup de menção
+  const mpop = document.getElementById('mpop-'+postId);
+  if(mpop){ mpop.style.display='none'; mpop.innerHTML=''; }
   // Update counter visually on all elements showing this post
   document.querySelectorAll('[id="cmtcnt-'+postId+'"]').forEach(el=>{
     const n=(parseInt(el.textContent)||0)+1;
@@ -5108,6 +4956,60 @@ async function submitCmt(postId, btnEl){
   const postCard = inp?.closest('.post-card');
   const commIdCmt = postCard?.dataset?.commid;
   if(commIdCmt && commIdCmt!=='undefined') addCommXP(commIdCmt,CU.id,'comment',5);
+
+  // ── Processar @menções e disparar notificações ──
+  const mentions = _extractMentions(txt);
+  if(mentions.length){
+    try{
+      const{data:mentioned}=await db.from('profiles').select('id,username').in('username',mentions);
+      if(mentioned && mentioned.length){
+        const preview = txt.length>80 ? txt.slice(0,80)+'…' : txt;
+        const notifs = mentioned
+          .filter(p => p.id !== CU.id) // não notifica o próprio usuário
+          .map(p => ({
+            user_id: p.id,
+            actor_id: CU.id,
+            type: 'mention',
+            content: `@${CP?.username||'alguém'} mencionou você: "${preview}"`,
+            post_id: postId,
+            read: false
+          }));
+        if(notifs.length){
+          const{error:notifErr}=await db.from('notifications').insert(notifs);
+          if(notifErr){
+            // Fallback: tenta sem post_id caso a coluna não exista
+            console.warn('[mention] notif err, retrying without post_id:', notifErr.message);
+            const basic = notifs.map(n=>({user_id:n.user_id,actor_id:n.actor_id,type:n.type,content:n.content,read:false}));
+            await db.from('notifications').insert(basic).catch(e=>console.warn('notif fallback err:',e));
+          }
+          console.log('[mention] notificados:', notifs.length);
+        }
+      }
+    }catch(e){ console.warn('[mention] notif err:',e); }
+  }
+
+  // Notificar também o autor do post (se diferente do comentarista e não já mencionado)
+  try{
+    const{data:postRow}=await db.from('posts').select('user_id').eq('id',postId).maybeSingle();
+    if(postRow && postRow.user_id && postRow.user_id !== CU.id){
+      // Só notifica se o autor do post não foi @mencionado explicitamente (evita duplicata)
+      const mentionedIds = new Set();
+      if(mentions.length){
+        const{data:ms}=await db.from('profiles').select('id').in('username',mentions);
+        (ms||[]).forEach(m=>mentionedIds.add(m.id));
+      }
+      if(!mentionedIds.has(postRow.user_id)){
+        await db.from('notifications').insert({
+          user_id: postRow.user_id,
+          actor_id: CU.id,
+          type: 'comment',
+          content: `@${CP?.username||'alguém'} comentou no seu post`,
+          read: false
+        }).catch(()=>{});
+      }
+    }
+  }catch(e){}
+
   const secEl = inp ? inp.closest('.comments-sec') : null;
   await loadCmts(postId, secEl);
 }
@@ -7313,432 +7215,122 @@ async function showPostAuthorProfile(userId, triggerEl){
 }
 
 
-function openShareModal(postId, authorName, preview){
-  // Remove modal anterior se existir
-  document.getElementById('share-modal-overlay')?.remove();
-
+function sharePost(postId, authorName, preview){
   const url = window.location.origin + window.location.pathname + '?post=' + postId;
-  const text = (authorName ? '📌 ' + authorName + ': ' : '') + (preview || 'Veja este post no EuAqui!') + ' 🌐';
-  const encoded = encodeURIComponent(url);
-  const encodedText = encodeURIComponent(text + '\n' + url);
-
+  const text = (authorName ? authorName + ': ' : '') + (preview || 'Veja este post no EuAqui');
+  const fullMsg = text + '\n\n' + url;
+  // Modal de compartilhamento
   const overlay = document.createElement('div');
   overlay.id = 'share-modal-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);z-index:5000;display:flex;align-items:flex-end;justify-content:center;padding:0 0 16px;';
-  overlay.innerHTML = `
-    <div style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:20px 20px 16px 16px;padding:20px 16px 16px;width:100%;max-width:480px;box-shadow:0 -8px 40px rgba(0,0,0,.5);">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-        <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);">🔗 Compartilhar Post</div>
-        <button onclick="document.getElementById('share-modal-overlay').remove()" style="background:none;border:1px solid rgba(255,255,255,.12);color:var(--text-muted);width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;">✕</button>
-      </div>
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(6px);z-index:5000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  const encodedUrl = encodeURIComponent(url);
+  const encodedText = encodeURIComponent(text);
+  const encodedFull = encodeURIComponent(fullMsg);
+  overlay.innerHTML = `<div class="modal" style="max-width:440px;width:100%;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+      <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-cyan);flex:1;">🔗 Compartilhar Post</div>
+      <button class="tbtn" style="font-size:10px;" onclick="document.getElementById('share-modal-overlay').remove()">✕</button>
+    </div>
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;line-height:1.5;">Compartilhe este post na própria rede EuAqui ou em outras plataformas.</div>
 
-      <!-- Preview do post -->
-      <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px 12px;margin-bottom:16px;font-size:11px;color:var(--text-muted);line-height:1.5;max-height:56px;overflow:hidden;text-overflow:ellipsis;">
-        ${xss(preview || 'Post no EuAqui')}
-      </div>
+    <!-- Compartilhar dentro do EuAqui -->
+    <div style="font-size:9px;color:var(--neon-cyan);font-family:Silkscreen,monospace;margin-bottom:8px;letter-spacing:1px;">📍 NO EUAQUI</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">
+      <button class="tbtn" style="padding:12px;display:flex;flex-direction:column;align-items:center;gap:4px;" onclick="_repostToFeed('${postId}','${xss(text).replace(/'/g,'')}')">
+        <div style="font-size:22px;">🔄</div>
+        <div style="font-size:10px;">Repostar no meu feed</div>
+      </button>
+      <button class="tbtn" style="padding:12px;display:flex;flex-direction:column;align-items:center;gap:4px;" onclick="_shareToDM('${postId}','${xss(text).replace(/'/g,'')}')">
+        <div style="font-size:22px;">💬</div>
+        <div style="font-size:10px;">Enviar por mensagem</div>
+      </button>
+    </div>
 
-      <!-- Opções de compartilhamento -->
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
-        <!-- EuAqui (compartilhar internamente via repost) -->
-        <button onclick="_shareOnEuAqui('${postId}','${xss(preview||'').replace(/'/g,'').replace(/\n/g,' ')}')" style="background:linear-gradient(135deg,rgba(0,255,204,.12),rgba(191,95,255,.12));border:1px solid var(--border-glow);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:5px;transition:all .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
-          <div style="font-size:22px;">🌐</div>
-          <div style="font-size:9px;color:var(--neon-cyan);font-family:Silkscreen,monospace;letter-spacing:.5px;">EuAqui</div>
-        </button>
-        <!-- WhatsApp -->
-        <button onclick="window.open('https://wa.me/?text=${encodedText}','_blank')" style="background:linear-gradient(135deg,rgba(37,211,102,.12),rgba(18,140,126,.12));border:1px solid rgba(37,211,102,.3);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:5px;transition:all .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
-          <div style="font-size:22px;">💬</div>
-          <div style="font-size:9px;color:#25d366;font-family:Silkscreen,monospace;letter-spacing:.5px;">WhatsApp</div>
-        </button>
-        <!-- Telegram -->
-        <button onclick="window.open('https://t.me/share/url?url=${encoded}&text=${encodeURIComponent(text)}','_blank')" style="background:linear-gradient(135deg,rgba(36,161,222,.12),rgba(0,136,204,.12));border:1px solid rgba(36,161,222,.3);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:5px;transition:all .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
-          <div style="font-size:22px;">✈️</div>
-          <div style="font-size:9px;color:#24a1de;font-family:Silkscreen,monospace;letter-spacing:.5px;">Telegram</div>
-        </button>
-        <!-- Twitter / X -->
-        <button onclick="window.open('https://twitter.com/intent/tweet?text=${encodedText}','_blank')" style="background:linear-gradient(135deg,rgba(29,161,242,.12),rgba(0,0,0,.12));border:1px solid rgba(29,161,242,.25);border-radius:12px;padding:12px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:5px;transition:all .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
-          <div style="font-size:22px;">𝕏</div>
-          <div style="font-size:9px;color:#1d9bf0;font-family:Silkscreen,monospace;letter-spacing:.5px;">Twitter</div>
-        </button>
-      </div>
+    <!-- Compartilhar em redes externas -->
+    <div style="font-size:9px;color:var(--neon-cyan);font-family:Silkscreen,monospace;margin-bottom:8px;letter-spacing:1px;">🌐 EM OUTRAS REDES</div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px;">
+      <a class="tbtn" style="padding:12px 6px;display:flex;flex-direction:column;align-items:center;gap:4px;text-decoration:none;color:var(--text-light);" href="https://wa.me/?text=${encodedFull}" target="_blank" rel="noopener" onclick="setTimeout(()=>document.getElementById('share-modal-overlay')?.remove(),300)">
+        <div style="font-size:22px;">💚</div>
+        <div style="font-size:9px;">WhatsApp</div>
+      </a>
+      <a class="tbtn" style="padding:12px 6px;display:flex;flex-direction:column;align-items:center;gap:4px;text-decoration:none;color:var(--text-light);" href="https://t.me/share/url?url=${encodedUrl}&text=${encodedText}" target="_blank" rel="noopener" onclick="setTimeout(()=>document.getElementById('share-modal-overlay')?.remove(),300)">
+        <div style="font-size:22px;">✈️</div>
+        <div style="font-size:9px;">Telegram</div>
+      </a>
+      <a class="tbtn" style="padding:12px 6px;display:flex;flex-direction:column;align-items:center;gap:4px;text-decoration:none;color:var(--text-light);" href="https://twitter.com/intent/tweet?url=${encodedUrl}&text=${encodedText}" target="_blank" rel="noopener" onclick="setTimeout(()=>document.getElementById('share-modal-overlay')?.remove(),300)">
+        <div style="font-size:22px;">🐦</div>
+        <div style="font-size:9px;">X / Twitter</div>
+      </a>
+      <a class="tbtn" style="padding:12px 6px;display:flex;flex-direction:column;align-items:center;gap:4px;text-decoration:none;color:var(--text-light);" href="https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}" target="_blank" rel="noopener" onclick="setTimeout(()=>document.getElementById('share-modal-overlay')?.remove(),300)">
+        <div style="font-size:22px;">📘</div>
+        <div style="font-size:9px;">Facebook</div>
+      </a>
+    </div>
 
-      <!-- Segunda linha: mais redes -->
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">
-        <!-- Facebook -->
-        <button onclick="window.open('https://www.facebook.com/sharer/sharer.php?u=${encoded}','_blank')" style="background:linear-gradient(135deg,rgba(24,119,242,.12),rgba(24,119,242,.06));border:1px solid rgba(24,119,242,.3);border-radius:12px;padding:10px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;transition:all .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
-          <div style="font-size:20px;">📘</div>
-          <div style="font-size:9px;color:#1877f2;font-family:Silkscreen,monospace;">Facebook</div>
-        </button>
-        <!-- Instagram (só copia link pois IG não tem API de share web) -->
-        <button onclick="_copyAndToast('${url}','📸 Link copiado! Cole no Instagram')" style="background:linear-gradient(135deg,rgba(225,48,108,.12),rgba(193,53,132,.12));border:1px solid rgba(225,48,108,.3);border-radius:12px;padding:10px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;transition:all .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
-          <div style="font-size:20px;">📸</div>
-          <div style="font-size:9px;color:#e1306c;font-family:Silkscreen,monospace;">Instagram</div>
-        </button>
-        <!-- Compartilhar nativo do SO -->
-        <button onclick="_nativeShare('${url}','${xss(text).replace(/'/g,'')}')" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;transition:all .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
-          <div style="font-size:20px;">↗️</div>
-          <div style="font-size:9px;color:var(--text-muted);font-family:Silkscreen,monospace;">Mais</div>
-        </button>
-      </div>
+    <!-- Link direto -->
+    <div style="font-size:9px;color:var(--neon-cyan);font-family:Silkscreen,monospace;margin-bottom:8px;letter-spacing:1px;">🔗 LINK DIRETO</div>
+    <div style="display:flex;gap:6px;align-items:center;background:rgba(0,0,0,.3);border:1px solid var(--border-glow);border-radius:8px;padding:8px;">
+      <input type="text" readonly value="${url}" style="flex:1;background:transparent;border:none;color:var(--text-light);font-size:11px;font-family:'Space Mono',monospace;outline:none;" onclick="this.select()">
+      <button class="post-btn" style="font-size:10px;padding:6px 12px;" onclick="copyShareLink('${url}');document.getElementById('share-modal-overlay').remove()">📋 Copiar</button>
+    </div>
 
-      <!-- Campo de copiar link -->
-      <div style="display:flex;gap:8px;align-items:center;">
-        <input id="share-link-input" value="${url}" style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 12px;color:var(--text-muted);font-size:11px;font-family:'Space Mono',monospace;outline:none;" readonly onclick="this.select()">
-        <button onclick="_copyAndToast('${url}','🔗 Link copiado!')" style="background:linear-gradient(135deg,var(--neon-cyan),var(--neon-purple));border:none;color:var(--bg-deep);padding:8px 14px;border-radius:8px;cursor:pointer;font-family:Silkscreen,monospace;font-size:10px;white-space:nowrap;font-weight:bold;">Copiar</button>
-      </div>
-    </div>`;
-
-  overlay.onclick = e => { if(e.target === overlay) overlay.remove(); };
+    ${navigator.share ? `<button class="tbtn" style="width:100%;margin-top:12px;padding:10px;" onclick="_nativeShare('${url}','${xss(text).replace(/'/g,'')}')">📱 Compartilhar com aplicativo do dispositivo</button>` : ''}
+  </div>`;
+  overlay.onclick = e => { if(e.target===overlay) overlay.remove(); };
   document.body.appendChild(overlay);
-  // Animação de entrada
-  const modal = overlay.querySelector('div');
-  modal.style.transform = 'translateY(100%)';
-  modal.style.transition = 'transform .3s cubic-bezier(.4,0,.2,1)';
-  requestAnimationFrame(()=>{ modal.style.transform = 'translateY(0)'; });
 }
 
-function _copyAndToast(url, msg){
-  if(navigator.clipboard){
-    navigator.clipboard.writeText(url).then(()=>showToast(msg||'🔗 Copiado!','success'));
-  } else {
-    const el=document.createElement('textarea');
-    el.value=url; el.style.cssText='position:fixed;opacity:0;';
-    document.body.appendChild(el); el.select();
-    try{ document.execCommand('copy'); showToast(msg||'🔗 Copiado!','success'); }catch(e){}
-    document.body.removeChild(el);
-  }
-  document.getElementById('share-modal-overlay')?.remove();
-}
-
+// Compartilhamento nativo (mobile)
 function _nativeShare(url, text){
-  if(navigator.share){
-    navigator.share({title:'EuAqui', text: text, url: url})
-      .then(()=>document.getElementById('share-modal-overlay')?.remove())
-      .catch(()=>_copyAndToast(url,'🔗 Link copiado!'));
-  } else {
-    _copyAndToast(url,'🔗 Link copiado!');
-  }
+  if(!navigator.share) return;
+  navigator.share({title:'EuAqui', text:text, url:url})
+    .then(()=>document.getElementById('share-modal-overlay')?.remove())
+    .catch(()=>{});
 }
 
-async function _shareOnEuAqui(postId, _ignored){
-  if(!CU){ showToast('Faça login para compartilhar','error'); return; }
+// Repostar no feed do usuário (cria um post novo com referência ao original)
+async function _repostToFeed(postId, text){
+  if(!CU) return showToast('Faça login','error');
   document.getElementById('share-modal-overlay')?.remove();
-
-  // Buscar post original completo no banco
-  let originalPost = null;
-  try{
-    const{data} = await db.from('posts')
-      .select('id,user_id,content,media_urls,media_types,visibility,profiles(id,username,full_name,avatar_url)')
-      .eq('id', postId).maybeSingle();
-    originalPost = data;
-  }catch(e){}
-
-  if(!originalPost){ showToast('Post não encontrado','error'); return; }
-
-  // Limpar marcadores internos do conteúdo ([COMM_POST:...], [BIZ_PROMO:...], [REPOST:...])
-  let cleanContent = originalPost.content || '';
-  cleanContent = cleanContent.replace(/^\[COMM_POST:[^\]]*\]\n?/, '');
-  cleanContent = cleanContent.replace(/^\[BIZ_PROMO:[^\]]*\]\n?/, '');
-  cleanContent = cleanContent.replace(/^\[REPOST:[^\]]*\]\n?/, '');
-  cleanContent = cleanContent.trim();
-
-  const originalAuthor = originalPost.profiles?.username || originalPost.profiles?.full_name || 'usuário';
-  const originalAuthorId = originalPost.user_id;
-
-  // Abrir modal de repost para o usuário adicionar comentário
-  const overlay = document.createElement('div');
-  overlay.id = 'repost-modal-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(8px);z-index:6000;display:flex;align-items:center;justify-content:center;padding:16px;';
-
-  const originalAvUrl = originalPost.profiles?.avatar_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+originalAuthor);
-
-  overlay.innerHTML = `
-    <div style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:18px;padding:20px;width:100%;max-width:500px;box-shadow:0 20px 60px rgba(0,0,0,.6);">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-        <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);">🔁 Repostar no EuAqui</div>
-        <button onclick="document.getElementById('repost-modal-overlay').remove()" style="background:none;border:1px solid rgba(255,255,255,.12);color:var(--text-muted);width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;">✕</button>
-      </div>
-
-      <!-- Campo de comentário do compartilhador -->
-      <textarea id="repost-comment-txt" placeholder="Adicione um comentário ao compartilhar... (opcional)" style="width:100%;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:10px 12px;color:var(--text-light);font-family:'Space Mono',monospace;font-size:12px;resize:none;outline:none;line-height:1.5;margin-bottom:12px;min-height:70px;" maxlength="300"></textarea>
-
-      <!-- Card do post original -->
-      <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:12px;margin-bottom:16px;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-          <img src="${xss(originalAvUrl)}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:1px solid rgba(0,255,204,.3);" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${xss(originalAuthor)}'">
-          <div>
-            <div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--neon-cyan);">${xss(originalPost.profiles?.full_name || originalAuthor)}</div>
-            <div style="font-size:9px;color:var(--text-muted);">@${xss(originalAuthor)}</div>
-          </div>
-        </div>
-        <div style="font-size:12px;color:var(--text-light);line-height:1.5;max-height:80px;overflow:hidden;word-break:break-word;">${xss(cleanContent || '(sem texto)')}</div>
-        ${(Array.isArray(originalPost.media_urls) && originalPost.media_urls[0]) ? `<div style="margin-top:8px;border-radius:8px;overflow:hidden;max-height:100px;"><img src="${xss(originalPost.media_urls[0])}" style="width:100%;height:100px;object-fit:cover;display:block;"></div>` : ''}
-      </div>
-
-      <!-- Visibilidade -->
-      <div style="display:flex;gap:6px;margin-bottom:14px;">
-        <button class="vis-opt sel" data-v="public" onclick="document.querySelectorAll('#repost-modal-overlay .vis-opt').forEach(o=>o.classList.remove('sel'));this.classList.add('sel')" style="flex:1;padding:7px 4px;text-align:center;border-radius:6px;font-size:10px;font-family:'Space Mono',monospace;cursor:pointer;border:1px solid rgba(255,255,255,.07);">🌍 Público</button>
-        <button class="vis-opt" data-v="friends" onclick="document.querySelectorAll('#repost-modal-overlay .vis-opt').forEach(o=>o.classList.remove('sel'));this.classList.add('sel')" style="flex:1;padding:7px 4px;text-align:center;border-radius:6px;font-size:10px;font-family:'Space Mono',monospace;cursor:pointer;border:1px solid rgba(255,255,255,.07);">👥 Amigos</button>
-        <button class="vis-opt" data-v="private" onclick="document.querySelectorAll('#repost-modal-overlay .vis-opt').forEach(o=>o.classList.remove('sel'));this.classList.add('sel')" style="flex:1;padding:7px 4px;text-align:center;border-radius:6px;font-size:10px;font-family:'Space Mono',monospace;cursor:pointer;border:1px solid rgba(255,255,255,.07);">🔒 Privado</button>
-      </div>
-
-      <button onclick="_confirmRepost('${postId}','${xss(originalAuthorId)}','${xss(originalAuthor)}')" style="width:100%;background:linear-gradient(135deg,var(--neon-pink),var(--neon-purple));border:none;color:#fff;padding:12px;border-radius:10px;cursor:pointer;font-family:Silkscreen,monospace;font-size:11px;letter-spacing:1px;">🔁 REPOSTAR AGORA</button>
-    </div>`;
-
-  overlay.onclick = e => { if(e.target === overlay) overlay.remove(); };
-  document.body.appendChild(overlay);
-  document.getElementById('repost-comment-txt')?.focus();
+  // Pré-popular o composer principal com o texto
+  const composer = document.getElementById('post-txt');
+  if(composer){
+    const url = window.location.origin + window.location.pathname + '?post=' + postId;
+    composer.value = '🔄 Repost: '+text+'\n\n'+url;
+    composer.focus();
+    nav('home');
+    setTimeout(()=>{
+      composer.scrollIntoView({behavior:'smooth',block:'center'});
+      showToast('✏ Edite e clique em POSTAR para repostar','success');
+    }, 200);
+  } else {
+    showToast('Vá para o feed para postar','error');
+  }
 }
 
-async function _confirmRepost(originalPostId, originalAuthorId, originalAuthorName){
-  if(!CU){ showToast('Faça login','error'); return; }
-
-  const commentTxt = document.getElementById('repost-comment-txt')?.value.trim() || '';
-  const visEl = document.querySelector('#repost-modal-overlay .vis-opt.sel');
-  const vis = visEl?.dataset?.v || 'public';
-
-  // Buscar post original novamente para garantir conteúdo limpo
-  let cleanContent = '';
-  let mediaUrls = [];
-  let mediaTypes = [];
-  try{
-    const{data:op} = await db.from('posts')
-      .select('content,media_urls,media_types')
-      .eq('id', originalPostId).maybeSingle();
-    if(op){
-      cleanContent = (op.content||'')
-        .replace(/^\[COMM_POST:[^\]]*\]\n?/, '')
-        .replace(/^\[BIZ_PROMO:[^\]]*\]\n?/, '')
-        .replace(/^\[REPOST:[^\]]*\]\n?/, '')
-        .trim();
-      mediaUrls = Array.isArray(op.media_urls) ? op.media_urls.filter(Boolean) : [];
-      mediaTypes = Array.isArray(op.media_types) ? op.media_types : [];
-    }
-  }catch(e){}
-
-  // Montar conteúdo do repost com marcador especial na primeira linha
-  // [REPOST:postId:autorOriginalUsername] para renderPost identificar
-  const repostMarker = `[REPOST:${originalPostId}:${originalAuthorId}:${originalAuthorName}]`;
-  const fullContent = repostMarker + (commentTxt ? '\n' + commentTxt : '');
-
-  const btn = document.querySelector('#repost-modal-overlay button:last-child');
-  if(btn){ btn.textContent='⏳ Repostando...'; btn.disabled=true; }
-
-  try{
-    const{error} = await db.from('posts').insert({
-      user_id: CU.id,
-      content: fullContent,
-      media_urls: mediaUrls.length ? mediaUrls : null,
-      media_types: mediaTypes.length ? mediaTypes : null,
-      type: 'text',
-      visibility: vis
-    });
-
-    if(error){ showToast('Erro ao repostar: '+error.message,'error'); return; }
-
-    // Notificar o autor original
-    if(originalAuthorId && originalAuthorId !== CU.id){
-      try{
-        await db.from('notifications').insert({
-          user_id: originalAuthorId,
-          actor_id: CU.id,
-          type: 'share',
-          content: `@${CP?.username||'alguém'} compartilhou sua postagem`,
-          read: false
-        });
-      }catch(e){}
-    }
-
-    document.getElementById('repost-modal-overlay')?.remove();
-    showToast('🔁 Repostado com sucesso!','success');
-    // Recarregar feed
-    cachedPostIds.clear(); cachedPosts={};
-    if(document.getElementById('page-home')?.classList.contains('active')){
-      loadFeed(true);
-    } else {
-      nav('home');
-    }
-  }catch(e){
-    showToast('Erro inesperado: '+e.message,'error');
-  }
+// Compartilhar via mensagem direta (DM)
+async function _shareToDM(postId, text){
+  document.getElementById('share-modal-overlay')?.remove();
+  const url = window.location.origin + window.location.pathname + '?post=' + postId;
+  // Pré-popular um buffer global que o messages page vai consumir
+  window._pendingShareMsg = '📎 '+text+'\n\n'+url;
+  nav('messages');
+  setTimeout(()=>{
+    showToast('💬 Selecione uma conversa para enviar','success');
+  }, 300);
 }
 
 function copyShareLink(url){
-  _copyAndToast(url,'🔗 Link copiado!');
-}
-
-// Manter sharePost como alias para compatibilidade
-function sharePost(postId, authorName, preview){
-  openShareModal(postId, authorName, preview);
-}
-
-// ── Enviar post para amigo via chat (estilo Instagram) ──
-async function openSendToFriendModal(postId){
-  if(!CU){ showToast('Faça login para enviar','error'); return; }
-  document.getElementById('send-friend-modal')?.remove();
-
-  // Buscar lista de amigos
-  let friends = [];
-  try{
-    const{data:frs} = await db.from('friends')
-      .select('friend_id, profiles!friends_friend_id_fkey(id,username,full_name,avatar_url)')
-      .eq('user_id', CU.id).limit(50);
-    friends = (frs||[]).map(f=>f.profiles).filter(Boolean);
-  }catch(e){}
-
-  // Buscar preview do post
-  let postPreview = '';
-  let postMedia = '';
-  try{
-    const{data:p} = await db.from('posts')
-      .select('content,media_urls,profiles(username,full_name)')
-      .eq('id',postId).maybeSingle();
-    if(p){
-      let c = (p.content||'').replace(/^\[COMM_POST:[^\]]*\]\n?/,'').replace(/^\[BIZ_PROMO:[^\]]*\]\n?/,'').replace(/^\[REPOST:[^\]]*\]\n?/,'').trim();
-      postPreview = c.slice(0,100) + (c.length>100?'...':'');
-      const meds = Array.isArray(p.media_urls)?p.media_urls.filter(Boolean):[];
-      if(meds[0]) postMedia = meds[0];
-    }
-  }catch(e){}
-
-  const overlay = document.createElement('div');
-  overlay.id = 'send-friend-modal';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);z-index:6000;display:flex;align-items:flex-end;justify-content:center;padding:0;';
-
-  const friendsHtml = friends.length ? friends.map(f=>{
-    const av = f.avatar_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+(f.username||'u'));
-    const isE = av && av.length<=4 && !av.startsWith('http');
-    const avEl = isE
-      ? `<div style="width:46px;height:46px;border-radius:50%;border:2px solid rgba(0,255,204,.3);background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;">${av}</div>`
-      : `<img src="${xss(av)}" style="width:46px;height:46px;border-radius:50%;object-fit:cover;border:2px solid rgba(0,255,204,.3);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${xss(f.username||'u')}'">`;
-    return `<div style="display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;min-width:64px;padding:4px;" onclick="_sendPostToFriend('${postId}','${xss(f.id)}','${xss(f.username||'')}',this)">
-      <div style="position:relative;">
-        ${avEl}
-        <div id="sfm-check-${xss(f.id)}" style="display:none;position:absolute;inset:0;border-radius:50%;background:rgba(0,255,204,.85);align-items:center;justify-content:center;font-size:18px;">✓</div>
-      </div>
-      <div style="font-size:10px;color:var(--text-light);font-family:Silkscreen,monospace;text-align:center;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${xss(f.username||f.full_name||'')}</div>
-    </div>`;
-  }).join('')
-  : `<div style="text-align:center;padding:20px 0;color:var(--text-muted);font-size:12px;">Adicione amigos para enviar posts!</div>`;
-
-  overlay.innerHTML = `
-    <div style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:20px 20px 0 0;padding:16px;width:100%;max-width:500px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 -8px 40px rgba(0,0,0,.5);">
-      <!-- Handle bar -->
-      <div style="width:36px;height:4px;background:rgba(255,255,255,.15);border-radius:2px;margin:0 auto 14px;"></div>
-
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-        <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);">📤 Enviar para</div>
-        <button onclick="document.getElementById('send-friend-modal').remove()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:20px;line-height:1;padding:0;">✕</button>
-      </div>
-
-      <!-- Preview mini do post -->
-      <div style="display:flex;gap:10px;align-items:center;padding:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;margin-bottom:14px;">
-        ${postMedia
-          ? `<img src="${xss(postMedia)}" style="width:48px;height:48px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">`
-          : `<div style="width:48px;height:48px;border-radius:8px;background:linear-gradient(135deg,rgba(0,255,204,.15),rgba(191,95,255,.15));display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;">📝</div>`
-        }
-        <div style="flex:1;min-width:0;">
-          <div style="font-size:11px;color:var(--text-light);line-height:1.5;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${xss(postPreview||'Post no EuAqui')}</div>
-        </div>
-      </div>
-
-      <!-- Busca de amigo -->
-      <input id="sfm-search" class="cmt-input" placeholder="Buscar amigo..." oninput="_filterSendFriends(this.value)" style="margin-bottom:12px;border-radius:10px;padding:9px 14px;">
-
-      <!-- Lista de amigos -->
-      <div id="sfm-list" style="display:flex;gap:8px;overflow-x:auto;padding:4px 0 8px;scrollbar-width:none;flex-wrap:nowrap;">
-        ${friendsHtml}
-      </div>
-      <style>#sfm-list::-webkit-scrollbar{display:none;}</style>
-
-      <!-- Área de mensagem opcional -->
-      <div style="margin-top:8px;">
-        <input id="sfm-msg" class="cmt-input" placeholder="Adicionar mensagem... (opcional)" style="border-radius:10px;padding:9px 14px;width:100%;">
-      </div>
-
-      <!-- Botão enviar -->
-      <button id="sfm-send-btn" onclick="_confirmSendToFriend('${postId}')" style="margin-top:12px;background:linear-gradient(135deg,var(--neon-pink),var(--neon-purple));border:none;color:#fff;padding:13px;border-radius:12px;cursor:pointer;font-family:Silkscreen,monospace;font-size:11px;letter-spacing:1px;width:100%;opacity:.5;transition:opacity .2s;" disabled>
-        📤 ENVIAR
-      </button>
-    </div>`;
-
-  overlay.onclick = e => { if(e.target===overlay) overlay.remove(); };
-  document.body.appendChild(overlay);
-
-  // Animar entrada
-  const sheet = overlay.querySelector('div');
-  sheet.style.transform = 'translateY(100%)';
-  sheet.style.transition = 'transform .3s cubic-bezier(.4,0,.2,1)';
-  requestAnimationFrame(()=>{ sheet.style.transform = 'translateY(0)'; });
-
-  // Guardar selecionados
-  overlay._selected = new Set();
-}
-
-// Lista de selecionados para envio
-const _sfmSelected = new Map(); // postId -> Set de userId
-
-function _sendPostToFriend(postId, friendId, friendUsername, el){
-  const overlay = document.getElementById('send-friend-modal');
-  if(!overlay) return;
-  if(!overlay._selected) overlay._selected = new Set();
-  const check = document.getElementById('sfm-check-'+friendId);
-
-  if(overlay._selected.has(friendId)){
-    overlay._selected.delete(friendId);
-    if(check) check.style.display='none';
-    el.querySelector('div:first-child').style.transform='scale(1)';
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(url).then(()=>showToast('🔗 Link copiado!','success'));
   } else {
-    overlay._selected.add(friendId);
-    if(check){ check.style.display='flex'; }
-    el.querySelector('div:first-child').style.transform='scale(0.9)';
+    // Fallback for older browsers
+    const el=document.createElement('textarea');
+    el.value=url; el.style.position='fixed'; el.style.opacity='0';
+    document.body.appendChild(el); el.select();
+    document.execCommand('copy'); document.body.removeChild(el);
+    showToast('🔗 Link copiado!','success');
   }
-  // Ativar/desativar botão
-  const btn = document.getElementById('sfm-send-btn');
-  if(btn){ btn.disabled = overlay._selected.size===0; btn.style.opacity = overlay._selected.size>0?'1':'.5'; }
-}
-
-function _filterSendFriends(query){
-  const q = query.toLowerCase();
-  document.querySelectorAll('#sfm-list > div[onclick]').forEach(el=>{
-    const name = el.querySelector('div:last-child')?.textContent?.toLowerCase()||'';
-    el.style.display = (!q || name.includes(q)) ? 'flex' : 'none';
-  });
-}
-
-async function _confirmSendToFriend(postId){
-  const overlay = document.getElementById('send-friend-modal');
-  if(!overlay || !overlay._selected?.size) return;
-  const msg = document.getElementById('sfm-msg')?.value.trim();
-  const url = window.location.origin + window.location.pathname + '?post=' + postId;
-  const msgContent = (msg ? msg + '\n' : '') + '📎 Post compartilhado: ' + url;
-
-  const btn = document.getElementById('sfm-send-btn');
-  if(btn){ btn.textContent='⏳ Enviando...'; btn.disabled=true; }
-
-  let sentCount = 0;
-  for(const friendId of overlay._selected){
-    try{
-      // Enviar mensagem no chat
-      await db.from('messages').insert({
-        sender_id: CU.id,
-        receiver_id: friendId,
-        content: msgContent,
-        read: false
-      });
-      // Notificar
-      await db.from('notifications').insert({
-        user_id: friendId,
-        actor_id: CU.id,
-        type: 'message',
-        content: `@${CP?.username||'alguém'} enviou um post para você`,
-        read: false
-      });
-      sentCount++;
-    }catch(e){ console.warn('send to friend error:',e); }
-  }
-
-  overlay.remove();
-  showToast(sentCount>1 ? `📤 Enviado para ${sentCount} amigos!` : '📤 Post enviado!', 'success');
 }
 
 
@@ -12843,47 +12435,99 @@ function _insertCommChatEmoji(commId,emoji){
 
 // ── Picker de GIF para o chat (lista curada, sem depender de API externa) ─
 const COMM_CHAT_GIFS = [
-  {q:'hello',      url:'https://media.giphy.com/media/3oEjI6SIIHBdRxXI40/giphy.gif'},
-  {q:'lol',        url:'https://media.giphy.com/media/ZqlvCTNHpqrio/giphy.gif'},
-  {q:'ok',         url:'https://media.giphy.com/media/111ebonMs90YLu/giphy.gif'},
-  {q:'love',       url:'https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif'},
-  {q:'wow',        url:'https://media.giphy.com/media/5p2wQFyu8GsFO/giphy.gif'},
-  {q:'sad',        url:'https://media.giphy.com/media/ISOckXUybVfQ4/giphy.gif'},
-  {q:'dance',      url:'https://media.giphy.com/media/l0MYGb1LuZ3n7dRnO/giphy.gif'},
-  {q:'clap',       url:'https://media.giphy.com/media/l0Exk8EUzSLsrErEQ/giphy.gif'},
-  {q:'fire',       url:'https://media.giphy.com/media/YqBqKSGaFRGfS/giphy.gif'},
-  {q:'party',      url:'https://media.giphy.com/media/l0MYC0LajbaPoEADu/giphy.gif'},
-  {q:'thinking',   url:'https://media.giphy.com/media/kPtv3UIPrv36cjxqLs/giphy.gif'},
-  {q:'mind blown', url:'https://media.giphy.com/media/xT0xeJpnrWC4XWblEk/giphy.gif'},
-  {q:'sim',        url:'https://media.giphy.com/media/XreQmk7ETCak0/giphy.gif'},
-  {q:'nao',        url:'https://media.giphy.com/media/l1J9yApnGts8EXYoo/giphy.gif'},
-  {q:'incrivel',   url:'https://media.giphy.com/media/3oz8xAFtqoOUUrsh7W/giphy.gif'},
-  {q:'choro',      url:'https://media.giphy.com/media/OPU6wzx8JrHna/giphy.gif'},
+  {q:'hello hi oi',     url:'https://media.giphy.com/media/3o7TKsQ8gqVrxZZ4Fy/giphy.gif'},
+  {q:'lol haha rir',    url:'https://media.giphy.com/media/4xpB3eE00FfBm/giphy.gif'},
+  {q:'thumbs up legal', url:'https://media.giphy.com/media/111ebonMs90YLu/giphy.gif'},
+  {q:'love coracao',    url:'https://media.giphy.com/media/26gsjCZpPolPr3sBy/giphy.gif'},
+  {q:'wow uau omg',     url:'https://media.giphy.com/media/3oEjI6SIIHBdRxXI40/giphy.gif'},
+  {q:'sad triste',      url:'https://media.giphy.com/media/L95W4wv8nnb9K/giphy.gif'},
+  {q:'dance dancar',    url:'https://media.giphy.com/media/3o7TKr3nzbh5WgCFxe/giphy.gif'},
+  {q:'clap palmas',     url:'https://media.giphy.com/media/7rj2ZgttvgomY/giphy.gif'},
+  {q:'fire fogo',       url:'https://media.giphy.com/media/3o7TKMt1VVNkHV2PaE/giphy.gif'},
+  {q:'party festa',     url:'https://media.giphy.com/media/g9582DNuQppxC/giphy.gif'},
+  {q:'thinking pensar', url:'https://media.giphy.com/media/3o7aCSPqXE5C6T8tBC/giphy.gif'},
+  {q:'mind blown uau',  url:'https://media.giphy.com/media/26ufdipQqU2lhNA4g/giphy.gif'},
+  {q:'cool legal',      url:'https://media.giphy.com/media/l3q2K5jinAlChoCLS/giphy.gif'},
+  {q:'sleep dormir',    url:'https://media.giphy.com/media/8YAUlwxQDcSGI/giphy.gif'},
+  {q:'cat gato',        url:'https://media.giphy.com/media/JIX9t2j0ZTN9S/giphy.gif'},
+  {q:'dog cachorro',    url:'https://media.giphy.com/media/mCRJDo24UvJMA/giphy.gif'},
+  {q:'eyeroll bored',   url:'https://media.giphy.com/media/l4FGuhL4U2WyjdkaY/giphy.gif'},
+  {q:'wait espera',     url:'https://media.giphy.com/media/3o7TKtnuHOHHUjR38Y/giphy.gif'},
+  {q:'shrug',           url:'https://media.giphy.com/media/r9UkRwEjfqHRS/giphy.gif'},
+  {q:'hug abraco',      url:'https://media.giphy.com/media/od5H3PmEG5EVq/giphy.gif'},
+  {q:'kiss beijo',      url:'https://media.giphy.com/media/BCIRR8tylAIw0/giphy.gif'},
+  {q:'congrats parabens',url:'https://media.giphy.com/media/g9582DNuQppxC/giphy.gif'},
 ];
+// API key pública/demo do Giphy. Funciona para testes/desenvolvimento.
+// Em produção, criar uma key própria em developers.giphy.com
+const GIPHY_API_KEY = 'dc6zaTOxFJmzC';
+
+async function _fetchGiphy(query, limit){
+  // Se query vazia, busca trending (GIFs populares do dia)
+  const url = query
+    ? `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(query)}&limit=${limit||24}&rating=g&lang=pt`
+    : `https://api.giphy.com/v1/gifs/trending?api_key=${GIPHY_API_KEY}&limit=${limit||24}&rating=g`;
+  try{
+    const r = await fetch(url);
+    if(!r.ok) throw new Error('Giphy '+r.status);
+    const j = await r.json();
+    return (j.data||[]).map(g=>({
+      id: g.id,
+      preview: g.images?.fixed_height_small?.url || g.images?.fixed_width_small?.url || g.images?.preview_gif?.url,
+      url: g.images?.fixed_height?.url || g.images?.original?.url
+    })).filter(g=>g.url);
+  }catch(e){
+    console.error('[gif] Giphy fetch err:',e);
+    return [];
+  }
+}
+
 function openCommChatGif(commId){
   const overlay=document.createElement('div');
   overlay.id='comm-gif-modal-'+commId;
   overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(6px);z-index:4000;display:flex;align-items:center;justify-content:center;padding:16px;';
-  overlay.innerHTML=`<div class="modal" style="max-width:480px;width:100%;max-height:80vh;display:flex;flex-direction:column;">
+  overlay.innerHTML=`<div class="modal" style="max-width:500px;width:100%;max-height:85vh;display:flex;flex-direction:column;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
       <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);flex:1;">🎬 Escolher GIF</div>
+      <div style="font-size:9px;color:var(--text-muted);">via GIPHY</div>
       <button class="tbtn" style="font-size:10px;" onclick="this.closest('[id^=comm-gif-modal]').remove()">✕</button>
     </div>
-    <input class="ainput" id="comm-gif-search-${commId}" placeholder="Buscar GIF (ex: hello, lol, fire)..." oninput="_filterCommGifs('${commId}')">
-    <div id="comm-gif-grid-${commId}" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;overflow-y:auto;flex:1;padding:4px;">
-      ${COMM_CHAT_GIFS.map(g=>`<div data-q="${g.q}" style="cursor:pointer;border-radius:8px;overflow:hidden;border:2px solid transparent;transition:border-color .2s;" onmouseover="this.style.borderColor='var(--neon-cyan)'" onmouseout="this.style.borderColor='transparent'" onclick="_sendCommGif('${commId}','${g.url}')"><img src="${g.url}" style="width:100%;height:110px;object-fit:cover;display:block;background:#222;" loading="lazy"></div>`).join('')}
+    <input class="ainput" id="comm-gif-search-${commId}" placeholder="Buscar GIF (deixe vazio para trending)..." oninput="_searchCommGifs('${commId}')">
+    <div id="comm-gif-grid-${commId}" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:10px;overflow-y:auto;flex:1;padding:4px;min-height:200px;">
+      <div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--text-muted);font-size:11px;">⏳ Carregando GIFs trending...</div>
     </div>
-    <div style="font-size:9px;color:var(--text-muted);margin-top:8px;text-align:center;">Digite para filtrar ou clique para enviar</div>
+    <div style="font-size:9px;color:var(--text-muted);margin-top:8px;text-align:center;">Clique em um GIF para enviar no chat</div>
   </div>`;
   overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
   document.body.appendChild(overlay);
+  // Carrega trending de cara
+  _loadCommGifs(commId, '');
 }
+
+let _gifSearchTimer=null;
+function _searchCommGifs(commId){
+  clearTimeout(_gifSearchTimer);
+  const q = document.getElementById('comm-gif-search-'+commId)?.value.trim()||'';
+  _gifSearchTimer = setTimeout(()=>_loadCommGifs(commId, q), 350);
+}
+
+async function _loadCommGifs(commId, query){
+  const grid = document.getElementById('comm-gif-grid-'+commId);
+  if(!grid) return;
+  grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--text-muted);font-size:11px;">⏳ Buscando...</div>';
+  const gifs = await _fetchGiphy(query, 24);
+  if(!gifs.length){
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--text-muted);font-size:11px;">Nenhum GIF encontrado</div>';
+    return;
+  }
+  grid.innerHTML = gifs.map(g=>`<div style="cursor:pointer;border-radius:8px;overflow:hidden;border:2px solid transparent;transition:all .15s;background:#222;aspect-ratio:1;" onmouseover="this.style.borderColor='var(--neon-cyan)';this.style.transform='scale(1.03)'" onmouseout="this.style.borderColor='transparent';this.style.transform='scale(1)'" onclick="_sendCommGif('${commId}','${g.url}')"><img src="${g.preview||g.url}" style="width:100%;height:100%;object-fit:cover;display:block;" loading="lazy" alt=""></div>`).join('');
+}
+
 function _filterCommGifs(commId){
-  const q=document.getElementById('comm-gif-search-'+commId).value.toLowerCase().trim();
-  document.querySelectorAll('#comm-gif-grid-'+commId+' [data-q]').forEach(el=>{
-    el.style.display = (!q || el.dataset.q.includes(q)) ? 'block' : 'none';
-  });
+  // legado — agora usa search real
+  _searchCommGifs(commId);
 }
+
 function _sendCommGif(commId,url){
   document.getElementById('comm-gif-modal-'+commId)?.remove();
   sendCommChat(commId, '[GIF:'+url+']');
@@ -12988,11 +12632,10 @@ async function loadCommMembersPanel(commId,_ignoredIsMod,_ignoredIsOwner){
     const userName=(m.profiles?.full_name||m.profiles?.username||'?').replace(/'/g,'').replace(/"/g,'');
     // ── Regras de moderação ──
     // Owner pode moderar TODOS (exceto ele mesmo).
-    // Mod pode moderar apenas MEMBROS COMUNS (não pode moderar owner, outros mods, nem ele mesmo).
-    // NINGUÉM pode banir ou kitar o Dono da Comunidade.
+    // Mod pode moderar MEMBROS comuns (não pode moderar owner, outros mods, nem ele mesmo).
     let canModerate = false;
-    if(isOwner && !isMe && m.role!=='owner') canModerate = true;
-    else if(isMod && !isOwner && !isMe && m.role!=='owner' && m.role!=='mod') canModerate = true;
+    if(isOwner && !isMe) canModerate = true;
+    else if(isMod && !isMe && m.role!=='owner' && m.role!=='mod') canModerate = true;
     // Botões específicos de owner (promover/despromover)
     const ownerButtons = isOwner && !isMe && m.role!=='owner' ? (
       m.role==='mod'
@@ -13023,8 +12666,39 @@ async function promoteToMod(commId,userId){if(!confirm('Promover a moderador?'))
 async function demoteMod(commId,userId){if(!confirm('Remover moderador?'))return;await db.from('community_members').update({role:'member'}).eq('community_id',commId).eq('user_id',userId);showToast('Removido de mod','success');loadCommMembersPanel(commId);}
 
 // ── Modal de banimento com dias/horas/minutos ──
+// ── Helper: verifica se o alvo é dono e se eu tenho permissão de moderar ──
+async function _canModerateTarget(commId, targetUserId){
+  if(!CU) return {ok:false, reason:'Não autenticado'};
+  if(targetUserId===CU.id) return {ok:false, reason:'Você não pode moderar a si mesmo'};
+  // Buscar role do alvo e o owner da comunidade
+  const[{data:comm},{data:targetRow},{data:meRow}]=await Promise.all([
+    db.from('communities').select('owner_id').eq('id',commId).maybeSingle(),
+    db.from('community_members').select('role').eq('community_id',commId).eq('user_id',targetUserId).maybeSingle(),
+    db.from('community_members').select('role').eq('community_id',commId).eq('user_id',CU.id).maybeSingle()
+  ]);
+  // Alvo é o dono?
+  if(comm?.owner_id === targetUserId) return {ok:false, reason:'O dono da comunidade não pode ser moderado'};
+  // Sou owner ou mod?
+  const iAmOwner = comm?.owner_id===CU.id;
+  const iAmMod = iAmOwner || meRow?.role==='mod';
+  if(!iAmMod) return {ok:false, reason:'Você não tem permissão de moderador'};
+  // Mods não podem moderar outros mods (só owner pode)
+  if(!iAmOwner && targetRow?.role==='mod') return {ok:false, reason:'Mods não podem moderar outros mods'};
+  return {ok:true};
+}
+
 function banMember(commId,userId,userName){
   const name = userName || 'este usuário';
+  // Checagem prévia: o alvo é dono?
+  _canModerateTarget(commId, userId).then(check=>{
+    if(!check.ok){
+      showToast('❌ '+check.reason,'error');
+      return;
+    }
+    _openBanModal(commId, userId, name);
+  });
+}
+function _openBanModal(commId, userId, name){
   const overlay=document.createElement('div');
   overlay.id='ban-modal-overlay';
   overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(6px);z-index:4000;display:flex;align-items:center;justify-content:center;padding:16px;';
@@ -13060,6 +12734,13 @@ function _setBanPreset(d,h,m){
   document.getElementById('ban-mins').value=m;
 }
 async function _confirmBan(commId,userId,name){
+  // Re-checar permissão no momento de confirmar (defesa em profundidade)
+  const check = await _canModerateTarget(commId, userId);
+  if(!check.ok){
+    showToast('❌ '+check.reason,'error');
+    document.getElementById('ban-modal-overlay')?.remove();
+    return;
+  }
   const d=parseInt(document.getElementById('ban-days').value)||0;
   const h=parseInt(document.getElementById('ban-hours').value)||0;
   const m=parseInt(document.getElementById('ban-mins').value)||0;
@@ -13078,6 +12759,12 @@ async function _confirmBan(commId,userId,name){
 // ── Kick: remove definitivamente (pode voltar a entrar depois) ──
 async function kickMember(commId,userId,userName){
   const name=userName||'este usuário';
+  // Checar permissão antes
+  const check = await _canModerateTarget(commId, userId);
+  if(!check.ok){
+    showToast('❌ '+check.reason,'error');
+    return;
+  }
   if(!confirm(`Remover ${name} da comunidade?\n\nEle poderá voltar a entrar depois. Para bloquear definitivamente, use "Banir".`))return;
   await db.from('community_members').delete().eq('community_id',commId).eq('user_id',userId);
   try{
