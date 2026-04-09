@@ -6376,13 +6376,19 @@ async function loadProfilePage(userId){
             const parts = raw.substring(8,end).split(':');
             const origId = parts[0];
             const op = origPostMap[origId];
-            if(!op) return;
             // Preencher diretamente sem nova requisição ao banco
             const elAv   = document.getElementById('repost-av-'+p.id);
             const elName = document.getElementById('repost-name-'+p.id);
             const elCont = document.getElementById('repost-content-'+p.id);
             const elOrig = document.getElementById('repost-orig-'+p.id);
             if(!elCont) return;
+            if(!op){
+              // Post original não encontrado (deletado ou indisponível) — mostrar fallback em vez de loading infinito
+              if(elAv) elAv.innerHTML = '';
+              if(elName) elName.innerHTML = '';
+              elCont.innerHTML = '<span style="color:var(--text-muted);font-size:11px;font-style:italic;">⚠️ Post original não disponível.</span>';
+              return;
+            }
             const prof = op.profiles||{};
             const av = prof.avatar_url||('https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u'));
             const name = prof.full_name||prof.username||'Usuário';
