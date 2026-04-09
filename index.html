@@ -4540,6 +4540,7 @@ async function loadFeed(force=false){
   const validPosts = rendered.filter(h=>h.length>0);
   const html = validPosts.join('');
   feed.innerHTML = html || '<div style="text-align:center;padding:40px;color:var(--text-muted);"><div style="font-size:40px;margin-bottom:12px;">📭</div><div style="font-family:VT323,monospace;font-size:20px;">Nenhuma postagem ainda</div></div>';
+  _hydrateAllReposts(feed);
   filteredPosts.forEach(p=>cachedPostIds.add(p.id));
   cachedPosts[cacheKey]=html;
   updateCommentCounts(filteredPosts.map(p=>p.id));
@@ -4715,7 +4716,7 @@ function renderPost(post,rxCounts={},myRx=''){
         position:relative;
         overflow:hidden;
       " onclick="void(0)">
-        <div id="repost-orig-${post.id}">
+        <div id="repost-orig-${post.id}" data-repost-id="${post.id}" data-orig-post-id="${repostMeta.originalPostId}" data-orig-author-id="${repostMeta.originalAuthorId}" data-orig-author-name="${repostMeta.originalAuthorName}">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
             <div id="repost-av-${post.id}" style="width:28px;height:28px;border-radius:50%;background:rgba(0,255,204,.15);border:1px solid rgba(0,255,204,.3);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;">
               <span style="font-size:12px;color:var(--neon-cyan);">⏳</span>
@@ -4729,7 +4730,7 @@ function renderPost(post,rxCounts={},myRx=''){
         </div>
       </div>`;
     // Hidratar conteúdo original de forma assíncrona
-    setTimeout(()=>_hydrateRepostCard(post.id, repostMeta.originalPostId, repostMeta.originalAuthorId, repostMeta.originalAuthorName), 0);
+    // data attributes para hidratação pós-inserção no DOM
   }
 
   return`<div class="post-card" id="post-${post.id}">
@@ -5674,6 +5675,7 @@ async function loadExploreFeed(){
   const rxMap={};(rxData.data||[]).forEach(r=>{if(!rxMap[r.post_id])rxMap[r.post_id]={};rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1;});
   const myRxMap={};(myLikesData.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
   feed.innerHTML='<h3 style="font-family:\'Silkscreen\',monospace;font-size:12px;color:var(--neon-cyan);margin-bottom:14px;margin-top:4px;">POSTS EM DESTAQUE</h3>'+((posts||[]).map(p=>renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||'')).join('')||'<div style="text-align:center;padding:30px;color:var(--text-muted);">Nenhum post ainda</div>');
+  _hydrateAllReposts(feed);
 }
 async function doSearch(){
   const raw = document.getElementById('exp-search').value.trim();
@@ -6339,6 +6341,7 @@ async function loadProfilePage(userId){
           try{ return renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||''); }
           catch(e){ console.warn('renderPost profile error:',e?.message,p?.id); return ''; }
         }).join('') || '<div style="text-align:center;padding:30px;color:var(--text-muted);">Nenhuma postagem ainda</div>';
+        _hydrateAllReposts(postsPanel);
         updateCommentCounts(postIds);
       }
     }
@@ -7450,6 +7453,18 @@ async function showPostAuthorProfile(userId, triggerEl){
 
 
 // ── Navega até o post original no feed (usado ao clicar no card de repost) ──
+// Varre o container e hidrata todos os repost cards encontrados
+function _hydrateAllReposts(container){
+  const nodes = (container||document).querySelectorAll('[data-repost-id]');
+  nodes.forEach(el=>{
+    const rid  = el.dataset.repostId;
+    const opid = el.dataset.origPostId;
+    const oaid = el.dataset.origAuthorId;
+    const oan  = el.dataset.origAuthorName;
+    if(rid && opid) _hydrateRepostCard(rid, opid, oaid, oan);
+  });
+}
+
 async function _goToOriginalPost(postId){
   // 1. Navegar para o feed principal
   nav('home');
@@ -8578,6 +8593,7 @@ async function loadCommPosts(commId){
   const rxMap={};(rxRes.data||[]).forEach(r=>{if(!rxMap[r.post_id])rxMap[r.post_id]={};rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1;});
   const myRxMap={};(myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
   el.innerHTML = posts.map(p=>renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||'')).join('') || '<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhum post ainda. Seja o primeiro!</div>';
+  _hydrateAllReposts(el);
 }
 
 async function loadCommMembers(commId){
@@ -11744,6 +11760,7 @@ async function loadCommPostsV2(commId,isMember,isMod){
     // Marcar com data-commid para XP de curtidas e comentários
     return html.replace(`id="post-${p.id}"`,`id="post-${p.id}" data-commid="${commId}"`);
   }).join('');
+  _hydrateAllReposts(el);
   updateCommentCounts(postIds);
 }
 
