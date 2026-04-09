@@ -6421,6 +6421,9 @@ async function loadProfilePage(userId){
           });
         }
 
+        // Fallback: hidrata repost cards que não foram preenchidos pela hidratação manual
+        _hydrateAllReposts(postsPanel);
+
         updateCommentCounts(postIds);
       }
     }
@@ -7344,6 +7347,7 @@ async function loadHomeProfile(){
     .eq('user_id',CU.id).order('created_at',{ascending:false}).limit(5);
   postsDiv.innerHTML=(posts||[]).map(p=>renderPost(p,{},'')).join('')
     ||'<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:20px;">Nenhum post ainda</div>';
+  _hydrateAllReposts(postsDiv);
 }
 
 
