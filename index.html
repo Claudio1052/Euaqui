@@ -6066,36 +6066,6 @@ async function toggleJoinComm(commId,isMember,btn){
     // Atualizar DOM
     document.querySelectorAll(`[data-commcount="${commId}"]`).forEach(el=>{el.textContent=realCount;});
   }catch(e){ console.warn('member count:',e?.message); }
-  // ── Atualizar área de chat e live imediatamente (sem recarregar a página) ──
-  const nowMember = !isMember;
-  const chatWrap = document.querySelector(`#ct-chat-${commId} .comm-chat-wrap`);
-  if(chatWrap){
-    // Remover elementos dinâmicos anteriores (placeholder ou input+cooldown)
-    const lockMsg = document.getElementById(`comm-chat-lock-msg-${commId}`);
-    if(lockMsg) lockMsg.remove();
-    const cooldownEl = document.getElementById(`comm-cooldown-${commId}`);
-    if(cooldownEl) cooldownEl.remove();
-    const inputWrap = chatWrap.querySelector('.comm-chat-input-wrap');
-    if(inputWrap) inputWrap.remove();
-    if(nowMember){
-      // Desbloqueou — mostrar input do chat
-      chatWrap.insertAdjacentHTML('beforeend',
-        `<div id="comm-cooldown-${commId}" class="comm-cooldown" style="display:none;"></div>`+
-        `<div class="comm-chat-input-wrap">`+
-          `<button class="tbtn" style="padding:6px 10px;font-size:14px;" onclick="openCommChatEmoji('${commId}')" title="Emoji">😊</button>`+
-          `<button class="tbtn" style="padding:6px 10px;font-size:12px;" onclick="openCommChatGif('${commId}')" title="GIF">🎬 GIF</button>`+
-          `<input class="ainput" id="comm-chat-in-${commId}" placeholder="Mensagem para a comunidade..." style="flex:1;" onkeydown="if(event.key==='Enter')sendCommChat('${commId}')">`+
-          `<button class="post-btn" style="font-size:11px;padding:8px 14px;" onclick="sendCommChat('${commId}')">➤</button>`+
-        `</div>`);
-      loadCommChatCooldown(commId);
-    } else {
-      // Bloqueou — mostrar placeholder
-      chatWrap.insertAdjacentHTML('beforeend',
-        `<div id="comm-chat-lock-msg-${commId}" style="padding:10px;text-align:center;font-size:11px;color:var(--text-muted);">🔒 Entre na comunidade para participar do chat</div>`);
-    }
-  }
-  // Recarregar aba de live para refletir novo status de membro
-  loadCommLive(commId);
 }
 
 // ── Recalcula e retorna contagem real de membros (usado ao abrir detalhe) ──
@@ -6192,7 +6162,7 @@ async function openCommDetail(commId){
             <button class="tbtn" style="padding:6px 10px;font-size:12px;" onclick="openCommChatGif('${commId}')" title="GIF">🎬 GIF</button>
             <input class="ainput" id="comm-chat-in-${commId}" placeholder="Mensagem para a comunidade..." style="flex:1;" onkeydown="if(event.key==='Enter')sendCommChat('${commId}')">
             <button class="post-btn" style="font-size:11px;padding:8px 14px;" onclick="sendCommChat('${commId}')">➤</button>
-          </div>`:`<div id="comm-chat-lock-msg-${commId}" style="padding:10px;text-align:center;font-size:11px;color:var(--text-muted);">${isBanned?'🚫 Banido':'🔒 Entre na comunidade para participar do chat'}</div>`}
+          </div>`:`<div style="padding:10px;text-align:center;font-size:11px;color:var(--text-muted);">${isBanned?'🚫 Banido':'Entre na comunidade para participar'}</div>`}
         </div>
       </div>
       <div id="ct-live-${commId}" style="display:none;"><div id="comm-live-content-${commId}">${skeletons(2)}</div></div>
@@ -12396,26 +12366,9 @@ function _liveAttachLocalVoiceDetector(){
 async function loadCommLive(commId){
   const el=document.getElementById('comm-live-content-'+commId);
   if(!el) return;
-  // Buscar owner e verificar se usuário é membro em paralelo
-  const [{data:comm},{data:memRow}]=await Promise.all([
-    db.from('communities').select('owner_id,name').eq('id',commId).maybeSingle(),
-    CU?db.from('community_members').select('id').eq('community_id',commId).eq('user_id',CU.id).maybeSingle():{data:null}
-  ]);
+  // Buscar owner para saber quem pode iniciar a live
+  const{data:comm}=await db.from('communities').select('owner_id,name').eq('id',commId).maybeSingle();
   const isOwner = CU?.id===comm?.owner_id;
-  const isMember = !!memRow || isOwner;
-  // Bloquear live para não-membros
-  if(!isMember){
-    el.innerHTML=`
-      <div class="live-room">
-        <div class="live-empty">
-          <div class="live-empty-big">🔒</div>
-          <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-pink);margin-bottom:6px;">ACESSO RESTRITO</div>
-          <div style="font-size:11px;margin-bottom:18px;">🔒 Você precisa ser membro para assistir à live</div>
-          <div style="font-size:10px;color:var(--text-muted);">Clique em <b style="color:var(--neon-cyan);">+ Entrar</b> para se tornar membro da comunidade</div>
-        </div>
-      </div>`;
-    return;
-  }
   // Verificar se já existe uma live ativa para esta comunidade
   const isLiveActive = LIVE_STATE.activeCommId===commId;
   // Verificar se há broadcast de outro host (via flag no banco)
@@ -12734,13 +12687,6 @@ function _liveBeforeUnload(){
 // ── LISTENER/SPEAKER entra na live ──
 async function joinCommLive(commId){
   if(!CU) return showToast('Faça login','error');
-  // Verificar se o usuário é membro ou dono da comunidade
-  const [{data:comm},{data:memRow}]=await Promise.all([
-    db.from('communities').select('owner_id').eq('id',commId).maybeSingle(),
-    db.from('community_members').select('id').eq('community_id',commId).eq('user_id',CU.id).maybeSingle()
-  ]);
-  const isOwner = CU.id===comm?.owner_id;
-  if(!memRow && !isOwner) return showToast('🔒 Você precisa ser membro para assistir à live','error');
   _liveInstallAudioUnlock();
   // Clicar em "Entrar na Live" conta como gesto de destravamento
   _liveAudioUnlocked = true;
