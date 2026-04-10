@@ -4043,7 +4043,19 @@ const CACHE_TTL=60000;
 
 // ===== DB — iniciado imediatamente (SDK já está no <head>) =====
 const {createClient} = window.supabase;
-const db = createClient(SB_URL, SB_KEY);
+const db = createClient(SB_URL, SB_KEY, {
+  auth: {
+    storage: window.localStorage,
+    storageKey: 'sb-'+SB_URL.split('.')[0].split('//')[1]+'-auth-token',
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
+    lock: async (name, acquireTimeout, fn) => {
+      // Simple non-blocking lock to avoid the 5s timeout warning
+      return await fn();
+    }
+  }
+});
 
 // ===== BOOT — simples e direto =====
 function hideLS(){
@@ -4679,7 +4691,7 @@ function renderPost(post,rxCounts={},myRx='',_origPostMap){
   const avBorderRgba = commMeta ? 'rgba(0,255,204,.55)' : (bizMeta?'rgba(255,204,0,.5)':'rgba(0,255,204,.25)');
   // Atributos extras para hidratação assíncrona dos dados da comunidade
   const commHydrAttr = (commMeta && !cachedComm) ? ` data-comm-avatar="${commMeta.id}"` : '';
-  const avHtml='<img src="'+xss(avUrl)+'"'+commHydrAttr+' data-uid="'+post.user_id+'" data-fb="https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u')+'" style="width:42px;height:42px;border-radius:'+avRadius+';object-fit:cover;border:2px solid '+avBorderRgba+';flex-shrink:0;cursor:pointer;background:#0a0e27;" onclick="'+(commMeta?`openCommDetail('${commMeta.id}')`:`showPostAuthorProfile(this.dataset.uid,null)`)+'" onerror="this.onerror=null;this.src=this.dataset.fb">';
+  const avHtml='<img src="'+xss(avUrl)+'"'+commHydrAttr+' data-uid="'+post.user_id+'" data-fb="https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u')+'" style="width:42px;height:42px;border-radius:'+avRadius+';object-fit:cover;border:2px solid '+avBorderRgba+';flex-shrink:0;cursor:pointer;background:#0a0e27;" onclick="'+(commMeta?`openCommDetail('${commMeta.id}')`:`loadProfilePage(this.dataset.uid)`)+'" onerror="this.onerror=null;this.src=this.dataset.fb">';
   const time=timeAgo(post.created_at);
   const content=linkify(displayContent);
   // Visibilidade (coluna pode não existir)
@@ -10168,7 +10180,7 @@ function handlePostClick(el){
   const bizId = el.dataset.bizid;
   const uid   = el.dataset.uid;
   if(bizId && bizId !== 'undefined' && bizId.length > 10) openBizById(bizId);
-  else showPostAuthorProfile(uid, null);
+  else loadProfilePage(uid);
 }
 
 function selectBizProductEl(el){
