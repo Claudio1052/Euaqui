@@ -5613,14 +5613,20 @@ function switchProfileTab(btn){
     if(CP) loadEditForm();
     else if(CU) loadProfilePage(CU.id).then(()=>loadEditForm());
   }
-  // Ao abrir aba Sobre: recarregar comunidades/lojas
+  // Ao abrir aba Sobre: recarregar comunidades/lojas se necessário
   if(tabId === 'pp-about'){
     const commEl = document.getElementById('about-communities-section');
     const bizEl  = document.getElementById('about-businesses-section');
-    // Se ainda tiver loading ou vazio, recarregar
-    if(commEl && (commEl.innerHTML.includes('Carregando') || commEl.innerHTML.trim()==='')) {
-      const uid = document.querySelector('[data-profile-uid]')?.dataset?.profileUid || CU?.id;
-      if(uid) loadAboutExtras(uid);
+    const uid = document.querySelector('[data-profile-uid]')?.dataset?.profileUid || CU?.id;
+    if(uid){
+      // Recarregar comunidades se vazio ou ainda carregando
+      if(commEl && (commEl.innerHTML.includes('Carregando') || commEl.innerHTML.trim()==='')) {
+        loadAboutCommunities(uid);
+      }
+      // Recarregar lojas se vazio
+      if(bizEl && bizEl.innerHTML.trim()==='') {
+        loadAboutBusinesses(uid);
+      }
     }
   }
 }
@@ -6499,74 +6505,10 @@ async function loadProfilePage(userId){
       }
     }
 
-    // 5. About tab — buscar comunidades junto com o restante
+    // 5. About tab — montar estrutura base e carregar extras de forma assíncrona
     if(aboutPanel){
-      // Buscar comunidades do usuário
-      let commsHtml = '';
-      try{
-        let comms = [];
-        // Buscar direto na tabela community_members com join inline do Supabase
-        const{data:cmRaw, error:cmErr} = await db.from('community_members')
-          .select('community_id, communities!inner(id,name,description,icon,avatar_url,members_count)')
-          .eq('user_id', userId)
-          .limit(30);
-        console.log('[COMM] join result:', cmRaw, cmErr);
-        if(!cmErr && cmRaw?.length){
-          comms = cmRaw.map(r=>r.communities).filter(Boolean);
-        }
-        // Fallback 1: join sem !inner
-        if(!comms.length){
-          const{data:r2, error:e2} = await db.from('community_members')
-            .select('community_id, communities(id,name,description,icon,avatar_url,members_count)')
-            .eq('user_id', userId).limit(30);
-          console.log('[COMM] join2 result:', r2, e2);
-          if(r2?.length) comms = r2.map(r=>r.communities).filter(Boolean);
-        }
-        // Fallback 2: dois passos separados
-        if(!comms.length){
-          const{data:step1} = await db.from('community_members')
-            .select('community_id').eq('user_id', userId).limit(30);
-          console.log('[COMM] step1:', step1);
-          if(step1?.length){
-            const ids = step1.map(r=>r.community_id).filter(Boolean);
-            const{data:step2} = await db.from('communities')
-              .select('id,name,description,icon,avatar_url,members_count').in('id',ids);
-            console.log('[COMM] step2:', step2);
-            comms = step2||[];
-          }
-        }
-        console.log('[COMM] final comms:', comms);
-        if(comms.length){
-          commsHtml =
-            '<div class="edit-section" style="margin-top:10px;">'+
-            '<div class="edit-section-title">🏘 COMUNIDADES ('+comms.length+')</div>'+
-            comms.map(function(cm){
-              const icon = cm.icon
-                ? '<div style="font-size:26px;width:40px;text-align:center;flex-shrink:0;">'+cm.icon+'</div>'
-                : (cm.avatar_url
-                  ? '<div style="width:40px;height:40px;border-radius:10px;overflow:hidden;flex-shrink:0;"><img src="'+xss(cm.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.textContent=&quot;🏘&quot;"></div>'
-                  : '<div style="font-size:26px;width:40px;text-align:center;flex-shrink:0;">🏘</div>');
-              return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer;" onclick="openCommDetail(\u0027'+xss(cm.id)+'\u0027)">'+
-                icon+
-                '<div style="flex:1;min-width:0;">'+
-                  '<div style="font-size:12px;font-weight:600;color:var(--neon-cyan);">'+xss(cm.name||'')+'</div>'+
-                  (cm.description?'<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+xss(cm.description.slice(0,60))+'</div>':'')+
-                  '<div style="font-size:9px;color:var(--text-muted);margin-top:2px;">👥 '+(cm.members_count||0)+' membros</div>'+
-                '</div>'+
-              '</div>';
-            }).join('')+
-            '</div>';
-        } else {
-          commsHtml =
-            '<div class="edit-section" style="margin-top:10px;">'+
-            '<div class="edit-section-title">🏘 COMUNIDADES</div>'+
-            '<div style="font-size:11px;color:var(--text-muted);padding:8px 0;">Nenhuma comunidade ainda.</div>'+
-            '</div>';
-        }
-      }catch(e){ console.warn('profile communities error:', e.message); }
-
       aboutPanel.innerHTML=
-        '<div style="max-width:500px;">'+
+        '<div style="max-width:500px;" data-profile-uid="'+userId+'">'+
         '<div class="edit-section">'+
           '<div class="edit-section-title">👤 SOBRE</div>'+
           '<p style="font-size:12px;color:var(--text-light);line-height:1.7;margin-bottom:8px;">'+xss(profile.bio||'Sem bio ainda')+'</p>'+
@@ -6580,10 +6522,11 @@ async function loadProfilePage(userId){
             (profile.twitter?'<a href="'+xss(profile.twitter)+'" target="_blank" rel="noopener" style="display:block;color:var(--neon-cyan);font-size:11px;margin-bottom:5px;text-decoration:none;">🐦 Twitter/X</a>':'')+
             (profile.github?'<a href="'+xss(profile.github)+'" target="_blank" rel="noopener" style="display:block;color:var(--text-light);font-size:11px;text-decoration:none;">💻 GitHub</a>':'')+
           '</div>':'')+
-        commsHtml+
+        '<div id="about-communities-section"><div class="edit-section" style="margin-top:10px;"><div class="edit-section-title">🏘 COMUNIDADES</div><div style="font-size:11px;color:var(--text-muted);padding:8px 0;">⏳ Carregando comunidades...</div></div></div>'+
         '<div id="about-businesses-section"></div>'+
         '</div>';
-      // Carregar lojas de forma assíncrona (mantido)
+      // Carregar comunidades e lojas de forma assíncrona
+      loadAboutCommunities(userId);
       loadAboutBusinesses(userId);
     }
 
@@ -11220,7 +11163,89 @@ async function showFollowersList(userId, tipo){
 // ================================================================
 // loadAboutExtras mantido para chamadas em outras partes do código
 async function loadAboutExtras(userId){
+  loadAboutCommunities(userId);
   loadAboutBusinesses(userId);
+}
+
+async function loadAboutCommunities(userId){
+  await new Promise(r=>setTimeout(r,80));
+  const commEl = document.getElementById('about-communities-section');
+  if(!commEl) return;
+
+  try{
+    let comms = [];
+
+    // Tentativa 1: join com !inner
+    const{data:cmRaw, error:cmErr} = await db.from('community_members')
+      .select('community_id, communities!inner(id,name,description,icon,avatar_url,members_count,slug)')
+      .eq('user_id', userId).limit(30);
+    if(!cmErr && cmRaw?.length){
+      comms = cmRaw.map(r=>r.communities).filter(Boolean);
+    }
+
+    // Tentativa 2: join sem !inner
+    if(!comms.length){
+      const{data:r2} = await db.from('community_members')
+        .select('community_id, communities(id,name,description,icon,avatar_url,members_count,slug)')
+        .eq('user_id', userId).limit(30);
+      if(r2?.length) comms = r2.map(r=>r.communities).filter(Boolean);
+    }
+
+    // Tentativa 3: dois passos separados
+    if(!comms.length){
+      const{data:step1} = await db.from('community_members')
+        .select('community_id').eq('user_id', userId).limit(30);
+      if(step1?.length){
+        const ids = step1.map(r=>r.community_id).filter(Boolean);
+        if(ids.length){
+          const{data:step2} = await db.from('communities')
+            .select('id,name,description,icon,avatar_url,members_count,slug').in('id',ids);
+          comms = step2||[];
+        }
+      }
+    }
+
+    if(comms.length){
+      commEl.innerHTML =
+        '<div class="edit-section" style="margin-top:10px;">'+
+        '<div class="edit-section-title">🏘 COMUNIDADES ('+comms.length+')</div>'+
+        comms.map(function(cm){
+          const roleData = {};
+          const icon = cm.icon
+            ? '<div style="font-size:26px;width:42px;height:42px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:rgba(0,255,204,.07);border-radius:10px;border:1px solid rgba(0,255,204,.15);">'+cm.icon+'</div>'
+            : (cm.avatar_url
+              ? '<div style="width:42px;height:42px;border-radius:10px;overflow:hidden;flex-shrink:0;border:1px solid rgba(0,255,204,.2);"><img src="'+xss(cm.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML=\'<span style=\\\"font-size:22px;\\\">🏘</span>\'"></div>'
+              : '<div style="font-size:22px;width:42px;height:42px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:rgba(0,255,204,.07);border-radius:10px;border:1px solid rgba(0,255,204,.15);">🏘</div>');
+          return '<div style="display:flex;align-items:center;gap:10px;padding:10px;margin-bottom:6px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:10px;cursor:pointer;transition:all .2s;" '+
+            'onclick="openCommDetail(\''+xss(cm.id)+'\')" '+
+            'onmouseenter="this.style.background=\'rgba(0,255,204,.06)\';this.style.borderColor=\'rgba(0,255,204,.2)\'" '+
+            'onmouseleave="this.style.background=\'rgba(255,255,255,.03)\';this.style.borderColor=\'rgba(255,255,255,.07)\'">'+
+            icon+
+            '<div style="flex:1;min-width:0;">'+
+              '<div style="font-size:12px;font-weight:600;color:var(--neon-cyan);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+xss(cm.name||'')+'</div>'+
+              (cm.description?'<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px;">'+xss(cm.description.slice(0,65))+'</div>':'')+
+              '<div style="font-size:9px;color:var(--text-muted);margin-top:3px;">👥 '+(cm.members_count||0)+' membros</div>'+
+            '</div>'+
+            '<div style="font-size:12px;color:var(--text-muted);flex-shrink:0;">›</div>'+
+          '</div>';
+        }).join('')+
+        '</div>';
+    } else {
+      commEl.innerHTML =
+        '<div class="edit-section" style="margin-top:10px;">'+
+        '<div class="edit-section-title">🏘 COMUNIDADES</div>'+
+        '<div style="font-size:11px;color:var(--text-muted);padding:8px 0;">Nenhuma comunidade ainda.</div>'+
+        '</div>';
+    }
+  }catch(e){
+    console.warn('loadAboutCommunities error:', e.message);
+    const commEl2 = document.getElementById('about-communities-section');
+    if(commEl2) commEl2.innerHTML =
+      '<div class="edit-section" style="margin-top:10px;">'+
+      '<div class="edit-section-title">🏘 COMUNIDADES</div>'+
+      '<div style="font-size:11px;color:var(--text-muted);padding:8px 0;">Nenhuma comunidade ainda.</div>'+
+      '</div>';
+  }
 }
 
 async function loadAboutBusinesses(userId){
