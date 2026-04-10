@@ -6510,13 +6510,18 @@ async function loadProfilePage(userId){
           .select('community_id')
           .eq('user_id', userId)
           .limit(30);
-        if(!cmErr && cmIds?.length){
-          const ids = cmIds.map(r=>r.community_id).filter(Boolean);
+        console.log('[COMM DEBUG] userId:', userId, 'cmIds:', cmIds, 'cmErr:', cmErr);
+        // Usar cmIds mesmo se houver erro leve (dados podem vir mesmo com aviso)
+        const _cmList = cmIds || [];
+        if(_cmList.length){
+          const ids = _cmList.map(r=>r.community_id).filter(Boolean);
+          console.log('[COMM DEBUG] ids encontrados:', ids);
           if(ids.length){
             // Passo 2: buscar dados das comunidades
-            const{data:cd} = await db.from('communities')
+            const{data:cd, error:cdErr} = await db.from('communities')
               .select('id,name,description,icon,avatar_url,members_count')
               .in('id', ids);
+            console.log('[COMM DEBUG] communities data:', cd, 'err:', cdErr);
             comms = cd||[];
           }
         }
