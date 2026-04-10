@@ -11193,7 +11193,8 @@ async function loadAboutCommunities(userId){
   if(!commEl) return;
 
   const renderComms = (comms) => {
-    if(!comms || !comms.length){
+    comms = (comms||[]).filter(Boolean);
+    if(!comms.length){
       commEl.innerHTML =
         '<div class="edit-section" style="margin-top:10px;">'+
         '<div class="edit-section-title">🏘 COMUNIDADES</div>'+
@@ -11205,45 +11206,54 @@ async function loadAboutCommunities(userId){
       '<div class="edit-section" style="margin-top:10px;">'+
       '<div class="edit-section-title">🏘 COMUNIDADES ('+comms.length+')</div>'+
       comms.map(function(cm){
-        const icon = cm.icon
-          ? '<div style="font-size:24px;width:42px;height:42px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:rgba(0,255,204,.07);border-radius:10px;border:1px solid rgba(0,255,204,.15);">'+xss(cm.icon)+'</div>'
-          : (cm.avatar_url
-            ? '<div style="width:42px;height:42px;border-radius:10px;overflow:hidden;flex-shrink:0;border:1px solid rgba(0,255,204,.2);"><img src="'+xss(cm.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;"></div>'
-            : '<div style="font-size:24px;width:42px;height:42px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:rgba(0,255,204,.07);border-radius:10px;border:1px solid rgba(0,255,204,.15);">🏘</div>');
-        return '<div style="display:flex;align-items:center;gap:10px;padding:10px;margin-bottom:6px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:10px;cursor:pointer;" '+
-          'onclick="openCommDetail(\'' + xss(cm.id) + '\')" '+
-          'onmouseenter="this.style.background=\'rgba(0,255,204,.06)\';this.style.borderColor=\'rgba(0,255,204,.2)\'" '+
-          'onmouseleave="this.style.background=\'rgba(255,255,255,.03)\';this.style.borderColor=\'rgba(255,255,255,.07)\'">'+ 
-          icon+
+        const av = cm.avatar_url||cm.icon||'';
+        const iconHtml = av
+          ? '<img src="'+xss(av)+'" style="width:42px;height:42px;border-radius:10px;object-fit:cover;flex-shrink:0;border:1px solid rgba(0,255,204,.2);">'
+          : '<div style="font-size:22px;width:42px;height:42px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:rgba(0,255,204,.07);border-radius:10px;">🏘</div>';
+        return '<div style="display:flex;align-items:center;gap:10px;padding:10px;margin-bottom:6px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:10px;cursor:pointer;" onclick="openCommDetail(\''+xss(cm.id)+'\')">'+
+          iconHtml+
           '<div style="flex:1;min-width:0;">'+
             '<div style="font-size:12px;font-weight:600;color:var(--neon-cyan);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+xss(cm.name||'')+'</div>'+
-            (cm.description?'<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px;">'+xss(cm.description.slice(0,65))+'</div>':'')+
-            '<div style="font-size:9px;color:var(--text-muted);margin-top:3px;">👥 '+(cm.members_count||0)+' membros</div>'+
+            (cm.description?'<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+xss(cm.description.slice(0,65))+'</div>':'')+
+            '<div style="font-size:9px;color:var(--text-muted);margin-top:2px;">👥 '+(cm.members_count||0)+' membros</div>'+
           '</div>'+
-          '<div style="font-size:12px;color:var(--text-muted);flex-shrink:0;">›</div>'+
+          '<div style="font-size:12px;color:var(--text-muted);">›</div>'+
         '</div>';
       }).join('')+
       '</div>';
   };
 
   try{
-    const{data:memRows,error:memErr} = await db
+    // Passo 1 — buscar IDs via community_members (RLS: USING true = leitura pública)
+    const{data:memRows, error:memErr} = await db
       .from('community_members')
       .select('community_id')
       .eq('user_id', userId)
       .limit(50);
 
-    if(memErr || !memRows?.length){ renderComms([]); return; }
+    const ids = (memRows||[]).map(r=>r.community_id).filter(Boolean);
 
-    const ids = [...new Set(memRows.map(r=>r.community_id).filter(Boolean))];
     if(!ids.length){ renderComms([]); return; }
 
-    const{data:comms} = await db
+    // Passo 2 — tentar buscar dados das comunidades
+    let comms = [];
+    const{data:fromDb} = await db
       .from('communities')
       .select('id,name,description,icon,avatar_url,members_count')
       .in('id', ids);
+    comms = fromDb || [];
 
-    renderComms(comms || []);
+    // Passo 3 — fallback: usar _commCache (dados já em memória no app)
+    if(!comms.length && typeof _commCache !== 'undefined'){
+      comms = ids.map(id=>_commCache[id]).filter(Boolean);
+    }
+
+    // Passo 4 — fallback final: montar objetos mínimos só com o id
+    if(!comms.length){
+      comms = ids.map(id=>({id, name:'Comunidade', description:'', avatar_url:'', members_count:0}));
+    }
+
+    renderComms(comms);
   }catch(e){
     console.warn('loadAboutCommunities:', e.message);
     renderComms([]);
