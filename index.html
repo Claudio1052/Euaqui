@@ -8661,12 +8661,33 @@ async function diagCommunities(){
 }
 
 function showRLSFixCard(errors){
-  const sql=`-- Execute TODO no Supabase SQL Editor (clique para copiar):
-DO $$ DECLARE pol RECORD; BEGIN FOR pol IN SELECT policyname FROM pg_policies WHERE tablename = 'communities' LOOP EXECUTE 'DROP POLICY IF EXISTS "' || pol.policyname || '" ON communities'; END LOOP; END $$;
-DO $$ DECLARE pol RECORD; BEGIN FOR pol IN SELECT policyname FROM pg_policies WHERE tablename = 'community_members' LOOP EXECUTE 'DROP POLICY IF EXISTS "' || pol.policyname || '" ON community_members'; END LOOP; END $$;
-CREATE POLICY "read_public_or_own_or_member" ON communities FOR SELECT USING (visibility = 'public' OR owner_id = auth.uid() OR id IN (SELECT community_id FROM community_members WHERE user_id = auth.uid()));
-CREATE POLICY "insert_auth" ON communities FOR INSERT WITH CHECK (auth.uid() IS NOT NULL AND owner_id = auth.uid());
-CREATE POLICY "modify_own" ON communities FOR ALL USING (owner_id = auth.uid());
+  const sql=`-- ⚠️ Execute TODO de uma vez no Supabase SQL Editor:
+
+-- 1. Remover políticas antigas de communities (todos os nomes possíveis)
+DROP POLICY IF EXISTS "read_public_or_own" ON communities;
+DROP POLICY IF EXISTS "read_public_or_own_or_member" ON communities;
+DROP POLICY IF EXISTS "comm_sel" ON communities;
+DROP POLICY IF EXISTS "insert_auth" ON communities;
+DROP POLICY IF EXISTS "modify_own" ON communities;
+
+-- 2. Remover políticas antigas de community_members
+DROP POLICY IF EXISTS "members_read" ON community_members;
+DROP POLICY IF EXISTS "members_insert" ON community_members;
+DROP POLICY IF EXISTS "members_delete" ON community_members;
+
+-- 3. Criar políticas corretas para communities
+CREATE POLICY "read_public_or_own_or_member" ON communities
+  FOR SELECT USING (
+    visibility = 'public'
+    OR owner_id = auth.uid()
+    OR id IN (SELECT community_id FROM community_members WHERE user_id = auth.uid())
+  );
+CREATE POLICY "insert_auth" ON communities
+  FOR INSERT WITH CHECK (auth.uid() IS NOT NULL AND owner_id = auth.uid());
+CREATE POLICY "modify_own" ON communities
+  FOR ALL USING (owner_id = auth.uid());
+
+-- 4. Criar políticas corretas para community_members
 CREATE POLICY "members_read" ON community_members FOR SELECT USING (true);
 CREATE POLICY "members_insert" ON community_members FOR INSERT WITH CHECK (user_id = auth.uid());
 CREATE POLICY "members_delete" ON community_members FOR DELETE USING (user_id = auth.uid());`;
