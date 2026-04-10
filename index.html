@@ -6501,24 +6501,22 @@ async function loadProfilePage(userId){
 
     // 5. About tab — buscar comunidades junto com o restante
     if(aboutPanel){
-      // Buscar comunidades do usuário
+      // Buscar comunidades do usuário (2 passos para evitar problemas de RLS no join)
       let commsHtml = '';
       try{
         let comms = [];
-        try{
-          const{data:cmData, error:cmErr} = await db.from('community_members')
-            .select('community_id, communities(id,name,description,icon,members_count)')
-            .eq('user_id', userId).limit(20);
-          if(!cmErr && cmData?.length){
-            comms = cmData.map(r=>r.communities).filter(Boolean);
-          }
-        }catch(e){}
-        // Fallback: buscar ids e depois comunidades
-        if(!comms.length){
-          const{data:cmIds} = await db.from('community_members').select('community_id').eq('user_id',userId).limit(20);
-          if(cmIds?.length){
-            const ids = cmIds.map(r=>r.community_id);
-            const{data:cd} = await db.from('communities').select('id,name,description,icon,members_count').in('id',ids);
+        // Passo 1: buscar IDs das comunidades que o usuário é membro
+        const{data:cmIds, error:cmErr} = await db.from('community_members')
+          .select('community_id')
+          .eq('user_id', userId)
+          .limit(30);
+        if(!cmErr && cmIds?.length){
+          const ids = cmIds.map(r=>r.community_id).filter(Boolean);
+          if(ids.length){
+            // Passo 2: buscar dados das comunidades
+            const{data:cd} = await db.from('communities')
+              .select('id,name,description,icon,avatar_url,members_count')
+              .in('id', ids);
             comms = cd||[];
           }
         }
@@ -6526,16 +6524,21 @@ async function loadProfilePage(userId){
           commsHtml =
             '<div class="edit-section" style="margin-top:10px;">'+
             '<div class="edit-section-title">🏘 COMUNIDADES ('+comms.length+')</div>'+
-            comms.map(cm=>
-              '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer;" onclick="openCommDetail(\'' + xss(cm.id) + '\')">'+
-                '<div style="font-size:26px;width:40px;text-align:center;flex-shrink:0;">'+(cm.icon||'🏘')+'</div>'+
+            comms.map(function(cm){
+              const icon = cm.icon
+                ? '<div style="font-size:26px;width:40px;text-align:center;flex-shrink:0;">'+cm.icon+'</div>'
+                : (cm.avatar_url
+                  ? '<div style="width:40px;height:40px;border-radius:10px;overflow:hidden;flex-shrink:0;"><img src="'+xss(cm.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.textContent=&quot;🏘&quot;"></div>'
+                  : '<div style="font-size:26px;width:40px;text-align:center;flex-shrink:0;">🏘</div>');
+              return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer;" onclick="openCommDetail(\u0027'+xss(cm.id)+'\u0027)">'+
+                icon+
                 '<div style="flex:1;min-width:0;">'+
                   '<div style="font-size:12px;font-weight:600;color:var(--neon-cyan);">'+xss(cm.name||'')+'</div>'+
                   (cm.description?'<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+xss(cm.description.slice(0,60))+'</div>':'')+
                   '<div style="font-size:9px;color:var(--text-muted);margin-top:2px;">👥 '+(cm.members_count||0)+' membros</div>'+
                 '</div>'+
-              '</div>'
-            ).join('')+
+              '</div>';
+            }).join('')+
             '</div>';
         } else {
           commsHtml =
@@ -6544,7 +6547,7 @@ async function loadProfilePage(userId){
             '<div style="font-size:11px;color:var(--text-muted);padding:8px 0;">Nenhuma comunidade ainda.</div>'+
             '</div>';
         }
-      }catch(e){}
+      }catch(e){ console.warn('profile communities error:', e.message); }
 
       aboutPanel.innerHTML=
         '<div style="max-width:500px;">'+
