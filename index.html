@@ -4580,7 +4580,7 @@ async function updateCommentCounts(postIds){
   }catch(e){ console.log('updateCommentCounts:',e.message); }
 }
 
-function renderPost(post,rxCounts={},myRx=''){
+function renderPost(post,rxCounts={},myRx='',_origPostMap){
   if(!post) return '';
   try{
   const prof=post.profiles||{};
@@ -4704,33 +4704,54 @@ function renderPost(post,rxCounts={},myRx=''){
   // FIX 2: O conteúdo carregado assíncronamente agora funciona corretamente via _hydrateRepostCard
   let repostCardHtml = '';
   if(repostMeta){
-    repostCardHtml = `
-      <div class="repost-embed-card" style="
-        background:rgba(255,255,255,.04);
-        border:1px solid rgba(0,255,204,.2);
-        border-left:3px solid var(--neon-cyan);
-        border-radius:12px;
-        padding:12px 12px 12px 14px;
-        margin:8px 0 10px;
-        cursor:pointer;
-        position:relative;
-        overflow:hidden;
-      " onclick="void(0)">
-        <div id="repost-orig-${post.id}" data-repost-id="${post.id}" data-orig-post-id="${repostMeta.originalPostId}" data-orig-author-id="${repostMeta.originalAuthorId}" data-orig-author-name="${repostMeta.originalAuthorName}">
+    // Tentar usar dados já disponíveis no _origPostMap
+    const _op = (_origPostMap||{})[repostMeta.originalPostId];
+    if(_op){
+      // Dados disponíveis: renderizar diretamente sem hidratação assíncrona
+      const _prof = _op.profiles||{};
+      const _av   = _prof.avatar_url||('https://api.dicebear.com/7.x/pixel-art/svg?seed='+(_prof.username||'u'));
+      const _name = xss(_prof.full_name||_prof.username||repostMeta.originalAuthorName||'Usuário');
+      const _user = xss(_prof.username||repostMeta.originalAuthorName||'');
+      const _uid  = xss(_op.user_id||repostMeta.originalAuthorId||'');
+      const _isEmoji = _av && _av.length<=4 && !_av.startsWith('http');
+      const _avHtml = _isEmoji
+        ? `<span style="font-size:16px;">${_av}</span>`
+        : `<img src="${xss(_av)}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;display:block;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${_user}'">`;
+      let _clean = (_op.content||'')
+        .replace(/^\[COMM_POST:[^\]]*\]\n?/,'')
+        .replace(/^\[BIZ_PROMO:[^\]]*\]\n?/,'')
+        .replace(/^\[REPOST:[^\]]*\]\n?/,'')
+        .trim();
+      const _mUrls = Array.isArray(_op.media_urls)?_op.media_urls.filter(Boolean):[];
+      const _mHtml = _mUrls.length
+        ? `<div style="margin-top:8px;border-radius:8px;overflow:hidden;"><img src="${xss(_mUrls[0])}" style="width:100%;max-height:220px;object-fit:cover;display:block;border-radius:8px;" loading="lazy" onerror="this.style.display='none'"></div>`
+        : '';
+      const _origPostId = xss(repostMeta.originalPostId);
+      repostCardHtml = `
+        <div class="repost-embed-card" style="background:rgba(255,255,255,.04);border:1px solid rgba(0,255,204,.2);border-left:3px solid var(--neon-cyan);border-radius:12px;padding:12px 12px 12px 14px;margin:8px 0 10px;cursor:pointer;position:relative;overflow:hidden;" onclick="_goToOriginalPost('${_origPostId}')">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
-            <div id="repost-av-${post.id}" style="width:28px;height:28px;border-radius:50%;background:rgba(0,255,204,.15);border:1px solid rgba(0,255,204,.3);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;">
-              <span style="font-size:12px;color:var(--neon-cyan);">⏳</span>
-            </div>
+            <div style="width:28px;height:28px;border-radius:50%;background:rgba(0,255,204,.15);border:1px solid rgba(0,255,204,.3);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="event.stopPropagation();loadProfilePage('${_uid}')">${_avHtml}</div>
             <div>
-              <div id="repost-name-${post.id}" style="font-family:Silkscreen,monospace;font-size:10px;color:var(--text-light);">Carregando...</div>
+              <div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--neon-cyan);cursor:pointer;" onclick="event.stopPropagation();loadProfilePage('${_uid}')">${_name} <span style="color:var(--text-muted);font-size:9px;">@${_user}</span></div>
               <div style="font-size:9px;color:var(--text-muted);">Post original</div>
             </div>
           </div>
-          <div id="repost-content-${post.id}" style="font-size:12px;color:var(--text-muted);line-height:1.5;">⏳ Carregando post original...</div>
-        </div>
-      </div>`;
-    // Hidratar conteúdo original de forma assíncrona
-    // data attributes para hidratação pós-inserção no DOM
+          ${_clean?`<div style="font-size:13px;color:var(--text-light);line-height:1.6;word-break:break-word;margin-bottom:4px;">${linkify(_clean)}</div>`:''}
+          ${_mHtml}
+        </div>`;
+    } else {
+      // Fallback: renderizar placeholder e hidratar depois
+      repostCardHtml = `
+        <div class="repost-embed-card" style="background:rgba(255,255,255,.04);border:1px solid rgba(0,255,204,.2);border-left:3px solid var(--neon-cyan);border-radius:12px;padding:12px 12px 12px 14px;margin:8px 0 10px;cursor:pointer;position:relative;overflow:hidden;" onclick="void(0)">
+          <div id="repost-orig-${post.id}" data-repost-id="${post.id}" data-orig-post-id="${repostMeta.originalPostId}" data-orig-author-id="${repostMeta.originalAuthorId}" data-orig-author-name="${repostMeta.originalAuthorName}">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+              <div id="repost-av-${post.id}" style="width:28px;height:28px;border-radius:50%;background:rgba(0,255,204,.15);border:1px solid rgba(0,255,204,.3);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;"><span style="font-size:12px;color:var(--neon-cyan);">⏳</span></div>
+              <div><div id="repost-name-${post.id}" style="font-family:Silkscreen,monospace;font-size:10px;color:var(--text-light);">Carregando...</div><div style="font-size:9px;color:var(--text-muted);">Post original</div></div>
+            </div>
+            <div id="repost-content-${post.id}" style="font-size:12px;color:var(--text-muted);line-height:1.5;">⏳ Carregando post original...</div>
+          </div>
+        </div>`;
+    }
   }
 
   return`<div class="post-card" id="post-${post.id}">
@@ -6437,7 +6458,7 @@ async function loadProfilePage(userId){
         const rxMap={};(rxRes.data||[]).forEach(r=>{if(!rxMap[r.post_id])rxMap[r.post_id]={};rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1;});
         const myRxMap={};(myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
         postsPanel.innerHTML=posts.map(p=>{
-          try{ return renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||''); }
+          try{ return renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||'',origPostMap); }
           catch(e){ console.warn('renderPost profile error:',e?.message,p?.id); return ''; }
         }).join('') || '<div style="text-align:center;padding:30px;color:var(--text-muted);">Nenhuma postagem ainda</div>';
 
@@ -6453,11 +6474,23 @@ async function loadProfilePage(userId){
           const origAuthorName = parts.slice(2).join(':')||'';
           const op = origPostMap[origId];
 
+          // Verificar se os elementos existem no DOM antes de hidratar
+          const elCheck = document.getElementById('repost-content-'+p.id);
+          if(!elCheck){
+            // Elemento não existe — o post não é repost ou renderPost falhou
+            // Aguardar um tick e tentar novamente
+            setTimeout(()=>{
+              const el2 = document.getElementById('repost-content-'+p.id);
+              if(!el2) return;
+              if(op) _fillRepostCard(p.id, op, origId);
+              else _hydrateRepostCard(p.id, origId, origAuthorId, origAuthorName);
+            }, 100);
+            return;
+          }
+
           if(op){
-            // Dados já disponíveis — preencher direto no DOM
             _fillRepostCard(p.id, op, origId);
           } else {
-            // Fallback: buscar individualmente (pode acontecer por RLS ou race)
             _hydrateRepostCard(p.id, origId, origAuthorId, origAuthorName);
           }
         });
