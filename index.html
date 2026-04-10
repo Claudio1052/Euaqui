@@ -3216,7 +3216,7 @@ body.day-mode::before{
 <nav id="main-nav">
   <!-- Row 1: Logo + main nav + search/avatar -->
   <div class="nav-main-row">
-    <div class="nav-logo" onclick="nav('home')">Eu<span>Aqui</span></div>
+    <div class="nav-logo" onclick="nav('home');cachedPostIds.clear();cachedPosts={};loadFeed(true);">Eu<span>Aqui</span></div>
     <div class="nav-center">
       <button class="nbtn active" id="nb-home" onclick="nav('home')">🏠 Feed</button>
       <button class="nbtn" id="nb-explore" onclick="nav('explore')">🔍 Explorar</button>
@@ -4777,7 +4777,7 @@ function renderPost(post,rxCounts={},myRx='',_origPostMap){
         </div>
       </div>
       <div style="display:flex;gap:4px;margin-left:auto;">
-        ${isOwn?`<button class="abtn danger" onclick="deletePost('${post.id}')" title="Deletar">🗑</button>`:''}
+        ${isOwn?`<button class="abtn danger" onclick="deletePost('${post.id}')" title="Deletar" style="font-size:16px;padding:6px 12px;">🗑</button>`:''}
       </div>
     </div>
     ${repostMeta
@@ -8299,7 +8299,7 @@ function getYouTubeId(url){
 
 function linkify(t){
   const safe = xss(t);
-  // Detect YouTube links and replace with embed player
+  // 1. Detect YouTube links and replace with embed player
   const ytRegex = /https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})[^\s]*/g;
   let result = safe.replace(ytRegex, (match, videoId)=>{
     return `<div class="yt-embed-wrap">
@@ -8312,9 +8312,16 @@ function linkify(t){
         title="YouTube video">
       </iframe>
     </div>
-    <a class="yt-link" href="${match}" target="_blank" rel="noopener">${match}</a>`;
+    <a class="yt-link" href="${match}" target="_blank" rel="noopener noreferrer">${match}</a>`;
   });
-  // Mentions and hashtags
+  // 2. Detect remaining generic URLs (not already inside href or iframe)
+  // Uses a placeholder approach: replace non-YT URLs with clickable links
+  const urlRegex = /(?<![=">])https?:\/\/[^\s<>"]+/g;
+  result = result.replace(urlRegex, (url)=>{
+    // Skip if it's already inside an HTML tag attribute (href, src)
+    return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color:var(--neon-cyan);text-decoration:underline;word-break:break-all;">${url}</a>`;
+  });
+  // 3. Mentions and hashtags
   result = result
     .replace(/@(\w+)/g,'<span class="mention" onclick="searchUser(\'$1\')">@$1</span>')
     .replace(/#(\w+)/g,'<span class="htag" style="cursor:pointer;" onclick="searchHashtag(\'$1\')">#$1</span>');
