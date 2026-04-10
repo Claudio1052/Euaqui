@@ -647,7 +647,7 @@ body{
   #main-layout{grid-template-columns:1fr;padding-bottom:68px;}
   .sl{display:none;}
   .sr{display:none;}
-  .fc{padding:8px 10px 80px;max-width:100%;}
+  .fc{padding:0 0 80px;max-width:100%;}
 
   /* Nav */
   .hamburger{display:flex;}
@@ -662,20 +662,27 @@ body{
   
 
   /* Posts */
-  .post-card{border-radius:8px;padding:12px;margin-bottom:8px;}
-  .ph{gap:8px;margin-bottom:10px;}
-  .pav{width:36px;height:36px;}
-  .pun{font-size:11px;}
-  .pt{font-size:10px;}
-  .pcontent{font-size:13px;line-height:1.6;}
-  .preactions{gap:3px;}
-  .rxbtn{padding:4px 8px;font-size:12px;}
-  .rxcnt{font-size:13px;}
-  .pactions{gap:2px;}
-  .abtn{padding:5px 8px;font-size:10px;}
+  .post-card{border-radius:0;padding:14px 12px;margin-bottom:2px;margin-left:-10px;margin-right:-10px;border-left:none;border-right:none;}
+  .ph{gap:10px;margin-bottom:8px;padding:0;}
+  .pav{width:38px;height:38px;border-width:2px;}
+  .pun{font-size:12px;font-weight:700;}
+  .pt{font-size:11px;}
+  .pcontent{font-size:14px;line-height:1.6;margin-bottom:10px;padding:0 2px;}
+  .mi img{height:auto;min-height:280px;max-height:500px;aspect-ratio:4/5;object-fit:cover;}
+  .media-grid.g1 .mi img{min-height:350px;max-height:560px;aspect-ratio:4/5;}
+  .mi video{max-height:500px;min-height:280px;}
+  .pmedia{border-radius:0;margin-left:-12px;margin-right:-12px;margin-bottom:10px;}
+  .preactions{gap:6px;margin-bottom:8px;padding:0 2px;}
+  .rxbtn{padding:5px 10px;font-size:13px;border-radius:20px;}
+  .rxcnt{font-size:14px;}
+  .pactions{gap:4px;padding:8px 2px 0;}
+  .abtn{padding:6px 10px;font-size:11px;}
+  .comments-sec{padding:10px 2px 0;}
+  .cmt-text{font-size:13px;}
+  .cmt-input{font-size:13px;padding:9px 14px;}
 
   /* Composer */
-  .composer{padding:10px;border-radius:10px;}
+  .composer{border-radius:0;margin-bottom:2px;margin-left:-10px;margin-right:-10px;padding:12px 14px;border-left:none;border-right:none;}
   .ctools{gap:3px;flex-wrap:wrap;}
   .tbtn{padding:5px 7px;font-size:10px;}
   .post-btn{padding:8px 12px;font-size:10px;}
@@ -698,7 +705,7 @@ body{
   .ptab{padding:9px 10px;font-size:9px;flex-shrink:0;}
 
   /* Feed filter tabs */
-  .ftabs{overflow-x:auto;scrollbar-width:none;}
+  .ftabs{border-radius:0;margin-left:-10px;margin-right:-10px;margin-bottom:2px;padding:3px 10px;overflow-x:auto;scrollbar-width:none;}
   .ftab{padding:8px 10px;font-size:10px;flex-shrink:0;}
 
   /* Friend cards */
