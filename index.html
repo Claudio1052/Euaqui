@@ -11189,7 +11189,6 @@ async function loadAboutExtras(userId){
 }
 
 async function loadAboutCommunities(userId){
-  await new Promise(r=>setTimeout(r,80));
   const commEl = document.getElementById('about-communities-section');
   if(!commEl) return;
 
@@ -11209,12 +11208,12 @@ async function loadAboutCommunities(userId){
         const icon = cm.icon
           ? '<div style="font-size:24px;width:42px;height:42px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:rgba(0,255,204,.07);border-radius:10px;border:1px solid rgba(0,255,204,.15);">'+xss(cm.icon)+'</div>'
           : (cm.avatar_url
-            ? '<div style="width:42px;height:42px;border-radius:10px;overflow:hidden;flex-shrink:0;border:1px solid rgba(0,255,204,.2);"><img src="'+xss(cm.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML=\'🏘\'"></div>'
+            ? '<div style="width:42px;height:42px;border-radius:10px;overflow:hidden;flex-shrink:0;border:1px solid rgba(0,255,204,.2);"><img src="'+xss(cm.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;"></div>'
             : '<div style="font-size:24px;width:42px;height:42px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:rgba(0,255,204,.07);border-radius:10px;border:1px solid rgba(0,255,204,.15);">🏘</div>');
-        return '<div style="display:flex;align-items:center;gap:10px;padding:10px;margin-bottom:6px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:10px;cursor:pointer;transition:all .2s;" '+
-          'onclick="openCommDetail(\''+xss(cm.id)+'\')" '+
+        return '<div style="display:flex;align-items:center;gap:10px;padding:10px;margin-bottom:6px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:10px;cursor:pointer;" '+
+          'onclick="openCommDetail(\'' + xss(cm.id) + '\')" '+
           'onmouseenter="this.style.background=\'rgba(0,255,204,.06)\';this.style.borderColor=\'rgba(0,255,204,.2)\'" '+
-          'onmouseleave="this.style.background=\'rgba(255,255,255,.03)\';this.style.borderColor=\'rgba(255,255,255,.07)\'">'+
+          'onmouseleave="this.style.background=\'rgba(255,255,255,.03)\';this.style.borderColor=\'rgba(255,255,255,.07)\'">'+ 
           icon+
           '<div style="flex:1;min-width:0;">'+
             '<div style="font-size:12px;font-weight:600;color:var(--neon-cyan);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+xss(cm.name||'')+'</div>'+
@@ -11227,72 +11226,28 @@ async function loadAboutCommunities(userId){
       '</div>';
   };
 
-  // ── PASSO 1: buscar IDs de membros (sempre funciona se RLS permitir leitura própria) ──
-  let memberIds = [];
   try{
-    const{data:step1, error:e1} = await db.from('community_members')
+    const{data:memRows,error:memErr} = await db
+      .from('community_members')
       .select('community_id')
       .eq('user_id', userId)
       .limit(50);
-    console.log('[COMM] step1 memberIds:', step1, e1);
-    if(!e1 && step1?.length){
-      memberIds = step1.map(r=>r.community_id).filter(Boolean);
-    }
-  }catch(ex){ console.warn('[COMM] step1 exception:', ex.message); }
 
-  if(!memberIds.length){
-    // Sem memberships — pode ser RLS bloqueando ou usuário sem comunidades
+    if(memErr || !memRows?.length){ renderComms([]); return; }
+
+    const ids = [...new Set(memRows.map(r=>r.community_id).filter(Boolean))];
+    if(!ids.length){ renderComms([]); return; }
+
+    const{data:comms} = await db
+      .from('communities')
+      .select('id,name,description,icon,avatar_url,members_count')
+      .in('id', ids);
+
+    renderComms(comms || []);
+  }catch(e){
+    console.warn('loadAboutCommunities:', e.message);
     renderComms([]);
-    return;
   }
-
-  // ── PASSO 2: buscar dados das comunidades pelos IDs ──
-  // A RLS atual permite: visibility='public' OR owner_id=auth.uid()
-  // Então buscamos em dois grupos e unimos
-  let comms = [];
-  try{
-    // Grupo A: comunidades públicas nos IDs do membro
-    const{data:pubComms, error:e2a} = await db.from('communities')
-      .select('id,name,description,icon,avatar_url,members_count,slug')
-      .in('id', memberIds)
-      .eq('visibility','public');
-    console.log('[COMM] pubComms:', pubComms, e2a);
-
-    // Grupo B: comunidades que o usuário é dono (ignora visibility)
-    const{data:ownComms, error:e2b} = CU ? await db.from('communities')
-      .select('id,name,description,icon,avatar_url,members_count,slug')
-      .in('id', memberIds)
-      .eq('owner_id', userId) : {data:[]};
-    console.log('[COMM] ownComms:', ownComms, e2b);
-
-    // Unir sem duplicatas
-    const seen = new Set();
-    for(const c of [...(pubComms||[]), ...(ownComms||[])]){
-      if(c && !seen.has(c.id)){ seen.add(c.id); comms.push(c); }
-    }
-    console.log('[COMM] merged comms:', comms);
-  }catch(ex){ console.warn('[COMM] step2 exception:', ex.message); }
-
-  // ── PASSO 3 (fallback): busca individual por id com filtro público ──
-  if(!comms.length && memberIds.length){
-    try{
-      const results = await Promise.all(
-        memberIds.slice(0,15).map(id =>
-          db.from('communities')
-            .select('id,name,description,icon,avatar_url,members_count,slug')
-            .eq('id', id)
-            .eq('visibility','public')
-            .maybeSingle()
-            .then(({data})=>data)
-            .catch(()=>null)
-        )
-      );
-      comms = results.filter(Boolean);
-      console.log('[COMM] step3 individual fetch:', comms);
-    }catch(ex){ console.warn('[COMM] step3 exception:', ex.message); }
-  }
-
-  renderComms(comms);
 }
 
 async function loadAboutBusinesses(userId){
