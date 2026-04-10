@@ -6499,21 +6499,52 @@ async function loadProfilePage(userId){
       }
     }
 
-    // 5. About tab — guestbook is optional (table may not exist)
+    // 5. About tab — buscar comunidades junto com o restante
     if(aboutPanel){
-      let gbHtml = '<div style="color:var(--text-muted);font-size:11px;margin-bottom:8px;">Sem mensagens ainda</div>';
+      // Buscar comunidades do usuário
+      let commsHtml = '';
       try{
-        const{data:gb}=await db.from('guestbook_entries')
-          .select('id,message,created_at,profiles(username)')
-          .eq('profile_id',userId).order('created_at',{ascending:false}).limit(5);
-        if((gb||[]).length){
-          gbHtml=(gb||[]).map(g=>
-            '<div style="background:rgba(255,204,0,.05);border-left:3px solid var(--neon-yellow);padding:8px 12px;margin-bottom:8px;border-radius:0 7px 7px 0;">'+
-            '<div style="font-family:Silkscreen,monospace;font-size:9px;color:var(--neon-yellow);">@'+xss(g.profiles?.username||'user')+' · '+timeAgo(g.created_at)+'</div>'+
-            '<div style="font-size:11px;color:var(--text-light);margin-top:3px;">'+xss(g.message)+'</div></div>'
-          ).join('');
+        let comms = [];
+        try{
+          const{data:cmData, error:cmErr} = await db.from('community_members')
+            .select('community_id, communities(id,name,description,icon,members_count)')
+            .eq('user_id', userId).limit(20);
+          if(!cmErr && cmData?.length){
+            comms = cmData.map(r=>r.communities).filter(Boolean);
+          }
+        }catch(e){}
+        // Fallback: buscar ids e depois comunidades
+        if(!comms.length){
+          const{data:cmIds} = await db.from('community_members').select('community_id').eq('user_id',userId).limit(20);
+          if(cmIds?.length){
+            const ids = cmIds.map(r=>r.community_id);
+            const{data:cd} = await db.from('communities').select('id,name,description,icon,members_count').in('id',ids);
+            comms = cd||[];
+          }
         }
-      }catch(e){ /* guestbook table may not exist yet */ }
+        if(comms.length){
+          commsHtml =
+            '<div class="edit-section" style="margin-top:10px;">'+
+            '<div class="edit-section-title">🏘 COMUNIDADES ('+comms.length+')</div>'+
+            comms.map(cm=>
+              '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer;" onclick="openCommDetail(\'' + xss(cm.id) + '\')">'+
+                '<div style="font-size:26px;width:40px;text-align:center;flex-shrink:0;">'+(cm.icon||'🏘')+'</div>'+
+                '<div style="flex:1;min-width:0;">'+
+                  '<div style="font-size:12px;font-weight:600;color:var(--neon-cyan);">'+xss(cm.name||'')+'</div>'+
+                  (cm.description?'<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+xss(cm.description.slice(0,60))+'</div>':'')+
+                  '<div style="font-size:9px;color:var(--text-muted);margin-top:2px;">👥 '+(cm.members_count||0)+' membros</div>'+
+                '</div>'+
+              '</div>'
+            ).join('')+
+            '</div>';
+        } else {
+          commsHtml =
+            '<div class="edit-section" style="margin-top:10px;">'+
+            '<div class="edit-section-title">🏘 COMUNIDADES</div>'+
+            '<div style="font-size:11px;color:var(--text-muted);padding:8px 0;">Nenhuma comunidade ainda.</div>'+
+            '</div>';
+        }
+      }catch(e){}
 
       aboutPanel.innerHTML=
         '<div style="max-width:500px;">'+
@@ -6530,16 +6561,11 @@ async function loadProfilePage(userId){
             (profile.twitter?'<a href="'+xss(profile.twitter)+'" target="_blank" rel="noopener" style="display:block;color:var(--neon-cyan);font-size:11px;margin-bottom:5px;text-decoration:none;">🐦 Twitter/X</a>':'')+
             (profile.github?'<a href="'+xss(profile.github)+'" target="_blank" rel="noopener" style="display:block;color:var(--text-light);font-size:11px;text-decoration:none;">💻 GitHub</a>':'')+
           '</div>':'')+
-        '<div class="edit-section" style="margin-top:10px;">'+
-          '<div class="edit-section-title">📖 GUESTBOOK</div>'+
-          gbHtml+
-          (!isOwn?'<div style="display:flex;gap:7px;margin-top:8px;"><input class="cmt-input" type="text" id="gb-in" placeholder="Deixe uma mensagem..."><button class="cmt-sub" data-uid="'+userId+'" onclick="submitGb(this.dataset.uid)">➤</button></div>':'')+
-        '</div>'+
-        '<div id="about-communities-section"><div style="margin:10px 0;color:var(--text-muted);font-size:11px;font-family:Space Mono,monospace;">⏳ Carregando...</div></div>'+
+        commsHtml+
         '<div id="about-businesses-section"></div>'+
         '</div>';
-      // Carregar comunidades e lojas de forma assíncrona
-      loadAboutExtras(userId);
+      // Carregar lojas de forma assíncrona (mantido)
+      loadAboutBusinesses(userId);
     }
 
     // Update CP if own profile
@@ -11173,64 +11199,14 @@ async function showFollowersList(userId, tipo){
 // ================================================================
 // PERFIL — SOBRE: Comunidades e Lojas que segue
 // ================================================================
+// loadAboutExtras mantido para chamadas em outras partes do código
 async function loadAboutExtras(userId){
-  // Aguardar DOM renderizar
+  loadAboutBusinesses(userId);
+}
+
+async function loadAboutBusinesses(userId){
   await new Promise(r=>setTimeout(r,100));
-
-  const commEl = document.getElementById('about-communities-section');
-  const bizEl  = document.getElementById('about-businesses-section');
-
-  // Tentar buscar comunidades
-  if(commEl){
-    try{
-      // Tentar community_members com join
-      let comms = [];
-      try{
-        const{data,error} = await db.from('community_members')
-          .select('community_id, communities(id,name,description,icon,member_count)')
-          .eq('user_id', userId).limit(20);
-        if(!error && data?.length){
-          comms = data.map(r=>r.communities).filter(Boolean);
-        }
-      }catch(e){}
-
-      // Fallback: só ids
-      if(!comms.length){
-        try{
-          const{data} = await db.from('community_members').select('community_id').eq('user_id',userId).limit(20);
-          if(data?.length){
-            const ids = data.map(r=>r.community_id);
-            const{data:cd} = await db.from('communities').select('id,name,description,icon,member_count').in('id',ids);
-            comms = cd||[];
-          }
-        }catch(e){}
-      }
-
-      if(comms.length){
-        commEl.innerHTML = `
-          <div class="edit-section" style="margin-top:10px;">
-            <div class="edit-section-title">🏘 COMUNIDADES (${comms.length})</div>
-            ${comms.map(cm=>`
-              <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06);">
-                <div style="font-size:24px;width:38px;text-align:center;flex-shrink:0;">${cm.icon||'🏘'}</div>
-                <div style="flex:1;min-width:0;">
-                  <div style="font-size:12px;font-weight:600;color:var(--text-light);">${xss(cm.name||'')}</div>
-                  ${cm.description?`<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${xss(cm.description.slice(0,60))}</div>`:''}
-                  <div style="font-size:9px;color:var(--neon-cyan);margin-top:2px;">👥 ${cm.member_count||0} membros</div>
-                </div>
-              </div>`).join('')}
-          </div>`;
-      } else {
-        commEl.innerHTML = `<div class="edit-section" style="margin-top:10px;">
-          <div class="edit-section-title">🏘 COMUNIDADES</div>
-          <div style="font-size:11px;color:var(--text-muted);padding:8px 0;">Nenhuma comunidade seguida ainda.</div>
-        </div>`;
-      }
-    } catch(e){
-      commEl.innerHTML = '';
-      console.warn('communities:', e.message);
-    }
-  }
+  const bizEl = document.getElementById('about-businesses-section');
 
   // Tentar buscar lojas
   if(bizEl){
