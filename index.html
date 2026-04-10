@@ -4775,6 +4775,7 @@ async function _hydrateRepostCard(repostPostId, originalPostId, originalAuthorId
   const elName   = document.getElementById('repost-name-'+repostPostId);
   const elCont   = document.getElementById('repost-content-'+repostPostId);
   if(!elCont) return;
+  if(elOrig && elOrig.dataset.hydrated === '1') return; // already hydrated, skip
 
   try{
     const{data:op} = await db.from('posts')
@@ -4838,6 +4839,7 @@ async function _hydrateRepostCard(repostPostId, originalPostId, originalAuthorId
         _goToOriginalPost(originalPostId);
       };
     }
+    if(elOrig) elOrig.dataset.hydrated = '1';
 
   }catch(e){
     if(elCont) elCont.innerHTML='<span style="color:var(--text-muted);font-size:11px;font-style:italic;">Não foi possível carregar o post original.</span>';
@@ -6387,6 +6389,7 @@ async function loadProfilePage(userId){
               if(elAv) elAv.innerHTML = '';
               if(elName) elName.innerHTML = '';
               elCont.innerHTML = '<span style="color:var(--text-muted);font-size:11px;font-style:italic;">⚠️ Post original não disponível.</span>';
+              if(elOrig) elOrig.dataset.hydrated = '1';
               return;
             }
             const prof = op.profiles||{};
@@ -6415,6 +6418,7 @@ async function loadProfilePage(userId){
               : '';
             elCont.innerHTML=(cleanContent?`<div style="font-size:13px;color:var(--text-light);line-height:1.6;word-break:break-word;margin-bottom:4px;">${linkify(cleanContent)}</div>`:'') + mediaHtml;
             if(elOrig){
+              elOrig.dataset.hydrated = '1';
               const card=elOrig.closest('.repost-embed-card');
               if(card){ card.onclick=function(e){e.stopPropagation();_goToOriginalPost(origId);}; }
             }
@@ -7540,6 +7544,7 @@ async function showPostAuthorProfile(userId, triggerEl){
 function _hydrateAllReposts(container){
   const nodes = (container||document).querySelectorAll('[data-repost-id]');
   nodes.forEach(el=>{
+    if(el.dataset.hydrated === '1') return; // already populated by manual pre-fetch
     const rid  = el.dataset.repostId;
     const opid = el.dataset.origPostId;
     const oaid = el.dataset.origAuthorId;
