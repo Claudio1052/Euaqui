@@ -4775,7 +4775,7 @@ async function _hydrateRepostCard(repostPostId, originalPostId, originalAuthorId
   const elName   = document.getElementById('repost-name-'+repostPostId);
   const elCont   = document.getElementById('repost-content-'+repostPostId);
   if(!elCont) return;
-  if(elOrig && elOrig.dataset.hydrated) return; // already hydrated, skip
+  if(elOrig && elOrig.dataset.hydrated === '1') return; // already hydrated, skip
 
   try{
     const{data:op} = await db.from('posts')
@@ -7544,7 +7544,7 @@ async function showPostAuthorProfile(userId, triggerEl){
 function _hydrateAllReposts(container){
   const nodes = (container||document).querySelectorAll('[data-repost-id]');
   nodes.forEach(el=>{
-    if(el.dataset.hydrated) return; // already populated by manual pre-fetch
+    if(el.dataset.hydrated === '1') return; // already populated by manual pre-fetch
     const rid  = el.dataset.repostId;
     const opid = el.dataset.origPostId;
     const oaid = el.dataset.origAuthorId;
