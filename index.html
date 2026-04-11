@@ -507,6 +507,16 @@ body.day-mode .repost-embed-card:hover{
 .ni-act-btn{padding:4px 10px;border-radius:5px;font-size:9px;cursor:pointer;font-family:'Space Mono',monospace;border:none;transition:all .2s;}
 .ni-act-acc{background:rgba(0,255,204,.15);color:var(--neon-cyan);border:1px solid var(--border-glow);}
 .ni-act-rej{background:rgba(255,51,102,.1);color:var(--neon-pink);border:1px solid rgba(255,51,102,.2);}
+/* ── Botão de dispensar notificação individualmente ── */
+.ni-dismiss{position:absolute;top:7px;right:8px;background:none;border:none;color:var(--text-muted);font-size:13px;cursor:pointer;padding:2px 5px;border-radius:4px;line-height:1;transition:color .2s,background .2s;opacity:.55;}
+.ni-dismiss:hover{color:var(--neon-pink);background:rgba(255,51,102,.12);opacity:1;}
+/* Garante posicionamento relativo no cartão */
+.ni{position:relative;}
+/* Corpo clicável da notificação */
+.ni-clickable-body{cursor:pointer;flex:1;min-width:0;padding-right:18px;}
+.ni-clickable-body:hover .ni-txt{color:var(--neon-cyan);}
+body.day-mode .ni-dismiss{color:#6b7280;}
+body.day-mode .ni-dismiss:hover{color:#e11d48;background:rgba(225,29,72,.08);}
 
 /* ===== RESPONSIVO GLOBAL ===== */
 
@@ -5062,6 +5072,18 @@ async function react(postId,reaction,btn){
       const card=btn.closest('.post-card');
       const commId=card?.dataset?.commid||card?.closest('[data-commid]')?.dataset?.commid;
       if(commId&&commId!=='undefined') addCommXP(commId,CU.id,'like',2);
+      // Notificar o autor do post (com post_id para roteamento)
+      try{
+        const{data:postOwner}=await db.from('posts').select('user_id').eq('id',postId).maybeSingle();
+        if(postOwner && postOwner.user_id!==CU.id){
+          await db.from('notifications').insert({
+            user_id:postOwner.user_id, actor_id:CU.id,
+            type:'like',
+            content:`@${CP?.username||'alguém'} reagiu à sua postagem`,
+            post_id:postId, read:false
+          });
+        }
+      }catch(e_notif){}
     }
   }catch(e){console.warn('react error:',e);}
 }
@@ -5301,6 +5323,7 @@ async function submitCmt(postId, btnEl){
           actor_id: CU.id,
           type: 'mention',
           content: `@${CP?.username||'alguém'} mencionou você em um comentário`,
+          post_id: postId,
           read: false
         });
       }catch(e){}
@@ -5309,6 +5332,20 @@ async function submitCmt(postId, btnEl){
   inp._mentions = {};
 
   inp.value='';
+  // Notificar o autor do post sobre o novo comentário (se não for o próprio usuário)
+  try{
+    const{data:postOwner}=await db.from('posts').select('user_id').eq('id',postId).maybeSingle();
+    if(postOwner && postOwner.user_id !== CU.id){
+      await db.from('notifications').insert({
+        user_id: postOwner.user_id,
+        actor_id: CU.id,
+        type: 'comment',
+        content: `@${CP?.username||'alguém'} comentou na sua postagem`,
+        post_id: postId,
+        read: false
+      });
+    }
+  }catch(e){}
   // Update counter visually on all elements showing this post
   document.querySelectorAll('[id="cmtcnt-'+postId+'"]').forEach(el=>{
     const n=(parseInt(el.textContent)||0)+1;
@@ -7537,25 +7574,52 @@ async function loadHomeAlerts(){
   if(!el||!CU) return;
   el.innerHTML=skeletons(3);
   const{data}=await db.from('notifications')
-    .select('id,type,content,read,created_at')
+    .select('id,type,content,read,created_at,post_id,actor_id')
     .eq('user_id',CU.id).eq('read',false)
-    .gte('created_at', new Date(Date.now()-24*60*60*1000).toISOString())
+    .gte('created_at',new Date(Date.now()-24*60*60*1000).toISOString())
     .order('created_at',{ascending:false}).limit(40);
   el.innerHTML='';
   if(!data?.length){
     el.innerHTML='<div class="notif-empty"><div class="notif-empty-icon">🔔</div><div class="notif-empty-txt">Sem alertas</div></div>';
     return;
   }
-  const icons={follow:'👤',like:'❤️',comment:'💬',friend_request:'👥',friend_accept:'🎉',message:'💬',community_invite:'🏘',mention:'@'};
+  const icons={follow:'👤',like:'❤️',comment:'💬',friend_request:'👥',friend_accept:'🎉',message:'💬',community_invite:'🏘️',mention:'@',call_missed:'📞'};
   data.forEach(n=>{
     const div=document.createElement('div');
     div.className='ni'+(n.read?'':' unrd');
-    div.innerHTML='<div class="ni-icon">'+(icons[n.type]||'🔔')+'</div>'
-      +'<div class="ni-body"><div class="ni-txt">'+xss(n.content||'Nova notificação')+'</div>'
-      +'<div class="ni-time">'+timeAgo(n.created_at)+'</div>'
-      +(n.type==='friend_request'&&!n.read?'<div class="ni-actions"><button class="ni-act-btn ni-act-acc">✓ Aceitar</button><button class="ni-act-btn ni-act-rej">✕</button></div>':'')
-      +'</div>';
-    div.onclick=function(){markRead(n.id,this);};
+    div.id='ni-'+n.id;
+    div.dataset.notif=JSON.stringify(n);
+
+    // Ícone
+    const iconEl=document.createElement('div');
+    iconEl.className='ni-icon';
+    iconEl.textContent=icons[n.type]||'🔔';
+
+    // Corpo clicável → navega para o contexto
+    const body=document.createElement('div');
+    body.className='ni-clickable-body';
+    body.innerHTML=
+      '<div class="ni-txt">'+xss(n.content||'Nova notificação')+'</div>'+
+      '<div class="ni-time">'+timeAgo(n.created_at)+'</div>'+
+      (n.type==='friend_request'&&!n.read
+        ?'<div class="ni-actions">'+
+            '<button class="ni-act-btn ni-act-acc">✓ Aceitar</button>'+
+            '<button class="ni-act-btn ni-act-rej">✕</button>'+
+          '</div>'
+        :'');
+    body.onclick=function(){handleNotifNavigation(n);};
+
+    // Botão ✕ de dispensar individualmente
+    const dismiss=document.createElement('button');
+    dismiss.className='ni-dismiss';
+    dismiss.title='Marcar como lida';
+    dismiss.textContent='✕';
+    dismiss.onclick=function(e){e.stopPropagation();markRead(n.id,div);};
+
+    div.appendChild(iconEl);
+    div.appendChild(body);
+    div.appendChild(dismiss);
+
     if(n.type==='friend_request'){
       const acc=div.querySelector('.ni-act-acc');
       const rej=div.querySelector('.ni-act-rej');
@@ -7564,7 +7628,7 @@ async function loadHomeAlerts(){
     }
     el.appendChild(div);
   });
-  // Don't auto-mark as read — user must dismiss individually or use "Marcar todas lidas"
+  // ❌ Sem auto-marcar como lida — apenas atualiza o badge
   loadNotifCount();
 }
 
@@ -8933,42 +8997,140 @@ function showChatSidebar(){
   document.querySelectorAll('.ci').forEach(ci=>ci.classList.remove('active'));
 }
 
+// ===== NOTIFICAÇÃO → ROTEAMENTO DE NAVEGAÇÃO =====
+async function handleNotifNavigation(n){
+  // n = objeto completo da notificação com {id, type, content, post_id, actor_id}
+  const usernameMatch = (n.content||'').match(/@(\w+)/);
+  switch(n.type){
+
+    // ── MENSAGEM DE CHAT ────────────────────────────────────────
+    case 'message':{
+      if(!n.actor_id){ nav('messages'); break; }
+      const{data:sender}=await db.from('profiles').select('id,username,avatar_url').eq('id',n.actor_id).maybeSingle();
+      if(sender){ nav('messages'); await new Promise(r=>setTimeout(r,260)); openChat(sender.id,sender.username,sender.avatar_url); }
+      else nav('messages');
+      break;
+    }
+
+    // ── COMENTÁRIO ou MENÇÃO (@) ────────────────────────────────
+    case 'comment':
+    case 'mention':{
+      if(n.post_id){
+        nav('home');
+        await new Promise(r=>setTimeout(r,420));
+        let el=document.getElementById('post-'+n.post_id);
+        if(el){
+          el.scrollIntoView({behavior:'smooth',block:'center'});
+          el.style.transition='box-shadow .3s';
+          el.style.boxShadow='0 0 0 3px var(--neon-cyan),0 0 24px rgba(0,255,204,.4)';
+          setTimeout(()=>{el.style.boxShadow='';},1800);
+          const cmtSec=document.getElementById('cmts-'+n.post_id);
+          if(!cmtSec||cmtSec.style.display==='none'||!cmtSec.children.length) toggleCmts(n.post_id);
+        } else {
+          await _goToOriginalPost(n.post_id);
+          await new Promise(r=>setTimeout(r,600));
+          el=document.getElementById('post-'+n.post_id);
+          if(el) toggleCmts(n.post_id);
+        }
+      } else nav('home');
+      break;
+    }
+
+    // ── LIKE / REAÇÃO ───────────────────────────────────────────
+    case 'like':{
+      if(n.post_id) await _goToOriginalPost(n.post_id);
+      else nav('home');
+      break;
+    }
+
+    // ── CHAMADA PERDIDA ─────────────────────────────────────────
+    case 'call_missed':{
+      if(!n.actor_id){ nav('messages'); break; }
+      const{data:caller}=await db.from('profiles').select('id,username,avatar_url').eq('id',n.actor_id).maybeSingle();
+      if(caller){ nav('messages'); await new Promise(r=>setTimeout(r,260)); openChat(caller.id,caller.username,caller.avatar_url); }
+      else nav('messages');
+      break;
+    }
+
+    // ── SOLICITAÇÃO / ACEITE DE AMIZADE ────────────────────────
+    case 'friend_request':
+    case 'friend_accept':
+      nav('friends');
+      break;
+
+    // ── SEGUIDOR ────────────────────────────────────────────────
+    case 'follow':{
+      if(n.actor_id){ nav('home'); await new Promise(r=>setTimeout(r,300)); showPostAuthorProfile(n.actor_id,null); }
+      else nav('friends');
+      break;
+    }
+
+    // ── CONVITE DE COMUNIDADE ───────────────────────────────────
+    case 'community_invite':
+      nav('communities');
+      break;
+
+    // ── PADRÃO ──────────────────────────────────────────────────
+    default:
+      nav('notifications');
+  }
+}
+
 async function loadNotifTab(tabId){
   if(!CU) return;
-  const typeMap = {
-    'nt-all': null,
-    'nt-mentions': 'mention',
-    'nt-social': ['follow','like','comment','friend_request','friend_accept','call_missed'],
-    'nt-system': ['message','community_invite']
+  const typeMap={
+    'nt-all':null,
+    'nt-mentions':'mention',
+    'nt-social':['follow','like','comment','friend_request','friend_accept','call_missed'],
+    'nt-system':['message','community_invite']
   };
-  const filter = typeMap[tabId];
-  const listId = tabId.replace('nt-','notif-list-').replace('all','all');
-  const el = document.getElementById('notif-list-' + tabId.replace('nt-',''));
+  const filter=typeMap[tabId];
+  const el=document.getElementById('notif-list-'+tabId.replace('nt-',''));
   if(!el) return;
-  el.innerHTML = skeletons(3);
-  // Busca APENAS notificações não lidas (sem limite de tempo)
-  let q = db.from('notifications').select('id,type,content,read,created_at').eq('user_id',CU.id).eq('read',false).order('created_at',{ascending:false}).limit(50);
-  if(Array.isArray(filter)) q = q.in('type', filter);
-  else if(filter) q = q.eq('type', filter);
-  const{data} = await q;
+  el.innerHTML=skeletons(3);
+
+  // ✅ Busca não lidas — SEM marcar como lida automaticamente
+  let q=db.from('notifications')
+    .select('id,type,content,read,created_at,post_id,actor_id')
+    .eq('user_id',CU.id).eq('read',false)
+    .order('created_at',{ascending:false}).limit(50);
+  if(Array.isArray(filter)) q=q.in('type',filter);
+  else if(filter) q=q.eq('type',filter);
+  const{data}=await q;
+
   if(!data?.length){
-    el.innerHTML=`<div class="notif-empty"><div class="notif-empty-icon">🔔</div><div class="notif-empty-txt">Sem notificações</div></div>`;
+    el.innerHTML=`<div class="notif-empty"><div class="notif-empty-icon">🔔</div><div class="notif-empty-txt">Tudo em dia!</div></div>`;
     return;
   }
-  const icons={'follow':'👤','like':'❤️','comment':'💬','friend_request':'👥','friend_accept':'🎉','message':'💬','community_invite':'🏘','mention':'@','call_missed':'📞'};
-  el.innerHTML = data.map(n=>`
-    <div class="ni ${n.read?'':'unrd'}" onclick="markRead('${n.id}',this)">
+
+  const icons={follow:'👤',like:'❤️',comment:'💬',friend_request:'👥',friend_accept:'🎉',message:'💬',community_invite:'🏘️',mention:'@',call_missed:'📞'};
+
+  el.innerHTML=data.map(n=>{
+    // Serializa o objeto n de forma segura para o atributo onclick
+    const nJson=JSON.stringify(n).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+    return `
+    <div class="ni${n.read?'':' unrd'}" id="ni-${n.id}">
       <div class="ni-icon">${icons[n.type]||'🔔'}</div>
-      <div class="ni-body">
+      <div class="ni-clickable-body" onclick="handleNotifNavigation(JSON.parse(this.closest('.ni').dataset.notif))">
         <div class="ni-txt">${xss(n.content||'Nova notificação')}</div>
         <div class="ni-time">${timeAgo(n.created_at)}</div>
-        ${n.type==='friend_request'?`<div class="ni-actions"><button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();acceptFriendFromNotif(this)">✓ Aceitar</button><button class="ni-act-btn ni-act-rej" onclick="event.stopPropagation();">✕ Recusar</button></div>`:''}
+        ${n.type==='friend_request'?`<div class="ni-actions">
+          <button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();acceptFriendFromNotif(this)">✓ Aceitar</button>
+          <button class="ni-act-btn ni-act-rej" onclick="event.stopPropagation();">✕ Recusar</button>
+        </div>`:''}
       </div>
-    </div>`).join('');
-  // Mark all as read
-  try{ await db.from('notifications').update({read:true}).eq('user_id',CU.id).eq('read',false); }catch(e){}
-  document.getElementById('notif-badge').style.display='none';
-  const _hnb=document.getElementById('header-notif-badge');if(_hnb)_hnb.style.display='none';
+      <button class="ni-dismiss" title="Marcar como lida" onclick="event.stopPropagation();markRead('${n.id}',this)">✕</button>
+    </div>`;
+  }).join('');
+
+  // Injeta dados no data-attribute para o handler de clique
+  data.forEach(n=>{
+    const niEl=document.getElementById('ni-'+n.id);
+    if(niEl) niEl.dataset.notif=JSON.stringify(n);
+  });
+
+  // ❌ REMOVIDO: não marca mais como lida automaticamente ao abrir o painel
+  loadNotifCount();
 }
 
 // ===== CHAT MELHORADO =====
