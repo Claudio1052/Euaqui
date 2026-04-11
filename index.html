@@ -422,12 +422,12 @@ body.day-mode .repost-embed-card:hover{
 .comm-stat-box{background:var(--glass);border:1px solid var(--border-glow);border-radius:8px;padding:10px 16px;text-align:center;flex:1;min-width:80px;}
 .comm-stat-n{font-family:'VT323',monospace;font-size:26px;color:var(--neon-cyan);}
 .comm-stat-l{font-size:9px;color:var(--text-muted);letter-spacing:1px;text-transform:uppercase;}
-.comm-members-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:20px;}
-.cmember{display:flex;align-items:center;gap:8px;background:var(--glass);border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:10px;}
-.cmember-av{width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid rgba(0,255,204,.2);}
-.cmember-name{font-family:'Silkscreen',monospace;font-size:9px;color:var(--text-light);}
+.comm-members-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:20px;box-sizing:border-box;width:100%;}
+.cmember{display:flex;align-items:center;gap:8px;background:var(--glass);border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:10px;min-width:0;box-sizing:border-box;}
+.cmember-av{width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid rgba(0,255,204,.2);flex-shrink:0;}
+.cmember-name{font-family:'Silkscreen',monospace;font-size:9px;color:var(--text-light);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .cmember-role{font-size:9px;color:var(--text-muted);}
-.comm-tab-content{min-height:200px;}
+.comm-tab-content{min-height:200px;width:100%;box-sizing:border-box;overflow:hidden;}
 
 /* ===== CHAT COMPLETO ===== */
 .chat-page-wrap{display:grid;grid-template-columns:280px 1fr;height:calc(100vh - var(--nav-h));overflow:hidden;margin:-16px -20px;}
@@ -721,6 +721,68 @@ body{
   .comm-card .comm-desc{font-size:10px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
   .comm-cover{height:60px;font-size:30px;}
 
+  /* ── COMMUNITY DETAIL — mobile ── */
+  .comm-detail-wrap{padding:0;margin:0 -10px;}
+  .comm-banner{height:110px;border-radius:0;}
+  .comm-header-bar{
+    flex-wrap:wrap;
+    padding:10px 12px;
+    gap:10px;
+    border-radius:0;
+    border-left:none;border-right:none;
+  }
+  .comm-avatar-big{width:52px;height:52px;font-size:26px;flex-shrink:0;}
+  /* coluna de texto da comunidade */
+  .comm-header-bar > div:nth-child(2){flex:1;min-width:0;}
+  /* botões de ação (editar/excluir/convidar): empilha abaixo */
+  .comm-header-bar > div:last-child{
+    width:100%;
+    flex-direction:row;
+    flex-wrap:wrap;
+    gap:6px;
+  }
+  .comm-header-bar > div:last-child button{flex:1;min-width:80px;font-size:9px;padding:6px 8px;}
+  .comm-tabs{margin:0 -12px;padding-left:4px;padding-right:4px;}
+  .comm-tab{padding:8px 10px;font-size:10px;}
+
+  /* Chat da comunidade */
+  .comm-chat-wrap{height:calc(100vh - 52px - 68px - 180px);min-height:260px;border-radius:8px;}
+  .comm-chat-bubble{max-width:82%;font-size:11px;padding:6px 10px;}
+  .comm-chat-input-wrap{padding:8px;gap:6px;}
+  .comm-chat-input-wrap input{font-size:12px;}
+  .comm-chat-input-wrap .tbtn{padding:6px 8px;font-size:12px;}
+  .comm-chat-input-wrap .post-btn{padding:7px 10px;font-size:10px;white-space:nowrap;}
+
+  /* ── LIVE / SPACE — mobile ── */
+  .live-room{border-radius:8px;padding:12px;min-height:280px;margin:0 -10px;}
+  .live-header{gap:6px;}
+  .live-onair{font-size:9px;padding:3px 8px;}
+  .live-title{font-size:11px;}
+  .live-speakers-grid{
+    grid-template-columns:repeat(auto-fill,minmax(72px,1fr));
+    gap:10px;
+    margin-bottom:14px;
+  }
+  .live-speaker-av{width:56px;height:56px;}
+  .live-speaker-name{font-size:9px;max-width:68px;}
+  .live-speaker-mic{width:18px;height:18px;font-size:10px;bottom:20px;}
+  .live-listeners-grid{grid-template-columns:repeat(auto-fill,minmax(40px,1fr));gap:8px;}
+  .live-listener img{width:34px;height:34px;}
+  .live-listener span{font-size:7px;max-width:40px;}
+  .live-controls{padding:10px;gap:6px;margin-top:10px;}
+  .live-ctrl-btn{padding:8px 10px;font-size:10px;border-radius:20px;}
+  .live-react-btn{width:38px;height:38px;font-size:19px;}
+  .live-chat-overlay{max-height:140px;padding:8px;}
+  .live-empty{padding:28px 14px;}
+  .live-empty-big{font-size:38px;}
+
+  /* Community members grid: 1 coluna em telas muito estreitas */
+  .comm-members-grid{grid-template-columns:1fr 1fr;}
+
+  /* Posts da comunidade: textarea e botão de postar */
+  #ct-posts-COMM textarea{font-size:12px;}/* genérico */
+  [id^="comm-post-txt-"]{font-size:12px!important;}
+
   /* Profile */
   .pcov{height:100px!important;}
   .pbav{margin-top:0 !important;}
@@ -969,6 +1031,16 @@ body{
   .vis-opt{padding:5px 2px;font-size:8px;}
   .pbav{margin-top:0 !important;}
   .bnav-btn 
+
+  /* Community tiny screens */
+  .comm-members-grid{grid-template-columns:1fr;}
+  .comm-avatar-big{width:44px;height:44px;font-size:22px;}
+  .comm-tab{padding:7px 8px;font-size:9px;}
+  .comm-chat-bubble{max-width:88%;font-size:11px;}
+  .live-speakers-grid{grid-template-columns:repeat(auto-fill,minmax(60px,1fr));gap:8px;}
+  .live-speaker-av{width:48px;height:48px;}
+  .live-ctrl-btn{padding:7px 8px;font-size:9px;}
+  .live-react-btn{width:32px;height:32px;font-size:16px;}
 }
 
 /* Touch devices — remove hover effects */
@@ -2466,22 +2538,29 @@ body.day-mode .notif-dot{ border-color:#f5f7fa; }
 }
 
 /* ===== COMUNIDADES V2 ===== */
-.comm-detail-wrap{max-width:700px;margin:0 auto;}
+.comm-detail-wrap{max-width:700px;margin:0 auto;width:100%;box-sizing:border-box;}
 .comm-banner{position:relative;height:160px;border-radius:14px 14px 0 0;overflow:hidden;background:linear-gradient(135deg,#0a0a2a,#1a1a3a);}
 .comm-banner img{width:100%;height:100%;object-fit:cover;}
 .comm-banner-overlay{position:absolute;inset:0;background:linear-gradient(to bottom,transparent 40%,rgba(0,0,0,.7));}
 .comm-avatar-big{width:72px;height:72px;border-radius:16px;border:3px solid var(--neon-cyan);object-fit:cover;background:rgba(0,255,204,.1);display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0;}
-.comm-header-bar{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;background:var(--bg-card);border:1px solid var(--border-glow);border-top:none;border-radius:0 0 14px 14px;margin-bottom:14px;}
-.comm-tabs{display:flex;gap:4px;border-bottom:1px solid var(--border-glow);margin-bottom:14px;overflow-x:auto;overflow-y:visible;scrollbar-width:none;padding-top:10px;}
-.comm-tab{background:none;border:none;color:var(--text-muted);font-family:'Space Mono',monospace;font-size:11px;padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s;}
+/* comm-header-bar: empilha em telas muito pequenas */
+.comm-header-bar{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;background:var(--bg-card);border:1px solid var(--border-glow);border-top:none;border-radius:0 0 14px 14px;margin-bottom:14px;box-sizing:border-box;width:100%;flex-wrap:wrap;}
+.comm-header-bar > div:first-of-type{flex:1;min-width:0;}/* coluna de texto cresce e não vaza */
+.comm-header-bar > div:first-of-type > div{word-break:break-word;white-space:normal;overflow-wrap:anywhere;}
+.comm-tabs{display:flex;gap:4px;border-bottom:1px solid var(--border-glow);margin-bottom:14px;overflow-x:auto;overflow-y:visible;scrollbar-width:none;padding-top:10px;-webkit-overflow-scrolling:touch;}
+.comm-tabs::-webkit-scrollbar{display:none;}
+.comm-tab{background:none;border:none;color:var(--text-muted);font-family:'Space Mono',monospace;font-size:11px;padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s;flex-shrink:0;}
 .comm-tab.active{color:var(--neon-cyan);border-bottom-color:var(--neon-cyan);}
-.comm-chat-wrap{display:flex;flex-direction:column;height:420px;border:1px solid var(--border-glow);border-radius:12px;overflow:hidden;}
-.comm-chat-msgs{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;}
-.comm-chat-msg{display:flex;gap:8px;align-items:flex-start;}
+/* chat: altura fluida no mobile */
+.comm-chat-wrap{display:flex;flex-direction:column;height:420px;border:1px solid var(--border-glow);border-radius:12px;overflow:hidden;box-sizing:border-box;width:100%;}
+.comm-chat-msgs{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0;}
+.comm-chat-msg{display:flex;gap:8px;align-items:flex-start;min-width:0;width:100%;}
 .comm-chat-msg.mine{flex-direction:row-reverse;}
-.comm-chat-bubble{background:var(--glass);border:1px solid var(--border-glow);border-radius:12px;padding:7px 12px;font-size:12px;color:var(--text-light);max-width:75%;}
+/* bolha de chat: word-break + max-width fluido */
+.comm-chat-bubble{background:var(--glass);border:1px solid var(--border-glow);border-radius:12px;padding:7px 12px;font-size:12px;color:var(--text-light);max-width:75%;min-width:0;word-break:break-word;white-space:normal;overflow-wrap:anywhere;}
 .comm-chat-msg.mine .comm-chat-bubble{background:rgba(0,255,204,.1);border-color:rgba(0,255,204,.3);}
-.comm-chat-input-wrap{display:flex;gap:8px;padding:10px;border-top:1px solid var(--border-glow);background:var(--bg-deep);}
+.comm-chat-input-wrap{display:flex;gap:8px;padding:10px;border-top:1px solid var(--border-glow);background:var(--bg-deep);box-sizing:border-box;width:100%;flex-wrap:nowrap;}
+.comm-chat-input-wrap input{flex:1;min-width:0;}/* input cresce sem vazar */
 .comm-cooldown{font-size:10px;color:var(--neon-yellow);font-family:'Space Mono',monospace;text-align:center;padding:4px;}
 .comm-xp-bar{height:6px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden;margin-top:4px;}
 .comm-xp-fill{height:100%;background:linear-gradient(90deg,var(--neon-cyan),var(--neon-purple));border-radius:3px;transition:width .5s;}
@@ -2500,6 +2579,8 @@ body.day-mode .notif-dot{ border-color:#f5f7fa; }
   padding:18px;
   overflow:hidden;
   min-height:380px;
+  box-sizing:border-box;
+  width:100%;
 }
 .live-room::before{
   content:'';
@@ -2509,7 +2590,7 @@ body.day-mode .notif-dot{ border-color:#f5f7fa; }
   pointer-events:none;
 }
 .live-header{
-  display:flex;align-items:center;gap:10px;margin-bottom:16px;position:relative;
+  display:flex;align-items:center;gap:10px;margin-bottom:16px;position:relative;flex-wrap:wrap;
 }
 .live-onair{
   display:inline-flex;align-items:center;gap:6px;
@@ -2621,14 +2702,14 @@ body.day-mode .notif-dot{ border-color:#f5f7fa; }
 .live-controls{
   display:flex;gap:8px;padding:12px;margin-top:14px;
   background:rgba(0,0,0,.35);border:1px solid var(--border-glow);border-radius:12px;
-  flex-wrap:wrap;align-items:center;justify-content:center;
+  flex-wrap:wrap;align-items:center;justify-content:center;box-sizing:border-box;width:100%;
 }
 .live-ctrl-btn{
   display:flex;align-items:center;gap:6px;
   background:var(--bg-card);border:1px solid var(--border-glow);
   color:var(--text-light);padding:9px 14px;border-radius:24px;
   cursor:pointer;font-size:11px;font-weight:600;transition:all .2s;
-  font-family:'Space Mono',monospace;
+  font-family:'Space Mono',monospace;white-space:nowrap;flex-shrink:0;
 }
 .live-ctrl-btn:hover{
   border-color:var(--neon-cyan);
@@ -2684,6 +2765,7 @@ body.day-mode .notif-dot{ border-color:#f5f7fa; }
   display:flex;gap:6px;align-items:flex-start;
   font-size:11px;color:var(--text-light);
   animation:fadeInUp .3s ease-out;
+  min-width:0;word-break:break-word;overflow-wrap:anywhere;
 }
 @keyframes fadeInUp{
   from{opacity:0;transform:translateY(8px);}
@@ -6149,20 +6231,20 @@ async function openCommDetail(commId){
       </div>
       <div id="ct-posts-${commId}">
         ${isBanned?`<div style="background:rgba(255,51,102,.1);border:1px solid rgba(255,51,102,.3);border-radius:10px;padding:14px;margin-bottom:14px;text-align:center;font-size:12px;color:var(--neon-pink);">🚫 Banido até ${bannedUntil?.toLocaleDateString('pt-BR')}</div>`:''}
-        ${isOwner?`<div style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:12px;padding:14px;margin-bottom:14px;">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
-            ${isImgAvatar?`<img src="${xss(comm.avatar_url)}" style="width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid var(--neon-cyan)40;">`:`<div style="width:36px;height:36px;border-radius:10px;background:rgba(0,255,204,.1);display:flex;align-items:center;justify-content:center;font-size:18px;">${comm.avatar_url||'🏘'}</div>`}
-            <div>
-              <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);">${xss(comm.name)}</div>
+        ${isOwner?`<div style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:12px;padding:14px;margin-bottom:14px;box-sizing:border-box;width:100%;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;min-width:0;">
+            ${isImgAvatar?`<img src="${xss(comm.avatar_url)}" style="width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid var(--neon-cyan)40;flex-shrink:0;">`:`<div style="width:36px;height:36px;border-radius:10px;background:rgba(0,255,204,.1);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${comm.avatar_url||'🏘'}</div>`}
+            <div style="min-width:0;flex:1;">
+              <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${xss(comm.name)}</div>
               <div style="font-size:9px;color:var(--text-muted);">Postando como comunidade</div>
             </div>
           </div>
-          <textarea class="ainput" id="comm-post-txt-${commId}" rows="3" placeholder="Compartilhe algo com a comunidade..." style="resize:none;margin-bottom:8px;"></textarea>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <textarea class="ainput" id="comm-post-txt-${commId}" rows="3" placeholder="Compartilhe algo com a comunidade..." style="resize:none;margin-bottom:8px;width:100%;box-sizing:border-box;"></textarea>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;width:100%;">
             <button class="tbtn" onclick="document.getElementById('comm-media-${commId}').click()">📷 Foto/Vídeo</button>
             <input type="file" id="comm-media-${commId}" accept="image/*,video/*" multiple style="display:none" onchange="handleCommMedia(this,'${commId}')">
-            <div id="comm-media-prev-${commId}" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
-            <button class="post-btn" style="margin-left:auto;font-size:11px;" onclick="postInCommV2('${commId}')">POSTAR ▶</button>
+            <div id="comm-media-prev-${commId}" style="display:flex;gap:4px;flex-wrap:wrap;min-width:0;flex:1;"></div>
+            <button class="post-btn" style="margin-left:auto;font-size:11px;white-space:nowrap;" onclick="postInCommV2('${commId}')">POSTAR ▶</button>
           </div>
         </div>`:isMember?`<div style="padding:12px;background:rgba(255,255,255,.02);border:1px solid var(--border-glow);border-radius:10px;margin-bottom:14px;text-align:center;font-size:11px;color:var(--text-muted);">Somente o criador da comunidade pode publicar posts.</div>`:''}
         <div id="comm-posts-list-${commId}">${skeletons(2)}</div>
@@ -6179,9 +6261,9 @@ async function openCommDetail(commId){
           </div>`:`<div style="padding:10px;text-align:center;font-size:11px;color:var(--text-muted);">${isBanned?'🚫 Banido':'Entre na comunidade para participar'}</div>`}
         </div>
       </div>
-      <div id="ct-live-${commId}" style="display:none;"><div id="comm-live-content-${commId}">${skeletons(2)}</div></div>
-      <div id="ct-members-${commId}" style="display:none;"><div id="comm-members-list-${commId}">${skeletons(3)}</div></div>
-      <div id="ct-xp-${commId}" style="display:none;"><div id="comm-xp-list-${commId}">${skeletons(3)}</div></div>
+      <div id="ct-live-${commId}" style="display:none;overflow:hidden;width:100%;box-sizing:border-box;"><div id="comm-live-content-${commId}">${skeletons(2)}</div></div>
+      <div id="ct-members-${commId}" style="display:none;overflow:hidden;width:100%;box-sizing:border-box;"><div id="comm-members-list-${commId}">${skeletons(3)}</div></div>
+      <div id="ct-xp-${commId}" style="display:none;overflow:hidden;width:100%;box-sizing:border-box;"><div id="comm-xp-list-${commId}">${skeletons(3)}</div></div>
     </div>`;
   // Guardar avatar da comunidade no cache para renderPost
   if(!window._commAvatarCache) window._commAvatarCache={};
@@ -13285,7 +13367,7 @@ function openCommChatEmoji(commId){
   const EMOJI_SET=['😀','😂','🥹','😍','🤩','😎','🤔','😅','😭','😤','🤪','😴','🥳','🥺','😈','👾','🤖','👻','💀','🔥','✨','💯','❤️','💔','🎉','🎊','🎮','🎵','🌈','⚡','💫','🌟','👑','🏆','💎','🚀','👍','👎','👏','🙏','🤝','💪','🤟','✌️','🫶','🌹','☕','🍕','🍔','🎂','🥂','🎁','📸','🎧','🎸'];
   const pop=document.createElement('div');
   pop.id='comm-emoji-pop-'+commId;
-  pop.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg-card);border:1px solid var(--border-glow);border-radius:12px;padding:10px;z-index:3000;box-shadow:0 12px 32px rgba(0,0,0,.4);max-width:320px;display:grid;grid-template-columns:repeat(9,1fr);gap:4px;backdrop-filter:blur(20px);';
+  pop.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg-card);border:1px solid var(--border-glow);border-radius:12px;padding:10px;z-index:3000;box-shadow:0 12px 32px rgba(0,0,0,.4);width:min(320px,90vw);display:grid;grid-template-columns:repeat(9,1fr);gap:4px;backdrop-filter:blur(20px);box-sizing:border-box;';
   pop.innerHTML=EMOJI_SET.map(e=>`<button style="background:none;border:none;font-size:20px;cursor:pointer;padding:4px;border-radius:6px;" onmouseover="this.style.background='rgba(0,255,204,.15)'" onmouseout="this.style.background='none'" onclick="_insertCommChatEmoji('${commId}','${e}')">${e}</button>`).join('');
   document.body.appendChild(pop);
   setTimeout(()=>{
@@ -13327,7 +13409,7 @@ function openCommChatGif(commId){
   const overlay=document.createElement('div');
   overlay.id='comm-gif-modal-'+commId;
   overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(6px);z-index:4000;display:flex;align-items:center;justify-content:center;padding:16px;';
-  overlay.innerHTML=`<div class="modal" style="max-width:480px;width:100%;max-height:80vh;display:flex;flex-direction:column;">
+  overlay.innerHTML=`<div class="modal" style="max-width:min(480px,94vw);width:100%;max-height:80vh;display:flex;flex-direction:column;box-sizing:border-box;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
       <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);flex:1;">🎬 Escolher GIF</div>
       <button class="tbtn" style="font-size:10px;" onclick="this.closest('[id^=comm-gif-modal]').remove()">✕</button>
