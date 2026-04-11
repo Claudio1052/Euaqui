@@ -5029,15 +5029,29 @@ async function loadCmts(postId, sec){
   const{data:postData}=await db.from('posts').select('user_id').eq('id',postId).maybeSingle();
   const isPostOwner=CU&&postData?.user_id===CU.id;
   const cmtHtml=(cmts||[]).map(c=>renderComment(c,myVotes[c.id]||'',isPostOwner,postId)).join('');
+
+  // [FIX #4] Verificar se o post é de uma comunidade e se o usuário é membro
+  const postCard=document.getElementById('post-'+postId);
+  const cmtCommId=postCard?.dataset?.commid;
+  let canComment=true; // padrão: pode comentar (feed global, perfil)
+  if(cmtCommId && cmtCommId!=='undefined'){
+    if(!CU){
+      canComment=false; // visitante não logado nunca comenta em post de comunidade
+    } else {
+      const{data:_cmtMem}=await db.from('community_members').select('id').eq('community_id',cmtCommId).eq('user_id',CU.id).maybeSingle();
+      canComment=!!_cmtMem;
+    }
+  }
+
   sec.innerHTML=cmtHtml+`
     <div style="position:relative;" id="cmt-wrap-${postId}">
-      <div class="cmt-input-wrap">
+      ${canComment?`<div class="cmt-input-wrap">
         <input class="cmt-input" id="cin-${postId}" type="text" placeholder="Comentar... use @ para mencionar alguém"
           oninput="_cmtMentionCheck(this,'${postId}')"
           onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();submitCmt('${postId}',this);}"
           onblur="setTimeout(()=>_closeMentionDropdown('${postId}'),200)">
         <button class="cmt-sub" onclick="submitCmt('${postId}',this)">➤</button>
-      </div>
+      </div>`:`<div style="margin-top:8px;padding:9px 12px;font-size:11px;color:var(--text-muted);font-family:'Space Mono',monospace;border:1px solid var(--border-glow);border-radius:8px;text-align:center;background:rgba(255,255,255,.02);">🔒 Entre na comunidade para comentar</div>`}
       <div id="cmt-mention-drop-${postId}" style="display:none;position:absolute;bottom:48px;left:0;right:0;background:var(--bg-card);border:1px solid var(--border-glow);border-radius:10px;max-height:180px;overflow-y:auto;z-index:200;box-shadow:0 -4px 20px rgba(0,0,0,.4);"></div>
     </div>`;
 }
@@ -6421,9 +6435,15 @@ async function loadProfilePage(userId){
 
     // 4. Load posts tab
     if(postsPanel){
-      const{data:posts} = await db.from('posts')
+      // [FIX #1] Visitantes não veem posts privados — só o próprio dono vê os seus privados
+      let postsQuery = db.from('posts')
         .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url)')
         .eq('user_id',userId).order('created_at',{ascending:false}).limit(10);
+      if(!isOwn) {
+        // Usuário logado diferente do dono do perfil: excluir posts privados
+        postsQuery = postsQuery.neq('visibility','private');
+      }
+      const{data:posts} = await postsQuery;
 
       if(!(posts||[]).length){
         postsPanel.innerHTML='<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px;">Nenhum post ainda</div>';
@@ -12687,6 +12707,24 @@ function _liveBeforeUnload(){
 // ── LISTENER/SPEAKER entra na live ──
 async function joinCommLive(commId){
   if(!CU) return showToast('Faça login','error');
+  // [FIX #3] Apenas membros podem entrar na live
+  const{data:_liveMem}=await db.from('community_members').select('id').eq('community_id',commId).eq('user_id',CU.id).maybeSingle();
+  if(!_liveMem){
+    const el=document.getElementById('comm-live-content-'+commId);
+    if(el){
+      el.innerHTML=`
+        <div class="live-room">
+          <div class="live-empty">
+            <div class="live-empty-big">🔒</div>
+            <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-pink);margin-bottom:6px;">ACESSO RESTRITO</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;">Você precisa ser membro desta comunidade para entrar na live.</div>
+            <button class="comm-join" onclick="toggleJoinComm('${commId}',false,this)">+ Entrar na Comunidade</button>
+          </div>
+        </div>`;
+    }
+    showToast('⛔ Seja membro da comunidade para entrar na live','error');
+    return;
+  }
   _liveInstallAudioUnlock();
   // Clicar em "Entrar na Live" conta como gesto de destravamento
   _liveAudioUnlocked = true;
@@ -13316,6 +13354,15 @@ function _sendCommGif(commId,url){
 
 async function sendCommChat(commId, contentOverride){
   if(!CU) return showToast('Faça login','error');
+  // [FIX #2] Verificar se é membro antes de enviar mensagem
+  const{data:_memCheck}=await db.from('community_members').select('id').eq('community_id',commId).eq('user_id',CU.id).maybeSingle();
+  if(!_memCheck){
+    showToast('⛔ Entre na comunidade para participar do chat','error');
+    // Ocultar input caso ainda esteja visível (salvaguarda de UI)
+    const _inputWrap=document.querySelector('.comm-chat-input-wrap');
+    if(_inputWrap) _inputWrap.style.display='none';
+    return;
+  }
   const inp=document.getElementById('comm-chat-in-'+commId);
   const txt = (contentOverride!=null ? contentOverride : (inp?.value||'')).trim();
   if(!txt) return;
