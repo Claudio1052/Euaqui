@@ -7635,21 +7635,36 @@ async function loadHomeAlerts(){
 
 async function markAllNotifsRead(){
   if(!CU) return;
-  // DELETE todas + fallback update read=true
-  const{error} = await db.from('notifications').delete().eq('user_id',CU.id);
-  if(error) await db.from('notifications').update({read:true}).eq('user_id',CU.id);
-  // Zerar badge imediatamente
-  updateNotifBadge(0);
-  // Limpar todas as listas
-  ['ht-alerts-list','notif-list-all','notif-list-mentions','notif-list-social','notif-list-system'].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el) el.innerHTML='<div class="notif-empty"><div class="notif-empty-icon">🔔</div><div class="notif-empty-txt">Sem notificações</div></div>';
+
+  // 1. Animação de saída em todos os itens visíveis antes de apagar
+  const allItems = document.querySelectorAll('.ni');
+  allItems.forEach(ni=>{
+    ni.style.transition='opacity .25s,max-height .3s,padding .3s,margin .3s';
+    ni.style.opacity='0';
+    ni.style.maxHeight='0';
+    ni.style.padding='0';
+    ni.style.margin='0';
+    ni.style.overflow='hidden';
   });
-  document.getElementById('notif-badge').style.display='none';
-  const bnb=document.getElementById('bnav-notif-badge');if(bnb)bnb.style.display='none';
-  const hnb=document.getElementById('header-notif-badge');if(hnb)hnb.style.display='none';
-  showToast('Todas as notificações lidas ✓','success');
-  loadNotifCount();
+
+  // 2. Zerar badge imediatamente (feedback visual instantâneo)
+  updateNotifBadge(0);
+
+  // 3. DELETE definitivo no Supabase (apenas do usuário atual)
+  const{error} = await db.from('notifications').delete().eq('user_id',CU.id);
+  // Fallback: se RLS bloquear DELETE, marca como lida
+  if(error) await db.from('notifications').update({read:true}).eq('user_id',CU.id).eq('read',false);
+
+  // 4. Após animação, substituir conteúdo pelo estado vazio
+  setTimeout(()=>{
+    const empty='<div class="notif-empty"><div class="notif-empty-icon">🔔</div><div class="notif-empty-txt">Tudo em dia!</div></div>';
+    ['ht-alerts-list','notif-list-all','notif-list-mentions','notif-list-social','notif-list-system'].forEach(id=>{
+      const el=document.getElementById(id);
+      if(el) el.innerHTML=empty;
+    });
+  }, 320);
+
+  showToast('Todas as notificações apagadas ✓','success');
 }
 
 
