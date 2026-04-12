@@ -7131,38 +7131,52 @@ async function loadMsgs(userId){
   area.innerHTML = html;
   area.scrollTop = area.scrollHeight;
   // ── Marcar mensagens como LIDAS/RECEBIDAS, respeitando configuração de privacidade ──
-  // Tentamos com received+read. Se a coluna 'received' não existir, caímos
-  // em um update só com 'read' (o Supabase-js retorna {error} — NÃO lança exceção).
   const hideReadReceipts = _privacyGet('hide_read_receipts');
   const fullPayload = hideReadReceipts ? {received:true} : {read:true, received:true};
   const fallbackPayload = hideReadReceipts ? null : {read:true};
 
   async function _markMessages(){
-    // Primeira tentativa: update completo (received + read)
     const filter = hideReadReceipts ? {col:'received', val:false} : {col:'read', val:false};
-    let {error} = await db.from('messages').update(fullPayload)
+    console.log('[chat-read] Tentando marcar mensagens: sender='+userId+' receiver='+CU.id+' filter='+filter.col+'='+filter.val);
+    // Primeira tentativa: update completo com received + read
+    let r = await db.from('messages').update(fullPayload)
       .eq('receiver_id',CU.id).eq('sender_id',userId)
-      .eq(filter.col, filter.val);
-    // Se deu erro por causa da coluna 'received' inexistente, tenta fallback só com 'read'
-    if(error){
-      const msg = error.message || '';
-      console.warn('[chat] update falhou:', msg);
-      // Detecta qualquer erro relacionado a schema/coluna ausente
+      .eq(filter.col, filter.val)
+      .select('id'); // .select() faz retornar os registros afetados
+    if(r.error){
+      console.warn('[chat-read] ❌ Update completo falhou:', r.error.message, '| code:', r.error.code);
+      const msg = r.error.message || '';
       const isSchemaErr = /received|column|schema|cache|PGRST/i.test(msg);
       if(isSchemaErr && fallbackPayload){
+        console.log('[chat-read] 🔄 Tentando fallback só com read=true...');
         const r2 = await db.from('messages').update(fallbackPayload)
-          .eq('receiver_id',CU.id).eq('sender_id',userId).eq('read',false);
+          .eq('receiver_id',CU.id).eq('sender_id',userId).eq('read',false)
+          .select('id');
         if(r2.error){
-          console.warn('[chat] fallback tambem falhou:', r2.error.message);
+          console.error('[chat-read] ❌ FALLBACK TAMBÉM FALHOU:', r2.error.message, '| code:', r2.error.code);
+          if(r2.error.code==='42501' || /permission|policy|RLS/i.test(r2.error.message||'')){
+            showToast('⚠ RLS bloqueando marcar como lida. Rode o SQL de política no Supabase.','error');
+          }
+          return false;
         } else {
-          console.log('[chat] fallback read-only OK — rode o SQL ALTER TABLE para habilitar ticks completos');
+          console.log('[chat-read] ✓ Fallback OK — atualizadas', r2.data?.length||0, 'mensagens');
+          return (r2.data?.length||0) > 0;
         }
-      } else if(hideReadReceipts){
-        console.log('[chat] coluna received ausente — modo "ocultar leitura" não funciona sem ela');
+      } else if(r.error.code==='42501' || /permission|policy|RLS/i.test(msg)){
+        showToast('⚠ RLS bloqueando marcar como lida','error');
+        return false;
+      } else {
+        console.error('[chat-read] Erro não-schema:', msg);
+        return false;
       }
+    } else {
+      const n = r.data?.length||0;
+      console.log('[chat-read] ✓ Update completo OK — atualizadas', n, 'mensagens');
+      return n > 0;
     }
   }
-  await _markMessages();
+  const marked = await _markMessages();
+  if(marked) console.log('[chat-read] ✅ SUCESSO: destinatário vai ver os ticks');
   document.getElementById('bnav-msg-dot')?.classList.remove('active');
   updateUnreadMsgBadge();
 }
