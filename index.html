@@ -1254,35 +1254,8 @@ body{
   margin-top:4px;
   opacity:1;
 }
-.mb.sent .mb-time{color:var(--neon-cyan);text-align:right;display:flex;align-items:center;gap:3px;justify-content:flex-end;}
+.mb.sent .mb-time{color:var(--neon-cyan);text-align:right;}
 .mb.recv .mb-time{color:var(--text-muted);text-align:left;}
-
-/* ===== MSG STATUS TICKS (estilo WhatsApp) ===== */
-.mb-status{display:inline-flex;align-items:center;font-size:13px;margin-left:2px;vertical-align:middle;line-height:1;flex-shrink:0;}
-.mb-status.st-sent{color:var(--text-muted);}
-.mb-status.st-delivered{color:#6677aa;}
-.mb-status.st-read{color:var(--neon-cyan);text-shadow:0 0 6px var(--neon-cyan);filter:drop-shadow(0 0 3px var(--neon-cyan));}
-
-/* ===== BADGE NUMÉRICO DE MSGS NÃO LIDAS ===== */
-#msg-count-badge{
-  display:none;background:var(--neon-pink);color:#fff;font-size:9px;font-weight:bold;
-  min-width:18px;height:18px;border-radius:9px;padding:0 4px;text-align:center;
-  line-height:18px;box-shadow:0 0 8px rgba(255,51,102,.6);
-  animation:badgePulse 2s ease-in-out infinite;
-  position:absolute;top:-5px;right:-5px;pointer-events:none;
-}
-@keyframes badgePulse{
-  0%,100%{box-shadow:0 0 8px rgba(255,51,102,.5);}
-  50%{box-shadow:0 0 16px rgba(255,51,102,.9);}
-}
-.ci-unread-badge{
-  background:var(--neon-pink);color:#fff;font-size:9px;min-width:18px;height:18px;
-  border-radius:9px;display:flex;align-items:center;justify-content:center;
-  padding:0 5px;font-weight:bold;flex-shrink:0;
-  box-shadow:0 0 6px rgba(255,51,102,.5);
-}
-body.day-mode #msg-count-badge,body.day-mode .ci-unread-badge{background:#c2185b;box-shadow:0 0 6px rgba(194,24,91,.4);}
-body.day-mode .mb-status.st-read{color:#008b9e;text-shadow:none;filter:none;}
 
 /* Media inside messages */
 .mb-media{max-width:220px;border-radius:10px;overflow:hidden;margin-bottom:3px;cursor:pointer;}
@@ -3420,7 +3393,7 @@ body.day-mode::before{
       <button class="nbtn" id="nb-friends" onclick="nav('friends')">👥 Amigos</button>
       <button class="nbtn" id="nb-communities" onclick="nav('communities')" style="position:relative;">🏘 Comunidades<span class="notif-dot-comm" id="nb-comm-dot" style="top:2px;right:2px;position:absolute;"></span></button>
       <button class="nbtn" id="nb-businesses" onclick="nav('businesses')" style="color:var(--neon-yellow);position:relative;">🏪 Lojas<span class="notif-dot-biz" id="nb-biz-dot" style="top:2px;right:2px;position:absolute;"></span></button>
-      <button class="nbtn" id="nb-messages" onclick="nav('messages')" style="position:relative;">💬 Chat<span id="msg-count-badge">0</span></button>
+      <button class="nbtn" id="nb-messages" onclick="nav('messages')">💬 Chat</button>
       <button class="nbtn" id="nb-notifications" onclick="nav('notifications')">🔔 <span class="nbadge" id="notif-badge" style="display:none">0</span></button>
     </div>
     <div class="nav-right">
@@ -4602,7 +4575,7 @@ function nav(page){
     else if(page==='friends')        loadFriendsList('friends');
     else if(page==='communities')    { loadCommGrid('all'); setTimeout(buildCommIconGrid,200); }
     else if(page==='businesses')     initBusinessPage();
-    else if(page==='messages'){ loadConversations(); loadUnreadMsgCount(); }
+    else if(page==='messages'){ loadConversations(); document.getElementById('bnav-msg-dot')?.classList.remove('active'); document.getElementById('msg-badge')?.remove(); db.from('messages').update({read:true}).eq('receiver_id',CU.id).eq('read',false).catch(()=>{}); }
     else if(page==='businesses'){ ['bn-biz-dot','nb-biz-dot'].forEach(id=>document.getElementById(id)?.classList.remove('active')); }
     else if(page==='communities'){ ['bn-comm-dot','nb-comm-dot'].forEach(id=>document.getElementById(id)?.classList.remove('active')); }
     else if(page==='notifications')  loadNotifTab('nt-all');
@@ -6902,23 +6875,6 @@ async function loadConversations(){
   const pm={};(profiles||[]).forEach(p=>pm[p.id]=p);
 
   cl.innerHTML='';
-  // ── Buscar contagem de não lidas por remetente ──────────────────────
-  const unreadMap={};
-  try{
-    // Tenta coluna status primeiro; cai no campo read se não existir
-    let unreadMsgs=null;
-    try{
-      const{data,error}=await db.from('messages')
-        .select('sender_id').eq('receiver_id',CU.id).neq('status','read');
-      if(error) throw error;
-      unreadMsgs=data;
-    }catch(e2){
-      const{data}=await db.from('messages')
-        .select('sender_id').eq('receiver_id',CU.id).eq('read',false);
-      unreadMsgs=data;
-    }
-    (unreadMsgs||[]).forEach(m=>{ unreadMap[m.sender_id]=(unreadMap[m.sender_id]||0)+1; });
-  }catch(e){}
   convos.forEach(conv=>{
     const p = pm[conv.userId]||{username:'?',full_name:'?'};
     const av = getAvatar(p);
@@ -6928,20 +6884,12 @@ async function loadConversations(){
     const isOnline = _onlineUsers.has(conv.userId);
     const dot = `<span class="presence-dot ${isOnline?'online':'offline'}" id="pdot-${conv.userId}"></span>`;
     const avHtml = `<div class="chat-av-wrap">${renderAvatar(p,46,'ci-av')}${dot}</div>`;
-    // Badge de não lidas por conversa
-    const unread = unreadMap[conv.userId]||0;
-    const unreadBadge = unread>0
-      ? `<span class="ci-unread-badge">${unread>99?'99+':unread}</span>`
-      : '';
-    const rightCol = conv.lastTime
-      ? `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;"><div class="ci-time">${timeAgo(conv.lastTime)}</div>${unreadBadge}</div>`
-      : unreadBadge;
     div.innerHTML = avHtml
       +'<div class="ci-info">'
         +'<div class="ci-name">'+xss(p.full_name||p.username||'?')+'</div>'
         +'<div class="ci-last">'+(conv.lastMsg?xss(conv.lastMsg.slice(0,35)):'Toque para conversar')+'</div>'
       +'</div>'
-      + rightCol;
+      +(conv.lastTime?'<div class="ci-time">'+timeAgo(conv.lastTime)+'</div>':'');
     div.onclick = ()=>openChat(conv.userId, p.username||'?', av);
     cl.appendChild(div);
   });
@@ -6993,22 +6941,10 @@ async function loadMsgs(userId){
   if(!CU) return;
   const area = document.getElementById('msgs-area');
   if(!area) return;
-  // Tenta com campo status; fallback sem ele caso coluna ainda não exista no banco
-  let msgs=null;
-  try{
-    const{data,error}=await db.from('messages')
-      .select('id,sender_id,receiver_id,content,media_url,media_type,read,status,created_at')
-      .or(`and(sender_id.eq.${CU.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${CU.id})`)
-      .order('created_at');
-    if(error) throw error;
-    msgs=data;
-  }catch(e){
-    const{data}=await db.from('messages')
-      .select('id,sender_id,receiver_id,content,media_url,media_type,read,created_at')
-      .or(`and(sender_id.eq.${CU.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${CU.id})`)
-      .order('created_at');
-    msgs=data;
-  }
+  const{data:msgs}=await db.from('messages')
+    .select('id,sender_id,receiver_id,content,media_url,media_type,read,created_at')
+    .or(`and(sender_id.eq.${CU.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${CU.id})`)
+    .order('created_at');
   if(!msgs?.length){
     area.innerHTML='<div class="chat-empty"><div class="chat-empty-icon">💬</div><div class="chat-empty-txt">Início da conversa</div><div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Diga olá! 👋</div></div>';
     return;
@@ -7062,10 +6998,7 @@ async function loadMsgs(userId){
     } else if(m.content){
       contentHtml = '<div class="mb-bubble">'+xss(m.content)+'</div>';
     }
-    // ── STATUS TICK: apenas para mensagens enviadas pelo usuário atual ──
-    const effectiveStatus = m.status||(m.read?'read':'sent');
-    const tickHtml = isSent ? _msgStatusIcon(effectiveStatus) : '';
-    const timeHtml = '<div class="mb-time">'+timeAgo(m.created_at)+tickHtml+'</div>';
+    const timeHtml = '<div class="mb-time">'+timeAgo(m.created_at)+'</div>';
     if(isCallMsg){
       html += '<div style="display:flex;justify-content:center;align-items:center;gap:6px;margin:6px 0;">'+contentHtml+'<span style="font-size:10px;color:var(--text-muted);">'+timeAgo(m.created_at)+'</span></div>';
     } else {
@@ -7074,26 +7007,9 @@ async function loadMsgs(userId){
   }
   area.innerHTML = html;
   area.scrollTop = area.scrollHeight;
-
-  // ── Marcar como READ ao abrir a conversa ─────────────────────────────
-  try{
-    const{error:upErr}=await db.from('messages')
-      .update({status:'read',read:true,read_at:new Date().toISOString()})
-      .eq('receiver_id',CU.id).eq('sender_id',userId).neq('status','read');
-    // Se status não existe no banco, faz fallback com campo read
-    if(upErr){
-      await db.from('messages').update({read:true})
-        .eq('receiver_id',CU.id).eq('sender_id',userId).eq('read',false);
-    }
-  }catch(e){
-    db.from('messages').update({read:true})
-      .eq('receiver_id',CU.id).eq('sender_id',userId).eq('read',false)
-      .then(()=>{}).catch(()=>{});
-  }
-  // Atualizar badge global e zerar badge da conversa na sidebar
-  loadUnreadMsgCount();
-  const ci=document.getElementById('ci-'+userId);
-  if(ci){ const b=ci.querySelector('.ci-unread-badge'); if(b) b.remove(); }
+  db.from('messages').update({read:true}).eq('receiver_id',CU.id).eq('sender_id',userId).eq('read',false)
+    .then(()=>{ document.getElementById('bnav-msg-dot')?.classList.remove('active'); })
+    .catch(()=>{});
 }
 
 // ── Extrai o postId de uma mensagem com marcador [POST_SHARE:id] ──
@@ -7222,56 +7138,6 @@ function updateNotifBadge(n){
   const hbadge = document.getElementById('header-notif-badge');
   if(hbadge){ hbadge.textContent=n>99?'99+':n; hbadge.style.display=n>0?'flex':'none'; }
 }
-
-// ─── MSG STATUS TICKS ──────────────────────────────────────────────────────
-function _msgStatusIcon(status){
-  if(status==='read')      return '<span class="mb-status st-read" title="Lida">✓✓</span>';
-  if(status==='delivered') return '<span class="mb-status st-delivered" title="Entregue">✓✓</span>';
-  return '<span class="mb-status st-sent" title="Enviado">✓</span>';
-}
-
-async function loadUnreadMsgCount(){
-  if(!CU)return;
-  try{
-    const{count}=await db.from('messages')
-      .select('id',{count:'exact',head:true})
-      .eq('receiver_id',CU.id)
-      .neq('status','read');
-    updateMsgBadge(count||0);
-  }catch(e){
-    try{
-      const{count}=await db.from('messages')
-        .select('id',{count:'exact',head:true})
-        .eq('receiver_id',CU.id).eq('read',false);
-      updateMsgBadge(count||0);
-    }catch(e2){}
-  }
-}
-
-function updateMsgBadge(n){
-  const badge=document.getElementById('msg-count-badge');
-  if(!badge)return;
-  if(n>0){
-    badge.textContent=n>99?'99+':n;
-    badge.style.display='block';
-    document.getElementById('bnav-msg-dot')?.classList.add('active');
-  }else{
-    badge.style.display='none';
-    badge.textContent='0';
-    document.getElementById('bnav-msg-dot')?.classList.remove('active');
-  }
-}
-
-async function markMessagesDelivered(){
-  if(!CU)return;
-  try{
-    const{error}=await db.from('messages')
-      .update({status:'delivered',delivered_at:new Date().toISOString()})
-      .eq('receiver_id',CU.id).eq('status','sent');
-    // Se coluna status não existe, ignora silenciosamente
-  }catch(e){}
-}
-// ──────────────────────────────────────────────────────────────────────────
 async function loadNotifications(){
   await loadNotifTab('nt-all');
 }
@@ -7396,30 +7262,10 @@ function setupRealtime(){
       if(document.getElementById('ht-alerts-list')?.children.length>0) loadHomeAlerts();
     }).subscribe();
 
-  // ── Marcar mensagens existentes como delivered ao entrar online ──
-  markMessagesDelivered();
-  loadUnreadMsgCount();
-
   // Real-time messages via Supabase Realtime
   db.channel('rt-msgs-'+CU.id)
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'receiver_id=eq.'+CU.id},async(pl)=>{
-      // Marcar como delivered imediatamente ao receber
-      try{
-        await db.from('messages')
-          .update({status:'delivered',delivered_at:new Date().toISOString()})
-          .eq('id',pl.new.id).eq('status','sent');
-      }catch(e){}
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'receiver_id=eq.'+CU.id},(pl)=>{
       handleIncomingMessage(pl.new);
-      loadUnreadMsgCount();
-    }).subscribe();
-
-  // Real-time UPDATE de status (atualiza ticks quando o outro lê)
-  db.channel('rt-msg-status-'+CU.id)
-    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'messages',filter:'sender_id=eq.'+CU.id},(pl)=>{
-      if(!pl.new.status) return;
-      // Recarregar msgs se conversa ativa é com o destinatário que leu
-      if(currentChatUser?.id===pl.new.receiver_id) loadMsgs(currentChatUser.id);
-      if(homeChatUser?.id===pl.new.receiver_id) loadHomeMsgs(homeChatUser.id);
     }).subscribe();
 
   // Polling fallback every 5s — ensures messages arrive even if realtime drops
@@ -7460,9 +7306,17 @@ function handleIncomingMessage(msg){
     }
   }
 
-  // Badge numérico no ícone do chat (novo sistema)
+  // Badge on chat button if not viewing this chat
   if(currentChatUser?.id!==senderId && homeChatUser?.id!==senderId){
-    loadUnreadMsgCount();
+    const chatNav=document.getElementById('nb-messages');
+    if(chatNav&&!document.getElementById('msg-badge')){
+      const dot=document.createElement('span');
+      dot.className='nbadge';dot.id='msg-badge';dot.textContent='●';
+      chatNav.appendChild(dot);
+    }
+    // Ativar bolinha no bottom nav
+    const bnDot = document.getElementById('bnav-msg-dot');
+    if(bnDot) bnDot.classList.add('active');
   }
 
   // Refresh conversation list
@@ -11995,7 +11849,33 @@ async function loadAboutBusinesses(userId){
 
 
 // ── Badge de mensagens não lidas (bolinha simples) ──────────────
-/* loadUnreadMsgCount — definida acima (v6 com badge numérico) */
+async function loadUnreadMsgCount(){
+  if(!CU) return;
+  try{
+    let q = db.from('messages')
+      .select('id',{count:'exact',head:true})
+      .eq('receiver_id',CU.id)
+      .eq('read',false);
+    if(currentChatUser?.id) q = q.neq('sender_id',currentChatUser.id);
+    if(homeChatUser?.id)    q = q.neq('sender_id',homeChatUser.id);
+    const{count} = await q;
+    const dot = document.getElementById('bnav-msg-dot');
+    if(dot) dot.classList.toggle('active', (count||0) > 0);
+    // Desktop badge
+    const nb = document.getElementById('msg-badge');
+    if((count||0) > 0){
+      if(nb) nb.textContent='●';
+      else{
+        const chatNav=document.getElementById('nb-messages');
+        if(chatNav&&!document.getElementById('msg-badge')){
+          const d=document.createElement('span');d.className='nbadge';d.id='msg-badge';d.textContent='●';chatNav.appendChild(d);
+        }
+      }
+    } else {
+      nb?.remove();
+    }
+  }catch(e){}
+}
 
 
 
