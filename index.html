@@ -2739,21 +2739,25 @@ body.day-mode .ccbtn-cancel{ color:#64748b; }
 .call-overlay.minimized-call-popup{
   position:fixed !important;
   inset:auto !important;
-  bottom:20px;right:20px;
-  width:250px;height:auto;
+  bottom:80px !important;
+  right:20px !important;
+  top:auto !important;
+  left:auto !important;
+  width:220px !important;
+  height:auto !important;
   min-height:0;
-  padding:14px 14px 12px;
-  z-index:9999;
-  border-radius:15px;
+  padding:10px !important;
+  z-index:99999 !important;
+  border-radius:12px !important;
   gap:8px;
+  align-items:flex-start !important;
+  justify-content:center !important;
   /* Borda neon brilhante */
-  border:2px solid var(--neon-cyan);
-  box-shadow:
-    0 0 20px rgba(0,255,204,.5),
-    0 0 40px rgba(0,255,204,.2),
-    0 8px 32px rgba(0,0,0,.7);
-  background:linear-gradient(135deg,rgba(10,10,42,.97) 0%,rgba(13,27,42,.97) 100%);
-  backdrop-filter:blur(10px);
+  border:2px solid var(--neon-cyan) !important;
+  box-shadow:0 0 15px rgba(0,255,204,.4) !important;
+  background:rgba(10,10,42,0.95) !important;
+  background-color:rgba(10,10,42,0.95) !important;
+  backdrop-filter:blur(10px) !important;
   cursor:grab;
   animation:minPopIn .25s cubic-bezier(.4,1.4,.6,1);
 }
@@ -2811,6 +2815,28 @@ body.day-mode .ccbtn-cancel{ color:#64748b; }
 }
 .call-overlay.minimized-call-popup .call-minimize-btn svg{
   width:14px;height:14px;
+}
+
+/* ── FORÇA EXTRA: garante que minimized-call-popup sobrepõe tudo ── */
+#call-overlay.minimized-call-popup{
+  position:fixed !important;
+  bottom:80px !important;
+  right:20px !important;
+  top:auto !important;
+  left:auto !important;
+  width:220px !important;
+  height:auto !important;
+  background:rgba(10,10,42,0.95) !important;
+  background-color:rgba(10,10,42,0.95) !important;
+  border:2px solid var(--neon-cyan) !important;
+  border-radius:12px !important;
+  z-index:99999 !important;
+  box-shadow:0 0 15px rgba(0,255,204,0.4) !important;
+  padding:10px !important;
+  backdrop-filter:blur(10px) !important;
+  align-items:flex-start !important;
+  justify-content:center !important;
+  inset:auto !important;
 }
 
 /* ===== COMUNIDADES V2 ===== */
@@ -12571,14 +12597,19 @@ function _setupCallListen(){
       if(p.payload?.from && p.payload.from!==CU.id) _onIncoming(p.payload);
     })
     .on('broadcast',{event:'call-cancel'},(p)=>{
-      // ── Caller cancelou antes da gente atender → fechar modal imediatamente ──
-      if(p.payload?.from && _callPeer && p.payload.from===_callPeer.id && !_isCaller){
-        console.log('[call] Caller cancelou a chamada — fechando modal');
+      // ── Caller cancelou ANTES de atender → parar toque e fechar modal ──
+      const fromId = p.payload?.from;
+      if(!fromId || _isCaller) return;
+      const overlay = document.getElementById('call-overlay');
+      if(!overlay) return;
+      const peerMatch = !_callPeer || _callPeer.id === fromId;
+      if(peerMatch){
+        console.log('[call] call-cancel recebido de', fromId, '— encerrando toque');
         _stopRing();
-        document.getElementById('call-overlay')?.remove();
-        // Mensagem no chat: chamada perdida
-        _insertCallMsg(_callPeer.id, '📵 Chamada perdida');
+        const peerId = _callPeer?.id || fromId;
+        overlay.remove();
         _cleanup();
+        _insertCallMsg(peerId, '📵 Chamada perdida');
       }
     })
     .subscribe();
@@ -12674,31 +12705,42 @@ function endCall(){
   // Fechar overlay IMEDIATAMENTE
   document.getElementById('call-overlay')?.remove();
   // Guardar estado antes do cleanup
-  const peer     = _callPeer ? {..._callPeer} : null;
+  const peer      = _callPeer ? {..._callPeer} : null;
   const wasCaller = _isCaller;
   const hadTimer  = !!_callTimer;
   const nm = CP?.full_name||CP?.username||'Alguém';
-  // Enviar sinal de encerramento pelo canal já aberto (se disponível, funciona quando chamada já foi atendida)
-  if(_sigCh) _sigCh.send({type:'broadcast',event:'call-end',payload:{from:CU.id}}).catch(()=>{});
+
   // ── CANCELAMENTO ANTES DE ATENDER ──
-  // Se sou o caller e ainda não conectei (sem _callTimer = sem resposta aceita),
-  // mando 'call-cancel' via canal de LISTEN do destinatário, pois ele ainda não entrou
-  // no canal par-a-par _sigCh. Sem isso, o modal de incoming do outro fica tocando infinito.
+  // Envia 'call-cancel' via canal de LISTEN do destinatário ANTES do _cleanup().
+  // Usa tentativa dupla: aguarda subscribe + fallback após 400ms.
   if(wasCaller && peer && !hadTimer){
     try{
       const cancelCh = db.channel('vcall-listen-'+peer.id, {config:{broadcast:{self:false}}});
-      cancelCh.subscribe(s=>{
-        if(s==='SUBSCRIBED'){
-          cancelCh.send({type:'broadcast',event:'call-cancel',payload:{from:CU.id,name:nm}});
-          setTimeout(()=>{try{db.removeChannel(cancelCh);}catch(e){}}, 1500);
-        }
-      });
+      let cancelSent = false;
+      const _sendCancel = (ch) => {
+        if(cancelSent) return;
+        cancelSent = true;
+        ch.send({
+          type:'broadcast',
+          event:'call-cancel',
+          payload:{from:CU.id, name:nm}
+        }).catch(()=>{});
+        setTimeout(()=>{try{db.removeChannel(ch);}catch(e){}}, 2000);
+      };
+      cancelCh.subscribe(s=>{ if(s==='SUBSCRIBED') _sendCancel(cancelCh); });
+      // Fallback: envia mesmo sem confirmação de SUBSCRIBED após 400ms
+      setTimeout(()=>{ if(!cancelSent) _sendCancel(cancelCh); }, 400);
     }catch(e){ console.warn('[call] cancel signal err:',e); }
   }
+
+  // Enviar sinal de encerramento pelo canal de sinalização já aberto
+  // (funciona quando chamada já foi atendida)
+  if(_sigCh) _sigCh.send({type:'broadcast',event:'call-end',payload:{from:CU.id}}).catch(()=>{});
+
   _cleanup();
+
   // Notificação + mensagem de chamada perdida em background
   if(wasCaller && peer && !hadTimer){
-    // Mensagem no chat
     _insertCallMsg(peer.id, '📞 Chamada não atendida');
     db.from('notifications').insert({
       user_id:peer.id, actor_id:CU.id,
@@ -12847,13 +12889,12 @@ function toggleCallMinimize(){
   }
   const btn = document.getElementById('call-minimize-btn');
   if(btn) btn.title = isMin ? 'Maximizar' : 'Minimizar';
-  // Ao maximizar, reseta posição custom do drag
-  if(!isMin){
-    ov.style.top = '';
-    ov.style.left = '';
-    ov.style.right = '';
-    ov.style.bottom = '';
-  }
+  // Ao minimizar: limpa estilos inline para que o CSS da classe assuma (bottom:80px, right:20px)
+  // Ao maximizar: limpa TODOS os estilos inline para voltar ao fullscreen
+  ov.style.top    = '';
+  ov.style.left   = '';
+  ov.style.right  = '';
+  ov.style.bottom = '';
 }
 
 // Drag-and-drop da janelinha minimizada (mouse + touch)
@@ -12920,17 +12961,26 @@ function _initCallListen(){
       if(p.payload?.from && p.payload.from!==CU.id) _onIncoming(p.payload);
     })
     .on('broadcast',{event:'call-cancel'},(p)=>{
-      // Caller cancelou antes de atender → fecha modal de incoming
-      if(p.payload?.from && _callPeer && p.payload.from===_callPeer.id && !_isCaller){
-        console.log('[call] Caller cancelou a chamada — fechando modal');
+      // ── Caller cancelou ANTES de atender → parar toque e fechar modal ──
+      // Verifica: (a) há overlay de chamada aberto, (b) não sou o caller, (c) from coincide
+      // com _callPeer.id OU, em caso de race condition (callPeer ainda não setado), aceita qualquer from válido
+      const fromId = p.payload?.from;
+      if(!fromId || _isCaller) return;
+      const overlay = document.getElementById('call-overlay');
+      if(!overlay) return; // Nenhum modal aberto — nada a fazer
+      // Aceita o cancel se o peer já foi registrado E bate com o from, OU se ainda não temos peer (race)
+      const peerMatch = !_callPeer || _callPeer.id === fromId;
+      if(peerMatch){
+        console.log('[call] call-cancel recebido de', fromId, '— encerrando toque');
         _stopRing();
-        document.getElementById('call-overlay')?.remove();
-        _insertCallMsg(_callPeer.id, '📵 Chamada perdida');
+        const peerId = _callPeer?.id || fromId;
+        overlay.remove();
         _cleanup();
+        _insertCallMsg(peerId, '📵 Chamada perdida');
       }
     })
     .subscribe((s)=>{
-      if(s==='SUBSCRIBED') console.log('[CALL] Listen channel ready:', 'vcall-listen-'+CU.id);
+      if(s==='SUBSCRIBED') console.log('[CALL] Listen channel pronto:', 'vcall-listen-'+CU.id);
     });
 }
 
