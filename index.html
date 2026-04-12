@@ -2735,143 +2735,37 @@ body.day-mode .ccbtn-cancel{ color:#64748b; }
   transform:scale(1.05);
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   JANELA FLUTUANTE (PiP) — TODOS os valores com !important para
-   vencer o inset:0 e qualquer outra regra do .call-overlay base.
-   O problema raiz: inset shorthand do base expande para top/right/
-   bottom/left:0 e sobrescreve propriedades sem !important.
-═══════════════════════════════════════════════════════════════ */
-#call-overlay.minimized-call-popup,
-.call-overlay.minimized-call-popup {
-  /* Posicionamento — TUDO com !important para vencer inset:0 do base */
-  position: fixed   !important;
-  top:    auto      !important;
-  left:   auto      !important;
-  right:  20px      !important;
-  bottom: 85px      !important;
-  inset:  auto      !important; /* reset do shorthand */
-
-  /* Dimensões fixas */
-  width:      200px !important;
-  height:     150px !important;
-  min-height: 0     !important;
-  max-width:  none  !important;
-
-  /* Empilhamento — acima de qualquer nav/menu */
-  z-index: 2147483647 !important; /* valor máximo de z-index */
-
-  /* Visual */
-  border-radius: 14px   !important;
-  border:  2px solid var(--neon-cyan) !important;
-  box-shadow: 0 0 18px rgba(0,255,204,.55), 0 8px 30px rgba(0,0,0,.8) !important;
-  background: rgba(8,8,30,0.97) !important;
-  backdrop-filter: blur(12px)   !important;
-
-  /* Layout interno compacto */
-  display:        flex          !important;
-  flex-direction: column        !important;
-  align-items:    center        !important;
-  justify-content:flex-start    !important;
-  gap:    4px   !important;
-  padding: 6px  !important;
-  overflow: hidden !important;
-
-  cursor: grab !important;
-  animation: minPopIn .22s cubic-bezier(.4,1.4,.6,1) !important;
+/* ═══ Bolinha flutuante de chamada minimizada ═══ */
+#call-bubble {
+  position: fixed;
+  bottom: 90px;
+  right: 20px;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #0ff5cc, #0a0a2a);
+  border: 3px solid var(--neon-cyan);
+  box-shadow: 0 0 18px rgba(0,255,204,.7), 0 4px 16px rgba(0,0,0,.6);
+  z-index: 2147483647;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  animation: bubblePop .25s cubic-bezier(.4,1.5,.6,1), bubblePulse 2s ease-in-out infinite .25s;
+  touch-action: none;
+  user-select: none;
 }
-.call-overlay.minimized-call-popup:active { cursor: grabbing !important; }
-
-@keyframes minPopIn {
-  0%   { transform: scale(.75); opacity: 0; }
-  100% { transform: scale(1);   opacity: 1; }
+#call-bubble:active { cursor: grabbing; }
+@keyframes bubblePop {
+  0%   { transform: scale(0); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes bubblePulse {
+  0%,100% { box-shadow: 0 0 14px rgba(0,255,204,.6), 0 4px 16px rgba(0,0,0,.6); }
+  50%      { box-shadow: 0 0 28px rgba(0,255,204,.9), 0 4px 16px rgba(0,0,0,.6); }
 }
 
-/* ── Elementos internos no modo PiP ── */
-
-/* Vídeo remoto: preenche a caixa toda */
-.call-overlay.minimized-call-popup .call-video-wrap {
-  width:        100% !important;
-  height:        90px !important;
-  max-width:    none !important;
-  aspect-ratio: unset !important;
-  border-radius: 8px  !important;
-  flex-shrink:   0    !important;
-}
-.call-overlay.minimized-call-popup .call-video-wrap video,
-.call-overlay.minimized-call-popup #call-remote-video {
-  width:      100% !important;
-  height:     100% !important;
-  object-fit: cover !important;
-}
-/* Pip de câmera própria: menor */
-.call-overlay.minimized-call-popup .call-video-self {
-  width: 36px !important;
-  bottom: 4px !important; right: 4px !important;
-  border-width: 1px !important;
-}
-
-/* Avatar (chamada de voz): compacto */
-.call-overlay.minimized-call-popup .call-avatar {
-  width:  44px !important; height: 44px !important;
-  font-size: 20px !important;
-  border-width: 2px !important;
-  animation: none !important;
-  box-shadow: 0 0 10px rgba(0,255,204,.3) !important;
-  flex-shrink: 0 !important;
-}
-
-/* Textos: ocultos ou muito pequenos */
-.call-overlay.minimized-call-popup .call-name {
-  font-size: 10px !important;
-  margin: 0 !important;
-  white-space: nowrap !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  max-width: 100% !important;
-}
-.call-overlay.minimized-call-popup .call-status {
-  display: none !important;
-}
-.call-overlay.minimized-call-popup .call-timer {
-  display: none !important;
-}
-
-/* Botões secundários: sumam */
-.call-overlay.minimized-call-popup .call-secondary-btn {
-  display: none !important;
-}
-/* Botão atender (receiver): some no PiP */
-.call-overlay.minimized-call-popup .call-actions > div:first-child:not(:last-child) {
-  display: none !important;
-}
-
-/* Linha de ações: compacta */
-.call-overlay.minimized-call-popup .call-actions {
-  margin-top: 2px !important;
-  gap: 6px       !important;
-  flex-wrap: nowrap !important;
-}
-.call-overlay.minimized-call-popup .call-action-btn {
-  width:  34px !important;
-  height: 34px !important;
-}
-.call-overlay.minimized-call-popup .call-actions svg {
-  width:  16px !important;
-  height: 16px !important;
-}
-.call-overlay.minimized-call-popup .call-actions > div > div {
-  display: none !important; /* esconde labels dos botões */
-}
-
-/* Botão de maximizar: pequeno, no canto */
-.call-overlay.minimized-call-popup .call-minimize-btn {
-  top:    4px !important; right: 4px !important;
-  width:  22px !important; height: 22px !important;
-  background: rgba(0,255,204,.12) !important;
-}
-.call-overlay.minimized-call-popup .call-minimize-btn svg {
-  width: 12px !important; height: 12px !important;
-}
 
 /* ===== COMUNIDADES V2 ===== */
 .comm-detail-wrap{max-width:700px;margin:0 auto;width:100%;box-sizing:border-box;}
@@ -12817,6 +12711,7 @@ async function _onAnswer(payload){
 }
 function _addIce(c){if(_pc&&c)_pc.addIceCandidate(new RTCIceCandidate(c)).catch(()=>{});}
 function _cleanup(){
+  document.getElementById('call-bubble')?.remove(); // remove bolinha se chamada encerrar minimizada
   clearInterval(_callTimer);_callTimer=null;_callSecs=0;
   _localStream?.getTracks().forEach(t=>t.stop());_localStream=null;
   try{_pc?.close();}catch(e){}_pc=null;
@@ -12892,92 +12787,84 @@ function _showCallUI(role,name,type,avatar){
 // ═══════════════════════════════════════════════════════════
 // 📐 Minimizar / maximizar chamada (janela flutuante + drag)
 // ═══════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// 📞 Minimizar → bolinha flutuante arrastável
+// Clicar na bolinha restaura o modal completo.
+// ═══════════════════════════════════════════════════════════
 function toggleCallMinimize(){
   const ov = document.getElementById('call-overlay');
   if(!ov) return;
 
-  // Limpa SEMPRE os estilos inline de posição (drag define top/left inline e
-  // sobrescreveria o CSS mesmo com !important, pois inline > stylesheet).
-  // O reset acontece antes do toggle para que o CSS da classe vença.
-  ov.style.removeProperty('top');
-  ov.style.removeProperty('left');
-  ov.style.removeProperty('right');
-  ov.style.removeProperty('bottom');
-  ov.style.removeProperty('width');
-  ov.style.removeProperty('height');
-  ov.style.removeProperty('inset');
-  ov.style.removeProperty('transition');
+  // Se já existe bolinha → maximiza de volta
+  if(document.getElementById('call-bubble')){ _restoreCallFromBubble(); return; }
 
-  const isMin = ov.classList.toggle('minimized-call-popup');
+  // Esconde o modal sem removê-lo do DOM (mantém streams ativos)
+  ov.style.display = 'none';
 
-  // Troca ícone: ↓ minimizar  ↔  ↗ maximizar
-  const iconEl = document.getElementById('call-minmax-icon');
-  if(iconEl){
-    iconEl.innerHTML = isMin
-      ? '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>'
-      : '<polyline points="19 12 12 19 5 12"/>';
-  }
-  const btn = document.getElementById('call-minimize-btn');
-  if(btn) btn.title = isMin ? 'Maximizar' : 'Minimizar';
-}
-// Alias pedido no briefing — aponta para a mesma função
-function toggleMinimizeCall(){ toggleCallMinimize(); }
+  // Descobre ícone: vídeo ou voz
+  const isVideo = _callType === 'video';
+  const icon = isVideo ? '📹' : '📞';
 
-// Drag-and-drop da janelinha minimizada (mouse + touch)
-function _setupCallMinimizeDrag(ov){
-  let dragging = false;
-  let startX = 0, startY = 0;
-  let baseX = 0, baseY = 0;
+  // Cria a bolinha
+  const bubble = document.createElement('div');
+  bubble.id = 'call-bubble';
+  bubble.textContent = icon;
+  bubble.title = 'Toque para abrir a chamada';
+  document.body.appendChild(bubble);
 
-  const getPoint = (e) => {
-    if(e.touches && e.touches[0]) return {x:e.touches[0].clientX, y:e.touches[0].clientY};
-    return {x:e.clientX, y:e.clientY};
-  };
+  // Clique simples na bolinha → restaura modal
+  let didDrag = false;
+  bubble.addEventListener('click', () => { if(!didDrag) _restoreCallFromBubble(); });
 
-  const onDown = (e) => {
-    if(!ov.classList.contains('minimized-call-popup')) return;
-    if(e.target.closest('button')) return;
-    const pt = getPoint(e);
-    dragging = true;
+  // Drag (mouse + touch)
+  let dragging = false, startX=0, startY=0, baseX=0, baseY=0;
+  const getXY = e => e.touches ? {x:e.touches[0].clientX,y:e.touches[0].clientY} : {x:e.clientX,y:e.clientY};
+
+  const onDown = e => {
+    const pt = getXY(e);
+    dragging = true; didDrag = false;
     startX = pt.x; startY = pt.y;
-    // getBoundingClientRect dá a posição real já com CSS !important aplicado
-    const rect = ov.getBoundingClientRect();
-    baseX = rect.left; baseY = rect.top;
-    // Sobrescreve bottom/right com setProperty + important para vencer CSS
-    ov.style.setProperty('right',  'auto', 'important');
-    ov.style.setProperty('bottom', 'auto', 'important');
-    ov.style.setProperty('left',   baseX + 'px', 'important');
-    ov.style.setProperty('top',    baseY + 'px', 'important');
-    ov.style.transition = 'none';
-    document.body.style.userSelect = 'none';
+    const r = bubble.getBoundingClientRect();
+    baseX = r.left; baseY = r.top;
+    bubble.style.transition = 'none';
+    bubble.style.animation = 'none';
+    e.preventDefault();
   };
-  const onMove = (e) => {
+  const onMove = e => {
     if(!dragging) return;
-    const pt = getPoint(e);
-    const nx = baseX + (pt.x - startX);
-    const ny = baseY + (pt.y - startY);
-    // Limitar dentro da viewport
-    const maxX = window.innerWidth  - ov.offsetWidth  - 4;
-    const maxY = window.innerHeight - ov.offsetHeight - 4;
-    ov.style.setProperty('left', Math.max(4, Math.min(nx, maxX)) + 'px', 'important');
-    ov.style.setProperty('top',  Math.max(4, Math.min(ny, maxY)) + 'px', 'important');
-    // Evita scroll no mobile enquanto arrasta
+    const pt = getXY(e);
+    const dx = pt.x - startX, dy = pt.y - startY;
+    if(Math.abs(dx)+Math.abs(dy) > 4) didDrag = true;
+    const nx = Math.max(4, Math.min(baseX+dx, window.innerWidth  - bubble.offsetWidth  - 4));
+    const ny = Math.max(4, Math.min(baseY+dy, window.innerHeight - bubble.offsetHeight - 4));
+    bubble.style.left   = nx + 'px';
+    bubble.style.top    = ny + 'px';
+    bubble.style.right  = 'auto';
+    bubble.style.bottom = 'auto';
     if(e.cancelable) e.preventDefault();
   };
-  const onUp = () => {
-    if(!dragging) return;
-    dragging = false;
-    ov.style.transition = '';
-    document.body.style.userSelect = '';
-  };
+  const onUp = () => { dragging = false; };
 
-  ov.addEventListener('mousedown', onDown);
-  document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup', onUp);
-  ov.addEventListener('touchstart', onDown, {passive:true});
-  document.addEventListener('touchmove', onMove, {passive:false});
-  document.addEventListener('touchend', onUp);
+  bubble.addEventListener('mousedown',  onDown);
+  bubble.addEventListener('touchstart', onDown, {passive:false});
+  document.addEventListener('mousemove',  onMove);
+  document.addEventListener('mouseup',    onUp);
+  document.addEventListener('touchmove',  onMove, {passive:false});
+  document.addEventListener('touchend',   onUp);
 }
+
+function _restoreCallFromBubble(){
+  const bubble = document.getElementById('call-bubble');
+  if(bubble) bubble.remove();
+  const ov = document.getElementById('call-overlay');
+  if(ov) ov.style.display = '';   // restaura display original (flex)
+}
+
+// Alias legado mantido por compatibilidade
+function toggleMinimizeCall(){ toggleCallMinimize(); }
+
+// Drag-and-drop da janelinha minimizada — substituído pela bolinha acima, mantido vazio por segurança
+function _setupCallMinimizeDrag(ov){ /* lógica migrada para toggleCallMinimize */ }
 
 // ── Inicializar escuta de chamadas ao fazer login ────────────────
 // Chamado no showApp após CU estar disponível
