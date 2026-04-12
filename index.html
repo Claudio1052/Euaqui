@@ -7695,7 +7695,7 @@ async function loadHomeAlerts(){
   if(!el||!CU) return;
   el.innerHTML=skeletons(3);
   const{data}=await db.from('notifications')
-    .select('id,type,content,read,created_at,post_id,actor_id')
+    .select('id,type,content,read,created_at,post_id,actor_id,business_id,community_id')
     .eq('user_id',CU.id).eq('read',false)
     .gte('created_at',new Date(Date.now()-24*60*60*1000).toISOString())
     .order('created_at',{ascending:false}).limit(40);
@@ -7704,7 +7704,7 @@ async function loadHomeAlerts(){
     el.innerHTML='<div class="notif-empty"><div class="notif-empty-icon">🔔</div><div class="notif-empty-txt">Sem alertas</div></div>';
     return;
   }
-  const icons={follow:'👤',like:'❤️',comment:'💬',friend_request:'👥',friend_accept:'🎉',message:'💬',community_invite:'🏘️',mention:'@',call_missed:'📞'};
+  const icons={follow:'👤',like:'❤️',comment:'💬',friend_request:'👥',friend_accept:'🎉',message:'💬',community_invite:'🏘️',community_post:'🏘️',community_mention:'🏘️',biz_promo:'🏪',mention:'@',call_missed:'📞',share:'🔁'};
   data.forEach(n=>{
     const div=document.createElement('div');
     div.className='ni'+(n.read?'':' unrd');
@@ -9201,10 +9201,40 @@ async function handleNotifNavigation(n){
       break;
     }
 
-    // ── CONVITE DE COMUNIDADE ───────────────────────────────────
-    case 'community_invite':
-      nav('communities');
+    // ── DIVULGAÇÃO DE LOJA (biz_promo) ────────────────────────
+    case 'biz_promo':{
+      nav('businesses');
+      await new Promise(r=>setTimeout(r,350));
+      try{
+        let biz = null;
+        if(n.business_id){
+          // Caminho direto: temos o ID da loja na notificação
+          const{data}=await db.from('businesses').select('*').eq('id',n.business_id).maybeSingle();
+          biz = data;
+        } else if(n.actor_id){
+          // Fallback: busca a loja pelo dono (actor_id)
+          const{data}=await db.from('businesses').select('*').eq('owner_id',n.actor_id).eq('active',true).maybeSingle();
+          biz = data;
+        }
+        if(biz) openBizDetail(biz);
+      }catch(e){ /* falha silenciosa: já está na aba certa */ }
       break;
+    }
+
+    // ── CONVITE / POST DE COMUNIDADE ───────────────────────────
+    case 'community_invite':
+    case 'community_post':
+    case 'community_mention':{
+      // Tenta usar community_id direto; fallback: extrai do conteúdo
+      const commId = n.community_id || null;
+      if(commId){
+        await openCommDetail(commId);
+      } else {
+        // Sem community_id: vai para aba de comunidades
+        nav('communities');
+      }
+      break;
+    }
 
     // ── PADRÃO ──────────────────────────────────────────────────
     default:
@@ -9227,7 +9257,7 @@ async function loadNotifTab(tabId){
 
   // ✅ Busca não lidas — SEM marcar como lida automaticamente
   let q=db.from('notifications')
-    .select('id,type,content,read,created_at,post_id,actor_id')
+    .select('id,type,content,read,created_at,post_id,actor_id,business_id,community_id')
     .eq('user_id',CU.id).eq('read',false)
     .order('created_at',{ascending:false}).limit(50);
   if(Array.isArray(filter)) q=q.in('type',filter);
@@ -9239,7 +9269,7 @@ async function loadNotifTab(tabId){
     return;
   }
 
-  const icons={follow:'👤',like:'❤️',comment:'💬',friend_request:'👥',friend_accept:'🎉',message:'💬',community_invite:'🏘️',mention:'@',call_missed:'📞'};
+  const icons={follow:'👤',like:'❤️',comment:'💬',friend_request:'👥',friend_accept:'🎉',message:'💬',community_invite:'🏘️',community_post:'🏘️',community_mention:'🏘️',biz_promo:'🏪',mention:'@',call_missed:'📞',share:'🔁'};
 
   el.innerHTML=data.map(n=>{
     // Serializa o objeto n de forma segura para o atributo onclick
@@ -10477,11 +10507,12 @@ async function confirmarDivulgacao(bizId, prodName, prodPrice, imgUrl, priceLabe
     const notifs = followers
       .filter(f=>f.user_id !== CU.id)
       .map(f=>({
-        user_id:   f.user_id,
-        actor_id:  CU.id,
-        type:      'biz_promo',
-        content:   `🏪 ${myBusiness.name} divulgou: ${prodName} por ${priceDisplay}`,
-        read:      false
+        user_id:     f.user_id,
+        actor_id:    CU.id,
+        type:        'biz_promo',
+        content:     `🏪 ${myBusiness.name} divulgou: ${prodName} por ${priceDisplay}`,
+        business_id: bizId,
+        read:        false
       }));
     if(notifs.length) await db.from('notifications').insert(notifs);
   }
@@ -10515,7 +10546,7 @@ async function notifyBizFollowers(bizId, msg){
   if(!followers?.length) return;
   const notifs = followers
     .filter(f=>f.user_id!==CU.id)
-    .map(f=>({user_id:f.user_id, actor_id:CU.id, type:'biz_promo', content:msg, read:false}));
+    .map(f=>({user_id:f.user_id, actor_id:CU.id, type:'biz_promo', content:msg, business_id:bizId, read:false}));
   if(notifs.length) await db.from('notifications').insert(notifs);
 }
 
