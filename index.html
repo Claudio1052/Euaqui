@@ -7125,41 +7125,46 @@ async function loadMsgs(userId){
     if(isCallMsg){
       html += '<div style="display:flex;justify-content:center;align-items:center;gap:6px;margin:6px 0;">'+contentHtml+'<span style="font-size:10px;color:var(--text-muted);">'+timeAgo(m.created_at)+'</span></div>';
     } else {
-      html += '<div class="mb '+(isSent?'sent':'recv')+'">'+mediaHtml+contentHtml+timeHtml+'</div>';
+      html += '<div class="mb '+(isSent?'sent':'recv')+'" data-msg-id="'+m.id+'">'+mediaHtml+contentHtml+timeHtml+'</div>';
     }
   }
   area.innerHTML = html;
   area.scrollTop = area.scrollHeight;
-  // ── Marcar mensagens como LIDAS, respeitando configuração de privacidade ──
-  // Se o usuário ativou "Ocultar confirmação de leitura", só marcamos como 'received'
-  // (chega o 2º tick cinza pro remetente, mas NÃO vira azul).
-  // Também mantemos uma marca local para sabermos que eu já vi — usado no badge de não lidas.
+  // ── Marcar mensagens como LIDAS/RECEBIDAS, respeitando configuração de privacidade ──
+  // Tentamos com received+read. Se a coluna 'received' não existir, caímos
+  // em um update só com 'read' (o Supabase-js retorna {error} — NÃO lança exceção).
   const hideReadReceipts = _privacyGet('hide_read_receipts');
-  const updatePayload = hideReadReceipts ? {received:true} : {read:true, received:true};
-  try{
-    const q = db.from('messages').update(updatePayload)
-      .eq('receiver_id',CU.id).eq('sender_id',userId);
-    // Só atualizamos as que ainda não foram marcadas
-    if(hideReadReceipts){
-      // Se já está 'received', não precisa re-update
-      await q.eq('received',false);
-    } else {
-      await q.eq('read',false);
-    }
-    document.getElementById('bnav-msg-dot')?.classList.remove('active');
-    // Atualiza o badge de mensagens não lidas imediatamente
-    updateUnreadMsgBadge();
-  }catch(e){
-    // Fallback: sem a coluna 'received', apenas marcar como read (a menos que o user tenha ocultado)
-    if(!hideReadReceipts){
-      try{
-        await db.from('messages').update({read:true})
+  const fullPayload = hideReadReceipts ? {received:true} : {read:true, received:true};
+  const fallbackPayload = hideReadReceipts ? null : {read:true};
+
+  async function _markMessages(){
+    // Primeira tentativa: update completo (received + read)
+    const filter = hideReadReceipts ? {col:'received', val:false} : {col:'read', val:false};
+    let {error} = await db.from('messages').update(fullPayload)
+      .eq('receiver_id',CU.id).eq('sender_id',userId)
+      .eq(filter.col, filter.val);
+    // Se deu erro por causa da coluna 'received' inexistente, tenta fallback só com 'read'
+    if(error){
+      const msg = error.message || '';
+      console.warn('[chat] update falhou:', msg);
+      // Detecta qualquer erro relacionado a schema/coluna ausente
+      const isSchemaErr = /received|column|schema|cache|PGRST/i.test(msg);
+      if(isSchemaErr && fallbackPayload){
+        const r2 = await db.from('messages').update(fallbackPayload)
           .eq('receiver_id',CU.id).eq('sender_id',userId).eq('read',false);
-        document.getElementById('bnav-msg-dot')?.classList.remove('active');
-        updateUnreadMsgBadge();
-      }catch(e2){}
+        if(r2.error){
+          console.warn('[chat] fallback tambem falhou:', r2.error.message);
+        } else {
+          console.log('[chat] fallback read-only OK — rode o SQL ALTER TABLE para habilitar ticks completos');
+        }
+      } else if(hideReadReceipts){
+        console.log('[chat] coluna received ausente — modo "ocultar leitura" não funciona sem ela');
+      }
     }
   }
+  await _markMessages();
+  document.getElementById('bnav-msg-dot')?.classList.remove('active');
+  updateUnreadMsgBadge();
 }
 
 // ── Extrai o postId de uma mensagem com marcador [POST_SHARE:id] ──
@@ -7445,6 +7450,26 @@ function openPrivacyModal(){
   document.body.appendChild(overlay);
 }
 
+// ═══════════════════════════════════════════════════════════
+// 🎯 Atualização em tempo real dos ticks quando o destinatário lê
+// Chamado via Realtime quando alguém faz UPDATE em uma mensagem
+// que EU enviei (sender_id=CU.id).
+// ═══════════════════════════════════════════════════════════
+function _updateMsgTicksLive(updatedMsg){
+  if(!updatedMsg?.id) return;
+  const bubble = document.querySelector(`.mb[data-msg-id="${updatedMsg.id}"]`);
+  if(!bubble) return; // conversa não está aberta
+  const statusEl = bubble.querySelector('.mb-status');
+  if(!statusEl) return;
+  // Determina novo estado baseado nas flags
+  const newCls = updatedMsg.read ? 'read' : (updatedMsg.received ? 'received' : 'sent');
+  const label = newCls==='read' ? 'lido' : newCls==='received' ? 'recebido' : 'enviado';
+  // Atualiza classes e aria-label com pequena transição visual
+  statusEl.className = 'mb-status '+newCls;
+  statusEl.setAttribute('aria-label', label);
+  console.log('[chat] tick atualizado para', updatedMsg.id, '→', newCls);
+}
+
 async function sendMsg(){
   // Close any open emoji picker
   document.querySelectorAll('.emoji-picker.open').forEach(p=>p.classList.remove('open'));
@@ -7628,6 +7653,11 @@ function setupRealtime(){
   db.channel('rt-msgs-'+CU.id)
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'receiver_id=eq.'+CU.id},(pl)=>{
       handleIncomingMessage(pl.new);
+    })
+    // ── Listener de UPDATE: quando o destinatário marca nossa msg como lida/recebida,
+    //    atualiza os ticks em tempo real sem recarregar a conversa.
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'messages',filter:'sender_id=eq.'+CU.id},(pl)=>{
+      _updateMsgTicksLive(pl.new);
     }).subscribe();
 
   // Polling fallback every 5s — ensures messages arrive even if realtime drops
