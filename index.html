@@ -2484,6 +2484,75 @@ body.day-mode .presence-dot{ border-color:#ffffff; }
 .notif-dot.active{ display:block; }
 body.day-mode .notif-dot{ border-color:#f5f7fa; }
 
+/* ── Dots de notificação: Loja e Comunidade ── */
+.notif-dot-biz{
+  position:absolute; top:5px; right:calc(50% - 14px);
+  width:9px; height:9px; border-radius:50%;
+  background:var(--neon-yellow,#facc15);
+  border:2px solid var(--bg-deep);
+  display:none; z-index:5;
+}
+.notif-dot-biz.active{ display:block; }
+.notif-dot-comm{
+  position:absolute; top:5px; right:calc(50% - 14px);
+  width:9px; height:9px; border-radius:50%;
+  background:var(--neon-purple,#a855f7);
+  border:2px solid var(--bg-deep);
+  display:none; z-index:5;
+}
+.notif-dot-comm.active{ display:block; }
+
+/* ── Modal customizado (confirmar ação destrutiva) ── */
+#custom-confirm-overlay{
+  position:fixed; inset:0; z-index:99999;
+  background:rgba(0,0,0,.75);
+  backdrop-filter:blur(6px);
+  display:flex; align-items:center; justify-content:center;
+}
+#custom-confirm-box{
+  background:var(--bg-card,#0d1117);
+  border:1px solid var(--border-glow,rgba(0,255,204,.3));
+  border-radius:14px;
+  padding:32px 28px 24px;
+  max-width:340px; width:90%;
+  box-shadow:0 0 40px rgba(0,255,204,.12),0 8px 32px rgba(0,0,0,.6);
+  text-align:center;
+  animation:modalIn .2s ease;
+}
+@keyframes modalIn{from{transform:scale(.88);opacity:0}to{transform:scale(1);opacity:1}}
+#custom-confirm-icon{ font-size:38px; margin-bottom:10px; }
+#custom-confirm-title{
+  font-family:'VT323',monospace; font-size:22px;
+  color:var(--neon-pink,#ff3366); letter-spacing:1px;
+  margin-bottom:8px;
+}
+#custom-confirm-msg{
+  font-family:'Space Mono',monospace; font-size:11px;
+  color:var(--text-muted,#8892b0); line-height:1.6;
+  margin-bottom:22px;
+}
+#custom-confirm-actions{ display:flex; gap:10px; justify-content:center; }
+.ccbtn{
+  padding:9px 22px; border-radius:8px; font-size:11px;
+  font-family:'Space Mono',monospace; cursor:pointer;
+  border:none; transition:all .2s; font-weight:600;
+}
+.ccbtn-confirm{
+  background:rgba(255,51,102,.15);
+  color:var(--neon-pink,#ff3366);
+  border:1px solid rgba(255,51,102,.4);
+}
+.ccbtn-confirm:hover{ background:rgba(255,51,102,.3); box-shadow:0 0 12px rgba(255,51,102,.3); }
+.ccbtn-cancel{
+  background:rgba(255,255,255,.05);
+  color:var(--text-muted,#8892b0);
+  border:1px solid rgba(255,255,255,.1);
+}
+.ccbtn-cancel:hover{ background:rgba(255,255,255,.1); color:var(--text-light); }
+body.day-mode #custom-confirm-box{ background:#fff; border-color:rgba(0,200,150,.4); }
+body.day-mode #custom-confirm-msg{ color:#475569; }
+body.day-mode .ccbtn-cancel{ color:#64748b; }
+
 /* ── Tela de chamada ── */
 .call-overlay{
   position:fixed;inset:0;
@@ -3322,8 +3391,8 @@ body.day-mode::before{
       <button class="nbtn active" id="nb-home" onclick="nav('home')">🏠 Feed</button>
       <button class="nbtn" id="nb-explore" onclick="nav('explore')">🔍 Explorar</button>
       <button class="nbtn" id="nb-friends" onclick="nav('friends')">👥 Amigos</button>
-      <button class="nbtn" id="nb-communities" onclick="nav('communities')">🏘 Comunidades</button>
-      <button class="nbtn" id="nb-businesses" onclick="nav('businesses')" style="color:var(--neon-yellow);">🏪 Lojas</button>
+      <button class="nbtn" id="nb-communities" onclick="nav('communities')" style="position:relative;">🏘 Comunidades<span class="notif-dot-comm" id="nb-comm-dot" style="top:2px;right:2px;position:absolute;"></span></button>
+      <button class="nbtn" id="nb-businesses" onclick="nav('businesses')" style="color:var(--neon-yellow);position:relative;">🏪 Lojas<span class="notif-dot-biz" id="nb-biz-dot" style="top:2px;right:2px;position:absolute;"></span></button>
       <button class="nbtn" id="nb-messages" onclick="nav('messages')">💬 Chat</button>
       <button class="nbtn" id="nb-notifications" onclick="nav('notifications')">🔔 <span class="nbadge" id="notif-badge" style="display:none">0</span></button>
     </div>
@@ -4033,10 +4102,10 @@ body.day-mode::before{
       <svg class="bni" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
       <span class="notif-dot" id="bnav-msg-dot"></span>
     </button>
-    <button class="bnav-btn" id="bn-businesses" onclick="nav('businesses')" aria-label="Lojas">
+    <button class="bnav-btn" id="bn-businesses" onclick="nav('businesses')" aria-label="Lojas" style="position:relative;"><span class="notif-dot-biz" id="bn-biz-dot"></span>
       <svg class="bni" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
     </button>
-    <button class="bnav-btn" id="bn-communities" onclick="nav('communities')" aria-label="Comunidades" style="position:relative;">
+    <button class="bnav-btn" id="bn-communities" onclick="nav('communities')" aria-label="Comunidades" style="position:relative;"><span class="notif-dot-comm" id="bn-comm-dot"></span>
       <svg class="bni" viewBox="0 0 24 24"><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
     </button>
     <button class="bnav-btn" id="bn-profile" onclick="nav('profile')" aria-label="Perfil">
@@ -4506,6 +4575,8 @@ function nav(page){
     else if(page==='communities')    { loadCommGrid('all'); setTimeout(buildCommIconGrid,200); }
     else if(page==='businesses')     initBusinessPage();
     else if(page==='messages'){ loadConversations(); document.getElementById('bnav-msg-dot')?.classList.remove('active'); document.getElementById('msg-badge')?.remove(); db.from('messages').update({read:true}).eq('receiver_id',CU.id).eq('read',false).catch(()=>{}); }
+    else if(page==='businesses'){ ['bn-biz-dot','nb-biz-dot'].forEach(id=>document.getElementById(id)?.classList.remove('active')); }
+    else if(page==='communities'){ ['bn-comm-dot','nb-comm-dot'].forEach(id=>document.getElementById(id)?.classList.remove('active')); }
     else if(page==='notifications')  loadNotifTab('nt-all');
     else if(page==='capsules')       loadCapsules();
     else if(page==='profile')        loadProfilePage(CU?.id);
@@ -6033,11 +6104,47 @@ async function handleFriendReq(reqId,senderId,action){
     if(document.getElementById('notif-list-all')?.innerHTML) loadNotifTab('nt-all');
   },300);
 }
+// ── Modal de confirmação customizado (neon/retro) ──────────────────
+function showCustomConfirm({icon='⚠️', title='Tem certeza?', msg='', confirmLabel='Sim', cancelLabel='Cancelar', onConfirm=()=>{}}){
+  document.getElementById('custom-confirm-overlay')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'custom-confirm-overlay';
+  overlay.innerHTML = `
+    <div id="custom-confirm-box">
+      <div id="custom-confirm-icon">${icon}</div>
+      <div id="custom-confirm-title">${title}</div>
+      <div id="custom-confirm-msg">${msg}</div>
+      <div id="custom-confirm-actions">
+        <button class="ccbtn ccbtn-confirm" id="ccbtn-yes">${confirmLabel}</button>
+        <button class="ccbtn ccbtn-cancel" id="ccbtn-no">${cancelLabel}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.querySelector('#ccbtn-yes').onclick = () => { close(); onConfirm(); };
+  overlay.querySelector('#ccbtn-no').onclick = close;
+  overlay.onclick = (e) => { if(e.target === overlay) close(); };
+}
+
 async function removeFriend(friendRowId){
-  if(!confirm('Remover este amigo?'))return;
-  const{data}=await db.from('friends').select('user_id,friend_id').eq('id',friendRowId).maybeSingle();
-  if(data){await Promise.all([db.from('friends').delete().eq('user_id',data.user_id).eq('friend_id',data.friend_id),db.from('friends').delete().eq('user_id',data.friend_id).eq('friend_id',data.user_id)]);}
-  showToast('Amigo removido','success');loadFriendsList('friends');
+  showCustomConfirm({
+    icon: '💔',
+    title: 'DESFAZER AMIZADE',
+    msg: 'Tem certeza que deseja remover este amigo?<br>Você poderá adicioná-lo novamente depois.',
+    confirmLabel: '✕ Sim, remover',
+    cancelLabel: 'Cancelar',
+    onConfirm: async () => {
+      const{data}=await db.from('friends').select('user_id,friend_id').eq('id',friendRowId).maybeSingle();
+      if(data){
+        await Promise.all([
+          db.from('friends').delete().eq('user_id',data.user_id).eq('friend_id',data.friend_id),
+          db.from('friends').delete().eq('user_id',data.friend_id).eq('friend_id',data.user_id)
+        ]);
+      }
+      showToast('Amigo removido','success');
+      loadFriendsList('friends');
+    }
+  });
 }
 async function unfollow(followId){
   await db.from('follows').delete().eq('id',followId);
@@ -7001,8 +7108,22 @@ async function sendMsg(){
 // ===== NOTIFICATIONS =====
 async function loadNotifCount(){
   if(!CU)return;
-  const{count}=await db.from('notifications').select('id',{count:'exact',head:true}).eq('user_id',CU.id).eq('read',false);
-  updateNotifBadge(count||0);
+  const{data:notifs}=await db.from('notifications')
+    .select('id,type')
+    .eq('user_id',CU.id).eq('read',false);
+  const all = notifs||[];
+  updateNotifBadge(all.length);
+  // Dots de Loja (biz_promo) e Comunidade (community_invite, community_post)
+  const BIZ_TYPES  = ['biz_promo'];
+  const COMM_TYPES = ['community_invite','community_post','community_mention'];
+  const hasBiz  = all.some(n=>BIZ_TYPES.includes(n.type));
+  const hasComm = all.some(n=>COMM_TYPES.includes(n.type));
+  ['bn-biz-dot','nb-biz-dot'].forEach(id=>{
+    document.getElementById(id)?.classList.toggle('active', hasBiz);
+  });
+  ['bn-comm-dot','nb-comm-dot'].forEach(id=>{
+    document.getElementById(id)?.classList.toggle('active', hasComm);
+  });
 }
 
 function updateNotifBadge(n){
@@ -7089,7 +7210,7 @@ function setupRealtime(){
   db.channel('rt-notifs-'+CU.id)
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'user_id=eq.'+CU.id},(pl)=>{
       showToast('🔔 '+pl.new.content,'success');
-      loadNotifCount();
+      loadNotifCount(); // já atualiza dots de biz/comm internamente
       if(document.getElementById('ht-alerts-list')?.children.length>0) loadHomeAlerts();
     }).subscribe();
 
