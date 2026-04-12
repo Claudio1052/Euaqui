@@ -4546,10 +4546,18 @@ async function loadProfile(){
   if(!CU)return;
   let data=null;
   try{
+    // Tenta com coluna settings (nova)
     const res=await db.from('profiles').select('id,username,full_name,email,avatar_url,avatar_type,retro_icon,bio,instagram,twitter,github,status_message,settings,created_at').eq('id',CU.id).maybeSingle();
+    if(res.error) throw res.error;
     data=res.data;
-    if(res.error)console.warn('Profile fetch:',res.error.message);
-  }catch(e){ console.warn('loadProfile exception:',e.message); }
+  }catch(e){
+    // Fallback sem coluna settings
+    console.warn('[loadProfile] Fallback sem settings:', e.message);
+    try{
+      const res2=await db.from('profiles').select('id,username,full_name,email,avatar_url,avatar_type,retro_icon,bio,instagram,twitter,github,status_message,created_at').eq('id',CU.id).maybeSingle();
+      data=res2.data;
+    }catch(e2){ console.warn('loadProfile exception:',e2.message); }
+  }
   if(data){
     CP=data;
     // Sincronizar preferências de privacidade no cache local
@@ -7031,10 +7039,28 @@ async function loadMsgs(userId){
   if(!CU) return;
   const area = document.getElementById('msgs-area');
   if(!area) return;
-  const{data:msgs}=await db.from('messages')
-    .select('id,sender_id,receiver_id,content,media_url,media_type,read,is_read,received,created_at')
-    .or(`and(sender_id.eq.${CU.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${CU.id})`)
-    .order('created_at');
+
+  // Tenta buscar com colunas novas; faz fallback se não existirem ainda no banco
+  let msgs = null;
+  try{
+    const res = await db.from('messages')
+      .select('id,sender_id,receiver_id,content,media_url,media_type,read,is_read,received,created_at')
+      .or(`and(sender_id.eq.${CU.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${CU.id})`)
+      .order('created_at');
+    if(res.error){ throw res.error; }
+    msgs = res.data;
+  }catch(e){
+    // Fallback: colunas is_read/received ainda não existem — usa select original
+    console.warn('[loadMsgs] Usando fallback sem is_read/received:', e.message);
+    try{
+      const res2 = await db.from('messages')
+        .select('id,sender_id,receiver_id,content,media_url,media_type,read,created_at')
+        .or(`and(sender_id.eq.${CU.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${CU.id})`)
+        .order('created_at');
+      msgs = res2.data;
+    }catch(e2){ console.error('[loadMsgs] Erro crítico:', e2); return; }
+  }
+
   if(!msgs?.length){
     area.innerHTML='<div class="chat-empty"><div class="chat-empty-icon">💬</div><div class="chat-empty-txt">Início da conversa</div><div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Diga olá! 👋</div></div>';
     return;
@@ -7118,18 +7144,20 @@ async function loadMsgs(userId){
   area.innerHTML = html;
   area.scrollTop = area.scrollHeight;
 
-  // Marcar mensagens recebidas como lidas (is_read=true) — respeitar preferência de privacidade do usuário atual
+  // Marcar mensagens recebidas como lidas — respeitar preferência de privacidade
   const myPrivacy = _getLocalPrivacySettings();
-  if(!myPrivacy.hide_read_receipt){
-    db.from('messages').update({read:true, is_read:true}).eq('receiver_id',CU.id).eq('sender_id',userId).eq('is_read',false)
-      .then(()=>{ document.getElementById('bnav-msg-dot')?.classList.remove('active'); updateChatBadge(-1); })
-      .catch(()=>{});
-  } else {
-    // Atualizar o campo read mas não is_read (para não acionar checks azuis no remetente)
-    db.from('messages').update({read:true}).eq('receiver_id',CU.id).eq('sender_id',userId).eq('read',false)
-      .then(()=>{ document.getElementById('bnav-msg-dot')?.classList.remove('active'); updateChatBadge(-1); })
-      .catch(()=>{});
+  try{
+    if(!myPrivacy.hide_read_receipt){
+      await db.from('messages').update({read:true, is_read:true}).eq('receiver_id',CU.id).eq('sender_id',userId).eq('read',false);
+    } else {
+      await db.from('messages').update({read:true}).eq('receiver_id',CU.id).eq('sender_id',userId).eq('read',false);
+    }
+  }catch(e){
+    // Colunas novas ainda não existem — fallback só com read
+    try{ await db.from('messages').update({read:true}).eq('receiver_id',CU.id).eq('sender_id',userId).eq('read',false); }catch(e2){}
   }
+  document.getElementById('bnav-msg-dot')?.classList.remove('active');
+  loadUnreadMsgCount();
 }
 
 // ── Extrai o postId de uma mensagem com marcador [POST_SHARE:id] ──
@@ -7220,8 +7248,18 @@ async function sendMsg(){
     const mod=await moderateContent(txt);
     if(!mod.allowed){ showModerationError(mod.categories||[]); return; }
   }
-  const{error}=await db.from('messages').insert({sender_id:CU.id,receiver_id:currentChatUser.id,content:txt,read:false,received:false,is_read:false});
-  if(error)return showToast('Erro ao enviar: '+error.message,'error');
+  let sendErr=null;
+  // Tenta inserir com colunas novas
+  try{
+    const res=await db.from('messages').insert({sender_id:CU.id,receiver_id:currentChatUser.id,content:txt,read:false,received:false,is_read:false});
+    sendErr=res.error;
+    if(sendErr && (sendErr.message?.includes('received') || sendErr.message?.includes('is_read'))){
+      // Fallback sem colunas novas
+      const res2=await db.from('messages').insert({sender_id:CU.id,receiver_id:currentChatUser.id,content:txt,read:false});
+      sendErr=res2.error;
+    }
+  }catch(e){ sendErr=e; }
+  if(sendErr)return showToast('Erro ao enviar: '+sendErr.message,'error');
   inp.value='';autoResizeMsgIn(inp);await loadMsgs(currentChatUser.id);
   try{await db.from('notifications').insert({user_id:currentChatUser.id,actor_id:CU.id,type:'message',content:`@${CP?.username||'alguém'} enviou uma mensagem`,read:false});}catch(e){}
 }
@@ -7292,11 +7330,21 @@ async function savePrivacySettings(){
   try{
     const{data:prof}=await db.from('profiles').select('settings').eq('id',CU.id).maybeSingle();
     existing = prof?.settings||{};
-  }catch(e){}
+  }catch(e){ existing={}; }
   const merged = {...existing, ...newSettings};
 
-  const{error}=await db.from('profiles').update({settings:merged}).eq('id',CU.id);
-  if(error){ showToast('Erro ao salvar: '+error.message,'error'); return; }
+  try{
+    const{error}=await db.from('profiles').update({settings:merged}).eq('id',CU.id);
+    if(error) throw error;
+  }catch(e){
+    // Coluna settings ainda não existe no banco — avisar o usuário mas salvar localmente
+    console.warn('[savePrivacySettings] Coluna settings não existe ainda:', e.message);
+    _setLocalPrivacySettings(newSettings);
+    if(typeof _applyInvisibleMode === 'function') _applyInvisibleMode(invisible);
+    showToast('⚠️ Salvo localmente. Adicione a coluna settings em profiles no Supabase para persistir.','');
+    closeM('m-privacy');
+    return;
+  }
 
   _setLocalPrivacySettings(newSettings);
 
@@ -7825,7 +7873,23 @@ async function loadHomeMsgs(userId){
   if(!CU) return;
   const area=document.getElementById('ht-msgs-area');
   if(!area) return;
-  const{data:msgs}=await db.from('messages').select('id,sender_id,receiver_id,content,media_url,media_type,read,is_read,received,created_at').or('and(sender_id.eq.'+CU.id+',receiver_id.eq.'+userId+'),and(sender_id.eq.'+userId+',receiver_id.eq.'+CU.id+')').order('created_at');
+
+  // Tenta buscar com colunas novas; fallback se não existirem
+  let msgs=null;
+  try{
+    const res=await db.from('messages').select('id,sender_id,receiver_id,content,media_url,media_type,read,is_read,received,created_at')
+      .or('and(sender_id.eq.'+CU.id+',receiver_id.eq.'+userId+'),and(sender_id.eq.'+userId+',receiver_id.eq.'+CU.id+')').order('created_at');
+    if(res.error) throw res.error;
+    msgs=res.data;
+  }catch(e){
+    console.warn('[loadHomeMsgs] Fallback sem is_read/received:', e.message);
+    try{
+      const res2=await db.from('messages').select('id,sender_id,receiver_id,content,media_url,media_type,read,created_at')
+        .or('and(sender_id.eq.'+CU.id+',receiver_id.eq.'+userId+'),and(sender_id.eq.'+userId+',receiver_id.eq.'+CU.id+')').order('created_at');
+      msgs=res2.data;
+    }catch(e2){ console.error('[loadHomeMsgs] Erro crítico:',e2); return; }
+  }
+
   if(!msgs?.length){area.innerHTML='<div style="text-align:center;color:var(--text-muted);font-size:11px;padding:20px;">Início da conversa 👋</div>';return;}
 
   // Pré-buscar posts compartilhados
@@ -7909,8 +7973,16 @@ async function sendHomeMsg(){
     }catch(e){}
     msgAttachFiles=[];renderMsgAttachPrev();
   }
-  const{error}=await db.from('messages').insert({sender_id:CU.id,receiver_id:homeChatUser.id,content:txt||null,media_url:mediaUrl,media_type:mediaType,read:false,received:false,is_read:false});
-  if(error){showToast('Erro: '+error.message,'error');return;}
+  let sendErr2=null;
+  try{
+    const res=await db.from('messages').insert({sender_id:CU.id,receiver_id:homeChatUser.id,content:txt||null,media_url:mediaUrl,media_type:mediaType,read:false,received:false,is_read:false});
+    sendErr2=res.error;
+    if(sendErr2 && (sendErr2.message?.includes('received')||sendErr2.message?.includes('is_read'))){
+      const res2=await db.from('messages').insert({sender_id:CU.id,receiver_id:homeChatUser.id,content:txt||null,media_url:mediaUrl,media_type:mediaType,read:false});
+      sendErr2=res2.error;
+    }
+  }catch(e){ sendErr2=e; }
+  if(sendErr2){showToast('Erro: '+sendErr2.message,'error');return;}
   if(inp){inp.value='';inp.style.height='auto';}
   await loadHomeMsgs(homeChatUser.id);
   try{await db.from('notifications').insert({user_id:homeChatUser.id,actor_id:CU.id,type:'message',content:'@'+(CP?.username||'alguém')+' enviou uma mensagem',read:false});}catch(e){}
