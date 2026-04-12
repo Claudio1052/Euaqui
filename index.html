@@ -7676,7 +7676,40 @@ function setupRealtime(){
 
   // Polling fallback every 5s — ensures messages arrive even if realtime drops
   clearInterval(_msgPollInterval);
-  _msgPollInterval = setInterval(()=>{ pollNewMessages(); loadUnreadMsgCount(); loadNotifCount(); }, 5000);
+  _msgPollInterval = setInterval(()=>{ pollNewMessages(); loadUnreadMsgCount(); loadNotifCount(); pollTickUpdates(); }, 5000);
+}
+
+// ═══════════════════════════════════════════════════════════
+// 🎯 POLLING DE TICKS: a cada 5s, se houver conversa aberta,
+// rebusca o status read/received das minhas mensagens enviadas
+// e atualiza os ticks na tela sem recarregar.
+// Fallback confiável caso o Realtime não esteja habilitado.
+// ═══════════════════════════════════════════════════════════
+async function pollTickUpdates(){
+  if(!CU || !currentChatUser) return;
+  // Pega os IDs das bolhas minhas que ainda não estão em 'read'
+  const pendingBubbles = document.querySelectorAll('.mb.sent[data-msg-id] .mb-status:not(.read)');
+  if(!pendingBubbles.length) return;
+  const ids = [];
+  pendingBubbles.forEach(s=>{
+    const bubble = s.closest('.mb[data-msg-id]');
+    if(bubble?.dataset?.msgId) ids.push(bubble.dataset.msgId);
+  });
+  if(!ids.length) return;
+  // Busca status atual no banco
+  try{
+    const{data, error} = await db.from('messages')
+      .select('id,read,received').in('id', ids);
+    if(error){
+      // Sem a coluna received, tenta só read
+      if(/received|column|schema/i.test(error.message||'')){
+        const r2 = await db.from('messages').select('id,read').in('id', ids);
+        if(r2.data) r2.data.forEach(m=>_updateMsgTicksLive({...m, received:m.read}));
+      }
+      return;
+    }
+    (data||[]).forEach(m=>_updateMsgTicksLive(m));
+  }catch(e){}
 }
 
 let _lastMsgCheck=new Date().toISOString();
