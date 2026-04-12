@@ -2714,6 +2714,105 @@ body.day-mode .ccbtn-cancel{ color:#64748b; }
   border:2px solid var(--neon-cyan);
 }
 
+/* ═══ Botão de minimizar chamada (cabeçalho do modal) ═══ */
+.call-minimize-btn{
+  position:absolute;
+  top:16px;right:16px;
+  width:38px;height:38px;
+  border-radius:50%;
+  background:rgba(0,255,204,.08);
+  border:1px solid rgba(0,255,204,.35);
+  color:var(--neon-cyan);
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;
+  transition:all .2s;
+  z-index:5;
+  box-shadow:0 0 10px rgba(0,255,204,.15);
+}
+.call-minimize-btn:hover{
+  background:rgba(0,255,204,.18);
+  box-shadow:0 0 18px rgba(0,255,204,.4);
+  transform:scale(1.05);
+}
+
+/* ═══ Janela minimizada (Picture-in-Picture) ═══ */
+.call-overlay.minimized-call-popup{
+  position:fixed !important;
+  inset:auto !important;
+  bottom:20px;right:20px;
+  width:250px;height:auto;
+  min-height:0;
+  padding:14px 14px 12px;
+  z-index:9999;
+  border-radius:15px;
+  gap:8px;
+  /* Borda neon brilhante */
+  border:2px solid var(--neon-cyan);
+  box-shadow:
+    0 0 20px rgba(0,255,204,.5),
+    0 0 40px rgba(0,255,204,.2),
+    0 8px 32px rgba(0,0,0,.7);
+  background:linear-gradient(135deg,rgba(10,10,42,.97) 0%,rgba(13,27,42,.97) 100%);
+  backdrop-filter:blur(10px);
+  cursor:grab;
+  animation:minPopIn .25s cubic-bezier(.4,1.4,.6,1);
+}
+.call-overlay.minimized-call-popup:active{ cursor:grabbing; }
+@keyframes minPopIn{
+  0%{transform:scale(.8);opacity:0;}
+  100%{transform:scale(1);opacity:1;}
+}
+
+/* Redimensionar todos os elementos internos ao minimizar */
+.call-overlay.minimized-call-popup .call-video-wrap{
+  max-width:100%;height:auto;aspect-ratio:16/10;
+  border-radius:10px;
+}
+.call-overlay.minimized-call-popup .call-video-wrap video{
+  max-width:100%;height:auto;
+}
+.call-overlay.minimized-call-popup .call-video-self{
+  width:48px;bottom:6px;right:6px;border-width:1px;
+}
+.call-overlay.minimized-call-popup .call-avatar{
+  width:54px;height:54px;font-size:26px;border-width:2px;
+  animation:none; /* sem pulsar quando minimizado */
+  box-shadow:0 0 12px rgba(0,255,204,.3);
+}
+.call-overlay.minimized-call-popup .call-name{
+  font-size:13px;margin:2px 0;
+}
+.call-overlay.minimized-call-popup .call-status{
+  font-size:9px;letter-spacing:1px;
+}
+.call-overlay.minimized-call-popup .call-timer{
+  display:none !important; /* timer detalhado só no modo grande */
+}
+/* Ocultar controles secundários — só mostra botão de encerrar */
+.call-overlay.minimized-call-popup .call-secondary-btn{
+  display:none !important;
+}
+/* Ações: menor + compactas */
+.call-overlay.minimized-call-popup .call-actions{
+  margin-top:4px;gap:10px;
+}
+.call-overlay.minimized-call-popup .call-action-btn{
+  width:40px;height:40px;
+}
+.call-overlay.minimized-call-popup .call-actions svg{
+  width:18px;height:18px;
+}
+.call-overlay.minimized-call-popup .call-actions > div > div{
+  font-size:8px !important;margin-top:3px !important;
+}
+/* Botão de maximizar também menor */
+.call-overlay.minimized-call-popup .call-minimize-btn{
+  top:8px;right:8px;width:28px;height:28px;
+}
+.call-overlay.minimized-call-popup .call-minimize-btn svg{
+  width:14px;height:14px;
+}
+
 /* ===== COMUNIDADES V2 ===== */
 .comm-detail-wrap{max-width:700px;margin:0 auto;width:100%;box-sizing:border-box;}
 .comm-banner{position:relative;height:160px;border-radius:14px 14px 0 0;overflow:hidden;background:linear-gradient(135deg,#0a0a2a,#1a1a3a);}
@@ -12471,6 +12570,17 @@ function _setupCallListen(){
     .on('broadcast',{event:'call-invite'},(p)=>{
       if(p.payload?.from && p.payload.from!==CU.id) _onIncoming(p.payload);
     })
+    .on('broadcast',{event:'call-cancel'},(p)=>{
+      // ── Caller cancelou antes da gente atender → fechar modal imediatamente ──
+      if(p.payload?.from && _callPeer && p.payload.from===_callPeer.id && !_isCaller){
+        console.log('[call] Caller cancelou a chamada — fechando modal');
+        _stopRing();
+        document.getElementById('call-overlay')?.remove();
+        // Mensagem no chat: chamada perdida
+        _insertCallMsg(_callPeer.id, '📵 Chamada perdida');
+        _cleanup();
+      }
+    })
     .subscribe();
 }
 
@@ -12568,8 +12678,23 @@ function endCall(){
   const wasCaller = _isCaller;
   const hadTimer  = !!_callTimer;
   const nm = CP?.full_name||CP?.username||'Alguém';
-  // Enviar sinal de encerramento pelo canal já aberto (se disponível)
+  // Enviar sinal de encerramento pelo canal já aberto (se disponível, funciona quando chamada já foi atendida)
   if(_sigCh) _sigCh.send({type:'broadcast',event:'call-end',payload:{from:CU.id}}).catch(()=>{});
+  // ── CANCELAMENTO ANTES DE ATENDER ──
+  // Se sou o caller e ainda não conectei (sem _callTimer = sem resposta aceita),
+  // mando 'call-cancel' via canal de LISTEN do destinatário, pois ele ainda não entrou
+  // no canal par-a-par _sigCh. Sem isso, o modal de incoming do outro fica tocando infinito.
+  if(wasCaller && peer && !hadTimer){
+    try{
+      const cancelCh = db.channel('vcall-listen-'+peer.id, {config:{broadcast:{self:false}}});
+      cancelCh.subscribe(s=>{
+        if(s==='SUBSCRIBED'){
+          cancelCh.send({type:'broadcast',event:'call-cancel',payload:{from:CU.id,name:nm}});
+          setTimeout(()=>{try{db.removeChannel(cancelCh);}catch(e){}}, 1500);
+        }
+      });
+    }catch(e){ console.warn('[call] cancel signal err:',e); }
+  }
   _cleanup();
   // Notificação + mensagem de chamada perdida em background
   if(wasCaller && peer && !hadTimer){
@@ -12668,6 +12793,9 @@ function _showCallUI(role,name,type,avatar){
     ?`<img class="call-avatar" src="${avatar}" onerror="this.outerHTML='<div class=\\'call-avatar\\'>📞</div>'">`
     :`<div class="call-avatar">${isVideo?'📹':'📞'}</div>`;
   ov.innerHTML=`
+    <button id="call-minimize-btn" class="call-minimize-btn" onclick="toggleCallMinimize()" title="Minimizar">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" id="call-minmax-icon"><polyline points="19 12 12 19 5 12"/></svg>
+    </button>
     ${isVideo?`<div class="call-video-wrap">
         <video id="call-remote-video" autoplay playsinline style="width:100%;height:100%;object-fit:cover;background:#000;border-radius:12px;"></video>
         <div class="call-video-self"><video id="call-self-video" autoplay playsinline muted style="width:100%;border-radius:6px;"></video></div>
@@ -12683,7 +12811,7 @@ function _showCallUI(role,name,type,avatar){
           </button>
           <div style="font-size:9px;color:#22c55e;margin-top:6px;font-family:'Space Mono',monospace;">ATENDER</div>
         </div>`:''}
-      <div style="text-align:center;">
+      <div style="text-align:center;" class="call-secondary-btn">
         <button class="call-action-btn call-btn-mute" id="call-mute-btn" onclick="toggleMute()">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
         </button>
@@ -12697,6 +12825,90 @@ function _showCallUI(role,name,type,avatar){
       </div>
     </div>`;
   document.body.appendChild(ov);
+  // Ativa o drag para quando estiver minimizado
+  _setupCallMinimizeDrag(ov);
+}
+
+// ═══════════════════════════════════════════════════════════
+// 📐 Minimizar / maximizar chamada (janela flutuante + drag)
+// ═══════════════════════════════════════════════════════════
+function toggleCallMinimize(){
+  const ov = document.getElementById('call-overlay');
+  if(!ov) return;
+  const isMin = ov.classList.toggle('minimized-call-popup');
+  // Troca o ícone: minimizar ↓ ↔ maximizar ↗
+  const iconEl = document.getElementById('call-minmax-icon');
+  if(iconEl){
+    iconEl.innerHTML = isMin
+      // Ícone de maximizar (seta diagonal / fullscreen)
+      ? '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>'
+      // Ícone de minimizar (chevron down)
+      : '<polyline points="19 12 12 19 5 12"/>';
+  }
+  const btn = document.getElementById('call-minimize-btn');
+  if(btn) btn.title = isMin ? 'Maximizar' : 'Minimizar';
+  // Ao maximizar, reseta posição custom do drag
+  if(!isMin){
+    ov.style.top = '';
+    ov.style.left = '';
+    ov.style.right = '';
+    ov.style.bottom = '';
+  }
+}
+
+// Drag-and-drop da janelinha minimizada (mouse + touch)
+function _setupCallMinimizeDrag(ov){
+  let dragging = false;
+  let startX = 0, startY = 0;
+  let baseX = 0, baseY = 0;
+
+  const getPoint = (e) => {
+    if(e.touches && e.touches[0]) return {x:e.touches[0].clientX, y:e.touches[0].clientY};
+    return {x:e.clientX, y:e.clientY};
+  };
+
+  const onDown = (e) => {
+    // Só arrasta se estiver minimizado
+    if(!ov.classList.contains('minimized-call-popup')) return;
+    // Não iniciar drag se clicou num botão
+    if(e.target.closest('button')) return;
+    const pt = getPoint(e);
+    dragging = true;
+    startX = pt.x; startY = pt.y;
+    const rect = ov.getBoundingClientRect();
+    baseX = rect.left; baseY = rect.top;
+    // Durante o drag, override any bottom/right
+    ov.style.right = 'auto';
+    ov.style.bottom = 'auto';
+    ov.style.transition = 'none';
+    document.body.style.userSelect = 'none';
+  };
+  const onMove = (e) => {
+    if(!dragging) return;
+    const pt = getPoint(e);
+    const nx = baseX + (pt.x - startX);
+    const ny = baseY + (pt.y - startY);
+    // Limitar dentro da viewport
+    const maxX = window.innerWidth  - ov.offsetWidth  - 4;
+    const maxY = window.innerHeight - ov.offsetHeight - 4;
+    ov.style.left = Math.max(4, Math.min(nx, maxX)) + 'px';
+    ov.style.top  = Math.max(4, Math.min(ny, maxY)) + 'px';
+    // Evita scroll no mobile enquanto arrasta
+    if(e.cancelable) e.preventDefault();
+  };
+  const onUp = () => {
+    if(!dragging) return;
+    dragging = false;
+    ov.style.transition = '';
+    document.body.style.userSelect = '';
+  };
+
+  ov.addEventListener('mousedown', onDown);
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+  ov.addEventListener('touchstart', onDown, {passive:true});
+  document.addEventListener('touchmove', onMove, {passive:false});
+  document.addEventListener('touchend', onUp);
 }
 
 // ── Inicializar escuta de chamadas ao fazer login ────────────────
@@ -12706,6 +12918,16 @@ function _initCallListen(){
   window._callListenCh=db.channel('vcall-listen-'+CU.id,{config:{broadcast:{self:false}}})
     .on('broadcast',{event:'call-invite'},(p)=>{
       if(p.payload?.from && p.payload.from!==CU.id) _onIncoming(p.payload);
+    })
+    .on('broadcast',{event:'call-cancel'},(p)=>{
+      // Caller cancelou antes de atender → fecha modal de incoming
+      if(p.payload?.from && _callPeer && p.payload.from===_callPeer.id && !_isCaller){
+        console.log('[call] Caller cancelou a chamada — fechando modal');
+        _stopRing();
+        document.getElementById('call-overlay')?.remove();
+        _insertCallMsg(_callPeer.id, '📵 Chamada perdida');
+        _cleanup();
+      }
     })
     .subscribe((s)=>{
       if(s==='SUBSCRIBED') console.log('[CALL] Listen channel ready:', 'vcall-listen-'+CU.id);
