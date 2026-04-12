@@ -6905,16 +6905,20 @@ async function loadConversations(){
   // ── Buscar contagem de não lidas por remetente ──────────────────────
   const unreadMap={};
   try{
-    const{data:unreadMsgs}=await db.from('messages')
-      .select('sender_id').eq('receiver_id',CU.id).neq('status','read');
-    (unreadMsgs||[]).forEach(m=>{ unreadMap[m.sender_id]=(unreadMap[m.sender_id]||0)+1; });
-  }catch(e){
+    // Tenta coluna status primeiro; cai no campo read se não existir
+    let unreadMsgs=null;
     try{
-      const{data:unreadMsgs}=await db.from('messages')
+      const{data,error}=await db.from('messages')
+        .select('sender_id').eq('receiver_id',CU.id).neq('status','read');
+      if(error) throw error;
+      unreadMsgs=data;
+    }catch(e2){
+      const{data}=await db.from('messages')
         .select('sender_id').eq('receiver_id',CU.id).eq('read',false);
-      (unreadMsgs||[]).forEach(m=>{ unreadMap[m.sender_id]=(unreadMap[m.sender_id]||0)+1; });
-    }catch(e2){}
-  }
+      unreadMsgs=data;
+    }
+    (unreadMsgs||[]).forEach(m=>{ unreadMap[m.sender_id]=(unreadMap[m.sender_id]||0)+1; });
+  }catch(e){}
   convos.forEach(conv=>{
     const p = pm[conv.userId]||{username:'?',full_name:'?'};
     const av = getAvatar(p);
@@ -6989,10 +6993,22 @@ async function loadMsgs(userId){
   if(!CU) return;
   const area = document.getElementById('msgs-area');
   if(!area) return;
-  const{data:msgs}=await db.from('messages')
-    .select('id,sender_id,receiver_id,content,media_url,media_type,read,status,created_at')
-    .or(`and(sender_id.eq.${CU.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${CU.id})`)
-    .order('created_at');
+  // Tenta com campo status; fallback sem ele caso coluna ainda não exista no banco
+  let msgs=null;
+  try{
+    const{data,error}=await db.from('messages')
+      .select('id,sender_id,receiver_id,content,media_url,media_type,read,status,created_at')
+      .or(`and(sender_id.eq.${CU.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${CU.id})`)
+      .order('created_at');
+    if(error) throw error;
+    msgs=data;
+  }catch(e){
+    const{data}=await db.from('messages')
+      .select('id,sender_id,receiver_id,content,media_url,media_type,read,created_at')
+      .or(`and(sender_id.eq.${CU.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${CU.id})`)
+      .order('created_at');
+    msgs=data;
+  }
   if(!msgs?.length){
     area.innerHTML='<div class="chat-empty"><div class="chat-empty-icon">💬</div><div class="chat-empty-txt">Início da conversa</div><div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Diga olá! 👋</div></div>';
     return;
@@ -7061,9 +7077,14 @@ async function loadMsgs(userId){
 
   // ── Marcar como READ ao abrir a conversa ─────────────────────────────
   try{
-    await db.from('messages')
+    const{error:upErr}=await db.from('messages')
       .update({status:'read',read:true,read_at:new Date().toISOString()})
       .eq('receiver_id',CU.id).eq('sender_id',userId).neq('status','read');
+    // Se status não existe no banco, faz fallback com campo read
+    if(upErr){
+      await db.from('messages').update({read:true})
+        .eq('receiver_id',CU.id).eq('sender_id',userId).eq('read',false);
+    }
   }catch(e){
     db.from('messages').update({read:true})
       .eq('receiver_id',CU.id).eq('sender_id',userId).eq('read',false)
@@ -7244,9 +7265,10 @@ function updateMsgBadge(n){
 async function markMessagesDelivered(){
   if(!CU)return;
   try{
-    await db.from('messages')
+    const{error}=await db.from('messages')
       .update({status:'delivered',delivered_at:new Date().toISOString()})
       .eq('receiver_id',CU.id).eq('status','sent');
+    // Se coluna status não existe, ignora silenciosamente
   }catch(e){}
 }
 // ──────────────────────────────────────────────────────────────────────────
