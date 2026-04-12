@@ -12812,13 +12812,14 @@ function toggleCallMinimize(){
   bubble.title = 'Toque para abrir a chamada';
   document.body.appendChild(bubble);
 
-  // Clique simples na bolinha → restaura modal
+  // Clique simples na bolinha → restaura modal (mouse)
   let didDrag = false;
   bubble.addEventListener('click', () => { if(!didDrag) _restoreCallFromBubble(); });
 
   // Drag (mouse + touch)
   let dragging = false, startX=0, startY=0, baseX=0, baseY=0;
-  const getXY = e => e.touches ? {x:e.touches[0].clientX,y:e.touches[0].clientY} : {x:e.clientX,y:e.clientY};
+  const getXY = e => e.touches ? {x:e.touches[0].clientX,y:e.touches[0].clientY}
+                                : {x:e.clientX,y:e.clientY};
 
   const onDown = e => {
     const pt = getXY(e);
@@ -12828,13 +12829,13 @@ function toggleCallMinimize(){
     baseX = r.left; baseY = r.top;
     bubble.style.transition = 'none';
     bubble.style.animation = 'none';
-    e.preventDefault();
+    e.preventDefault(); // necessário para o drag, mas cancela 'click' no mobile
   };
   const onMove = e => {
     if(!dragging) return;
     const pt = getXY(e);
     const dx = pt.x - startX, dy = pt.y - startY;
-    if(Math.abs(dx)+Math.abs(dy) > 4) didDrag = true;
+    if(Math.abs(dx)+Math.abs(dy) > 6) didDrag = true;
     const nx = Math.max(4, Math.min(baseX+dx, window.innerWidth  - bubble.offsetWidth  - 4));
     const ny = Math.max(4, Math.min(baseY+dy, window.innerHeight - bubble.offsetHeight - 4));
     bubble.style.left   = nx + 'px';
@@ -12845,8 +12846,19 @@ function toggleCallMinimize(){
   };
   const onUp = () => { dragging = false; };
 
+  // No mobile o 'click' é cancelado pelo preventDefault() do touchstart.
+  // Por isso detectamos o toque simples direto no touchend da bolinha.
+  const onTouchEnd = e => {
+    dragging = false;
+    if(!didDrag) {
+      e.preventDefault(); // evita o click fantasma de 300ms
+      _restoreCallFromBubble();
+    }
+  };
+
   bubble.addEventListener('mousedown',  onDown);
-  bubble.addEventListener('touchstart', onDown, {passive:false});
+  bubble.addEventListener('touchstart', onDown,    {passive:false});
+  bubble.addEventListener('touchend',   onTouchEnd,{passive:false}); // ← toque simples mobile
   document.addEventListener('mousemove',  onMove);
   document.addEventListener('mouseup',    onUp);
   document.addEventListener('touchmove',  onMove, {passive:false});
