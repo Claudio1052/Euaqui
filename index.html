@@ -2735,108 +2735,142 @@ body.day-mode .ccbtn-cancel{ color:#64748b; }
   transform:scale(1.05);
 }
 
-/* ═══ Janela minimizada (Picture-in-Picture) ═══ */
-.call-overlay.minimized-call-popup{
-  position:fixed !important;
-  inset:auto !important;
-  bottom:80px !important;
-  right:20px !important;
-  top:auto !important;
-  left:auto !important;
-  width:220px !important;
-  height:auto !important;
-  min-height:0;
-  padding:10px !important;
-  z-index:99999 !important;
-  border-radius:12px !important;
-  gap:8px;
-  align-items:flex-start !important;
-  justify-content:center !important;
-  /* Borda neon brilhante */
-  border:2px solid var(--neon-cyan) !important;
-  box-shadow:0 0 15px rgba(0,255,204,.4) !important;
-  background:rgba(10,10,42,0.95) !important;
-  background-color:rgba(10,10,42,0.95) !important;
-  backdrop-filter:blur(10px) !important;
-  cursor:grab;
-  animation:minPopIn .25s cubic-bezier(.4,1.4,.6,1);
+/* ═══════════════════════════════════════════════════════════════
+   JANELA FLUTUANTE (PiP) — TODOS os valores com !important para
+   vencer o inset:0 e qualquer outra regra do .call-overlay base.
+   O problema raiz: inset shorthand do base expande para top/right/
+   bottom/left:0 e sobrescreve propriedades sem !important.
+═══════════════════════════════════════════════════════════════ */
+#call-overlay.minimized-call-popup,
+.call-overlay.minimized-call-popup {
+  /* Posicionamento — TUDO com !important para vencer inset:0 do base */
+  position: fixed   !important;
+  top:    auto      !important;
+  left:   auto      !important;
+  right:  20px      !important;
+  bottom: 85px      !important;
+  inset:  auto      !important; /* reset do shorthand */
+
+  /* Dimensões fixas */
+  width:      200px !important;
+  height:     150px !important;
+  min-height: 0     !important;
+  max-width:  none  !important;
+
+  /* Empilhamento — acima de qualquer nav/menu */
+  z-index: 2147483647 !important; /* valor máximo de z-index */
+
+  /* Visual */
+  border-radius: 14px   !important;
+  border:  2px solid var(--neon-cyan) !important;
+  box-shadow: 0 0 18px rgba(0,255,204,.55), 0 8px 30px rgba(0,0,0,.8) !important;
+  background: rgba(8,8,30,0.97) !important;
+  backdrop-filter: blur(12px)   !important;
+
+  /* Layout interno compacto */
+  display:        flex          !important;
+  flex-direction: column        !important;
+  align-items:    center        !important;
+  justify-content:flex-start    !important;
+  gap:    4px   !important;
+  padding: 6px  !important;
+  overflow: hidden !important;
+
+  cursor: grab !important;
+  animation: minPopIn .22s cubic-bezier(.4,1.4,.6,1) !important;
 }
-.call-overlay.minimized-call-popup:active{ cursor:grabbing; }
-@keyframes minPopIn{
-  0%{transform:scale(.8);opacity:0;}
-  100%{transform:scale(1);opacity:1;}
+.call-overlay.minimized-call-popup:active { cursor: grabbing !important; }
+
+@keyframes minPopIn {
+  0%   { transform: scale(.75); opacity: 0; }
+  100% { transform: scale(1);   opacity: 1; }
 }
 
-/* Redimensionar todos os elementos internos ao minimizar */
-.call-overlay.minimized-call-popup .call-video-wrap{
-  max-width:100%;height:auto;aspect-ratio:16/10;
-  border-radius:10px;
+/* ── Elementos internos no modo PiP ── */
+
+/* Vídeo remoto: preenche a caixa toda */
+.call-overlay.minimized-call-popup .call-video-wrap {
+  width:        100% !important;
+  height:        90px !important;
+  max-width:    none !important;
+  aspect-ratio: unset !important;
+  border-radius: 8px  !important;
+  flex-shrink:   0    !important;
 }
-.call-overlay.minimized-call-popup .call-video-wrap video{
-  max-width:100%;height:auto;
+.call-overlay.minimized-call-popup .call-video-wrap video,
+.call-overlay.minimized-call-popup #call-remote-video {
+  width:      100% !important;
+  height:     100% !important;
+  object-fit: cover !important;
 }
-.call-overlay.minimized-call-popup .call-video-self{
-  width:48px;bottom:6px;right:6px;border-width:1px;
-}
-.call-overlay.minimized-call-popup .call-avatar{
-  width:54px;height:54px;font-size:26px;border-width:2px;
-  animation:none; /* sem pulsar quando minimizado */
-  box-shadow:0 0 12px rgba(0,255,204,.3);
-}
-.call-overlay.minimized-call-popup .call-name{
-  font-size:13px;margin:2px 0;
-}
-.call-overlay.minimized-call-popup .call-status{
-  font-size:9px;letter-spacing:1px;
-}
-.call-overlay.minimized-call-popup .call-timer{
-  display:none !important; /* timer detalhado só no modo grande */
-}
-/* Ocultar controles secundários — só mostra botão de encerrar */
-.call-overlay.minimized-call-popup .call-secondary-btn{
-  display:none !important;
-}
-/* Ações: menor + compactas */
-.call-overlay.minimized-call-popup .call-actions{
-  margin-top:4px;gap:10px;
-}
-.call-overlay.minimized-call-popup .call-action-btn{
-  width:40px;height:40px;
-}
-.call-overlay.minimized-call-popup .call-actions svg{
-  width:18px;height:18px;
-}
-.call-overlay.minimized-call-popup .call-actions > div > div{
-  font-size:8px !important;margin-top:3px !important;
-}
-/* Botão de maximizar também menor */
-.call-overlay.minimized-call-popup .call-minimize-btn{
-  top:8px;right:8px;width:28px;height:28px;
-}
-.call-overlay.minimized-call-popup .call-minimize-btn svg{
-  width:14px;height:14px;
+/* Pip de câmera própria: menor */
+.call-overlay.minimized-call-popup .call-video-self {
+  width: 36px !important;
+  bottom: 4px !important; right: 4px !important;
+  border-width: 1px !important;
 }
 
-/* ── FORÇA EXTRA: garante que minimized-call-popup sobrepõe tudo ── */
-#call-overlay.minimized-call-popup{
-  position:fixed !important;
-  bottom:80px !important;
-  right:20px !important;
-  top:auto !important;
-  left:auto !important;
-  width:220px !important;
-  height:auto !important;
-  background:rgba(10,10,42,0.95) !important;
-  background-color:rgba(10,10,42,0.95) !important;
-  border:2px solid var(--neon-cyan) !important;
-  border-radius:12px !important;
-  z-index:99999 !important;
-  box-shadow:0 0 15px rgba(0,255,204,0.4) !important;
-  padding:10px !important;
-  backdrop-filter:blur(10px) !important;
-  align-items:flex-start !important;
-  justify-content:center !important;
-  inset:auto !important;
+/* Avatar (chamada de voz): compacto */
+.call-overlay.minimized-call-popup .call-avatar {
+  width:  44px !important; height: 44px !important;
+  font-size: 20px !important;
+  border-width: 2px !important;
+  animation: none !important;
+  box-shadow: 0 0 10px rgba(0,255,204,.3) !important;
+  flex-shrink: 0 !important;
+}
+
+/* Textos: ocultos ou muito pequenos */
+.call-overlay.minimized-call-popup .call-name {
+  font-size: 10px !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 100% !important;
+}
+.call-overlay.minimized-call-popup .call-status {
+  display: none !important;
+}
+.call-overlay.minimized-call-popup .call-timer {
+  display: none !important;
+}
+
+/* Botões secundários: sumam */
+.call-overlay.minimized-call-popup .call-secondary-btn {
+  display: none !important;
+}
+/* Botão atender (receiver): some no PiP */
+.call-overlay.minimized-call-popup .call-actions > div:first-child:not(:last-child) {
+  display: none !important;
+}
+
+/* Linha de ações: compacta */
+.call-overlay.minimized-call-popup .call-actions {
+  margin-top: 2px !important;
+  gap: 6px       !important;
+  flex-wrap: nowrap !important;
+}
+.call-overlay.minimized-call-popup .call-action-btn {
+  width:  34px !important;
+  height: 34px !important;
+}
+.call-overlay.minimized-call-popup .call-actions svg {
+  width:  16px !important;
+  height: 16px !important;
+}
+.call-overlay.minimized-call-popup .call-actions > div > div {
+  display: none !important; /* esconde labels dos botões */
+}
+
+/* Botão de maximizar: pequeno, no canto */
+.call-overlay.minimized-call-popup .call-minimize-btn {
+  top:    4px !important; right: 4px !important;
+  width:  22px !important; height: 22px !important;
+  background: rgba(0,255,204,.12) !important;
+}
+.call-overlay.minimized-call-popup .call-minimize-btn svg {
+  width: 12px !important; height: 12px !important;
 }
 
 /* ===== COMUNIDADES V2 ===== */
@@ -12597,19 +12631,14 @@ function _setupCallListen(){
       if(p.payload?.from && p.payload.from!==CU.id) _onIncoming(p.payload);
     })
     .on('broadcast',{event:'call-cancel'},(p)=>{
-      // ── Caller cancelou ANTES de atender → parar toque e fechar modal ──
-      const fromId = p.payload?.from;
-      if(!fromId || _isCaller) return;
-      const overlay = document.getElementById('call-overlay');
-      if(!overlay) return;
-      const peerMatch = !_callPeer || _callPeer.id === fromId;
-      if(peerMatch){
-        console.log('[call] call-cancel recebido de', fromId, '— encerrando toque');
+      // ── Caller cancelou antes da gente atender → fechar modal imediatamente ──
+      if(p.payload?.from && _callPeer && p.payload.from===_callPeer.id && !_isCaller){
+        console.log('[call] Caller cancelou a chamada — fechando modal');
         _stopRing();
-        const peerId = _callPeer?.id || fromId;
-        overlay.remove();
+        document.getElementById('call-overlay')?.remove();
+        // Mensagem no chat: chamada perdida
+        _insertCallMsg(_callPeer.id, '📵 Chamada perdida');
         _cleanup();
-        _insertCallMsg(peerId, '📵 Chamada perdida');
       }
     })
     .subscribe();
@@ -12705,42 +12734,31 @@ function endCall(){
   // Fechar overlay IMEDIATAMENTE
   document.getElementById('call-overlay')?.remove();
   // Guardar estado antes do cleanup
-  const peer      = _callPeer ? {..._callPeer} : null;
+  const peer     = _callPeer ? {..._callPeer} : null;
   const wasCaller = _isCaller;
   const hadTimer  = !!_callTimer;
   const nm = CP?.full_name||CP?.username||'Alguém';
-
+  // Enviar sinal de encerramento pelo canal já aberto (se disponível, funciona quando chamada já foi atendida)
+  if(_sigCh) _sigCh.send({type:'broadcast',event:'call-end',payload:{from:CU.id}}).catch(()=>{});
   // ── CANCELAMENTO ANTES DE ATENDER ──
-  // Envia 'call-cancel' via canal de LISTEN do destinatário ANTES do _cleanup().
-  // Usa tentativa dupla: aguarda subscribe + fallback após 400ms.
+  // Se sou o caller e ainda não conectei (sem _callTimer = sem resposta aceita),
+  // mando 'call-cancel' via canal de LISTEN do destinatário, pois ele ainda não entrou
+  // no canal par-a-par _sigCh. Sem isso, o modal de incoming do outro fica tocando infinito.
   if(wasCaller && peer && !hadTimer){
     try{
       const cancelCh = db.channel('vcall-listen-'+peer.id, {config:{broadcast:{self:false}}});
-      let cancelSent = false;
-      const _sendCancel = (ch) => {
-        if(cancelSent) return;
-        cancelSent = true;
-        ch.send({
-          type:'broadcast',
-          event:'call-cancel',
-          payload:{from:CU.id, name:nm}
-        }).catch(()=>{});
-        setTimeout(()=>{try{db.removeChannel(ch);}catch(e){}}, 2000);
-      };
-      cancelCh.subscribe(s=>{ if(s==='SUBSCRIBED') _sendCancel(cancelCh); });
-      // Fallback: envia mesmo sem confirmação de SUBSCRIBED após 400ms
-      setTimeout(()=>{ if(!cancelSent) _sendCancel(cancelCh); }, 400);
+      cancelCh.subscribe(s=>{
+        if(s==='SUBSCRIBED'){
+          cancelCh.send({type:'broadcast',event:'call-cancel',payload:{from:CU.id,name:nm}});
+          setTimeout(()=>{try{db.removeChannel(cancelCh);}catch(e){}}, 1500);
+        }
+      });
     }catch(e){ console.warn('[call] cancel signal err:',e); }
   }
-
-  // Enviar sinal de encerramento pelo canal de sinalização já aberto
-  // (funciona quando chamada já foi atendida)
-  if(_sigCh) _sigCh.send({type:'broadcast',event:'call-end',payload:{from:CU.id}}).catch(()=>{});
-
   _cleanup();
-
   // Notificação + mensagem de chamada perdida em background
   if(wasCaller && peer && !hadTimer){
+    // Mensagem no chat
     _insertCallMsg(peer.id, '📞 Chamada não atendida');
     db.from('notifications').insert({
       user_id:peer.id, actor_id:CU.id,
@@ -12877,25 +12895,33 @@ function _showCallUI(role,name,type,avatar){
 function toggleCallMinimize(){
   const ov = document.getElementById('call-overlay');
   if(!ov) return;
+
+  // Limpa SEMPRE os estilos inline de posição (drag define top/left inline e
+  // sobrescreveria o CSS mesmo com !important, pois inline > stylesheet).
+  // O reset acontece antes do toggle para que o CSS da classe vença.
+  ov.style.removeProperty('top');
+  ov.style.removeProperty('left');
+  ov.style.removeProperty('right');
+  ov.style.removeProperty('bottom');
+  ov.style.removeProperty('width');
+  ov.style.removeProperty('height');
+  ov.style.removeProperty('inset');
+  ov.style.removeProperty('transition');
+
   const isMin = ov.classList.toggle('minimized-call-popup');
-  // Troca o ícone: minimizar ↓ ↔ maximizar ↗
+
+  // Troca ícone: ↓ minimizar  ↔  ↗ maximizar
   const iconEl = document.getElementById('call-minmax-icon');
   if(iconEl){
     iconEl.innerHTML = isMin
-      // Ícone de maximizar (seta diagonal / fullscreen)
       ? '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>'
-      // Ícone de minimizar (chevron down)
       : '<polyline points="19 12 12 19 5 12"/>';
   }
   const btn = document.getElementById('call-minimize-btn');
   if(btn) btn.title = isMin ? 'Maximizar' : 'Minimizar';
-  // Ao minimizar: limpa estilos inline para que o CSS da classe assuma (bottom:80px, right:20px)
-  // Ao maximizar: limpa TODOS os estilos inline para voltar ao fullscreen
-  ov.style.top    = '';
-  ov.style.left   = '';
-  ov.style.right  = '';
-  ov.style.bottom = '';
 }
+// Alias pedido no briefing — aponta para a mesma função
+function toggleMinimizeCall(){ toggleCallMinimize(); }
 
 // Drag-and-drop da janelinha minimizada (mouse + touch)
 function _setupCallMinimizeDrag(ov){
@@ -12909,18 +12935,19 @@ function _setupCallMinimizeDrag(ov){
   };
 
   const onDown = (e) => {
-    // Só arrasta se estiver minimizado
     if(!ov.classList.contains('minimized-call-popup')) return;
-    // Não iniciar drag se clicou num botão
     if(e.target.closest('button')) return;
     const pt = getPoint(e);
     dragging = true;
     startX = pt.x; startY = pt.y;
+    // getBoundingClientRect dá a posição real já com CSS !important aplicado
     const rect = ov.getBoundingClientRect();
     baseX = rect.left; baseY = rect.top;
-    // Durante o drag, override any bottom/right
-    ov.style.right = 'auto';
-    ov.style.bottom = 'auto';
+    // Sobrescreve bottom/right com setProperty + important para vencer CSS
+    ov.style.setProperty('right',  'auto', 'important');
+    ov.style.setProperty('bottom', 'auto', 'important');
+    ov.style.setProperty('left',   baseX + 'px', 'important');
+    ov.style.setProperty('top',    baseY + 'px', 'important');
     ov.style.transition = 'none';
     document.body.style.userSelect = 'none';
   };
@@ -12932,8 +12959,8 @@ function _setupCallMinimizeDrag(ov){
     // Limitar dentro da viewport
     const maxX = window.innerWidth  - ov.offsetWidth  - 4;
     const maxY = window.innerHeight - ov.offsetHeight - 4;
-    ov.style.left = Math.max(4, Math.min(nx, maxX)) + 'px';
-    ov.style.top  = Math.max(4, Math.min(ny, maxY)) + 'px';
+    ov.style.setProperty('left', Math.max(4, Math.min(nx, maxX)) + 'px', 'important');
+    ov.style.setProperty('top',  Math.max(4, Math.min(ny, maxY)) + 'px', 'important');
     // Evita scroll no mobile enquanto arrasta
     if(e.cancelable) e.preventDefault();
   };
@@ -12961,26 +12988,17 @@ function _initCallListen(){
       if(p.payload?.from && p.payload.from!==CU.id) _onIncoming(p.payload);
     })
     .on('broadcast',{event:'call-cancel'},(p)=>{
-      // ── Caller cancelou ANTES de atender → parar toque e fechar modal ──
-      // Verifica: (a) há overlay de chamada aberto, (b) não sou o caller, (c) from coincide
-      // com _callPeer.id OU, em caso de race condition (callPeer ainda não setado), aceita qualquer from válido
-      const fromId = p.payload?.from;
-      if(!fromId || _isCaller) return;
-      const overlay = document.getElementById('call-overlay');
-      if(!overlay) return; // Nenhum modal aberto — nada a fazer
-      // Aceita o cancel se o peer já foi registrado E bate com o from, OU se ainda não temos peer (race)
-      const peerMatch = !_callPeer || _callPeer.id === fromId;
-      if(peerMatch){
-        console.log('[call] call-cancel recebido de', fromId, '— encerrando toque');
+      // Caller cancelou antes de atender → fecha modal de incoming
+      if(p.payload?.from && _callPeer && p.payload.from===_callPeer.id && !_isCaller){
+        console.log('[call] Caller cancelou a chamada — fechando modal');
         _stopRing();
-        const peerId = _callPeer?.id || fromId;
-        overlay.remove();
+        document.getElementById('call-overlay')?.remove();
+        _insertCallMsg(_callPeer.id, '📵 Chamada perdida');
         _cleanup();
-        _insertCallMsg(peerId, '📵 Chamada perdida');
       }
     })
     .subscribe((s)=>{
-      if(s==='SUBSCRIBED') console.log('[CALL] Listen channel pronto:', 'vcall-listen-'+CU.id);
+      if(s==='SUBSCRIBED') console.log('[CALL] Listen channel ready:', 'vcall-listen-'+CU.id);
     });
 }
 
