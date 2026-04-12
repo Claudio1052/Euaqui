@@ -1257,6 +1257,102 @@ body{
 .mb.sent .mb-time{color:var(--neon-cyan);text-align:right;}
 .mb.recv .mb-time{color:var(--text-muted);text-align:left;}
 
+/* ═══ Ticks de status de mensagem (estilo WhatsApp) ═══ */
+.mb-status{
+  display:inline-flex;align-items:center;gap:2px;
+  margin-left:6px;
+  font-size:13px;
+  font-family:'VT323',monospace;
+  vertical-align:middle;
+  letter-spacing:-3px; /* aproxima os dois checks */
+}
+.mb-status .tick{
+  display:inline-block;
+  font-size:14px;
+  line-height:1;
+  font-weight:700;
+  transition:color .25s ease, transform .2s ease;
+}
+/* Enviado: 1 tick cinza */
+.mb-status.sent .tick-1{color:#9ca3af;}
+.mb-status.sent .tick-2{display:none;}
+/* Recebido: 2 ticks cinzas */
+.mb-status.received .tick-1{color:#9ca3af;}
+.mb-status.received .tick-2{color:#9ca3af;display:inline-block;}
+/* Lido: 2 ticks azul neon */
+.mb-status.read .tick-1{color:var(--neon-cyan);filter:drop-shadow(0 0 3px rgba(0,255,204,.5));}
+.mb-status.read .tick-2{color:var(--neon-cyan);display:inline-block;filter:drop-shadow(0 0 3px rgba(0,255,204,.5));}
+body.day-mode .mb-status.sent .tick-1,
+body.day-mode .mb-status.received .tick-1,
+body.day-mode .mb-status.received .tick-2{color:#9ca3af;}
+body.day-mode .mb-status.read .tick-1,
+body.day-mode .mb-status.read .tick-2{color:#0891b2;filter:drop-shadow(0 0 2px rgba(8,145,178,.4));}
+
+/* ═══ Switch toggle (retro/neon) — usado em config de privacidade ═══ */
+.priv-switch{
+  position:relative;
+  display:inline-block;
+  width:48px;height:26px;
+  flex-shrink:0;
+  cursor:pointer;
+}
+.priv-switch input{opacity:0;width:0;height:0;position:absolute;}
+.priv-slider{
+  position:absolute;inset:0;
+  background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.18);
+  border-radius:26px;
+  transition:all .25s ease;
+  cursor:pointer;
+}
+.priv-slider::before{
+  content:'';
+  position:absolute;
+  top:3px;left:3px;
+  width:18px;height:18px;
+  background:#9ca3af;
+  border-radius:50%;
+  transition:all .25s cubic-bezier(.4,1.4,.6,1);
+  box-shadow:0 2px 4px rgba(0,0,0,.4);
+}
+.priv-switch input:checked + .priv-slider{
+  background:linear-gradient(135deg,rgba(0,255,204,.2),rgba(124,58,237,.2));
+  border-color:var(--neon-cyan);
+  box-shadow:0 0 12px rgba(0,255,204,.35), inset 0 0 6px rgba(0,255,204,.15);
+}
+.priv-switch input:checked + .priv-slider::before{
+  transform:translateX(22px);
+  background:var(--neon-cyan);
+  box-shadow:0 0 10px rgba(0,255,204,.7), 0 2px 4px rgba(0,0,0,.4);
+}
+body.day-mode .priv-slider{background:#e5e7eb;border-color:#d1d5db;}
+body.day-mode .priv-switch input:checked + .priv-slider{background:linear-gradient(135deg,#06b6d4,#7c3aed);border-color:transparent;}
+body.day-mode .priv-slider::before{background:#fff;}
+
+/* ═══ Badge numérico de mensagens não lidas ═══ */
+.msg-badge-num{
+  position:absolute;
+  top:-4px;right:-4px;
+  min-width:18px;height:18px;padding:0 5px;
+  background:linear-gradient(135deg,#ff3366,#c2185b);
+  color:#fff;
+  border-radius:9px;
+  font-size:10px;
+  font-weight:700;
+  font-family:'Silkscreen',monospace;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 2px 6px rgba(255,51,102,.5);
+  border:2px solid var(--bg-deep);
+  animation:msgBadgePop .3s cubic-bezier(.4,1.5,.6,1);
+  z-index:5;
+  pointer-events:none;
+}
+@keyframes msgBadgePop{
+  0%{transform:scale(.5);opacity:0;}
+  100%{transform:scale(1);opacity:1;}
+}
+body.day-mode .msg-badge-num{border-color:#fef6f9;}
+
 /* Media inside messages */
 .mb-media{max-width:220px;border-radius:10px;overflow:hidden;margin-bottom:3px;cursor:pointer;}
 .mb-media img{width:100%;display:block;}
@@ -3432,6 +3528,7 @@ body.day-mode::before{
   <div class="slink" onclick="nav('notifications');toggleDrawer()"><span class="ic">🔔</span> Notificações</div>
   <div class="slink" onclick="nav('capsules');toggleDrawer()"><span class="ic">⏳</span> Time Capsule</div>
   <div class="slink" onclick="showSettings();toggleDrawer()"><span class="ic">⚙️</span> Configurações</div>
+  <div class="slink" onclick="openPrivacyModal();toggleDrawer()"><span class="ic">🔒</span> Privacidade</div>
   <div class="slink" onclick="handleLogout()"><span class="ic">🚪</span> Sair</div>
     <div class="slbl" style="margin-top:10px;">Moderação</div>
     <div class="slink" onclick="testModerationAPI()" style="color:var(--neon-cyan);border-color:rgba(0,255,204,.2);">
@@ -3464,6 +3561,7 @@ body.day-mode::before{
     <div class="slbl">Especial</div>
     <div class="slink" onclick="nav('capsules')"><span class="ic">⏳</span> Time Capsule</div>
     <div class="slink" onclick="showSettings()"><span class="ic">⚙️</span> Configurações</div>
+    <div class="slink" onclick="openPrivacyModal()"><span class="ic">🔒</span> Privacidade</div>
     <div class="slink" onclick="handleLogout()"><span class="ic">🚪</span> Sair</div>
     <div class="slbl" style="margin-top:10px;">Moderação</div>
     <div class="slink" onclick="testModerationAPI()" style="color:var(--neon-cyan);border-color:rgba(0,255,204,.2);">
@@ -6941,10 +7039,26 @@ async function loadMsgs(userId){
   if(!CU) return;
   const area = document.getElementById('msgs-area');
   if(!area) return;
-  const{data:msgs}=await db.from('messages')
-    .select('id,sender_id,receiver_id,content,media_url,media_type,read,created_at')
-    .or(`and(sender_id.eq.${CU.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${CU.id})`)
-    .order('created_at');
+  // Buscar com coluna 'received'; se não existir, fallback sem ela
+  let msgs, err;
+  {
+    const r = await db.from('messages')
+      .select('id,sender_id,receiver_id,content,media_url,media_type,read,received,created_at')
+      .or(`and(sender_id.eq.${CU.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${CU.id})`)
+      .order('created_at');
+    if(r.error && /received/.test(r.error.message||'')){
+      // Coluna 'received' não existe — buscar sem ela
+      const r2 = await db.from('messages')
+        .select('id,sender_id,receiver_id,content,media_url,media_type,read,created_at')
+        .or(`and(sender_id.eq.${CU.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${CU.id})`)
+        .order('created_at');
+      msgs = r2.data;
+      err = r2.error;
+    } else {
+      msgs = r.data;
+      err = r.error;
+    }
+  }
   if(!msgs?.length){
     area.innerHTML='<div class="chat-empty"><div class="chat-empty-icon">💬</div><div class="chat-empty-txt">Início da conversa</div><div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Diga olá! 👋</div></div>';
     return;
@@ -6998,7 +7112,16 @@ async function loadMsgs(userId){
     } else if(m.content){
       contentHtml = '<div class="mb-bubble">'+xss(m.content)+'</div>';
     }
-    const timeHtml = '<div class="mb-time">'+timeAgo(m.created_at)+'</div>';
+    // Ticks de status (só para mensagens enviadas pelo usuário atual)
+    let statusHtml = '';
+    if(isSent){
+      // read=true  → lido (2 ticks azul neon)
+      // received=true  → recebido (2 ticks cinza)
+      // senão → enviado (1 tick cinza)
+      const statusCls = m.read ? 'read' : (m.received ? 'received' : 'sent');
+      statusHtml = `<span class="mb-status ${statusCls}" aria-label="${statusCls==='read'?'lido':statusCls==='received'?'recebido':'enviado'}"><span class="tick tick-1">✓</span><span class="tick tick-2">✓</span></span>`;
+    }
+    const timeHtml = '<div class="mb-time">'+timeAgo(m.created_at)+statusHtml+'</div>';
     if(isCallMsg){
       html += '<div style="display:flex;justify-content:center;align-items:center;gap:6px;margin:6px 0;">'+contentHtml+'<span style="font-size:10px;color:var(--text-muted);">'+timeAgo(m.created_at)+'</span></div>';
     } else {
@@ -7007,9 +7130,36 @@ async function loadMsgs(userId){
   }
   area.innerHTML = html;
   area.scrollTop = area.scrollHeight;
-  db.from('messages').update({read:true}).eq('receiver_id',CU.id).eq('sender_id',userId).eq('read',false)
-    .then(()=>{ document.getElementById('bnav-msg-dot')?.classList.remove('active'); })
-    .catch(()=>{});
+  // ── Marcar mensagens como LIDAS, respeitando configuração de privacidade ──
+  // Se o usuário ativou "Ocultar confirmação de leitura", só marcamos como 'received'
+  // (chega o 2º tick cinza pro remetente, mas NÃO vira azul).
+  // Também mantemos uma marca local para sabermos que eu já vi — usado no badge de não lidas.
+  const hideReadReceipts = _privacyGet('hide_read_receipts');
+  const updatePayload = hideReadReceipts ? {received:true} : {read:true, received:true};
+  try{
+    const q = db.from('messages').update(updatePayload)
+      .eq('receiver_id',CU.id).eq('sender_id',userId);
+    // Só atualizamos as que ainda não foram marcadas
+    if(hideReadReceipts){
+      // Se já está 'received', não precisa re-update
+      await q.eq('received',false);
+    } else {
+      await q.eq('read',false);
+    }
+    document.getElementById('bnav-msg-dot')?.classList.remove('active');
+    // Atualiza o badge de mensagens não lidas imediatamente
+    updateUnreadMsgBadge();
+  }catch(e){
+    // Fallback: sem a coluna 'received', apenas marcar como read (a menos que o user tenha ocultado)
+    if(!hideReadReceipts){
+      try{
+        await db.from('messages').update({read:true})
+          .eq('receiver_id',CU.id).eq('sender_id',userId).eq('read',false);
+        document.getElementById('bnav-msg-dot')?.classList.remove('active');
+        updateUnreadMsgBadge();
+      }catch(e2){}
+    }
+  }
 }
 
 // ── Extrai o postId de uma mensagem com marcador [POST_SHARE:id] ──
@@ -7088,6 +7238,211 @@ function _renderPostShareBubble(postId, post, extraMsg, isSent){
     ${extraMsg?`<div style="margin-top:8px;font-size:12px;color:var(--text-light);border-top:1px solid rgba(255,255,255,.1);padding-top:8px;font-style:italic;">"${xss(extraMsg)}"</div>`:''}
     <div style="margin-top:8px;font-size:9px;color:${accentColor};opacity:.7;">👆 Toque para ver o post</div>
   </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// ⌨ Tecla Enter no chat: desktop envia, mobile quebra linha
+// Shift+Enter sempre quebra linha em qualquer plataforma
+// ═══════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// 🔢 BADGE NUMÉRICO DE MENSAGENS NÃO LIDAS
+// Substitui o .notif-dot por um badge com contagem real.
+// Atualiza via count('exact') no Supabase + listener de Realtime.
+// ═══════════════════════════════════════════════════════════
+async function updateUnreadMsgBadge(){
+  if(!CU) return;
+  try{
+    const{count, error} = await db.from('messages')
+      .select('id', {count:'exact', head:true})
+      .eq('receiver_id', CU.id)
+      .eq('read', false);
+    if(error){ console.warn('[unread msg]', error.message); return; }
+    _setUnreadMsgBadge(count||0);
+  }catch(e){ console.warn('[unread msg] err:', e?.message); }
+}
+
+function _setUnreadMsgBadge(n){
+  // Remove badge antigo se existir
+  const oldBadge = document.getElementById('bnav-msg-num');
+  if(oldBadge) oldBadge.remove();
+  // Esconder também o dot antigo (vamos usar só o número agora)
+  const dot = document.getElementById('bnav-msg-dot');
+  if(dot) dot.style.display = 'none';
+  if(n <= 0) return;
+  // Cria badge numérico dentro do botão do chat da bottom-nav
+  const btn = document.getElementById('bn-messages');
+  if(!btn) return;
+  const badge = document.createElement('span');
+  badge.id = 'bnav-msg-num';
+  badge.className = 'msg-badge-num';
+  badge.textContent = n > 99 ? '99+' : String(n);
+  btn.appendChild(badge);
+}
+
+// Realtime: escuta INSERTs em messages onde eu sou o receiver
+let _unreadMsgChannel = null;
+function setupUnreadMsgListener(){
+  if(!CU || _unreadMsgChannel) return;
+  _unreadMsgChannel = db.channel('unread-msgs-'+CU.id)
+    .on('postgres_changes', {
+      event:'INSERT', schema:'public', table:'messages',
+      filter:`receiver_id=eq.${CU.id}`
+    }, () => {
+      // Nova mensagem recebida → atualizar contagem
+      updateUnreadMsgBadge();
+    })
+    .on('postgres_changes', {
+      event:'UPDATE', schema:'public', table:'messages',
+      filter:`receiver_id=eq.${CU.id}`
+    }, () => {
+      // Alguma mensagem foi atualizada (ex: marcada como lida em outra aba) → recalcular
+      updateUnreadMsgBadge();
+    })
+    .subscribe();
+}
+
+function _isMobileDevice(){
+  // Detecção combinada: UA + touch + tamanho de tela
+  const ua = navigator.userAgent || '';
+  const touchOnly = !matchMedia('(pointer:fine)').matches;
+  const mobileUA = /Mobi|Android|iPhone|iPad|iPod|BlackBerry|Windows Phone|Opera Mini|IEMobile/i.test(ua);
+  return mobileUA || touchOnly;
+}
+function handleMsgKey(ev){
+  if(ev.key !== 'Enter') return;
+  // Shift+Enter: sempre permite quebra de linha
+  if(ev.shiftKey) return;
+  // Mobile: mantém comportamento padrão do textarea (quebra de linha)
+  // Usuário mobile aperta o botão ➤ para enviar
+  if(_isMobileDevice()) return;
+  // Desktop: Enter sozinho = envia
+  ev.preventDefault();
+  sendMsg();
+}
+function autoResizeMsgIn(el){
+  if(!el) return;
+  el.style.height = 'auto';
+  const max = 100; // coerente com o CSS max-height
+  el.style.height = Math.min(el.scrollHeight, max) + 'px';
+}
+
+// ═══════════════════════════════════════════════════════════
+// 🔒 CONFIGURAÇÕES DE PRIVACIDADE
+// Armazenamento duplo:
+//  - localStorage: leitura síncrona imediata (sem round-trip ao DB)
+//  - profiles.settings (JSONB): sincroniza entre dispositivos
+// ═══════════════════════════════════════════════════════════
+const _PRIVACY_LS_KEY = 'euaqui_privacy';
+const _PRIVACY_DEFAULTS = {
+  hide_read_receipts: false,  // Ocultar confirmação de leitura
+  invisible_mode: false        // Aparecer como offline para outros
+};
+let _privacyCache = null;
+
+function _privacyLoad(){
+  if(_privacyCache) return _privacyCache;
+  try{
+    const raw = localStorage.getItem(_PRIVACY_LS_KEY);
+    _privacyCache = raw ? {..._PRIVACY_DEFAULTS, ...JSON.parse(raw)} : {..._PRIVACY_DEFAULTS};
+  }catch(e){ _privacyCache = {..._PRIVACY_DEFAULTS}; }
+  return _privacyCache;
+}
+function _privacyGet(key){
+  const p = _privacyLoad();
+  return !!p[key];
+}
+async function _privacySet(key, value){
+  const p = _privacyLoad();
+  p[key] = !!value;
+  _privacyCache = p;
+  try{ localStorage.setItem(_PRIVACY_LS_KEY, JSON.stringify(p)); }catch(e){}
+  // Tentar sincronizar no Supabase via profiles.settings (JSONB) — falha silenciosamente
+  if(CU){
+    try{
+      await db.from('profiles').update({settings: p}).eq('id', CU.id);
+    }catch(e){ console.log('[privacy] sync remoto falhou (coluna settings ausente?):', e?.message); }
+  }
+  // Efeitos colaterais imediatos
+  _applyPrivacyEffects();
+}
+async function _privacyHydrateFromRemote(){
+  // Carrega as configs do perfil remoto (se a coluna existir) e mescla com local
+  if(!CU) return;
+  try{
+    const{data, error} = await db.from('profiles').select('settings').eq('id', CU.id).maybeSingle();
+    if(error) return; // coluna pode não existir; mantém localStorage
+    if(data?.settings && typeof data.settings==='object'){
+      _privacyCache = {..._PRIVACY_DEFAULTS, ...data.settings};
+      try{ localStorage.setItem(_PRIVACY_LS_KEY, JSON.stringify(_privacyCache)); }catch(e){}
+      _applyPrivacyEffects();
+    }
+  }catch(e){}
+}
+function _applyPrivacyEffects(){
+  // Modo invisível: untrack do canal de presença
+  if(_presenceChannel){
+    if(_privacyGet('invisible_mode')){
+      try{ _presenceChannel.untrack(); }catch(e){}
+    } else if(!document.hidden){
+      try{
+        _presenceChannel.track({
+          user_id: CU?.id,
+          username: CP?.username || '',
+          online_at: new Date().toISOString()
+        });
+      }catch(e){}
+    }
+  }
+}
+
+// ── Modal de Configurações de Privacidade ──
+function openPrivacyModal(){
+  const cur = _privacyLoad();
+  const overlay=document.createElement('div');
+  overlay.id='privacy-modal-overlay';
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);backdrop-filter:blur(8px);z-index:5000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.innerHTML=`<div class="modal" style="max-width:460px;width:100%;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+      <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-cyan);flex:1;text-shadow:0 0 8px rgba(0,255,204,.4);">🔒 Configurações de Privacidade</div>
+      <button class="tbtn" style="font-size:10px;" onclick="document.getElementById('privacy-modal-overlay').remove()">✕</button>
+    </div>
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:18px;line-height:1.5;">Controle sua visibilidade e o que outros usuários podem ver sobre você.</div>
+
+    <!-- Toggle 1: Ocultar confirmação de leitura -->
+    <div class="privacy-row" style="display:flex;align-items:flex-start;gap:12px;padding:14px;background:rgba(0,255,204,.04);border:1px solid var(--border-glow);border-radius:12px;margin-bottom:10px;">
+      <div style="font-size:22px;flex-shrink:0;">👁</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;color:var(--text-light);font-weight:700;margin-bottom:3px;">Ocultar confirmação de leitura</div>
+        <div style="font-size:10px;color:var(--text-muted);line-height:1.5;">Se ativo, os outros não verão os ✓✓ azuis nas mensagens que você ler. Você também não verá os checks azuis deles.</div>
+      </div>
+      <label class="priv-switch">
+        <input type="checkbox" id="priv-toggle-read" ${cur.hide_read_receipts?'checked':''} onchange="_privacySet('hide_read_receipts', this.checked)">
+        <span class="priv-slider"></span>
+      </label>
+    </div>
+
+    <!-- Toggle 2: Modo Invisível -->
+    <div class="privacy-row" style="display:flex;align-items:flex-start;gap:12px;padding:14px;background:rgba(191,95,255,.04);border:1px solid rgba(191,95,255,.25);border-radius:12px;margin-bottom:10px;">
+      <div style="font-size:22px;flex-shrink:0;">👻</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;color:var(--text-light);font-weight:700;margin-bottom:3px;">Modo Invisível (Online)</div>
+        <div style="font-size:10px;color:var(--text-muted);line-height:1.5;">Se ativo, seu status não aparecerá como <b style="color:#22c55e;">● online</b> para outros usuários. Você ainda pode enviar e receber mensagens normalmente.</div>
+      </div>
+      <label class="priv-switch">
+        <input type="checkbox" id="priv-toggle-invisible" ${cur.invisible_mode?'checked':''} onchange="_privacySet('invisible_mode', this.checked)">
+        <span class="priv-slider"></span>
+      </label>
+    </div>
+
+    <div style="background:rgba(0,0,0,.3);border:1px dashed rgba(255,255,255,.15);border-radius:10px;padding:10px;font-size:10px;color:var(--text-muted);margin-top:6px;line-height:1.5;">
+      💡 As alterações são aplicadas imediatamente e sincronizadas entre seus dispositivos.
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:14px;">
+      <button class="post-btn" onclick="document.getElementById('privacy-modal-overlay').remove()">✓ Fechar</button>
+    </div>
+  </div>`;
+  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+  document.body.appendChild(overlay);
 }
 
 async function sendMsg(){
@@ -7253,6 +7608,13 @@ function setupRealtime(){
 
   // ── Supabase Presence — quem está online ──────────────────────
   setupPresence();
+
+  // ── Hidratar configs de privacidade do perfil remoto ──
+  _privacyHydrateFromRemote();
+
+  // ── Badge de mensagens não lidas: contagem inicial + listener ──
+  updateUnreadMsgBadge();
+  setupUnreadMsgListener();
 
   // Real-time notifications
   db.channel('rt-notifs-'+CU.id)
@@ -11540,6 +11902,11 @@ function setupPresence(){
     })
     .subscribe(async (status) => {
       if(status === 'SUBSCRIBED'){
+        // Respeitar modo invisível: se ativo, NÃO anuncia presença
+        if(_privacyGet('invisible_mode')){
+          console.log('[presence] Modo invisível ativo — não anunciando');
+          return;
+        }
         // Anunciar presença do usuário atual
         await _presenceChannel.track({
           user_id: CU.id,
@@ -11558,7 +11925,8 @@ function setupPresence(){
   document.addEventListener('visibilitychange', () => {
     if(document.hidden){
       _presenceChannel?.untrack();
-    } else {
+    } else if(!_privacyGet('invisible_mode')){
+      // Só re-anuncia se NÃO estiver em modo invisível
       _presenceChannel?.track({
         user_id: CU.id,
         username: CP?.username || '',
