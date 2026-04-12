@@ -4247,6 +4247,7 @@ function showApp(){
   // Load page data — each wrapped so one failure doesn't block the rest
   setTimeout(()=>{ try{ cachedPostIds.clear();cachedPosts={};loadFeed(true); }catch(e){ console.warn('loadFeed:',e); } }, 0);
   setTimeout(()=>{ try{ loadNotifCount(); loadUnreadMsgCount(); }catch(e){} }, 0);
+  setTimeout(()=>{ try{ _debugNotifRLS(); }catch(e){} }, 2000); // Diagnóstico RLS (ver console)
   setTimeout(()=>{ try{ _initCallListen(); }catch(e){} }, 500);
   setTimeout(()=>{ try{ loadNotifCount(); }catch(e){} }, 100);
   setTimeout(()=>{ try{ checkMigration(); }catch(e){} }, 2000);
@@ -7176,29 +7177,76 @@ async function acceptFriendFromNotif(btn){
   await handleFriendReq(req.id, sender.id, 'accept');
 }
 
-async function markRead(id,el){
-  // Remove from DOM immediately (optimistic)
+async function markRead(id, el){
+  if(!CU || !id) return;
+
   const niEl = el?.closest ? el.closest('.ni') || el : el;
+
+  // 1. Tenta DELETE definitivo
+  const { error: delErr, data: delData } = await db
+    .from('notifications')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', CU.id)
+    .select(); // .select() força retorno para confirmar que algo foi deletado
+
+  const deletedOk = !delErr && Array.isArray(delData) && delData.length > 0;
+
+  if(!deletedOk){
+    // 2. Fallback: UPDATE read = true (para RLS que só permite UPDATE)
+    const { error: updErr } = await db
+      .from('notifications')
+      .update({ read: true })
+      .eq('id', id)
+      .eq('user_id', CU.id);
+
+    if(updErr){
+      console.error('[markRead] DELETE e UPDATE falharam:', delErr, updErr);
+      showToast('Erro ao remover notificação','error');
+      return; // Não remove do DOM se falhou no banco
+    }
+  }
+
+  // 3. Só remove do DOM após confirmar sucesso no banco
   if(niEl){
-    niEl.style.transition='opacity .3s,max-height .3s,padding .3s,margin .3s';
-    niEl.style.opacity='0';
-    niEl.style.maxHeight='0';
-    niEl.style.padding='0';
-    niEl.style.margin='0';
-    niEl.style.overflow='hidden';
-    setTimeout(()=>niEl.remove(), 320);
+    niEl.style.transition = 'opacity .3s, max-height .3s, padding .3s, margin .3s';
+    niEl.style.opacity    = '0';
+    niEl.style.maxHeight  = '0';
+    niEl.style.padding    = '0';
+    niEl.style.margin     = '0';
+    niEl.style.overflow   = 'hidden';
+    setTimeout(() => niEl.remove(), 320);
   }
-  // Try DELETE first
-  const{error:delErr} = await db.from('notifications').delete().eq('id',id).eq('user_id',CU.id);
-  if(delErr){
-    // Fallback: mark as read if DELETE fails (RLS may only allow UPDATE)
-    await db.from('notifications').update({read:true}).eq('id',id).eq('user_id',CU.id);
-  }
+
   loadNotifCount();
 }
 
 // ===== REALTIME =====
 let _msgPollInterval=null;
+
+// ── Diagnóstico de RLS: roda uma vez por sessão ──────────────────
+async function _debugNotifRLS(){
+  if(!CU) return;
+  // Insere notif de teste
+  const{data:ins, error:insErr}=await db.from('notifications')
+    .insert({user_id:CU.id, actor_id:CU.id, type:'system', content:'[RLS TEST]', read:false})
+    .select().maybeSingle();
+  if(insErr){ console.warn('[RLS] INSERT falhou:', insErr.message); return; }
+  const testId = ins?.id;
+  if(!testId){ console.warn('[RLS] INSERT não retornou id'); return; }
+  // Testa DELETE
+  const{error:delErr, data:delData}=await db.from('notifications').delete().eq('id',testId).eq('user_id',CU.id).select();
+  if(delErr){
+    console.error('[RLS] DELETE BLOQUEADO pelo RLS:', delErr.message);
+    console.info('[RLS] Solução: habilite RLS DELETE para notifications no Supabase (veja README)');
+    // Testa UPDATE como fallback
+    const{error:updErr}=await db.from('notifications').update({read:true}).eq('id',testId).eq('user_id',CU.id);
+    if(updErr) console.error('[RLS] UPDATE também bloqueado:', updErr.message);
+    else console.info('[RLS] UPDATE funciona — usando read=true como fallback');
+  } else {
+    console.info('[RLS] DELETE OK — exclusão de notificações funcionando ✓');
+  }
+}
 
 function setupRealtime(){
   if(!CU)return;
@@ -7757,7 +7805,34 @@ async function loadHomeAlerts(){
 async function markAllNotifsRead(){
   if(!CU) return;
 
-  // 1. Animação de saída em todos os itens visíveis antes de apagar
+  // 1. Tenta DELETE de todas as notificações do usuário
+  const { error: delErr, data: delData } = await db
+    .from('notifications')
+    .delete()
+    .eq('user_id', CU.id)
+    .select();
+
+  const deletedOk = !delErr && Array.isArray(delData) && delData.length >= 0;
+
+  if(!deletedOk){
+    // Fallback: UPDATE read = true para todas não lidas
+    const { error: updErr } = await db
+      .from('notifications')
+      .update({ read: true })
+      .eq('user_id', CU.id)
+      .eq('read', false);
+
+    if(updErr){
+      console.error('[markAllNotifsRead] DELETE e UPDATE falharam:', delErr, updErr);
+      showToast('Erro ao limpar notificações','error');
+      return;
+    }
+  }
+
+  // 2. Confirmar no banco — recarregar count real
+  await loadNotifCount();
+
+  // 3. Animação de saída + limpar DOM
   const allItems = document.querySelectorAll('.ni');
   allItems.forEach(ni=>{
     ni.style.transition='opacity .25s,max-height .3s,padding .3s,margin .3s';
@@ -7768,24 +7843,15 @@ async function markAllNotifsRead(){
     ni.style.overflow='hidden';
   });
 
-  // 2. Zerar badge imediatamente (feedback visual instantâneo)
-  updateNotifBadge(0);
-
-  // 3. DELETE definitivo no Supabase (apenas do usuário atual)
-  const{error} = await db.from('notifications').delete().eq('user_id',CU.id);
-  // Fallback: se RLS bloquear DELETE, marca como lida
-  if(error) await db.from('notifications').update({read:true}).eq('user_id',CU.id).eq('read',false);
-
-  // 4. Após animação, substituir conteúdo pelo estado vazio
+  const empty='<div class="notif-empty"><div class="notif-empty-icon">🔔</div><div class="notif-empty-txt">Tudo em dia!</div></div>';
   setTimeout(()=>{
-    const empty='<div class="notif-empty"><div class="notif-empty-icon">🔔</div><div class="notif-empty-txt">Tudo em dia!</div></div>';
     ['ht-alerts-list','notif-list-all','notif-list-mentions','notif-list-social','notif-list-system'].forEach(id=>{
       const el=document.getElementById(id);
       if(el) el.innerHTML=empty;
     });
   }, 320);
 
-  showToast('Todas as notificações apagadas ✓','success');
+  showToast('Todas as notificações removidas ✓','success');
 }
 
 
