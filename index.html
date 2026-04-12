@@ -443,6 +443,45 @@ body.day-mode .repost-embed-card:hover{
 .ci-name{font-family:'Silkscreen',monospace;font-size:10px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .ci-last{font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;}
 .ci-unread{background:var(--neon-pink);color:#fff;font-size:9px;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 4px;flex-shrink:0;}
+
+/* ── MSG TICKS (status de entrega/leitura) ── */
+.msg-ticks{display:inline-flex;align-items:center;margin-left:4px;font-size:11px;line-height:1;vertical-align:middle;}
+.msg-ticks.sent-only{color:#888;letter-spacing:-3px;}
+.msg-ticks.received{color:#888;letter-spacing:-3px;}
+.msg-ticks.read{color:var(--neon-cyan);letter-spacing:-3px;text-shadow:0 0 6px rgba(0,255,204,.6);}
+.mb-time{display:flex;align-items:center;gap:2px;justify-content:flex-end;}
+
+/* ── BADGE NUMÉRICO CHAT ── */
+.chat-num-badge{background:var(--neon-pink);color:#fff;font-size:9px;padding:1px 5px;border-radius:10px;font-weight:bold;min-width:17px;text-align:center;box-shadow:0 0 8px rgba(255,51,102,.5);animation:badge-pop .2s ease;}
+@keyframes badge-pop{from{transform:scale(0)}to{transform:scale(1)}}
+
+/* ── PRIVACY MODAL ── */
+#m-privacy{z-index:3000;}
+.privacy-modal-inner{background:var(--bg-mid);border:1px solid var(--neon-purple);border-radius:18px;padding:0;width:min(420px,92vw);max-height:85vh;overflow-y:auto;position:relative;box-shadow:0 0 40px rgba(191,95,255,.25),0 0 80px rgba(0,255,204,.08);}
+.privacy-modal-inner::before{content:'';position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 28px,rgba(191,95,255,.03) 28px,rgba(191,95,255,.03) 29px);border-radius:18px;pointer-events:none;}
+.prv-hdr{padding:20px 22px 16px;border-bottom:1px solid rgba(191,95,255,.2);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--bg-mid);z-index:2;border-radius:18px 18px 0 0;}
+.prv-hdr-title{font-family:'Silkscreen',monospace;font-size:13px;color:var(--neon-purple);letter-spacing:1px;display:flex;align-items:center;gap:8px;}
+.prv-hdr-title span{font-size:18px;}
+.prv-body{padding:18px 22px;}
+.prv-section{margin-bottom:20px;}
+.prv-section-label{font-size:9px;letter-spacing:3px;color:var(--text-muted);text-transform:uppercase;margin-bottom:12px;font-family:'Silkscreen',monospace;}
+.prv-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:14px 16px;border:1px solid rgba(255,255,255,.06);border-radius:12px;margin-bottom:8px;background:rgba(255,255,255,.02);transition:border-color .2s;}
+.prv-row:hover{border-color:rgba(191,95,255,.2);}
+.prv-row-info{flex:1;}
+.prv-row-name{font-size:12px;color:var(--text-light);font-family:'Space Mono',monospace;font-weight:700;margin-bottom:3px;}
+.prv-row-desc{font-size:10px;color:var(--text-muted);line-height:1.5;}
+/* Neon toggle switch */
+.prv-toggle{position:relative;width:46px;height:24px;flex-shrink:0;cursor:pointer;}
+.prv-toggle input{opacity:0;width:0;height:0;position:absolute;}
+.prv-toggle-track{position:absolute;inset:0;border-radius:12px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);transition:all .3s;}
+.prv-toggle input:checked~.prv-toggle-track{background:rgba(191,95,255,.2);border-color:var(--neon-purple);box-shadow:0 0 10px rgba(191,95,255,.4);}
+.prv-toggle-thumb{position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#888;transition:all .3s;box-shadow:0 1px 4px rgba(0,0,0,.4);}
+.prv-toggle input:checked~.prv-toggle-thumb{left:25px;background:var(--neon-purple);box-shadow:0 0 8px var(--neon-purple);}
+.prv-save-btn{width:100%;padding:12px;background:linear-gradient(135deg,var(--neon-purple),var(--neon-pink));border:none;border-radius:10px;color:#fff;font-family:'Silkscreen',monospace;font-size:11px;letter-spacing:1px;cursor:pointer;transition:all .2s;margin-top:4px;box-shadow:0 4px 14px rgba(191,95,255,.3);}
+.prv-save-btn:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(191,95,255,.5);}
+.prv-status-tag{display:inline-flex;align-items:center;gap:4px;font-size:9px;font-family:'Silkscreen',monospace;padding:3px 8px;border-radius:20px;margin-top:6px;}
+.prv-status-tag.active{background:rgba(191,95,255,.15);color:var(--neon-purple);border:1px solid rgba(191,95,255,.3);}
+.prv-status-tag.inactive{background:rgba(255,255,255,.05);color:var(--text-muted);border:1px solid rgba(255,255,255,.08);}
 .chat-window{display:flex;flex-direction:column;background:var(--bg-deep);height:100%;overflow:hidden;}
 .chat-win-hdr{padding:12px 16px;border-bottom:1px solid var(--border-glow);display:flex;align-items:center;gap:12px;background:rgba(10,10,42,.96);flex-shrink:0;position:sticky;top:0;z-index:10;backdrop-filter:blur(12px);}
 .chat-win-av{width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid var(--border-glow);font-size:18px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.06);flex-shrink:0;}
@@ -3393,7 +3432,7 @@ body.day-mode::before{
       <button class="nbtn" id="nb-friends" onclick="nav('friends')">👥 Amigos</button>
       <button class="nbtn" id="nb-communities" onclick="nav('communities')" style="position:relative;">🏘 Comunidades<span class="notif-dot-comm" id="nb-comm-dot" style="top:2px;right:2px;position:absolute;"></span></button>
       <button class="nbtn" id="nb-businesses" onclick="nav('businesses')" style="color:var(--neon-yellow);position:relative;">🏪 Lojas<span class="notif-dot-biz" id="nb-biz-dot" style="top:2px;right:2px;position:absolute;"></span></button>
-      <button class="nbtn" id="nb-messages" onclick="nav('messages')">💬 Chat</button>
+      <button class="nbtn" id="nb-messages" onclick="nav('messages')" style="position:relative;">💬 Chat<span class="chat-num-badge" id="msg-badge" style="display:none;margin-left:5px;">0</span></button>
       <button class="nbtn" id="nb-notifications" onclick="nav('notifications')">🔔 <span class="nbadge" id="notif-badge" style="display:none">0</span></button>
     </div>
     <div class="nav-right">
@@ -3432,6 +3471,7 @@ body.day-mode::before{
   <div class="slink" onclick="nav('notifications');toggleDrawer()"><span class="ic">🔔</span> Notificações</div>
   <div class="slink" onclick="nav('capsules');toggleDrawer()"><span class="ic">⏳</span> Time Capsule</div>
   <div class="slink" onclick="showSettings();toggleDrawer()"><span class="ic">⚙️</span> Configurações</div>
+  <div class="slink" onclick="openPrivacyModal();toggleDrawer()"><span class="ic">🔒</span> Privacidade</div>
   <div class="slink" onclick="handleLogout()"><span class="ic">🚪</span> Sair</div>
     <div class="slbl" style="margin-top:10px;">Moderação</div>
     <div class="slink" onclick="testModerationAPI()" style="color:var(--neon-cyan);border-color:rgba(0,255,204,.2);">
@@ -3464,6 +3504,7 @@ body.day-mode::before{
     <div class="slbl">Especial</div>
     <div class="slink" onclick="nav('capsules')"><span class="ic">⏳</span> Time Capsule</div>
     <div class="slink" onclick="showSettings()"><span class="ic">⚙️</span> Configurações</div>
+    <div class="slink" onclick="openPrivacyModal()"><span class="ic">🔒</span> Privacidade</div>
     <div class="slink" onclick="handleLogout()"><span class="ic">🚪</span> Sair</div>
     <div class="slbl" style="margin-top:10px;">Moderação</div>
     <div class="slink" onclick="testModerationAPI()" style="color:var(--neon-cyan);border-color:rgba(0,255,204,.2);">
@@ -3719,7 +3760,10 @@ body.day-mode::before{
         <div class="chat-sidebar" id="chat-sidebar">
           <div class="chat-sb-hdr">
             <span class="chat-sb-title">💬 Mensagens</span>
-            <button class="tbtn" onclick="openFindFriends()" style="font-size:11px;">+ Nova</button>
+            <div style="display:flex;gap:4px;">
+              <button class="tbtn" onclick="openPrivacyModal()" title="Configurações de Privacidade" style="font-size:13px;padding:5px 7px;">🔒</button>
+              <button class="tbtn" onclick="openFindFriends()" style="font-size:11px;">+ Nova</button>
+            </div>
           </div>
           <div style="padding:8px 12px;">
             <input class="ainput" type="text" placeholder="Buscar conversa..." style="font-size:11px;" oninput="filterChats(this.value)">
@@ -4101,6 +4145,7 @@ body.day-mode::before{
     <button class="bnav-btn" id="bn-messages" onclick="nav('messages')" aria-label="Chat" style="position:relative;">
       <svg class="bni" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
       <span class="notif-dot" id="bnav-msg-dot"></span>
+      <span id="bnav-msg-badge" style="display:none;position:absolute;top:2px;right:2px;background:var(--neon-pink);color:#fff;font-size:8px;min-width:15px;height:15px;border-radius:8px;align-items:center;justify-content:center;padding:0 3px;font-weight:bold;box-shadow:0 0 6px rgba(255,51,102,.5);">0</span>
     </button>
     <button class="bnav-btn" id="bn-businesses" onclick="nav('businesses')" aria-label="Lojas" style="position:relative;"><span class="notif-dot-biz" id="bn-biz-dot"></span>
       <svg class="bni" viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
@@ -4114,8 +4159,51 @@ body.day-mode::before{
   </div>
 </div>
 
-<!-- MUSIC PLAYER -->
-<div class="music-pl" id="music-pl">
+<!-- PRIVACY SETTINGS MODAL -->
+<div class="movl" id="m-privacy" onclick="if(event.target===this)closeM('m-privacy')">
+  <div class="privacy-modal-inner">
+    <div class="prv-hdr">
+      <div class="prv-hdr-title"><span>🔒</span> CONFIGURAÇÕES DE PRIVACIDADE</div>
+      <button class="mclose" onclick="closeM('m-privacy')">✕</button>
+    </div>
+    <div class="prv-body">
+      <div class="prv-section">
+        <div class="prv-section-label">📨 Confirmações de Mensagem</div>
+        <div class="prv-row">
+          <div class="prv-row-info">
+            <div class="prv-row-name">Ocultar Confirmação de Leitura</div>
+            <div class="prv-row-desc">Se ativo, outros usuários não verão os checks azuis (✓✓) quando você ler as mensagens deles.</div>
+            <span class="prv-status-tag inactive" id="prv-tag-hide-read">○ Desativado</span>
+          </div>
+          <label class="prv-toggle">
+            <input type="checkbox" id="prv-toggle-hide-read" onchange="updatePrivacyTag('hide-read')">
+            <div class="prv-toggle-track"></div>
+            <div class="prv-toggle-thumb"></div>
+          </label>
+        </div>
+      </div>
+      <div class="prv-section">
+        <div class="prv-section-label">👁 Status Online</div>
+        <div class="prv-row">
+          <div class="prv-row-info">
+            <div class="prv-row-name">Modo Invisível</div>
+            <div class="prv-row-desc">Se ativo, seu status não aparecerá como "online" para outros usuários. Você ainda pode conversar normalmente.</div>
+            <span class="prv-status-tag inactive" id="prv-tag-invisible">○ Desativado</span>
+          </div>
+          <label class="prv-toggle">
+            <input type="checkbox" id="prv-toggle-invisible" onchange="updatePrivacyTag('invisible')">
+            <div class="prv-toggle-track"></div>
+            <div class="prv-toggle-thumb"></div>
+          </label>
+        </div>
+      </div>
+      <button class="prv-save-btn" onclick="savePrivacySettings()">💾 SALVAR PREFERÊNCIAS</button>
+      <div style="text-align:center;margin-top:10px;font-size:9px;color:var(--text-muted);font-family:'Space Mono',monospace;">As configurações são salvas no seu perfil e aplicadas em tempo real.</div>
+    </div>
+  </div>
+</div>
+
+
   <span class="mnote">♪</span>
   <span class="mtitle">lo-fi hip hop radio ✨</span>
   <button class="mtgl" onclick="toggleMusic()">⏸</button>
@@ -4458,11 +4546,16 @@ async function loadProfile(){
   if(!CU)return;
   let data=null;
   try{
-    const res=await db.from('profiles').select('id,username,full_name,email,avatar_url,avatar_type,retro_icon,bio,instagram,twitter,github,status_message,created_at').eq('id',CU.id).maybeSingle();
+    const res=await db.from('profiles').select('id,username,full_name,email,avatar_url,avatar_type,retro_icon,bio,instagram,twitter,github,status_message,settings,created_at').eq('id',CU.id).maybeSingle();
     data=res.data;
     if(res.error)console.warn('Profile fetch:',res.error.message);
   }catch(e){ console.warn('loadProfile exception:',e.message); }
-  if(data){CP=data;return;}
+  if(data){
+    CP=data;
+    // Sincronizar preferências de privacidade no cache local
+    if(data.settings){ _setLocalPrivacySettings({hide_read_receipt:!!data.settings.hide_read_receipt, invisible_mode:!!data.settings.invisible_mode}); }
+    return;
+  }
   const meta=CU.user_metadata||{};
   let base=(meta.username||meta.user_name||meta.name||CU.email?.split('@')[0]||'user').toLowerCase().replace(/[^a-z0-9_]/g,'_').substring(0,18);
   let uname=base,s=1;
@@ -4575,7 +4668,7 @@ function nav(page){
     else if(page==='friends')        loadFriendsList('friends');
     else if(page==='communities')    { loadCommGrid('all'); setTimeout(buildCommIconGrid,200); }
     else if(page==='businesses')     initBusinessPage();
-    else if(page==='messages'){ loadConversations(); document.getElementById('bnav-msg-dot')?.classList.remove('active'); document.getElementById('msg-badge')?.remove(); db.from('messages').update({read:true}).eq('receiver_id',CU.id).eq('read',false).catch(()=>{}); }
+    else if(page==='messages'){ loadConversations(); loadUnreadMsgCount(); }
     else if(page==='businesses'){ ['bn-biz-dot','nb-biz-dot'].forEach(id=>document.getElementById(id)?.classList.remove('active')); }
     else if(page==='communities'){ ['bn-comm-dot','nb-comm-dot'].forEach(id=>document.getElementById(id)?.classList.remove('active')); }
     else if(page==='notifications')  loadNotifTab('nt-all');
@@ -6906,9 +6999,6 @@ function filterHomeChats(v){
 }
 async function openChat(userId,username,avatarUrl){
   currentChatUser={id:userId,username,avatar:avatarUrl};
-  document.getElementById('msg-badge')?.remove();
-  // Apagar bolinha bottom nav ao abrir qualquer chat
-  document.getElementById('bnav-msg-dot')?.classList.remove('active');
   document.querySelectorAll('.ci').forEach(c=>c.classList.remove('active'));
   document.getElementById('ci-'+userId)?.classList.add('active');
   // Load conversations if list is empty
@@ -6942,7 +7032,7 @@ async function loadMsgs(userId){
   const area = document.getElementById('msgs-area');
   if(!area) return;
   const{data:msgs}=await db.from('messages')
-    .select('id,sender_id,receiver_id,content,media_url,media_type,read,created_at')
+    .select('id,sender_id,receiver_id,content,media_url,media_type,read,is_read,received,created_at')
     .or(`and(sender_id.eq.${CU.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${CU.id})`)
     .order('created_at');
   if(!msgs?.length){
@@ -6963,6 +7053,13 @@ async function loadMsgs(userId){
       (sharedPosts||[]).forEach(p=>{ postShareMap[p.id]=p; });
     }catch(e){}
   }
+
+  // Buscar preferência de privacidade do destinatário (ocultar leitura)
+  let partnerHidesRead = false;
+  try{
+    const{data:partnerProf}=await db.from('profiles').select('settings').eq('id',userId).maybeSingle();
+    partnerHidesRead = !!(partnerProf?.settings?.hide_read_receipt);
+  }catch(e){}
 
   let lastDate='', html='';
   for(const m of msgs){
@@ -6998,7 +7095,20 @@ async function loadMsgs(userId){
     } else if(m.content){
       contentHtml = '<div class="mb-bubble">'+xss(m.content)+'</div>';
     }
-    const timeHtml = '<div class="mb-time">'+timeAgo(m.created_at)+'</div>';
+    // ── Ticks de status (apenas em mensagens enviadas pelo usuário) ──
+    let ticksHtml = '';
+    if(isSent && !isCallMsg){
+      const isRead    = !partnerHidesRead && (m.is_read === true || m.read === true);
+      const isReceived= m.received === true || m.read === true || m.is_read === true;
+      if(isRead){
+        ticksHtml = '<span class="msg-ticks read" title="Lido">✓✓</span>';
+      } else if(isReceived){
+        ticksHtml = '<span class="msg-ticks received" title="Recebido">✓✓</span>';
+      } else {
+        ticksHtml = '<span class="msg-ticks sent-only" title="Enviado">✓</span>';
+      }
+    }
+    const timeHtml = '<div class="mb-time"><span>'+timeAgo(m.created_at)+'</span>'+ticksHtml+'</div>';
     if(isCallMsg){
       html += '<div style="display:flex;justify-content:center;align-items:center;gap:6px;margin:6px 0;">'+contentHtml+'<span style="font-size:10px;color:var(--text-muted);">'+timeAgo(m.created_at)+'</span></div>';
     } else {
@@ -7007,9 +7117,19 @@ async function loadMsgs(userId){
   }
   area.innerHTML = html;
   area.scrollTop = area.scrollHeight;
-  db.from('messages').update({read:true}).eq('receiver_id',CU.id).eq('sender_id',userId).eq('read',false)
-    .then(()=>{ document.getElementById('bnav-msg-dot')?.classList.remove('active'); })
-    .catch(()=>{});
+
+  // Marcar mensagens recebidas como lidas (is_read=true) — respeitar preferência de privacidade do usuário atual
+  const myPrivacy = _getLocalPrivacySettings();
+  if(!myPrivacy.hide_read_receipt){
+    db.from('messages').update({read:true, is_read:true}).eq('receiver_id',CU.id).eq('sender_id',userId).eq('is_read',false)
+      .then(()=>{ document.getElementById('bnav-msg-dot')?.classList.remove('active'); updateChatBadge(-1); })
+      .catch(()=>{});
+  } else {
+    // Atualizar o campo read mas não is_read (para não acionar checks azuis no remetente)
+    db.from('messages').update({read:true}).eq('receiver_id',CU.id).eq('sender_id',userId).eq('read',false)
+      .then(()=>{ document.getElementById('bnav-msg-dot')?.classList.remove('active'); updateChatBadge(-1); })
+      .catch(()=>{});
+  }
 }
 
 // ── Extrai o postId de uma mensagem com marcador [POST_SHARE:id] ──
@@ -7100,10 +7220,97 @@ async function sendMsg(){
     const mod=await moderateContent(txt);
     if(!mod.allowed){ showModerationError(mod.categories||[]); return; }
   }
-  const{error}=await db.from('messages').insert({sender_id:CU.id,receiver_id:currentChatUser.id,content:txt,read:false});
+  const{error}=await db.from('messages').insert({sender_id:CU.id,receiver_id:currentChatUser.id,content:txt,read:false,received:false,is_read:false});
   if(error)return showToast('Erro ao enviar: '+error.message,'error');
-  inp.value='';await loadMsgs(currentChatUser.id);
+  inp.value='';autoResizeMsgIn(inp);await loadMsgs(currentChatUser.id);
   try{await db.from('notifications').insert({user_id:currentChatUser.id,actor_id:CU.id,type:'message',content:`@${CP?.username||'alguém'} enviou uma mensagem`,read:false});}catch(e){}
+}
+
+// ── Tecla Enter: enviar com Enter, nova linha com Shift+Enter (desktop only) ──
+function handleMsgKey(e){
+  const isMobile = 'ontouchstart' in window && window.innerWidth <= 768;
+  if(isMobile) return; // comportamento padrão no mobile
+  if(e.key==='Enter' && !e.shiftKey){
+    e.preventDefault();
+    sendMsg();
+  }
+  // Shift+Enter: inserir \n (comportamento padrão do textarea, não precisa de código)
+}
+
+function autoResizeMsgIn(el){
+  if(!el) return;
+  el.style.height='auto';
+  el.style.height=Math.min(el.scrollHeight, 120)+'px';
+}
+
+// ── Configurações de Privacidade ──────────────────────────────────
+
+// Lê as preferências salvas localmente (cache do que veio do Supabase)
+function _getLocalPrivacySettings(){
+  try{ return JSON.parse(localStorage.getItem('euaqui_privacy')||'{}'); }catch(e){ return {}; }
+}
+function _setLocalPrivacySettings(s){
+  try{ localStorage.setItem('euaqui_privacy', JSON.stringify(s)); }catch(e){}
+}
+
+function updatePrivacyTag(key){
+  const map={'hide-read':'prv-tag-hide-read','invisible':'prv-tag-invisible'};
+  const labelMap={'hide-read':'Ocultar Leitura','invisible':'Modo Invisível'};
+  const togId = 'prv-toggle-'+key;
+  const tagId = map[key];
+  const tog = document.getElementById(togId);
+  const tag = document.getElementById(tagId);
+  if(!tog||!tag) return;
+  const active = tog.checked;
+  tag.className = 'prv-status-tag '+(active?'active':'inactive');
+  tag.textContent = active ? '● '+(labelMap[key]||'Ativo') : '○ Desativado';
+}
+
+async function openPrivacyModal(){
+  if(!CU){ showToast('Faça login para acessar as configurações','error'); return; }
+  // Buscar configurações do perfil
+  try{
+    const{data:prof}=await db.from('profiles').select('settings').eq('id',CU.id).maybeSingle();
+    const s = prof?.settings||{};
+    document.getElementById('prv-toggle-hide-read').checked = !!s.hide_read_receipt;
+    document.getElementById('prv-toggle-invisible').checked  = !!s.invisible_mode;
+    updatePrivacyTag('hide-read');
+    updatePrivacyTag('invisible');
+    _setLocalPrivacySettings({hide_read_receipt:!!s.hide_read_receipt, invisible_mode:!!s.invisible_mode});
+  }catch(e){}
+  openM('m-privacy');
+}
+
+async function savePrivacySettings(){
+  if(!CU) return;
+  const hideRead  = document.getElementById('prv-toggle-hide-read').checked;
+  const invisible = document.getElementById('prv-toggle-invisible').checked;
+  const newSettings = {hide_read_receipt: hideRead, invisible_mode: invisible};
+
+  // Ler settings existentes para não sobrescrever outros campos
+  let existing = {};
+  try{
+    const{data:prof}=await db.from('profiles').select('settings').eq('id',CU.id).maybeSingle();
+    existing = prof?.settings||{};
+  }catch(e){}
+  const merged = {...existing, ...newSettings};
+
+  const{error}=await db.from('profiles').update({settings:merged}).eq('id',CU.id);
+  if(error){ showToast('Erro ao salvar: '+error.message,'error'); return; }
+
+  _setLocalPrivacySettings(newSettings);
+
+  // Aplicar modo invisível em tempo real na presença
+  if(typeof _applyInvisibleMode === 'function') _applyInvisibleMode(invisible);
+
+  showToast('✅ Preferências salvas!','success');
+  closeM('m-privacy');
+}
+
+// Chamado pelo setupPresence para verificar se deve aparecer online
+function _shouldAppearOnline(){
+  const s = _getLocalPrivacySettings();
+  return !s.invisible_mode;
 }
 
 // ===== NOTIFICATIONS =====
@@ -7265,6 +7472,8 @@ function setupRealtime(){
   // Real-time messages via Supabase Realtime
   db.channel('rt-msgs-'+CU.id)
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'receiver_id=eq.'+CU.id},(pl)=>{
+      // Marcar como recebida (received=true) assim que chegar
+      db.from('messages').update({received:true}).eq('id',pl.new.id).catch(()=>{});
       handleIncomingMessage(pl.new);
     }).subscribe();
 
@@ -7306,17 +7515,9 @@ function handleIncomingMessage(msg){
     }
   }
 
-  // Badge on chat button if not viewing this chat
+  // Badge numérico no chat button se não estiver vendo este chat
   if(currentChatUser?.id!==senderId && homeChatUser?.id!==senderId){
-    const chatNav=document.getElementById('nb-messages');
-    if(chatNav&&!document.getElementById('msg-badge')){
-      const dot=document.createElement('span');
-      dot.className='nbadge';dot.id='msg-badge';dot.textContent='●';
-      chatNav.appendChild(dot);
-    }
-    // Ativar bolinha no bottom nav
-    const bnDot = document.getElementById('bnav-msg-dot');
-    if(bnDot) bnDot.classList.add('active');
+    loadUnreadMsgCount(); // atualiza badge numérico real
   }
 
   // Refresh conversation list
@@ -7597,7 +7798,7 @@ function closeHomeChatWindow(){
 async function openHomeChatWith(userId, username, avatarUrl){
   homeChatUser={id:userId,username,avatar:avatarUrl};
   currentChatUser={id:userId,username,avatar:avatarUrl};
-  document.getElementById('msg-badge')?.remove();
+  // Badge será atualizado pelo loadHomeMsgs (mark as read)
   const chatTabBtn=document.querySelector('#home-page-tabs .ptab[data-tab="ht-chat"]');
   if(chatTabBtn) switchHomeTab(chatTabBtn);
   // Update header
@@ -7624,7 +7825,7 @@ async function loadHomeMsgs(userId){
   if(!CU) return;
   const area=document.getElementById('ht-msgs-area');
   if(!area) return;
-  const{data:msgs}=await db.from('messages').select('id,sender_id,content,media_url,media_type,created_at').or('and(sender_id.eq.'+CU.id+',receiver_id.eq.'+userId+'),and(sender_id.eq.'+userId+',receiver_id.eq.'+CU.id+')').order('created_at');
+  const{data:msgs}=await db.from('messages').select('id,sender_id,receiver_id,content,media_url,media_type,read,is_read,received,created_at').or('and(sender_id.eq.'+CU.id+',receiver_id.eq.'+userId+'),and(sender_id.eq.'+userId+',receiver_id.eq.'+CU.id+')').order('created_at');
   if(!msgs?.length){area.innerHTML='<div style="text-align:center;color:var(--text-muted);font-size:11px;padding:20px;">Início da conversa 👋</div>';return;}
 
   // Pré-buscar posts compartilhados
@@ -7636,6 +7837,13 @@ async function loadHomeMsgs(userId){
       (sp||[]).forEach(p=>{postShareMap[p.id]=p;});
     }catch(e){}
   }
+
+  // Verificar se parceiro oculta confirmação de leitura
+  let partnerHidesRead=false;
+  try{
+    const{data:pp}=await db.from('profiles').select('settings').eq('id',userId).maybeSingle();
+    partnerHidesRead=!!(pp?.settings?.hide_read_receipt);
+  }catch(e){}
 
   let html='';
   for(const m of msgs){
@@ -7654,10 +7862,29 @@ async function loadHomeMsgs(userId){
     } else if(m.content){
       contentHtml='<div class="mb-bubble">'+xss(m.content)+'</div>';
     }
-    html+='<div class="mb '+(sent?'sent':'recv')+'">'+mh+contentHtml+'<div class="mb-time">'+timeAgo(m.created_at)+'</div></div>';
+    // Ticks de status
+    let ticksHtml='';
+    if(sent){
+      const isRead=!partnerHidesRead&&(m.is_read===true||m.read===true);
+      const isReceived=m.received===true||m.read===true||m.is_read===true;
+      if(isRead) ticksHtml='<span class="msg-ticks read" title="Lido">✓✓</span>';
+      else if(isReceived) ticksHtml='<span class="msg-ticks received" title="Recebido">✓✓</span>';
+      else ticksHtml='<span class="msg-ticks sent-only" title="Enviado">✓</span>';
+    }
+    html+='<div class="mb '+(sent?'sent':'recv')+'">'+mh+contentHtml+'<div class="mb-time"><span>'+timeAgo(m.created_at)+'</span>'+ticksHtml+'</div></div>';
   }
   area.innerHTML=html;
   area.scrollTop=area.scrollHeight;
+
+  // Marcar como lidas respeitando preferência de privacidade
+  const myPrivacy=_getLocalPrivacySettings();
+  if(!myPrivacy.hide_read_receipt){
+    db.from('messages').update({read:true,is_read:true}).eq('receiver_id',CU.id).eq('sender_id',userId).eq('is_read',false)
+      .then(()=>loadUnreadMsgCount()).catch(()=>{});
+  } else {
+    db.from('messages').update({read:true}).eq('receiver_id',CU.id).eq('sender_id',userId).eq('read',false)
+      .then(()=>loadUnreadMsgCount()).catch(()=>{});
+  }
 }
 
 async function sendHomeMsg(){
@@ -7682,7 +7909,7 @@ async function sendHomeMsg(){
     }catch(e){}
     msgAttachFiles=[];renderMsgAttachPrev();
   }
-  const{error}=await db.from('messages').insert({sender_id:CU.id,receiver_id:homeChatUser.id,content:txt||null,media_url:mediaUrl,media_type:mediaType,read:false});
+  const{error}=await db.from('messages').insert({sender_id:CU.id,receiver_id:homeChatUser.id,content:txt||null,media_url:mediaUrl,media_type:mediaType,read:false,received:false,is_read:false});
   if(error){showToast('Erro: '+error.message,'error');return;}
   if(inp){inp.value='';inp.style.height='auto';}
   await loadHomeMsgs(homeChatUser.id);
@@ -11540,12 +11767,14 @@ function setupPresence(){
     })
     .subscribe(async (status) => {
       if(status === 'SUBSCRIBED'){
-        // Anunciar presença do usuário atual
-        await _presenceChannel.track({
-          user_id: CU.id,
-          username: CP?.username || '',
-          online_at: new Date().toISOString()
-        });
+        // Anunciar presença apenas se não estiver em modo invisível
+        if(_shouldAppearOnline()){
+          await _presenceChannel.track({
+            user_id: CU.id,
+            username: CP?.username || '',
+            online_at: new Date().toISOString()
+          });
+        }
       }
     });
 
@@ -11558,7 +11787,7 @@ function setupPresence(){
   document.addEventListener('visibilitychange', () => {
     if(document.hidden){
       _presenceChannel?.untrack();
-    } else {
+    } else if(_shouldAppearOnline()){
       _presenceChannel?.track({
         user_id: CU.id,
         username: CP?.username || '',
@@ -11566,6 +11795,20 @@ function setupPresence(){
       });
     }
   });
+}
+
+// Aplicar/remover modo invisível em tempo real (chamado ao salvar privacidade)
+function _applyInvisibleMode(invisible){
+  if(!_presenceChannel) return;
+  if(invisible){
+    _presenceChannel.untrack();
+  } else {
+    _presenceChannel.track({
+      user_id: CU.id,
+      username: CP?.username || '',
+      online_at: new Date().toISOString()
+    });
+  }
 }
 
 // Atualizar UMA bolinha específica (lista + header se aberto)
@@ -11859,22 +12102,42 @@ async function loadUnreadMsgCount(){
     if(currentChatUser?.id) q = q.neq('sender_id',currentChatUser.id);
     if(homeChatUser?.id)    q = q.neq('sender_id',homeChatUser.id);
     const{count} = await q;
-    const dot = document.getElementById('bnav-msg-dot');
-    if(dot) dot.classList.toggle('active', (count||0) > 0);
-    // Desktop badge
-    const nb = document.getElementById('msg-badge');
-    if((count||0) > 0){
-      if(nb) nb.textContent='●';
-      else{
-        const chatNav=document.getElementById('nb-messages');
-        if(chatNav&&!document.getElementById('msg-badge')){
-          const d=document.createElement('span');d.className='nbadge';d.id='msg-badge';d.textContent='●';chatNav.appendChild(d);
-        }
-      }
-    } else {
-      nb?.remove();
-    }
+    _updateMsgBadgeUI(count||0);
   }catch(e){}
+}
+
+function _updateMsgBadgeUI(count){
+  const n = count||0;
+  // Bottom nav dot (legacy - hide if badge visible)
+  const dot = document.getElementById('bnav-msg-dot');
+  if(dot) dot.classList.toggle('active', false); // substituído pelo badge numérico
+
+  // Bottom nav badge numérico
+  const bnBadge = document.getElementById('bnav-msg-badge');
+  if(bnBadge){
+    if(n>0){ bnBadge.textContent=n>99?'99+':n; bnBadge.style.display='flex'; }
+    else { bnBadge.style.display='none'; }
+  }
+
+  // Desktop nav badge numérico
+  const nb = document.getElementById('msg-badge');
+  if(nb){
+    if(n>0){ nb.textContent=n>99?'99+':n; nb.style.display='inline-flex'; }
+    else { nb.style.display='none'; }
+  }
+}
+
+function updateChatBadge(delta){
+  // Atualiza o badge sem precisar de nova query (delta = mudança relativa)
+  const nb = document.getElementById('msg-badge');
+  const bnBadge = document.getElementById('bnav-msg-badge');
+  if(delta === -1){
+    // Recarregar contagem real do servidor
+    loadUnreadMsgCount();
+    return;
+  }
+  const cur = parseInt(nb?.textContent||'0')||0;
+  _updateMsgBadgeUI(Math.max(0, cur+delta));
 }
 
 
