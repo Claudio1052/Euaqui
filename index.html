@@ -15442,16 +15442,20 @@ async function _saveChatCooldown(commId){
 async function copyCommInvite(commId, name){
   const url = `${window.location.href.split('#')[0].split('?')[0]}?comm=${commId}`;
 
-  // Buscar dados da comunidade para exibir logo
-  let commData = window._commCache?.[commId] || null;
-  if(!commData){
-    try{
-      const{data:cd}=await db.from('communities').select('id,name,avatar_url,banner_url,description,members_count').eq('id',commId).maybeSingle();
-      if(cd){ commData=cd; if(!window._commCache)window._commCache={}; window._commCache[commId]=cd; }
-    }catch(e){}
-  }
+  // Buscar dados da comunidade + contagem REAL de membros
+  let commData = null;
+  let realMemberCount = 0;
+  try{
+    const[{data:cd}, {count:mc}] = await Promise.all([
+      db.from('communities').select('id,name,avatar_url,banner_url,description').eq('id',commId).maybeSingle(),
+      db.from('community_members').select('*',{count:'exact',head:true}).eq('community_id',commId)
+    ]);
+    commData = cd;
+    realMemberCount = mc || 0;
+    if(cd){ if(!window._commCache)window._commCache={}; window._commCache[commId]=cd; }
+  }catch(e){}
 
-  // Buscar amigos para a seção "Enviar para amigos"
+  // Buscar amigos
   let friends = [];
   if(CU){
     try{
@@ -15463,19 +15467,18 @@ async function copyCommInvite(commId, name){
   }
 
   const commAvUrl = commData?.avatar_url || commData?.banner_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+(name||'comm'));
-  const membCount = commData?.members_count || 0;
   const commDesc  = commData?.description || '';
 
   const overlay = document.createElement('div');
-  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);backdrop-filter:blur(8px);z-index:4000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);backdrop-filter:blur(8px);z-index:4000;display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto;';
 
   const friendsHtml = friends.length ? `
     <div style="margin-top:14px;border-top:1px solid rgba(255,255,255,.07);padding-top:14px;">
       <div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--neon-yellow);letter-spacing:1px;margin-bottom:10px;">👥 ENVIAR PARA AMIGOS <span style="font-size:9px;color:var(--text-muted);">(máx. 5)</span></div>
-      <div id="comm-invite-friends" style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto;">
+      <div id="comm-invite-friends" style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;">
         ${friends.map(f=>`
-          <div style="display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);cursor:pointer;transition:all .2s;"
-            onclick="toggleCommInviteFriend(this,'${f.id}','${xss(f.username||'')}','${xss(f.full_name||f.username||'')}')">
+          <div data-uid="${f.id}" data-selected="0" style="display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);cursor:pointer;transition:all .2s;"
+            onclick="toggleCommInviteFriend(this)">
             <img src="${xss(f.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(f.username||'u'))}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:1.5px solid rgba(0,255,204,.2);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=u'">
             <div style="flex:1;min-width:0;">
               <div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(f.full_name||f.username||'')}</div>
@@ -15498,30 +15501,33 @@ async function copyCommInvite(commId, name){
         <div style="flex:1;min-width:0;">
           <div style="font-family:Silkscreen,monospace;font-size:12px;color:var(--neon-cyan);margin-bottom:2px;">${xss(name)}</div>
           ${commDesc?`<div style="font-size:10px;color:var(--text-muted);line-height:1.4;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(commDesc)}</div>`:''}
-          <div style="font-size:10px;color:var(--text-muted);">🏘 Comunidade · 👥 ${membCount} membros</div>
+          <div style="font-size:10px;color:var(--text-muted);">🏘 Comunidade · 👥 ${realMemberCount} membro${realMemberCount!==1?'s':''}</div>
         </div>
       </div>
 
       <!-- Link -->
       <div style="background:rgba(0,0,0,.3);border:1px solid var(--border-glow);border-radius:8px;padding:10px;font-size:10px;color:var(--neon-cyan);word-break:break-all;margin-bottom:14px;cursor:pointer;" onclick="copyToClipboard('${url}')">${url}</div>
 
-      <!-- Botões de compartilhamento -->
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;">
+      <!-- Botões de compartilhamento externo -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px;">
         <button onclick="copyToClipboard('${url}')" style="background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:10px;padding:10px 4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;">
           <span style="font-size:20px;">📋</span><span style="font-size:9px;color:var(--neon-cyan);font-family:Silkscreen,monospace;">Copiar</span>
         </button>
-        <button onclick="window.open('https://wa.me/?text='+encodeURIComponent('Junte-se a ${xss(name)} no EuAqui! '+('${url}')),'_blank')" style="background:rgba(37,211,102,.08);border:1px solid rgba(37,211,102,.3);border-radius:10px;padding:10px 4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;">
+        <button onclick="window.open('https://wa.me/?text='+encodeURIComponent('Junte-se a ${xss(name.replace(/'/g,''))} no EuAqui! ${url}'),'_blank')" style="background:rgba(37,211,102,.08);border:1px solid rgba(37,211,102,.3);border-radius:10px;padding:10px 4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;">
           <span style="font-size:20px;">💬</span><span style="font-size:9px;color:#25d366;font-family:Silkscreen,monospace;">WhatsApp</span>
         </button>
-        <button onclick="window.open('https://t.me/share/url?url='+encodeURIComponent('${url}')+'&text='+encodeURIComponent('Junte-se a ${xss(name)}!'),'_blank')" style="background:rgba(36,161,222,.08);border:1px solid rgba(36,161,222,.3);border-radius:10px;padding:10px 4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;">
+        <button onclick="window.open('https://t.me/share/url?url='+encodeURIComponent('${url}'),'_blank')" style="background:rgba(36,161,222,.08);border:1px solid rgba(36,161,222,.3);border-radius:10px;padding:10px 4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;">
           <span style="font-size:20px;">✈️</span><span style="font-size:9px;color:#24a1de;font-family:Silkscreen,monospace;">Telegram</span>
         </button>
-        <button onclick="if(navigator.share){navigator.share({title:'${xss(name)}',text:'Junte-se a mim em ${xss(name)} no EuAqui!',url:'${url}'});}else{copyToClipboard('${url}');}" style="background:rgba(191,95,255,.08);border:1px solid rgba(191,95,255,.3);border-radius:10px;padding:10px 4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;">
+        <button onclick="if(navigator.share){navigator.share({title:'${xss(name.replace(/'/g,''))}',text:'Junte-se a ${xss(name.replace(/'/g,''))} no EuAqui!',url:'${url}'});}else{copyToClipboard('${url}');}" style="background:rgba(191,95,255,.08);border:1px solid rgba(191,95,255,.3);border-radius:10px;padding:10px 4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;">
           <span style="font-size:20px;">⬆️</span><span style="font-size:9px;color:var(--neon-purple);font-family:Silkscreen,monospace;">Mais</span>
         </button>
       </div>
 
-      <!-- Seção enviar para amigos -->
+      <!-- Botão Postar no Feed -->
+      <button onclick="postCommInviteToFeed('${commId}','${xss(name.replace(/'/g,''))}','${url}')" style="width:100%;background:linear-gradient(135deg,var(--neon-pink),var(--neon-purple));border:none;color:#fff;padding:10px;border-radius:8px;cursor:pointer;font-family:Silkscreen,monospace;font-size:10px;letter-spacing:1px;margin-bottom:4px;">📢 POSTAR NO MEU FEED</button>
+
+      <!-- Enviar para amigos -->
       ${friendsHtml}
 
       <button class="tbtn" onclick="this.closest('[style*=fixed]').remove()" style="margin-top:12px;width:100%;">Fechar</button>
@@ -15531,8 +15537,29 @@ async function copyCommInvite(commId, name){
   document.body.appendChild(overlay);
 }
 
+// Postar convite da comunidade no feed pessoal
+async function postCommInviteToFeed(commId, commName, url){
+  if(!CU){ showToast('Faça login','error'); return; }
+  try{
+    const content = `🏘 Junte-se a mim na comunidade **${commName}**!\n\n${url}`;
+    const{error} = await db.from('posts').insert({
+      user_id: CU.id,
+      content,
+      visibility: 'public',
+      type: 'text'
+    });
+    if(error) throw error;
+    showToast('✅ Postado no seu feed!','success');
+    document.querySelector('[style*="z-index: 4000"],[style*="z-index:4000"]')?.remove();
+    nav('home');
+    setTimeout(()=>loadFeed(true), 400);
+  }catch(e){
+    showToast('Erro ao postar: '+(e?.message||''),'error');
+  }
+}
+
 // Selecionar/deselecionar amigo para convite
-function toggleCommInviteFriend(el, userId, username, name){
+function toggleCommInviteFriend(el){
   const selected = el.dataset.selected==='1';
   const container = document.getElementById('comm-invite-friends');
   const allSel = container.querySelectorAll('[data-selected="1"]');
@@ -15549,6 +15576,7 @@ function toggleCommInviteFriend(el, userId, username, name){
     check.textContent='';
     check.style.borderColor='rgba(255,255,255,.2)';
     check.style.background='';
+    check.style.color='';
   } else {
     el.style.background='rgba(0,255,204,.07)';
     el.style.borderColor='rgba(0,255,204,.25)';
@@ -15563,40 +15591,36 @@ function toggleCommInviteFriend(el, userId, username, name){
   if(countEl) countEl.textContent = newCount+' / 5 selecionados';
 }
 
-// Enviar convite da comunidade para amigos selecionados
+// Enviar convite via notificação para amigos selecionados
 async function sendCommInviteToFriends(commId, commName){
   if(!CU){ showToast('Faça login','error'); return; }
   const container = document.getElementById('comm-invite-friends');
   const selected = [...container.querySelectorAll('[data-selected="1"]')];
   if(!selected.length){ showToast('Selecione ao menos 1 amigo','error'); return; }
 
-  const friendIds = selected.map(el=>el.dataset.userId || el.getAttribute('onclick')?.match(/'([a-f0-9-]{36})'/)?.[1]).filter(Boolean);
+  const ids = selected.map(el=>el.dataset.uid).filter(Boolean);
+  if(!ids.length){ showToast('Erro ao identificar amigos','error'); return; }
 
-  // Tentar extrair IDs dos atributos onclick
-  const ids = selected.map(el=>{
-    const m = el.getAttribute('onclick')?.match(/'([a-f0-9\-]{36})'/);
-    return m?m[1]:null;
-  }).filter(Boolean);
-
-  if(!ids.length){ showToast('Erro ao obter IDs dos amigos','error'); return; }
-
+  const senderName = CP?.username || CP?.full_name || 'alguém';
+  const url = `${window.location.href.split('#')[0].split('?')[0]}?comm=${commId}`;
   let sent = 0;
+
   for(const friendId of ids.slice(0,5)){
     try{
       await db.from('notifications').insert({
         user_id: friendId,
         actor_id: CU.id,
         type: 'community_invite',
-        data: JSON.stringify({community_id: commId, community_name: commName}),
+        content: `@${senderName} te convidou para a comunidade "${commName}" — ${url}`,
         read: false
       });
       sent++;
-    }catch(e){ console.warn('invite send:', e?.message); }
+    }catch(e){ console.warn('invite notif error:', e?.message); }
   }
 
   if(sent>0){
     showToast(`✅ Convite enviado para ${sent} amigo${sent>1?'s':''}!`,'success');
-    document.querySelector('[style*="fixed"][style*="4000"]')?.remove();
+    document.querySelector('[style*="z-index: 4000"],[style*="z-index:4000"]')?.remove();
   } else {
     showToast('Erro ao enviar convites','error');
   }
