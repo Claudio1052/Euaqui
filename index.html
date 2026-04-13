@@ -11917,36 +11917,174 @@ async function notifyBizFollowers(bizId, msg){
 }
 
 // ── 4. Link de convite / propaganda ──────────────────────────────
-function gerarLinkConvite(bizId, bizName){
-  // Create shareable URL that opens the app and shows the business
+async function gerarLinkConvite(bizId, bizName){
   const baseUrl = window.location.origin + window.location.pathname;
   const url = `${baseUrl}?biz=${bizId}`;
 
+  // Buscar dados frescos da loja (logo, banner, seguidores)
+  const biz = myBusiness || {};
+  const logoUrl   = biz.logo_url   || '';
+  const bannerUrl = biz.banner_url || '';
+  const segment   = biz.segment    || '';
+  const city      = biz.city       || '';
+  const followCount = biz.followers_count || 0;
+  const isSvc     = biz.category === 'servico';
+
+  // Buscar amigos para envio direto
+  let friends = [];
+  if(CU){
+    try{
+      const{data:fws}=await db.from('friends')
+        .select('friend_id,profiles!friends_friend_id_fkey(id,username,full_name,avatar_url)')
+        .eq('user_id',CU.id).limit(30);
+      friends = (fws||[]).map(f=>f.profiles).filter(Boolean);
+    }catch(e){}
+  }
+
   const overlay = document.createElement('div');
-  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(8px);z-index:4000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);backdrop-filter:blur(8px);z-index:4000;display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto;';
+
+  const friendsHtml = friends.length ? `
+    <div style="margin-top:14px;border-top:1px solid rgba(255,255,255,.07);padding-top:14px;">
+      <div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--neon-yellow);letter-spacing:1px;margin-bottom:10px;">👥 ENVIAR PARA AMIGOS <span style="font-size:9px;color:var(--text-muted);">(máx. 5)</span></div>
+      <div id="biz-invite-friends" style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;">
+        ${friends.map(f=>`
+          <div data-uid="${f.id}" data-selected="0" style="display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);cursor:pointer;transition:all .2s;"
+            onclick="toggleBizInviteFriend(this)">
+            <img src="${xss(f.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(f.username||'u'))}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:1.5px solid rgba(0,255,204,.2);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=u'">
+            <div style="flex:1;min-width:0;">
+              <div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(f.full_name||f.username||'')}</div>
+              <div style="font-size:9px;color:var(--neon-cyan);">@${xss(f.username||'')}</div>
+            </div>
+            <div class="biz-invite-check" style="width:20px;height:20px;border-radius:50%;border:2px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;transition:all .2s;"></div>
+          </div>`).join('')}
+      </div>
+      <div id="biz-invite-sel-count" style="font-size:10px;color:var(--text-muted);margin-top:6px;text-align:right;">0 / 5 selecionados</div>
+      <button onclick="sendBizInviteToFriends('${bizId}','${xss(bizName.replace(/'/g,''))}','${url}')" style="width:100%;margin-top:8px;background:linear-gradient(135deg,var(--neon-yellow),var(--neon-pink));border:none;color:var(--bg-deep);padding:10px;border-radius:8px;cursor:pointer;font-family:Silkscreen,monospace;font-size:10px;letter-spacing:1px;">📨 ENVIAR CONVITE</button>
+    </div>` : '';
+
   overlay.innerHTML=`
-    <div class="modal" style="max-width:440px;width:100%;text-align:center;">
-      <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);margin-bottom:4px;">📣 Convite / Propaganda</div>
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;">Compartilhe este link para convidar pessoas a seguirem sua loja</div>
-      
-      <!-- Card preview do convite -->
-      <div style="background:linear-gradient(135deg,var(--bg-mid),rgba(0,255,204,.06));border:1px solid var(--border-glow);border-radius:14px;padding:18px;margin-bottom:16px;">
-        <div style="font-size:32px;margin-bottom:8px;">${myBusiness?.category==='loja'?'🛍️':'🔧'}</div>
-        <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-cyan);margin-bottom:4px;">${xss(bizName)}</div>
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">${xss(myBusiness?.segment||'')} · ${xss(myBusiness?.city||'')}</div>
-        <div style="font-size:12px;color:var(--text-light);margin-bottom:14px;">👆 Clique para seguir e ficar por dentro das novidades!</div>
-        <div style="background:rgba(0,0,0,.3);border:1px solid var(--border-glow);border-radius:8px;padding:8px;font-size:10px;color:var(--neon-cyan);word-break:break-all;cursor:pointer;" onclick="copyBizLink('${url}')" id="biz-invite-url">${url}</div>
+    <div class="modal" style="max-width:440px;width:100%;text-align:center;padding:20px;">
+      <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);margin-bottom:14px;">📣 Convite — ${xss(bizName)}</div>
+
+      <!-- Card estilo loja -->
+      <div style="background:linear-gradient(135deg,rgba(255,204,0,.06),rgba(255,51,102,.06));border:1px solid rgba(255,204,0,.2);border-radius:14px;overflow:hidden;margin-bottom:14px;text-align:left;">
+        ${bannerUrl ? `<div style="height:80px;overflow:hidden;"><img src="${xss(bannerUrl)}" style="width:100%;height:80px;object-fit:cover;display:block;"></div>` : ''}
+        <div style="display:flex;gap:10px;align-items:center;padding:12px;">
+          ${logoUrl
+            ? `<img src="${xss(logoUrl)}" style="width:46px;height:46px;border-radius:10px;object-fit:cover;border:2px solid rgba(255,204,0,.35);flex-shrink:0;">`
+            : `<div style="width:46px;height:46px;border-radius:10px;background:rgba(255,204,0,.1);border:2px solid rgba(255,204,0,.2);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;">${isSvc?'🔧':'🛍️'}</div>`
+          }
+          <div style="flex:1;min-width:0;">
+            <div style="font-family:Silkscreen,monospace;font-size:12px;color:var(--neon-yellow);margin-bottom:2px;">${xss(bizName)}</div>
+            ${segment||city ? `<div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">${xss(segment)}${city?' · '+xss(city):''}</div>` : ''}
+            <div style="font-size:10px;color:var(--text-muted);">${isSvc?'🔧 Serviço':'🛍️ Loja'} · 👥 ${followCount} seguidores</div>
+          </div>
+        </div>
       </div>
 
-      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
-        <button class="post-btn" onclick="copyBizLink('${url}')" style="font-size:10px;">📋 Copiar link</button>
-        <button class="post-btn" onclick="shareBizLink('${url}','${xss(bizName)}')" style="font-size:10px;background:linear-gradient(135deg,#25d366,#128c7e);">📱 Compartilhar</button>
-        <button class="tbtn" onclick="this.closest('[style*=fixed]').remove()">Fechar</button>
+      <!-- Link -->
+      <div style="background:rgba(0,0,0,.3);border:1px solid var(--border-glow);border-radius:8px;padding:10px;font-size:10px;color:var(--neon-cyan);word-break:break-all;margin-bottom:14px;cursor:pointer;" onclick="copyBizLink('${url}')">${url}</div>
+
+      <!-- Botões de compartilhamento -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px;">
+        <button onclick="copyBizLink('${url}')" style="background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:10px;padding:10px 4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;">
+          <span style="font-size:20px;">📋</span><span style="font-size:9px;color:var(--neon-cyan);font-family:Silkscreen,monospace;">Copiar</span>
+        </button>
+        <button onclick="window.open('https://wa.me/?text='+encodeURIComponent('Confira ${xss(bizName.replace(/'/g,''))} no EuAqui e siga para novidades! ${url}'),'_blank')" style="background:rgba(37,211,102,.08);border:1px solid rgba(37,211,102,.3);border-radius:10px;padding:10px 4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;">
+          <span style="font-size:20px;">💬</span><span style="font-size:9px;color:#25d366;font-family:Silkscreen,monospace;">WhatsApp</span>
+        </button>
+        <button onclick="window.open('https://t.me/share/url?url='+encodeURIComponent('${url}'),'_blank')" style="background:rgba(36,161,222,.08);border:1px solid rgba(36,161,222,.3);border-radius:10px;padding:10px 4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;">
+          <span style="font-size:20px;">✈️</span><span style="font-size:9px;color:#24a1de;font-family:Silkscreen,monospace;">Telegram</span>
+        </button>
+        <button onclick="if(navigator.share){navigator.share({title:'${xss(bizName.replace(/'/g,''))}',text:'Confira ${xss(bizName.replace(/'/g,''))} no EuAqui!',url:'${url}'});}else{copyBizLink('${url}');}" style="background:rgba(191,95,255,.08);border:1px solid rgba(191,95,255,.3);border-radius:10px;padding:10px 4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;">
+          <span style="font-size:20px;">⬆️</span><span style="font-size:9px;color:var(--neon-purple);font-family:Silkscreen,monospace;">Mais</span>
+        </button>
       </div>
-      <div style="font-size:10px;color:var(--text-muted);margin-top:12px;">Ao acessar o link, a pessoa verá sua loja e poderá seguir.</div>
+
+      <!-- Postar no feed -->
+      <button onclick="postBizInviteToFeed('${bizId}','${xss(bizName.replace(/'/g,''))}','${url}')" style="width:100%;background:linear-gradient(135deg,var(--neon-pink),var(--neon-purple));border:none;color:#fff;padding:10px;border-radius:8px;cursor:pointer;font-family:Silkscreen,monospace;font-size:10px;letter-spacing:1px;margin-bottom:4px;">📢 POSTAR NO MEU FEED</button>
+
+      <!-- Enviar para amigos -->
+      ${friendsHtml}
+
+      <button class="tbtn" onclick="this.closest('[style*=fixed]').remove()" style="margin-top:12px;width:100%;">Fechar</button>
     </div>`;
+
   overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
   document.body.appendChild(overlay);
+}
+
+// Selecionar/deselecionar amigo para convite de loja
+function toggleBizInviteFriend(el){
+  const selected = el.dataset.selected==='1';
+  const container = document.getElementById('biz-invite-friends');
+  const allSel = container.querySelectorAll('[data-selected="1"]');
+  if(!selected && allSel.length >= 5){ showToast('Máximo de 5 amigos por vez','error'); return; }
+  el.dataset.selected = selected ? '0' : '1';
+  const check = el.querySelector('.biz-invite-check');
+  if(selected){
+    el.style.background='rgba(255,255,255,.03)'; el.style.borderColor='rgba(255,255,255,.06)';
+    check.textContent=''; check.style.borderColor='rgba(255,255,255,.2)'; check.style.background=''; check.style.color='';
+  } else {
+    el.style.background='rgba(255,204,0,.07)'; el.style.borderColor='rgba(255,204,0,.25)';
+    check.textContent='✓'; check.style.borderColor='var(--neon-yellow)'; check.style.background='rgba(255,204,0,.2)'; check.style.color='var(--neon-yellow)';
+  }
+  const newCount = container.querySelectorAll('[data-selected="1"]').length;
+  const countEl = document.getElementById('biz-invite-sel-count');
+  if(countEl) countEl.textContent = newCount+' / 5 selecionados';
+}
+
+// Enviar convite da loja para amigos via notificação
+async function sendBizInviteToFriends(bizId, bizName, url){
+  if(!CU){ showToast('Faça login','error'); return; }
+  const container = document.getElementById('biz-invite-friends');
+  const selected = [...container.querySelectorAll('[data-selected="1"]')];
+  if(!selected.length){ showToast('Selecione ao menos 1 amigo','error'); return; }
+  const ids = selected.map(el=>el.dataset.uid).filter(Boolean);
+  if(!ids.length){ showToast('Erro ao identificar amigos','error'); return; }
+  const senderName = CP?.username || CP?.full_name || 'alguém';
+  let sent = 0;
+  for(const friendId of ids.slice(0,5)){
+    try{
+      await db.from('notifications').insert({
+        user_id: friendId, actor_id: CU.id,
+        type: 'biz_promo', business_id: bizId,
+        content: `@${senderName} te indicou a loja/serviço "${bizName}" — ${url}`,
+        read: false
+      });
+      sent++;
+    }catch(e){
+      try{
+        await db.from('notifications').insert({
+          user_id: friendId, actor_id: CU.id, type: 'biz_promo',
+          content: `@${senderName} te indicou "${bizName}" — ${url}`, read: false
+        });
+        sent++;
+      }catch(e2){ console.warn('biz invite err:', e2?.message); }
+    }
+  }
+  if(sent>0){
+    showToast(`✅ Convite enviado para ${sent} amigo${sent>1?'s':''}!`,'success');
+    document.querySelector('[style*="z-index: 4000"],[style*="z-index:4000"]')?.remove();
+  } else { showToast('Erro ao enviar convites','error'); }
+}
+
+// Postar convite da loja no feed
+async function postBizInviteToFeed(bizId, bizName, url){
+  if(!CU){ showToast('Faça login','error'); return; }
+  try{
+    const biz = myBusiness || {};
+    const imgUrl = biz.banner_url || biz.logo_url || null;
+    const content = `${biz.category==='servico'?'🔧':'🛍️'} Conheça **${bizName}**!\n\nSiga e fique por dentro das novidades!\n\n👉 [Seguir e ver mais](${url})`;
+    const postData = { user_id: CU.id, content, visibility: 'public', type: 'text' };
+    if(imgUrl) postData.media_urls = [imgUrl];
+    const{error} = await db.from('posts').insert(postData);
+    if(error) throw error;
+    showToast('✅ Postado no seu feed!','success');
+    document.querySelector('[style*="z-index: 4000"],[style*="z-index:4000"]')?.remove();
+    nav('home'); setTimeout(()=>loadFeed(true), 400);
+  }catch(e){ showToast('Erro ao postar: '+(e?.message||''),'error'); }
 }
 
 function copyBizLink(url){
