@@ -3531,6 +3531,26 @@ body.day-mode::before{
 <!-- APP -->
 <div id="app" style="display:none;">
 
+<!-- TRENDING MODAL -->
+<div id="trending-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:5000;backdrop-filter:blur(4px);" onclick="if(event.target===this)closeTrendingModal()">
+  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(440px,95vw);max-height:85vh;background:var(--bg-card);border:1px solid var(--border-glow);border-radius:18px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 0 40px rgba(0,255,204,.15);">
+    <div style="padding:16px 18px 12px;border-bottom:1px solid var(--border-glow);display:flex;align-items:center;gap:10px;flex-shrink:0;">
+      <span style="font-size:22px;">🔥</span>
+      <span style="font-family:'Silkscreen',monospace;font-size:14px;color:var(--neon-pink);letter-spacing:1px;">EM ALTA</span>
+      <span style="font-size:10px;color:var(--text-muted);margin-left:auto;">Top 10 Hashtags</span>
+      <button onclick="closeTrendingModal()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;padding:0 4px;">✕</button>
+    </div>
+    <div style="padding:10px 18px 8px;border-bottom:1px solid rgba(255,255,255,.05);display:flex;gap:6px;flex-shrink:0;">
+      <button class="trend-period-btn active" onclick="loadTrending('hours',this)" style="flex:1;padding:6px;border-radius:6px;font-size:10px;font-family:'Space Mono',monospace;background:rgba(0,255,204,.12);border:1px solid var(--neon-cyan);color:var(--neon-cyan);cursor:pointer;">Últimas Horas</button>
+      <button class="trend-period-btn" onclick="loadTrending('today',this)" style="flex:1;padding:6px;border-radius:6px;font-size:10px;font-family:'Space Mono',monospace;background:transparent;border:1px solid rgba(255,255,255,.1);color:var(--text-muted);cursor:pointer;">Hoje</button>
+      <button class="trend-period-btn" onclick="loadTrending('month',this)" style="flex:1;padding:6px;border-radius:6px;font-size:10px;font-family:'Space Mono',monospace;background:transparent;border:1px solid rgba(255,255,255,.1);color:var(--text-muted);cursor:pointer;">Este Mês</button>
+    </div>
+    <div id="trending-list" style="overflow-y:auto;padding:14px 18px 18px;flex:1;">
+      <div style="text-align:center;color:var(--text-muted);font-size:12px;padding:20px;">⏳ Carregando tendências...</div>
+    </div>
+  </div>
+</div>
+
 <!-- NAV -->
 <nav id="main-nav">
   <!-- Row 1: Logo + main nav + search/avatar -->
@@ -3556,6 +3576,7 @@ body.day-mode::before{
   <!-- Row 2: Home sub-tabs (Feed/Amigos/Grupos/Chat/Perfil/Alertas) -->
   <div class="nav-tabs-row" id="nav-home-tabs">
     <button class="nav-tab active" data-tab="ht-feed"    onclick="switchHomeTab(this)">🏠 Feed</button>
+    <button class="nav-tab" onclick="openTrendingModal()" style="color:var(--neon-pink);font-weight:700;">🔥 Em Alta</button>
     <button class="nav-tab"        data-tab="ht-friends" onclick="switchHomeTab(this)">👥 Amigos</button>
     <button class="nav-tab"        data-tab="ht-comms"   onclick="switchHomeTab(this)">🏘 Grupos</button>
     <button class="nav-tab"        data-tab="ht-chat"    onclick="switchHomeTab(this)">💬 Chat</button>
@@ -3604,7 +3625,8 @@ body.day-mode::before{
       </div>
     </div>
     <div class="slbl">Navegação</div>
-    <div class="slink active" id="sl-home" onclick="nav('home')"><span class="ic">🏠</span> Feed</div>
+    <div class="slink" id="sl-home" onclick="nav('home')"><span class="ic">🏠</span> Feed</div>
+    <div class="slink" onclick="openTrendingModal()" style="color:var(--neon-pink);"><span class="ic">🔥</span> Em Alta</div>
     <div class="slink" id="sl-profile" onclick="nav('profile')"><span class="ic">👤</span> Perfil</div>
     <div class="slink" id="sl-friends" onclick="nav('friends')"><span class="ic">👥</span> Amigos</div>
     <div class="slink" id="sl-communities" onclick="nav('communities')"><span class="ic">🏘</span> Comunidades</div>
@@ -5512,77 +5534,79 @@ async function submitCmt(postId, btnEl){
   let inp = btnEl ? btnEl.closest('.comments-sec')?.querySelector('.cmt-input') : null;
   if(!inp) inp=document.getElementById('cin-'+postId);
   const txt=inp?.value.trim();if(!txt)return;
+  // PATCH 5: guard duplo clique
+  if(btnEl && btnEl.disabled) return;
+  const origBtnText = btnEl ? btnEl.textContent : '';
+  if(btnEl){ btnEl.disabled=true; btnEl.style.opacity='.5'; btnEl.style.cursor='not-allowed'; btnEl.textContent='⏳'; }
   inp.disabled=true;
-
-  // ── Moderação do comentário ──
-  const modResult = await moderateContent(txt);
-  if(!modResult.allowed){
-    inp.disabled=false;
-    showModerationError(modResult.categories||[]);
-    return;
-  }
-
-  const{error}=await db.from('comments').insert({post_id:postId,user_id:CU.id,content:txt});
-  inp.disabled=false;
-  if(error)return showToast('Erro ao comentar: '+error.message,'error');
-
-  // ── Notificações de @menção ──
-  const mentionedUsers = inp._mentions || {};
-  const mentionMatches = [...txt.matchAll(/@(\w+)/g)];
-  for(const m of mentionMatches){
-    const uname = m[1];
-    // Tentar pegar id do cache do campo, senão buscar no banco
-    let mentionedId = mentionedUsers[uname];
-    if(!mentionedId){
-      try{
-        const{data:up}=await db.from('profiles').select('id').eq('username',uname).maybeSingle();
-        mentionedId = up?.id;
-      }catch(e){}
+  try {
+    // ── Moderação do comentário ──
+    const modResult = await moderateContent(txt);
+    if(!modResult.allowed){
+      showModerationError(modResult.categories||[]);
+      return;
     }
-    if(mentionedId && mentionedId !== CU.id){
-      try{
+
+    const{error}=await db.from('comments').insert({post_id:postId,user_id:CU.id,content:txt});
+    if(error)return showToast('Erro ao comentar: '+error.message,'error');
+
+    // ── Notificações de @menção ──
+    const mentionedUsers = inp._mentions || {};
+    const mentionMatches = [...txt.matchAll(/@(\w+)/g)];
+    for(const m of mentionMatches){
+      const uname = m[1];
+      let mentionedId = mentionedUsers[uname];
+      if(!mentionedId){
+        try{
+          const{data:up}=await db.from('profiles').select('id').eq('username',uname).maybeSingle();
+          mentionedId = up?.id;
+        }catch(e){}
+      }
+      if(mentionedId && mentionedId !== CU.id){
+        try{
+          await db.from('notifications').insert({
+            user_id: mentionedId,
+            actor_id: CU.id,
+            type: 'mention',
+            content: `@${CP?.username||'alguém'} mencionou você em um comentário`,
+            post_id: postId,
+            read: false
+          });
+        }catch(e){}
+      }
+    }
+    inp._mentions = {};
+    inp.value='';
+    // Notificar o autor do post
+    try{
+      const{data:postOwner}=await db.from('posts').select('user_id').eq('id',postId).maybeSingle();
+      if(postOwner && postOwner.user_id !== CU.id){
         await db.from('notifications').insert({
-          user_id: mentionedId,
+          user_id: postOwner.user_id,
           actor_id: CU.id,
-          type: 'mention',
-          content: `@${CP?.username||'alguém'} mencionou você em um comentário`,
+          type: 'comment',
+          content: `@${CP?.username||'alguém'} comentou na sua postagem`,
           post_id: postId,
           read: false
         });
-      }catch(e){}
-    }
+      }
+    }catch(e){}
+    document.querySelectorAll('[id="cmtcnt-'+postId+'"]').forEach(el=>{
+      const n=(parseInt(el.textContent)||0)+1;
+      el.textContent=n;
+    });
+    cachedPostIds.delete(postId);
+    cachedPosts={};
+    const postCard = inp?.closest('.post-card');
+    const commIdCmt = postCard?.dataset?.commid;
+    if(commIdCmt && commIdCmt!=='undefined') addCommXP(commIdCmt,CU.id,'comment',5);
+    const secEl = inp ? inp.closest('.comments-sec') : null;
+    await loadCmts(postId, secEl);
+  } finally {
+    // PATCH 5: restaurar botão e input sempre
+    inp.disabled=false;
+    if(btnEl){ btnEl.disabled=false; btnEl.style.opacity=''; btnEl.style.cursor=''; btnEl.textContent=origBtnText||'Comentar'; }
   }
-  inp._mentions = {};
-
-  inp.value='';
-  // Notificar o autor do post sobre o novo comentário (se não for o próprio usuário)
-  try{
-    const{data:postOwner}=await db.from('posts').select('user_id').eq('id',postId).maybeSingle();
-    if(postOwner && postOwner.user_id !== CU.id){
-      await db.from('notifications').insert({
-        user_id: postOwner.user_id,
-        actor_id: CU.id,
-        type: 'comment',
-        content: `@${CP?.username||'alguém'} comentou na sua postagem`,
-        post_id: postId,
-        read: false
-      });
-    }
-  }catch(e){}
-  // Update counter visually on all elements showing this post
-  document.querySelectorAll('[id="cmtcnt-'+postId+'"]').forEach(el=>{
-    const n=(parseInt(el.textContent)||0)+1;
-    el.textContent=n;
-  });
-  // Invalidate cache so count reflects on next full load
-  cachedPostIds.delete(postId);
-  cachedPosts={};
-  // XP por comentar em post de comunidade
-  const postCard = inp?.closest('.post-card');
-  const commIdCmt = postCard?.dataset?.commid;
-  if(commIdCmt && commIdCmt!=='undefined') addCommXP(commIdCmt,CU.id,'comment',5);
-  const secEl = inp ? inp.closest('.comments-sec') : null;
-  await loadCmts(postId, secEl);
 }
 async function deleteCmt(cmtId,postId){
   if(!confirm('Excluir este comentário?'))return;
@@ -5790,7 +5814,10 @@ async function createPost(){
   if(!CU)return showToast('Faça login para postar','error');
   const content=document.getElementById('post-txt').value.trim();
   if(!content&&!mediaFiles.length)return showToast('Escreva algo ou adicione mídia!','error');
-  const btn=document.getElementById('post-submit-btn');btn.textContent='⏳ Verificando...';btn.disabled=true;
+  const btn=document.getElementById('post-submit-btn');
+  if(btn.disabled) return; // Guard contra duplo clique
+  btn.textContent='⏳ Verificando...';btn.disabled=true;btn.style.opacity='.5';btn.style.cursor='not-allowed';
+  try {
 
   // ── Moderação de conteúdo de texto ──
   if(content){
@@ -5840,7 +5867,6 @@ async function createPost(){
     media_types: mTypes.length ? mTypes : []
   };
   const{data:postData,error}=await db.from('posts').insert(payload).select().maybeSingle();
-  btn.textContent='POSTAR ▶';btn.disabled=false;
   if(error){
     console.error('Insert post error:',error);
     if(error.message.includes('media_types')||error.message.includes('media_urls')){
@@ -5860,6 +5886,13 @@ async function createPost(){
   cachedPostIds.clear();cachedPosts={};
   showToast('Post publicado! ✨','success');
   await loadFeed(true);updateLevel();
+  } finally {
+    // PATCH 5: sempre restaura botão, mesmo em caso de erro inesperado
+    btn.textContent='POSTAR ▶';
+    btn.disabled=false;
+    btn.style.opacity='';
+    btn.style.cursor='';
+  }
 }
 async function deletePost(postId){
   if(!confirm('Deletar este post?'))return;
@@ -7096,13 +7129,13 @@ async function loadMsgs(userId){
   let msgs, err;
   {
     const r = await db.from('messages')
-      .select('id,sender_id,receiver_id,content,media_url,media_type,read,received,created_at')
+      .select('id,sender_id,receiver_id,content,media_url,media_type,read,received,created_at,is_hidden')
       .or(`and(sender_id.eq.${CU.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${CU.id})`)
       .order('created_at');
     if(r.error && /received/.test(r.error.message||'')){
       // Coluna 'received' não existe — buscar sem ela
       const r2 = await db.from('messages')
-        .select('id,sender_id,receiver_id,content,media_url,media_type,read,created_at')
+        .select('id,sender_id,receiver_id,content,media_url,media_type,read,created_at,is_hidden')
         .or(`and(sender_id.eq.${CU.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${CU.id})`)
         .order('created_at');
       msgs = r2.data;
@@ -7133,6 +7166,15 @@ async function loadMsgs(userId){
 
   let lastDate='', html='';
   for(const m of msgs){
+    // ── PATCH 4: Mensagens ocultas globalmente ──
+    if(m.is_hidden){
+      const isSent = m.sender_id===CU.id;
+      html += `<div class="mb ${isSent?'sent':'recv'}" data-msg-id="${m.id}" style="opacity:.5;">
+        <div class="mb-bubble" style="font-style:italic;color:var(--text-muted);font-size:11px;">🙈 Mensagem oculta</div>
+        <div class="mb-time">${timeAgo(m.created_at)}</div>
+      </div>`;
+      continue;
+    }
     const isSent = m.sender_id===CU.id;
     const msgDate = new Date(m.created_at).toLocaleDateString('pt-BR');
     if(msgDate!==lastDate){
@@ -7178,7 +7220,11 @@ async function loadMsgs(userId){
     if(isCallMsg){
       html += '<div style="display:flex;justify-content:center;align-items:center;gap:6px;margin:6px 0;">'+contentHtml+'<span style="font-size:10px;color:var(--text-muted);">'+timeAgo(m.created_at)+'</span></div>';
     } else {
-      html += '<div class="mb '+(isSent?'sent':'recv')+'" data-msg-id="'+m.id+'">'+mediaHtml+contentHtml+timeHtml+'</div>';
+      // Botão 🙈 para ocultar globalmente (visível para o remetente)
+      const hideBtn = isSent
+        ? `<button onclick="hideMessageGlobal('${m.id}',this)" title="Ocultar mensagem para todos" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;opacity:.5;padding:0 2px;transition:opacity .2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.5">🙈</button>`
+        : '';
+      html += '<div class="mb '+(isSent?'sent':'recv')+'" data-msg-id="'+m.id+'" style="position:relative;">'+mediaHtml+contentHtml+'<div style="display:flex;align-items:center;gap:4px;justify-content:'+(isSent?'flex-end':'flex-start')+';">'+timeHtml+hideBtn+'</div></div>';
     }
   }
   area.innerHTML = html;
@@ -7542,15 +7588,52 @@ async function sendMsg(){
   document.querySelectorAll('.emoji-picker.open').forEach(p=>p.classList.remove('open'));
   if(!CU||!currentChatUser)return;
   const inp=document.getElementById('msg-in');const txt=inp.value.trim();if(!txt)return;
-  // ── Moderação da mensagem ──
-  if(txt){
-    const mod=await moderateContent(txt);
-    if(!mod.allowed){ showModerationError(mod.categories||[]); return; }
+  // PATCH 5: guard duplo clique
+  const sendBtn=document.getElementById('chat-send-btn');
+  if(sendBtn && sendBtn.disabled) return;
+  if(sendBtn){ sendBtn.disabled=true; sendBtn.style.opacity='.5'; sendBtn.style.cursor='not-allowed'; }
+  inp.disabled=true;
+  try {
+    // ── Moderação da mensagem ──
+    if(txt){
+      const mod=await moderateContent(txt);
+      if(!mod.allowed){ showModerationError(mod.categories||[]); return; }
+    }
+    const{error}=await db.from('messages').insert({sender_id:CU.id,receiver_id:currentChatUser.id,content:txt,read:false});
+    if(error)return showToast('Erro ao enviar: '+error.message,'error');
+    inp.value='';await loadMsgs(currentChatUser.id);
+    try{await db.from('notifications').insert({user_id:currentChatUser.id,actor_id:CU.id,type:'message',content:`@${CP?.username||'alguém'} enviou uma mensagem`,read:false});}catch(e){}
+  } finally {
+    // PATCH 5: restaurar sempre, independente de erro
+    inp.disabled=false;
+    if(sendBtn){ sendBtn.disabled=false; sendBtn.style.opacity=''; sendBtn.style.cursor=''; }
   }
-  const{error}=await db.from('messages').insert({sender_id:CU.id,receiver_id:currentChatUser.id,content:txt,read:false});
-  if(error)return showToast('Erro ao enviar: '+error.message,'error');
-  inp.value='';await loadMsgs(currentChatUser.id);
-  try{await db.from('notifications').insert({user_id:currentChatUser.id,actor_id:CU.id,type:'message',content:`@${CP?.username||'alguém'} enviou uma mensagem`,read:false});}catch(e){}
+}
+
+// ── PATCH 4: Ocultar mensagem globalmente via Supabase ──
+async function hideMessageGlobal(messageId, btn){
+  if(!CU) return;
+  if(!confirm('Ocultar esta mensagem para todos os participantes?')) return;
+  if(btn) btn.disabled = true;
+  const { error } = await db.from('messages')
+    .update({ is_hidden: true })
+    .eq('id', messageId)
+    .eq('sender_id', CU.id); // só o remetente pode ocultar
+  if(error){
+    showToast('Erro ao ocultar: ' + error.message, 'error');
+    if(btn) btn.disabled = false;
+    return;
+  }
+  // Atualizar bolha imediatamente no DOM sem recarregar tudo
+  const msgDiv = document.querySelector(`[data-msg-id="${messageId}"]`);
+  if(msgDiv){
+    msgDiv.style.opacity = '.5';
+    const bubble = msgDiv.querySelector('.mb-bubble');
+    if(bubble){ bubble.style.fontStyle='italic'; bubble.style.color='var(--text-muted)'; bubble.style.fontSize='11px'; bubble.textContent='🙈 Mensagem oculta'; }
+    const hideButtonWrap = msgDiv.querySelector('button[title="Ocultar mensagem para todos"]');
+    if(hideButtonWrap) hideButtonWrap.remove();
+  }
+  showToast('Mensagem oculta para todos 🙈', 'success');
 }
 
 // ===== NOTIFICATIONS =====
@@ -9815,7 +9898,7 @@ async function loadNotifTab(tabId){
 
   // ✅ Busca não lidas — SEM marcar como lida automaticamente
   let q=db.from('notifications')
-    .select('id,type,content,read,created_at,post_id,actor_id,business_id,community_id')
+    .select('id,type,content,read,created_at,post_id,actor_id,business_id,community_id,metadata,reaction_type')
     .eq('user_id',CU.id).eq('read',false)
     .order('created_at',{ascending:false}).limit(50);
   if(Array.isArray(filter)) q=q.in('type',filter);
@@ -9827,14 +9910,30 @@ async function loadNotifTab(tabId){
     return;
   }
 
-  const icons={follow:'👤',like:'❤️',comment:'💬',friend_request:'👥',friend_accept:'🎉',message:'💬',community_invite:'🏘️',community_post:'🏘️',community_mention:'🏘️',biz_promo:'🏪',mention:'@',call_missed:'📞',share:'🔁'};
+  const REACTION_EMOJI = {
+    like:'👍', love:'❤️', haha:'😂', wow:'😮', sad:'😢', angry:'😡',
+    fire:'🔥', clap:'👏', heart:'❤️', thumbs_up:'👍'
+  };
+  const icons={
+    follow:'👤',
+    like: n => {
+      // Tenta extrair emoji da reação real salva no metadata ou action_type
+      const meta = n.metadata || n.reaction_metadata || {};
+      const rxType = meta.reaction_type || meta.emoji || meta.reaction || n.reaction_type || '';
+      return REACTION_EMOJI[rxType] || '❤️';
+    },
+    comment:'💬',friend_request:'👥',friend_accept:'🎉',message:'💬',
+    community_invite:'🏘️',community_post:'🏘️',community_mention:'🏘️',
+    biz_promo:'🏪',mention:'@',call_missed:'📞',share:'🔁'
+  };
 
   el.innerHTML=data.map(n=>{
-    // Serializa o objeto n de forma segura para o atributo onclick
     const nJson=JSON.stringify(n).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+    const iconVal = icons[n.type];
+    const iconDisp = typeof iconVal === 'function' ? iconVal(n) : (iconVal || '🔔');
     return `
     <div class="ni${n.read?'':' unrd'}" id="ni-${n.id}">
-      <div class="ni-icon">${icons[n.type]||'🔔'}</div>
+      <div class="ni-icon">${iconDisp}</div>
       <div class="ni-clickable-body" onclick="handleNotifNavigation(JSON.parse(this.closest('.ni').dataset.notif))">
         <div class="ni-txt">${xss(n.content||'Nova notificação')}</div>
         <div class="ni-time">${timeAgo(n.created_at)}</div>
@@ -10002,7 +10101,7 @@ function buildBizCard(biz, isFollowing){
       <div class="biz-logo">${logo}</div>
     </div>
     <div class="biz-body">
-      <div class="biz-name">${xss(biz.name)}</div>
+      <div class="biz-name"><strong style="font-weight:800;color:var(--neon-cyan);text-shadow:0 0 8px rgba(0,255,204,.35);">${xss(biz.name)}</strong></div>
       <div class="biz-segment">${xss(biz.segment)} · ${biz.category==='loja'?'🛍️ Loja':'🔧 Serviço'}</div>
       <div style="margin-bottom:6px;">${starsDisp}</div>
       ${biz.description?`<div class="biz-desc">${xss(biz.description)}</div>`:''}
@@ -13038,46 +13137,46 @@ async function postInCommV2(commId){
   const txt=txtEl?.value.trim();
   const mediaFiles=_commMediaFiles[commId]||[];
   if(!txt&&!mediaFiles.length) return showToast('Escreva algo ou adicione mídia','error');
-  if(txt){ const mod=await moderateContent(txt); if(!mod.allowed){showModerationError(mod.categories);return;} }
   const btn=document.querySelector(`[onclick="postInCommV2('${commId}')"]`);
-  if(btn){btn.disabled=true;btn.textContent='⏳...';}
-  let urls=[],mTypes=[];
-  for(const f of mediaFiles){
-    try{
-      const path=`${CU.id}/${Date.now()}-${f.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
-      const{data:ud}=await db.storage.from('media').upload(path,f,{upsert:true,contentType:f.type});
-      if(ud){const{data:u}=db.storage.from('media').getPublicUrl(path);urls.push(u.publicUrl);mTypes.push(f.type.startsWith('video')?'video':'image');}
-    }catch(e){}
+  // PATCH 5: guard duplo clique
+  if(btn && btn.disabled) return;
+  if(btn){btn.disabled=true;btn.textContent='⏳...';btn.style.opacity='.5';btn.style.cursor='not-allowed';}
+  try {
+    if(txt){ const mod=await moderateContent(txt); if(!mod.allowed){showModerationError(mod.categories);return;} }
+    let urls=[],mTypes=[];
+    for(const f of mediaFiles){
+      try{
+        const path=`${CU.id}/${Date.now()}-${f.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
+        const{data:ud}=await db.storage.from('media').upload(path,f,{upsert:true,contentType:f.type});
+        if(ud){const{data:u}=db.storage.from('media').getPublicUrl(path);urls.push(u.publicUrl);mTypes.push(f.type.startsWith('video')?'video':'image');}
+      }catch(e){}
+    }
+    const{data:commData}=await db.from('communities').select('id,name,avatar_url,icon,owner_id').eq('id',commId).maybeSingle();
+    if(commData) _commCache[commId]={id:commData.id,name:commData.name,avatar_url:commData.avatar_url||commData.icon||''};
+    const commIcon = (commData?.avatar_url || commData?.icon || '').replace(/\|/g,'');
+    const commName = (commData?.name || 'Comunidade').replace(/:/g,'|');
+    const marker   = `[COMM_POST:${commId}:${commName}|${commIcon}]`;
+    const finalContent = marker + (txt ? '\n'+txt : '');
+    const{data:post,error}=await db.from('posts').insert({
+      user_id:CU.id,content:finalContent,
+      type:urls.length?(mTypes.includes('video')?'video':'image'):'text',
+      visibility:'public',
+      media_urls:urls.length?urls:[],media_types:mTypes.length?mTypes:[]
+    }).select().maybeSingle();
+    if(error){showToast('Erro: '+error.message,'error');return;}
+    if(post?.id) await db.from('community_posts').insert({community_id:commId,post_id:post.id});
+    if(txtEl) txtEl.value='';
+    _commMediaFiles[commId]=[];
+    const prev=document.getElementById('comm-media-prev-'+commId);
+    if(prev) prev.innerHTML='';
+    showToast('Post publicado! ✨','success');
+    addCommXP(commId,CU.id,'post',10);
+    loadCommPostsV2(commId,true,false);
+    cachedPostIds.clear();cachedPosts={};
+  } finally {
+    // PATCH 5: restaurar botão sempre
+    if(btn){btn.disabled=false;btn.textContent='POSTAR ▶';btn.style.opacity='';btn.style.cursor='';}
   }
-  // Buscar dados da comunidade para mostrar no post (nome + avatar/ícone)
-  const{data:commData}=await db.from('communities').select('id,name,avatar_url,icon,owner_id').eq('id',commId).maybeSingle();
-  // Popular cache global para hidratação imediata em renderPost
-  if(commData) _commCache[commId]={id:commData.id,name:commData.name,avatar_url:commData.avatar_url||commData.icon||''};
-  // Marker de identidade da comunidade — detectado por renderPost
-  // Formato: [COMM_POST:commId:Nome|iconUrl]  (| no nome no lugar de : para evitar conflito)
-  const commIcon = (commData?.avatar_url || commData?.icon || '').replace(/\|/g,'');
-  const commName = (commData?.name || 'Comunidade').replace(/:/g,'|');
-  const marker   = `[COMM_POST:${commId}:${commName}|${commIcon}]`;
-  const finalContent = marker + (txt ? '\n'+txt : '');
-  // Post da comunidade — visibility 'public' para aparecer no feed também,
-  // porém filtrado em loadFeed para que somente membros da comunidade vejam
-  const{data:post,error}=await db.from('posts').insert({
-    user_id:CU.id,content:finalContent,
-    type:urls.length?(mTypes.includes('video')?'video':'image'):'text',
-    visibility:'public',
-    media_urls:urls.length?urls:[],media_types:mTypes.length?mTypes:[]
-  }).select().maybeSingle();
-  if(error){showToast('Erro: '+error.message,'error');if(btn){btn.disabled=false;btn.textContent='POSTAR ▶';}return;}
-  if(post?.id) await db.from('community_posts').insert({community_id:commId,post_id:post.id});
-  if(txtEl) txtEl.value='';
-  _commMediaFiles[commId]=[];
-  const prev=document.getElementById('comm-media-prev-'+commId);
-  if(prev) prev.innerHTML='';
-  if(btn){btn.disabled=false;btn.textContent='POSTAR ▶';}
-  showToast('Post publicado! ✨','success');
-  addCommXP(commId,CU.id,'post',10);
-  loadCommPostsV2(commId,true,false);
-  cachedPostIds.clear();cachedPosts={};
 }
 
 async function loadCommPostsV2(commId,isMember,isMod){
@@ -14471,7 +14570,6 @@ async function sendCommChat(commId, contentOverride){
   const{data:_memCheck}=await db.from('community_members').select('id').eq('community_id',commId).eq('user_id',CU.id).maybeSingle();
   if(!_memCheck){
     showToast('⛔ Entre na comunidade para participar do chat','error');
-    // Ocultar input caso ainda esteja visível (salvaguarda de UI)
     const _inputWrap=document.querySelector('.comm-chat-input-wrap');
     if(_inputWrap) _inputWrap.style.display='none';
     return;
@@ -14479,62 +14577,71 @@ async function sendCommChat(commId, contentOverride){
   const inp=document.getElementById('comm-chat-in-'+commId);
   const txt = (contentOverride!=null ? contentOverride : (inp?.value||'')).trim();
   if(!txt) return;
-  const COOLDOWN_MS = getCommChatCooldown(commId);
-  const now=Date.now();
-  const last=_commCooldowns[commId]||0;
-  const remaining=Math.ceil((COOLDOWN_MS-(now-last))/1000);
-  if(COOLDOWN_MS>0 && remaining>0){
+  // PATCH 5: guard duplo clique
+  const sendBtn=document.querySelector(`[onclick="sendCommChat('${commId}')"]`);
+  if(sendBtn && sendBtn.disabled) return;
+  if(sendBtn){ sendBtn.disabled=true; sendBtn.style.opacity='.5'; sendBtn.style.cursor='not-allowed'; }
+  if(inp) inp.disabled=true;
+  try {
+    const COOLDOWN_MS = getCommChatCooldown(commId);
+    const now=Date.now();
+    const last=_commCooldowns[commId]||0;
+    const remaining=Math.ceil((COOLDOWN_MS-(now-last))/1000);
+    if(COOLDOWN_MS>0 && remaining>0){
+      const cdEl=document.getElementById('comm-cooldown-'+commId);
+      if(cdEl){cdEl.style.display='block';cdEl.textContent=`⏳ Aguarde ${remaining}s para falar novamente`;}
+      const timer=setInterval(()=>{
+        const r2=Math.ceil((COOLDOWN_MS-(Date.now()-last))/1000);
+        if(r2<=0){clearInterval(timer);if(cdEl)cdEl.style.display='none';}
+        else if(cdEl) cdEl.textContent=`⏳ Aguarde ${r2}s para falar novamente`;
+      },1000);
+      return;
+    }
+    const mod=await moderateContent(txt);
+    if(!mod.allowed){showModerationError(mod.categories);return;}
+    const{data:newMsg,error}=await db.from('community_chat')
+      .insert({community_id:commId,user_id:CU.id,content:txt})
+      .select('id,user_id,content,created_at').maybeSingle();
+    if(error){
+      console.error('[comm chat] Erro ao enviar:', error);
+      showToast('Erro ao enviar: '+error.message,'error');
+      return;
+    }
+    if(!newMsg){
+      console.warn('[comm chat] Insert ok mas sem retorno — possível RLS bloqueando SELECT após insert');
+    }
+    _commCooldowns[commId]=Date.now();
+    if(contentOverride==null && inp) inp.value='';
+    if(newMsg && _commChatPolls[commId]){
+      try{
+        _commChatPolls[commId].send({
+          type:'broadcast', event:'new_msg',
+          payload:{...newMsg, profiles:{id:CU.id,username:CP?.username||'',avatar_url:CP?.avatar_url||''}}
+        });
+      }catch(e){}
+    }
     const cdEl=document.getElementById('comm-cooldown-'+commId);
-    if(cdEl){cdEl.style.display='block';cdEl.textContent=`⏳ Aguarde ${remaining}s para falar novamente`;}
-    const timer=setInterval(()=>{
-      const r2=Math.ceil((COOLDOWN_MS-(Date.now()-last))/1000);
-      if(r2<=0){clearInterval(timer);if(cdEl)cdEl.style.display='none';}
-      else if(cdEl) cdEl.textContent=`⏳ Aguarde ${r2}s para falar novamente`;
-    },1000);
-    return;
-  }
-  const mod=await moderateContent(txt);
-  if(!mod.allowed){showModerationError(mod.categories);return;}
-  const{data:newMsg,error}=await db.from('community_chat')
-    .insert({community_id:commId,user_id:CU.id,content:txt})
-    .select('id,user_id,content,created_at').maybeSingle();
-  if(error){
-    console.error('[comm chat] Erro ao enviar:', error);
-    showToast('Erro ao enviar: '+error.message,'error');
-    return;
-  }
-  if(!newMsg){
-    console.warn('[comm chat] Insert ok mas sem retorno — possível RLS bloqueando SELECT após insert');
-  }
-  _commCooldowns[commId]=Date.now();
-  if(contentOverride==null && inp) inp.value='';
-  // Broadcast para todos via canal Supabase
-  if(newMsg && _commChatPolls[commId]){
-    try{
-      _commChatPolls[commId].send({
-        type:'broadcast', event:'new_msg',
-        payload:{...newMsg, profiles:{id:CU.id,username:CP?.username||'',avatar_url:CP?.avatar_url||''}}
-      });
-    }catch(e){}
-  }
-  const cdEl=document.getElementById('comm-cooldown-'+commId);
-  if(COOLDOWN_MS>0 && cdEl){
-    cdEl.style.display='block';
-    const initSec=Math.ceil(COOLDOWN_MS/1000);
-    cdEl.textContent=`⏳ Aguarde ${initSec}s para falar novamente`;
-  }
-  addCommXP(commId,CU.id,'chat',2);
-  // Mostrar mensagem do próprio usuário instantaneamente
-  _appendCommMsg(commId, {
-    id: 'tmp-'+Date.now(),
-    user_id: CU.id,
-    content: txt,
-    created_at: new Date().toISOString(),
-    profiles: { id:CU.id, username:CP?.username||'', avatar_url:CP?.avatar_url||'' }
-  });
-  if(COOLDOWN_MS>0){
-    let secs=Math.ceil(COOLDOWN_MS/1000);
-    const t=setInterval(()=>{secs--;if(cdEl&&secs>0)cdEl.textContent=`⏳ Aguarde ${secs}s para falar novamente`;else{clearInterval(t);if(cdEl)cdEl.style.display='none';}},1000);
+    if(COOLDOWN_MS>0 && cdEl){
+      cdEl.style.display='block';
+      const initSec=Math.ceil(COOLDOWN_MS/1000);
+      cdEl.textContent=`⏳ Aguarde ${initSec}s para falar novamente`;
+    }
+    addCommXP(commId,CU.id,'chat',2);
+    _appendCommMsg(commId, {
+      id: 'tmp-'+Date.now(),
+      user_id: CU.id,
+      content: txt,
+      created_at: new Date().toISOString(),
+      profiles: { id:CU.id, username:CP?.username||'', avatar_url:CP?.avatar_url||'' }
+    });
+    if(COOLDOWN_MS>0){
+      let secs=Math.ceil(COOLDOWN_MS/1000);
+      const t=setInterval(()=>{secs--;if(cdEl&&secs>0)cdEl.textContent=`⏳ Aguarde ${secs}s para falar novamente`;else{clearInterval(t);if(cdEl)cdEl.style.display='none';}},1000);
+    }
+  } finally {
+    // PATCH 5: restaurar botão e input sempre
+    if(inp) inp.disabled=false;
+    if(sendBtn){ sendBtn.disabled=false; sendBtn.style.opacity=''; sendBtn.style.cursor=''; }
   }
 }
 
@@ -15093,6 +15200,108 @@ async function loadCommRanking(commId){
         </div>
       </div>`;
     }).join('');
+}
+
+// ===== TRENDING TOPICS =====
+async function openTrendingModal(){
+  const overlay = document.getElementById('trending-modal-overlay');
+  if(!overlay) return;
+  overlay.style.display = 'block';
+  // Estilizar period-btns por CSS inline ao abrir
+  await loadTrending('hours', overlay.querySelector('.trend-period-btn.active'));
+}
+
+function closeTrendingModal(){
+  document.getElementById('trending-modal-overlay').style.display = 'none';
+}
+
+async function loadTrending(period, clickedBtn){
+  // Atualizar botões ativos
+  document.querySelectorAll('.trend-period-btn').forEach(b=>{
+    b.style.background = 'transparent';
+    b.style.borderColor = 'rgba(255,255,255,.1)';
+    b.style.color = 'var(--text-muted)';
+    b.classList.remove('active');
+  });
+  if(clickedBtn){
+    clickedBtn.style.background = 'rgba(0,255,204,.12)';
+    clickedBtn.style.borderColor = 'var(--neon-cyan)';
+    clickedBtn.style.color = 'var(--neon-cyan)';
+    clickedBtn.classList.add('active');
+  }
+
+  const listEl = document.getElementById('trending-list');
+  listEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:20px;">⏳ Calculando...</div>';
+
+  // Definir janela de tempo
+  const now = new Date();
+  let since;
+  if(period === 'hours'){
+    since = new Date(now.getTime() - 6 * 60 * 60 * 1000).toISOString();
+  } else if(period === 'today'){
+    since = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+  } else {
+    since = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  }
+
+  // Buscar posts e comentários do período
+  const [postsRes, cmtsRes] = await Promise.all([
+    db.from('posts').select('content').gte('created_at', since).eq('visibility','public').limit(500),
+    db.from('comments').select('content').gte('created_at', since).limit(500)
+  ]);
+
+  const allTexts = [
+    ...(postsRes.data || []).map(r => r.content || ''),
+    ...(cmtsRes.data || []).map(r => r.content || '')
+  ];
+
+  // Extrair e contabilizar hashtags
+  const tagCount = {};
+  const hashRx = /#([a-zA-ZÀ-ú0-9_]{2,})/g;
+  for(const text of allTexts){
+    let m;
+    while((m = hashRx.exec(text)) !== null){
+      const tag = m[1].toLowerCase();
+      tagCount[tag] = (tagCount[tag] || 0) + 1;
+    }
+  }
+
+  const sorted = Object.entries(tagCount).sort((a,b)=>b[1]-a[1]).slice(0,10);
+
+  if(!sorted.length){
+    listEl.innerHTML = '<div style="text-align:center;padding:30px;"><div style="font-size:36px;opacity:.3;">🏷</div><div style="font-size:12px;color:var(--text-muted);margin-top:8px;">Nenhuma hashtag encontrada neste período.</div></div>';
+    return;
+  }
+
+  const maxCount = sorted[0][1];
+  const rankIcons = ['🥇','🥈','🥉'];
+
+  listEl.innerHTML = sorted.map(([tag, count], i) => {
+    const pct = Math.round((count / maxCount) * 100);
+    const icon = i < 3 ? rankIcons[i] : `<span style="font-family:'VT323',monospace;font-size:16px;color:var(--text-muted);">#${i+1}</span>`;
+    return `<div onclick="applyHashtagFilter('${tag}')" style="cursor:pointer;padding:12px 14px;border-radius:10px;margin-bottom:8px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);transition:all .2s;" onmouseover="this.style.background='rgba(0,255,204,.06)';this.style.borderColor='rgba(0,255,204,.25)'" onmouseout="this.style.background='rgba(255,255,255,.03)';this.style.borderColor='rgba(255,255,255,.07)'">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+        <span style="font-size:18px;width:24px;text-align:center;flex-shrink:0;">${icon}</span>
+        <span style="font-family:'Silkscreen',monospace;font-size:12px;color:var(--neon-pink);">#${tag}</span>
+        <span style="margin-left:auto;font-family:'VT323',monospace;font-size:18px;color:var(--neon-cyan);">${count}</span>
+        <span style="font-size:10px;color:var(--text-muted);">posts</span>
+      </div>
+      <div style="height:3px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden;">
+        <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,var(--neon-pink),var(--neon-purple));border-radius:2px;"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function applyHashtagFilter(tag){
+  closeTrendingModal();
+  // Navegar para o feed e aplicar filtro
+  nav('home');
+  const searchEl = document.getElementById('nav-search');
+  if(searchEl){ searchEl.value = '#' + tag; }
+  // Executar busca de hashtag diretamente no feed
+  searchHashtag(tag);
+  showToast('Filtrando por #' + tag, 'success');
 }
 
 async function checkCanCreateComm(){
