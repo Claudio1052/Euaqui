@@ -6043,80 +6043,15 @@ function savePost(id){if(!CU)return;db.from('saved_posts').upsert({user_id:CU.id
 function reportPost(id){showToast('Post reportado para análise.','success');}
 
 // ===== EMOJI =====
-const EMOJI_CATS = {
-  'Rostos':   '😀 😁 😂 🤣 😊 😇 🥰 😍 🤩 😘 🙂 🤗 🤔 😐 😑 😶 😏 😒 🙄 😬 😌 😔 😪 😴 😷 🤒 🤕 🤢 🤮 🥵 🥶 😵 🤯 🤠 🥳 😎 🤓 😕 😟 🙁 😮 😲 😳 🥺 😦 😧 😨 😰 😥 😢 😭 😱 😖 😣 😞 😓 😩 😫 😤 😡 😠 🤬 😈 👿 💀 💩 🤡 👹 👺 👻 👾 🤖'.split(' '),
-  'Gestos':   '👋 🤚 🖐 ✋ 👌 🤌 🤏 ✌ 🤞 🤟 🤘 🤙 👈 👉 👆 👇 👍 👎 ✊ 👊 🤛 🤜 👏 🙌 👐 🤲 🙏 💅 💪 👁 👀 👄 💋'.split(' '),
-  'Corações': '❤ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 💕 💞 💓 💗 💖 💘 💝 💟'.split(' '),
-  'Festa':    '🎉 🎊 🎈 🎁 🎀 🏆 🥇 🥈 🥉 🏅 👑 💎 🔮 🎭 🎪 🎢 🎡 🎠 🎯 🎱 🎰 🎲 🧩 🎮 🕹'.split(' '),
-  'Popular':  '🔥 ✨ 💫 ⚡ 🌟 💯 🚀 💥 🌈 🎵 🎶 📣 📢 🔔 🆒 🆙 🆕 🆓 🔝'.split(' '),
-  'Animais':  '🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🙈 🙉 🙊 🐔 🐧 🐦 🦆 🦅 🦉 🐺 🐴 🦄 🐝 🦋 🐌 🐞 🐜 🐢 🐍 🦎 🐙 🦑 🦐 🦀 🐠 🐟 🐬 🐳 🦈 🐊 🐅 🐆 🦓 🦍 🐘 🦛 🐫 🦒 🦘 🐕 🐈 🐇 🐀 🐿 🦔'.split(' '),
-  'Comidas':  '🍕 🍔 🌮 🌯 🥗 🍜 🍝 🍣 🍱 🍤 🥚 🍳 🥞 🧇 🥩 🍗 🍖 🌭 🥪 🧀 🥦 🥒 🌽 🍟 🍿 🧁 🍰 🎂 🍩 🍪 🍭 🍬 🍫 🥜 🍯 🧃 🥤 🧋 ☕ 🍵 🍺 🍻 🥂 🍷 🍸 🍹'.split(' '),
-  'Esportes': '⚽ 🏀 🏈 ⚾ 🎾 🏐 🏉 🎱 🏓 🏸 🏒 🎣 🤿 🎿 🥌 🏋 🤸 🏄 🏊 🤽 🚣 🚴 🏆 🥇 🥈 🥉 🏅'.split(' '),
-  'Lugares':  '🌍 🌎 🌏 🗺 🧭 🏔 🌋 🏕 🏖 🏜 🏝 🏟 🏛 🏗 🧱 🏠 🏡 🏢 🏥 🏦 🏨 🏪 🏫 🏬 🏭 🏯 🏰 💒 🗼 🗽 🕌 🕋 ⛲ ⛺ 🌁 🌃 🏙 🌄 🌅 🌆 🌇 🌉 🌌 🌠'.split(' '),
-};
-let _emojiActiveCat = Object.keys(EMOJI_CATS)[0];
+const EMOJI_CATS={Rostos:['😀','😁','😂','🤣','😊','😇','🥰','😍','🤩','😘','🙂','🤗','🤔','😐','😑','😶','😏','😒','🙄','😬','😌','😔','😪','😴','😷','🤒','🤕','🤢','🤮','🥵','🥶','🥴','😵','🤯','🤠','🥳','😎','🤓','😕','😮','😲','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😤','😡','😠','🤬','😈','👿','💀','💩','🤡','👻','👾','🤖'],Gestos:['👋','✋','👌','✌','🤞','🤟','🤘','🤙','👈','👉','👆','👇','👍','👎','✊','👊','👏','🙌','🙏','💪','👀','👄','💋'],Coracoes:['❤','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','💕','💞','💓','💗','💖','💘','💝','💟'],Festa:['🎉','🎊','🎈','🎁','🎀','🏆','🥇','🥈','🥉','🏅','👑','💯','🔮','🎭','🎪','🎂','🎮','📱','💻','🎧','🎤','🎸','🎹'],Popular:['🔥','✨','💫','⚡','🌟','💯','🚀','💥','🌈','🎵','🎶','📣','📢','🔔','♥','☆','⏰','🎷'],Animais:['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐔','🐧','🦅','🦆','🦉','🦇','🐺','🐴','🦄','🐝','🦋','🐢','🐍','🐙','🐠','🐬','🐳','🦈','🐕','🐈'],Comidas:['🍕','🍔','🌮','🌯','🥗','🍜','🍝','🍛','🍣','🍱','🍳','🥞','🍗','🍖','🌭','🧀','🥦','🍎','🍌','🍓','🍉','🍇','🍑','🍯','🍰','🍩','🍪','🍫','🍮','☕','🍺','🍷','🍸','🍹'],Esportes:['⚽','🏀','🏈','⚾','🎾','🎱','🏓','🏉','🥊','🎯','🎿','⛳','🎣','🚴','🏆','🥇','🥈','🥉','🏅'],Lugares:['🌍','🌎','🌏','🗺','🏔','🌋','🏕','🏖','🏜','🏝','🏟','🏛','🏗','🏘','🏠','🏡','🏢','🏥','🏦','🏨','🏪','🏫','🏬','🏭','🏯','🏰','🗼','🗽','🎡','🎢','🎠','🌉','🌃','🌆','🌇','🌄','🌅','🌌','🌠']};
+let _emojiActiveCat=Object.keys(EMOJI_CATS)[0];
+function openEmoji(){openM('m-emoji');_buildEmojiPicker();var es=document.getElementById('emoji-search');if(es)es.value='';}
+function _buildEmojiPicker(){var cats=document.getElementById('emoji-cats');if(!cats)return;if(!cats.dataset.built){cats.dataset.built='1';var labels={Rostos:'Rostos',Gestos:'Gestos',Coracoes:'Corações',Festa:'Festa',Popular:'Popular',Animais:'Animais',Comidas:'Comidas',Esportes:'Esportes',Lugares:'Lugares'};cats.innerHTML=Object.keys(EMOJI_CATS).map(function(k){return '<button onclick="_emojiCat(\"'+k+'\")" data-cat="'+k+'" style="flex-shrink:0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:5px 10px;font-size:11px;font-family:Space Mono,monospace;color:var(--text-muted);cursor:pointer;white-space:nowrap;">'+(labels[k]||k)+'</button>';}).join('');}_showEmojiCat(_emojiActiveCat);}
+function _emojiCat(cat){_emojiActiveCat=cat;document.querySelectorAll('#emoji-cats button').forEach(function(b){var a=b.dataset.cat===cat;b.style.background=a?'rgba(0,255,204,.2)':'rgba(255,255,255,.06)';b.style.borderColor=a?'var(--neon-cyan)':'rgba(255,255,255,.1)';b.style.color=a?'var(--neon-cyan)':'var(--text-muted)';});_showEmojiCat(cat);}
+function _showEmojiCat(cat){var grid=document.getElementById('emoji-grid');if(!grid)return;var emojis=EMOJI_CATS[cat]||[];grid.innerHTML=emojis.map(function(e){return '<button onclick="_pickEmoji(this.dataset.e)" data-e="'+e+'" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px;width:40px;height:40px;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;">'+e+'</button>';}).join('');}
+function _filterEmojis(q){var grid=document.getElementById('emoji-grid');if(!grid)return;if(!q.trim()){_showEmojiCat(_emojiActiveCat);return;}var all=[];Object.values(EMOJI_CATS).forEach(function(a){all=all.concat(a);});grid.innerHTML=all.map(function(e){return '<button onclick="_pickEmoji(this.dataset.e)" data-e="'+e+'" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px;width:40px;height:40px;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;">'+e+'</button>';}).join('');}
+function _pickEmoji(e){var ta=document.getElementById('post-txt');if(!ta)return;var s=ta.selectionStart,en=ta.selectionEnd;ta.value=ta.value.slice(0,s)+e+ta.value.slice(en);ta.selectionStart=ta.selectionEnd=s+e.length;ta.dispatchEvent(new Event('input'));ta.focus();closeM('m-emoji');}
 
-function openEmoji(){
-  openM('m-emoji');
-  _buildEmojiPicker();
-  var es = document.getElementById('emoji-search');
-  if(es) es.value = '';
-}
-
-function _buildEmojiPicker(){
-  var cats = document.getElementById('emoji-cats');
-  if(!cats) return;
-  if(!cats.dataset.built){
-    cats.dataset.built = '1';
-    cats.innerHTML = Object.keys(EMOJI_CATS).map(function(cat){
-      return '<button onclick="_emojiCat(\''+cat+'\')" data-cat="'+cat+'" style="flex-shrink:0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:5px 10px;font-size:12px;font-family:Space Mono,monospace;color:var(--text-muted);cursor:pointer;transition:all .15s;white-space:nowrap;">'+cat+'</button>';
-    }).join('');
-  }
-  _showEmojiCat(_emojiActiveCat);
-}
-
-function _emojiCat(cat){
-  _emojiActiveCat = cat;
-  document.querySelectorAll('#emoji-cats button').forEach(function(b){
-    var active = b.dataset.cat === cat;
-    b.style.background = active ? 'rgba(0,255,204,.2)' : 'rgba(255,255,255,.06)';
-    b.style.borderColor = active ? 'var(--neon-cyan)' : 'rgba(255,255,255,.1)';
-    b.style.color = active ? 'var(--neon-cyan)' : 'var(--text-muted)';
-  });
-  _showEmojiCat(cat);
-}
-
-function _showEmojiCat(cat){
-  var grid = document.getElementById('emoji-grid');
-  if(!grid) return;
-  var emojis = (EMOJI_CATS[cat] || []).filter(function(e){ return e.trim(); });
-  grid.innerHTML = emojis.map(function(e){
-    return '<button onclick="_pickEmoji(\''+e+'\')" title="'+e+'" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px;width:40px;height:40px;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .12s;flex-shrink:0;" onmouseover="this.style.background=\'rgba(0,255,204,.15)\';this.style.transform=\'scale(1.2)\'" onmouseout="this.style.background=\'rgba(255,255,255,.04)\';this.style.transform=\'\'">'+e+'</button>';
-  }).join('');
-}
-
-function _filterEmojis(q){
-  var grid = document.getElementById('emoji-grid');
-  if(!grid) return;
-  if(!q.trim()){ _showEmojiCat(_emojiActiveCat); return; }
-  var all = [];
-  Object.values(EMOJI_CATS).forEach(function(arr){ all = all.concat(arr); });
-  var res = all.filter(function(e){ return e && e.trim(); });
-  grid.innerHTML = res.map(function(e){
-    return '<button onclick="_pickEmoji(\''+e+'\')" title="'+e+'" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px;width:40px;height:40px;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;" onmouseover="this.style.background=\'rgba(0,255,204,.15)\';this.style.transform=\'scale(1.2)\'" onmouseout="this.style.background=\'rgba(255,255,255,.04)\';this.style.transform=\'\'">'+e+'</button>';
-  }).join('');
-}
-
-function _pickEmoji(e){
-  var ta = document.getElementById('post-txt');
-  if(!ta) return;
-  var s = ta.selectionStart, end = ta.selectionEnd;
-  ta.value = ta.value.slice(0,s) + e + ta.value.slice(end);
-  ta.selectionStart = ta.selectionEnd = s + e.length;
-  ta.dispatchEvent(new Event('input'));
-  ta.focus();
-  closeM('m-emoji');
-}
 
 function buildRetroGrid(){
   const grid=document.getElementById('av-retro-grid');
