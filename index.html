@@ -8377,18 +8377,21 @@ async function loadHomeAlerts(){
     return;
   }
 
-  // ── Pré-carrega nomes de comunidade via community_id (busca real no banco) ──
+  // ── Pré-carrega nomes E avatares via query única por IDs únicos ──
   const _HA_COMM_TYPES = new Set(['community_post','community_comment','community_mention','community_invite','community_live']);
-  const _HA_commCache = {};
-  await Promise.all(data.filter(n=>_HA_COMM_TYPES.has(n.type)&&n.community_id).map(async n=>{
-    if(_HA_commCache[n.community_id]) return;
-    const meta=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
-    if(meta.community_name){_HA_commCache[n.community_id]=meta.community_name;return;}
+  const _HA_commCache = {}; // chave: id → name, 'av_'+id → avatar_url
+  const _HA_ids = [...new Set(data.filter(n=>_HA_COMM_TYPES.has(n.type)&&n.community_id).map(n=>n.community_id))];
+  if(_HA_ids.length){
     try{
-      const{data:c}=await db.from('communities').select('name').eq('id',n.community_id).maybeSingle();
-      if(c?.name) _HA_commCache[n.community_id]=c.name;
+      const{data:_hac}=await db.from('communities').select('id,name,avatar_url').in('id',_HA_ids);
+      (_hac||[]).forEach(c=>{
+        _HA_commCache[c.id]       = c.name;
+        _HA_commCache['av_'+c.id] = c.avatar_url || '';
+        if(!window._commCache) window._commCache={};
+        if(!window._commCache[c.id]) window._commCache[c.id]=c;
+      });
     }catch(e){}
-  }));
+  }
   function _HA_commName(n){
     const meta=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
     // n.community_name vem direto da view notifications_enriched via JOIN
@@ -8426,15 +8429,17 @@ async function loadHomeAlerts(){
     const iconEl=document.createElement('div');
     iconEl.className='ni-icon';
     if(_HA_COMM_TYPES.has(n.type)){
-      const av=n.community_avatar_url||'';
+      // Prioridade: cache local → _commCache global → community_avatar_url da view
+      const av = _HA_commCache['av_'+n.community_id]
+        || (window._commCache&&window._commCache[n.community_id]&&window._commCache[n.community_id].avatar_url)
+        || n.community_avatar_url || '';
       if(av && av.startsWith('http')){
         const img=document.createElement('img');
         img.src=av;
         img.style.cssText='width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid rgba(0,255,204,.35);flex-shrink:0;';
         img.onerror=function(){this.outerHTML='<span style="font-size:20px">🏘️</span>';};
         iconEl.appendChild(img);
-        iconEl.style.background='transparent';
-        iconEl.style.padding='0';
+        iconEl.style.cssText='background:transparent;padding:0;display:flex;align-items:center;justify-content:center;';
       } else {
         iconEl.textContent = (av && !av.startsWith('http')) ? av : '🏘️';
         iconEl.style.fontSize='20px';
@@ -10095,8 +10100,21 @@ async function loadNotifTab(tabId){
     community_live:    name => `Live ao vivo em <strong>${name}</strong>`
   };
 
-  // Pré-carrega os nomes de comunidade para todas as notificações de comunidade
+  // Pré-carrega nomes E avatares das comunidades (query única por community_id único)
   const commNotifs = data.filter(n=>COMM_TYPES_SET.has(n.type));
+  const _uniqueCommIds = [...new Set(commNotifs.map(n=>n.community_id).filter(Boolean))];
+  if(_uniqueCommIds.length){
+    try{
+      const{data:_comms}=await db.from('communities').select('id,name,avatar_url').in('id',_uniqueCommIds);
+      (_comms||[]).forEach(c=>{
+        _commNameCache[c.id] = c.name;
+        _commNameCache['av_'+c.id] = c.avatar_url || '';
+        // aproveita para popular o cache global do app
+        if(!window._commCache) window._commCache={};
+        if(!window._commCache[c.id]) window._commCache[c.id]=c;
+      });
+    }catch(e){}
+  }
   await Promise.all(commNotifs.map(n=>_getCommName(n)));
 
   // ── Gera o texto de exibição ──────────────────────────────────
@@ -10128,7 +10146,10 @@ async function loadNotifTab(tabId){
     const iconDisp = typeof iconVal === 'function' ? iconVal(n) : (iconVal || '🔔');
     // Para notificações de comunidade: exibe logo real no lugar do emoji
     const isCommunityNotif = COMM_TYPES_SET.has(n.type);
-    const commAvatar = n.community_avatar_url || _commNameCache['avatar_'+n.community_id] || '';
+    // Prioridade: 1) cache local av_ 2) _commCache global 3) community_avatar_url da view
+    const commAvatar = _commNameCache['av_'+n.community_id]
+      || (window._commCache&&window._commCache[n.community_id]&&window._commCache[n.community_id].avatar_url)
+      || n.community_avatar_url || '';
     const niIconHtml = isCommunityNotif
       ? (commAvatar && commAvatar.startsWith('http')
           ? `<img src="${commAvatar}" style="width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid rgba(0,255,204,.35);flex-shrink:0;" onerror="this.outerHTML='<span style=\"font-size:20px\">🏘️</span>'">`
