@@ -9958,16 +9958,47 @@ async function loadNotifTab(tabId){
     return await q;
   }
   // Tenta com metadata+reaction_type; se a coluna não existir no banco, retenta sem
-  let res = await _fetchNotifs('metadata,reaction_type');
+  let res = await _fetchNotifs('metadata,reaction_type,community_avatar');
   if(res.error){
     console.warn('[notif] Colunas extras ausentes, retentando:', res.error.message);
-    res = await _fetchNotifs('');
+    res = await _fetchNotifs('community_id');
+    if(res.error){
+      res = await _fetchNotifs('');
+    }
   }
   const data = res.data;
 
   if(!data?.length){
     el.innerHTML=`<div class="notif-empty"><div class="notif-empty-icon">🔔</div><div class="notif-empty-txt">Tudo em dia!</div></div>`;
     return;
+  }
+
+  // Buscar dados reais das comunidades para notificações de tipo community_*
+  // Estratégia: buscar via community_id sem depender de colunas extras no banco
+  const commNotifs = (data||[]).filter(n=>
+    ['community_post','community_live','community_mention','community_invite'].includes(n.type) && n.community_id
+  );
+  const _commDataMap = {};
+  if(commNotifs.length){
+    const commIds = [...new Set(commNotifs.map(n=>n.community_id))];
+    try{
+      const{data:comms} = await db.from('communities')
+        .select('id,name,avatar_url,icon')
+        .in('id', commIds);
+      (comms||[]).forEach(c=>{
+        _commDataMap[c.id] = {
+          name: c.name || 'Comunidade',
+          avatar: c.avatar_url || c.icon || null
+        };
+      });
+    }catch(e){ console.warn('[notif comm lookup]', e?.message); }
+    // Enriquecer notificações com dados reais da comunidade
+    data.forEach(n=>{
+      if(n.community_id && _commDataMap[n.community_id]){
+        n._commName   = _commDataMap[n.community_id].name;
+        n._commAvatar = _commDataMap[n.community_id].avatar;
+      }
+    });
   }
 
   const REACTION_EMOJI = {
@@ -9987,18 +10018,24 @@ async function loadNotifTab(tabId){
     biz_promo:'🏪',mention:'@',call_missed:'📞',share:'🔁'
   };
 
-  // Ícone da notificação — usa logo da comunidade quando disponível
+  // Ícone da notificação — usa logo real da comunidade (buscada via community_id)
   function _notifIconHtml(n){
     const isCommType = ['community_post','community_mention','community_live','community_invite'].includes(n.type);
-    const commAv = n.community_avatar || null;
+    // Prioridade: dado enriquecido (_commAvatar) > community_avatar da coluna > fallback
+    const commAv = n._commAvatar || n.community_avatar || null;
     if(isCommType && commAv){
       if(commAv.startsWith('http')){
         return `<img src="${xss(commAv)}" style="width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid rgba(0,255,204,.3);" onerror="this.parentElement.textContent='🏘️'">`;
       } else {
+        // emoji como ícone da comunidade
         return `<span style="font-size:22px;line-height:1;">${xss(commAv)}</span>`;
       }
     }
-    // Ícone especial pulsante para live
+    // Sem avatar mas é notif de comunidade — ícone genérico estilizado
+    if(isCommType){
+      return `<span style="font-size:20px;">🏘️</span>`;
+    }
+    // Live: ícone pulsante
     if(n.type === 'community_live'){
       return `<span style="font-size:18px;animation:pulse 1s ease-in-out infinite;">🔴</span>`;
     }
@@ -10013,7 +10050,15 @@ async function loadNotifTab(tabId){
     <div class="ni${n.read?'':' unrd'}" id="ni-${n.id}">
       <div class="ni-icon">${iconHtml}</div>
       <div class="ni-clickable-body" onclick="handleNotifNavigation(JSON.parse(this.closest('.ni').dataset.notif))">
-        <div class="ni-txt">${xss(n.content||'Nova notificação')}</div>
+        <div class="ni-txt">${xss(
+        // Para notificações de comunidade, substituir "Comunidade" pelo nome real se disponível
+        (n._commName && n.content && n.content.includes('Comunidade'))
+          ? n.content.replace('Comunidade', n._commName)
+          : (n.content||'Nova notificação')
+      )}</div>
+      ${(n._commName && ['community_post','community_live'].includes(n.type))
+        ? `<div style="font-size:10px;color:var(--neon-cyan);margin-top:2px;font-family:'Silkscreen',monospace;opacity:.8;">🏘 ${xss(n._commName)}</div>`
+        : ''}
         <div class="ni-time">${timeAgo(n.created_at)}</div>
         ${n.type==='friend_request'?`<div class="ni-actions">
           <button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();acceptFriendFromNotif(this)">✓ Aceitar</button>
