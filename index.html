@@ -8381,8 +8381,28 @@ async function loadHomeAlerts(){
     // Corpo clicável → navega para o contexto
     const body=document.createElement('div');
     body.className='ni-clickable-body';
+    // ── BLOCO EXCLUSIVO PARA NOTIFICAÇÕES DE COMUNIDADE ────────────
+    const COMM_TYPES_DISPLAY = ['community_post','community_comment','community_mention','community_invite','community_live'];
+    let _notifDisplayText;
+    if(COMM_TYPES_DISPLAY.includes(n.type)){
+      const _meta = (n.metadata && typeof n.metadata === 'object') ? n.metadata : {};
+      const _commName = _meta.community_name
+        || (typeof n.content === 'string' && n.content.match(/"([^"]+)"$/)?.[1])
+        || 'Comunidade';
+      const _labelMap = {
+        community_post:    `Nova postagem em <strong>${_commName}</strong>`,
+        community_comment: `Novo comentário em <strong>${_commName}</strong>`,
+        community_mention: `Você foi mencionado em <strong>${_commName}</strong>`,
+        community_invite:  `Você foi convidado para <strong>${_commName}</strong>`,
+        community_live:    `Live ao vivo em <strong>${_commName}</strong>`
+      };
+      _notifDisplayText = _labelMap[n.type];
+    } else {
+      // ── TODOS OS OUTROS TIPOS: conteúdo original intacto (com @username) ──
+      _notifDisplayText = xss(n.content||'Nova notificação');
+    }
     body.innerHTML=
-      '<div class="ni-txt">'+xss(n.content||'Nova notificação')+'</div>'+
+      '<div class="ni-txt">'+_notifDisplayText+'</div>'+
       '<div class="ni-time">'+timeAgo(n.created_at)+'</div>'+
       (n.type==='friend_request'&&!n.read
         ?'<div class="ni-actions">'+
@@ -9990,6 +10010,46 @@ async function loadNotifTab(tabId){
     biz_promo:'🏪',mention:'@',call_missed:'📞',share:'🔁'
   };
 
+  // ── Formata o texto exibido da notificação ──────────────────────
+  // ATENÇÃO: apenas os tipos de comunidade têm texto personalizado.
+  // Todos os demais retornam n.content intacto (incluindo o @username).
+  function getNotifDisplayText(n){
+    const meta = (n.metadata && typeof n.metadata === 'object') ? n.metadata : {};
+    // ── BLOCO EXCLUSIVO PARA NOTIFICAÇÕES DE COMUNIDADE ────────────
+    if(n.type === 'community_post'){
+      const commName = meta.community_name
+        || (typeof n.content === 'string' && n.content.match(/"([^"]+)"$/)?.[1])
+        || 'Comunidade';
+      return `Nova postagem em <strong>${commName}</strong>`;
+    }
+    if(n.type === 'community_comment'){
+      const commName = meta.community_name
+        || (typeof n.content === 'string' && n.content.match(/"([^"]+)"$/)?.[1])
+        || 'Comunidade';
+      return `Novo comentário em <strong>${commName}</strong>`;
+    }
+    if(n.type === 'community_mention'){
+      const commName = meta.community_name
+        || (typeof n.content === 'string' && n.content.match(/"([^"]+)"$/)?.[1])
+        || 'Comunidade';
+      return `Você foi mencionado em <strong>${commName}</strong>`;
+    }
+    if(n.type === 'community_invite'){
+      const commName = meta.community_name
+        || (typeof n.content === 'string' && n.content.match(/"([^"]+)"$/)?.[1])
+        || 'Comunidade';
+      return `Você foi convidado para <strong>${commName}</strong>`;
+    }
+    if(n.type === 'community_live'){
+      const commName = meta.community_name
+        || (typeof n.content === 'string' && n.content.match(/"([^"]+)"$/)?.[1])
+        || 'Comunidade';
+      return `Live ao vivo em <strong>${commName}</strong>`;
+    }
+    // ── TODOS OS OUTROS TIPOS: retorna o conteúdo original intacto ──
+    return n.content || 'Nova notificação';
+  }
+
   el.innerHTML=data.map(n=>{
     const nJson=JSON.stringify(n).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
     const iconVal = icons[n.type];
@@ -9998,7 +10058,7 @@ async function loadNotifTab(tabId){
     <div class="ni${n.read?'':' unrd'}" id="ni-${n.id}">
       <div class="ni-icon">${iconDisp}</div>
       <div class="ni-clickable-body" onclick="handleNotifNavigation(JSON.parse(this.closest('.ni').dataset.notif))">
-        <div class="ni-txt">${xss(n.content||'Nova notificação')}</div>
+        <div class="ni-txt">${xss(getNotifDisplayText(n))}</div>
         <div class="ni-time">${timeAgo(n.created_at)}</div>
         ${n.type==='friend_request'?`<div class="ni-actions">
           <button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();acceptFriendFromNotif(this)">✓ Aceitar</button>
