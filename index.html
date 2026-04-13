@@ -1933,6 +1933,14 @@ body.day-mode .bnav-btn.active .bni{
 .yt-link:hover{ color:var(--neon-cyan); }
 body.day-mode .yt-link{ color:#6b7280; }
 
+/* Feed autoplay — botão mudo flutuante */
+.feed-mute-btn:hover{ transform:scale(1.12); background:rgba(0,0,0,.75) !important; }
+.feed-video::-webkit-media-controls-play-button{ display:none; }
+/* Em mobile, remove barra de controles padrão quando o autoplay está ativo */
+@media(max-width:768px){
+  .feed-video{ object-fit:cover; }
+}
+
 /* ================================================================
    NEGÓCIOS — Lojas & Serviços
    ================================================================ */
@@ -4914,6 +4922,8 @@ async function loadFeed(force=false){
     }
   });
   if(commIdsInFeed.length) _hydrateCommAvatars(commIdsInFeed);
+  // Autoplay mudo no mobile
+  if(window.innerWidth <= 768) initFeedAutoplay();
 }
 
 async function updateCommentCounts(postIds){
@@ -5286,7 +5296,9 @@ function renderMedia(urls,types){
     const safeUrl=xss(url);
     if(t==='video'||url.match(/\.mp4$|\.webm$|\.mov$|\.ogg$/i)){
       return`<div class="mi" style="background:#000;border-radius:6px;overflow:hidden;">
-        <video src="${safeUrl}" preload="metadata" controls playsinline style="width:100%;max-height:320px;display:block;background:#000;" class="img-safe"></video>
+        <video src="${safeUrl}" preload="metadata" controls playsinline muted loop
+          style="width:100%;max-height:320px;display:block;background:#000;"
+          class="img-safe feed-video"></video>
       </div>`;
     }
     return`<div class="mi" style="border-radius:6px;overflow:hidden;cursor:pointer;" onclick="openLightbox('${safeUrl}')">
@@ -9223,9 +9235,9 @@ function linkify(t){
   // 1. Detect YouTube links and replace with embed player
   const ytRegex = /https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})[^\s]*/g;
   let result = safe.replace(ytRegex, (match, videoId)=>{
-    return `<div class="yt-embed-wrap">
-      <iframe class="yt-embed" 
-        src="https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1"
+    return `<div class="yt-embed-wrap yt-feed-wrap" data-ytid="${videoId}">
+      <iframe class="yt-embed yt-feed-iframe"
+        src="https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1&enablejsapi=1&mute=1&playsinline=1&autoplay=0"
         frameborder="0"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
         allowfullscreen
@@ -15181,6 +15193,95 @@ async function loadCommRanking(commId){
       </div>`;
     }).join('');
 }
+
+// ===== FEED AUTOPLAY (mobile only) =====
+let _feedObserver = null;
+
+function initFeedAutoplay(){
+  // Só roda em mobile
+  if(window.innerWidth > 768) return;
+
+  // Desconecta observer anterior para evitar duplicatas
+  if(_feedObserver) _feedObserver.disconnect();
+
+  _feedObserver = new IntersectionObserver((entries)=>{
+    entries.forEach(entry => {
+      const el = entry.target;
+
+      // ── Vídeos nativos HTML5 ──
+      if(el.tagName === 'VIDEO'){
+        if(entry.isIntersecting && entry.intersectionRatio >= 0.6){
+          el.muted = true;
+          el.play().catch(()=>{});
+          // Indicador visual mudo
+          _showMuteIndicator(el);
+        } else {
+          el.pause();
+        }
+        return;
+      }
+
+      // ── iframes YouTube ──
+      if(el.classList.contains('yt-feed-iframe')){
+        try{
+          const cmd = entry.isIntersecting && entry.intersectionRatio >= 0.6
+            ? 'playVideo' : 'pauseVideo';
+          el.contentWindow.postMessage(
+            JSON.stringify({ event:'command', func: cmd, args:[] }),
+            '*'
+          );
+        }catch(e){}
+        return;
+      }
+    });
+  }, {
+    threshold: [0, 0.3, 0.6, 1.0],
+    rootMargin: '0px'
+  });
+
+  // Observar todos os vídeos nativos do feed
+  document.querySelectorAll('#feed .feed-video').forEach(v => {
+    _feedObserver.observe(v);
+  });
+
+  // Observar todos os iframes YouTube do feed
+  document.querySelectorAll('#feed .yt-feed-iframe').forEach(iframe => {
+    _feedObserver.observe(iframe);
+  });
+}
+
+// Botão de toggle mudo flutuante sobre o vídeo
+function _showMuteIndicator(videoEl){
+  const wrap = videoEl.closest('.mi');
+  if(!wrap || wrap.querySelector('.feed-mute-btn')) return;
+  const btn = document.createElement('button');
+  btn.className = 'feed-mute-btn';
+  btn.innerHTML = '🔇';
+  btn.title = 'Toque para ativar som';
+  btn.style.cssText = [
+    'position:absolute','top:8px','right:8px','z-index:10',
+    'background:rgba(0,0,0,.55)','border:none','border-radius:50%',
+    'width:34px','height:34px','font-size:16px',
+    'display:flex','align-items:center','justify-content:center',
+    'cursor:pointer','backdrop-filter:blur(4px)',
+    'transition:all .2s'
+  ].join(';');
+  // Garantir que o wrap tenha position:relative para o botão flutuar
+  wrap.style.position = 'relative';
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    videoEl.muted = !videoEl.muted;
+    btn.innerHTML = videoEl.muted ? '🔇' : '🔊';
+  };
+  wrap.appendChild(btn);
+}
+
+// Reobservar após navegação de volta ao feed
+document.addEventListener('visibilitychange', ()=>{
+  if(!document.hidden && window.innerWidth <= 768){
+    setTimeout(initFeedAutoplay, 300);
+  }
+});
 
 // ===== TRENDING TOPICS =====
 async function openTrendingModal(){
