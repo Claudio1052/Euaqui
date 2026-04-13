@@ -11299,6 +11299,24 @@ async function openBizDetail(biz){
         <div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${biz.followers_count||0}</div><div class="dash-lbl">👥 Seguidores</div></div>
        </div>`;
   modal.innerHTML=`
+    <!-- Banner + Logo da loja -->
+    ${(biz.banner_url||biz.logo_url) ? `
+    <div style="position:relative;margin:-28px -28px 16px;border-radius:18px 18px 0 0;overflow:hidden;">
+      ${biz.banner_url
+        ? `<div style="height:140px;background:linear-gradient(135deg,var(--bg-mid),var(--bg-deep));overflow:hidden;">
+             <img src="${xss(biz.banner_url)}" style="width:100%;height:140px;object-fit:cover;display:block;" onerror="this.parentElement.style.background='linear-gradient(135deg,rgba(0,255,204,.08),rgba(191,95,255,.08))'">
+           </div>`
+        : `<div style="height:100px;background:linear-gradient(135deg,rgba(0,255,204,.08),rgba(191,95,255,.08));"></div>`
+      }
+      ${biz.logo_url
+        ? `<div style="position:absolute;bottom:-22px;left:16px;width:54px;height:54px;border-radius:12px;overflow:hidden;border:3px solid var(--bg-mid);box-shadow:0 4px 16px rgba(0,0,0,.6);">
+             <img src="${xss(biz.logo_url)}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.parentElement.style.display='none'">
+           </div>`
+        : ''
+      }
+    </div>
+    ${biz.logo_url ? '<div style="height:28px;"></div>' : ''}` : ''}
+
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
       <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-cyan);">${xss(biz.name)}</div>
       <button style="background:none;border:1px solid var(--border-glow);color:var(--text-muted);width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;" onclick="this.closest('[data-biz-overlay]').remove()">✕</button>
