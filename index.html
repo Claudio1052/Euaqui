@@ -5177,22 +5177,42 @@ function _fillRepostCard(repostPostId, op, origId){
   const elCont = document.getElementById('repost-content-'+repostPostId);
   const elOrig = document.getElementById('repost-orig-'+repostPostId);
   if(!elCont) return;
+
+  // Detectar se é post de comunidade
+  const rawContent = op.content || '';
+  const commMatch = rawContent.match(/^\[COMM_POST:([^:\]]+)(?::([^\]]*))?\]/);
+  const commId = commMatch ? commMatch[1] : null;
+  const commData = commId ? (window._commCache?.[commId] || null) : null;
+
   const prof = op.profiles||{};
-  const av   = prof.avatar_url||('https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u'));
-  const name = prof.full_name||prof.username||'Usuário';
-  const user = prof.username||'';
-  const isEmoji = av && av.length<=4 && !av.startsWith('http');
+  let displayAv, displayName, displaySub, displayRadius, clickFn;
+
+  if(commData){
+    displayAv     = commData.avatar_url || commData.banner_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+commData.name);
+    displayName   = commData.name;
+    displaySub    = '🏘 Comunidade';
+    displayRadius = '6px';
+    clickFn       = ()=>{ try{ openCommDetail(commId); }catch(e){} };
+  } else {
+    const av = prof.avatar_url||('https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u'));
+    displayAv     = av;
+    displayName   = prof.full_name||prof.username||'Usuário';
+    displaySub    = '@'+(prof.username||'');
+    displayRadius = '50%';
+    clickFn       = ()=>loadProfilePage(op.user_id);
+  }
+
   if(elAv){
-    elAv.innerHTML = isEmoji
-      ? `<span style="font-size:16px;">${av}</span>`
-      : `<img src="${xss(av)}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;display:block;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${xss(user)}'">`;
+    elAv.innerHTML = `<img src="${xss(displayAv)}" style="width:28px;height:28px;border-radius:${displayRadius};object-fit:cover;display:block;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=x'">`;
     elAv.style.cursor='pointer';
-    elAv.onclick=()=>loadProfilePage(op.user_id);
+    elAv.onclick=clickFn;
   }
   if(elName){
-    elName.innerHTML=`<span style="cursor:pointer;color:var(--neon-cyan);" onclick="loadProfilePage('${xss(op.user_id)}')">${xss(name)}</span> <span style="color:var(--text-muted);font-size:9px;">@${xss(user)}</span>`;
+    elName.innerHTML=`<span style="cursor:pointer;color:var(--neon-cyan);">${xss(displayName)}</span> <span style="color:var(--text-muted);font-size:9px;">${xss(displaySub)}</span>`;
+    elName.querySelector('span').onclick=clickFn;
   }
-  let cleanContent=(op.content||'')
+
+  let cleanContent = rawContent
     .replace(/^\[COMM_POST:[^\]]*\]\n?/,'')
     .replace(/^\[BIZ_PROMO:[^\]]*\]\n?/,'')
     .replace(/^\[REPOST:[^\]]*\]\n?/,'')
@@ -5240,26 +5260,52 @@ async function _hydrateRepostCard(repostPostId, originalPostId, originalAuthorId
       return;
     }
 
-    // Avatar do autor original
+    // Detectar se é post de comunidade pelo marcador [COMM_POST:commId:...]
+    const rawOpContent = op.content || '';
+    const commMatch = rawOpContent.match(/^\[COMM_POST:([^:\]]+)(?::([^\]]*))?\]/);
+    const commId = commMatch ? commMatch[1] : null;
+
+    // Buscar dados da comunidade se for comm post
+    let commData = null;
+    if(commId){
+      commData = window._commCache?.[commId] || null;
+      if(!commData){
+        try{
+          const{data:cd}=await db.from('communities').select('id,name,avatar_url,banner_url').eq('id',commId).maybeSingle();
+          if(cd){ commData=cd; if(!window._commCache)window._commCache={}; window._commCache[commId]=cd; }
+        }catch(e){}
+      }
+    }
+
+    // Definir fonte visual: comunidade ou autor original
     const origProf = op.profiles || {};
-    const origAv   = origProf.avatar_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+(origProf.username||originalAuthorName||'u'));
-    const origName = origProf.full_name || origProf.username || originalAuthorName || 'Usuário';
-    const origUser = origProf.username || originalAuthorName || '';
-    const origId   = op.user_id || originalAuthorId;
+    let displayAv, displayName, displaySub, displayRadius, displayClick;
+
+    if(commData){
+      displayAv     = commData.avatar_url || commData.banner_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+commData.name);
+      displayName   = commData.name;
+      displaySub    = '🏘 Comunidade';
+      displayRadius = '6px';
+      displayClick  = `openCommDetail('${commId}')`;
+    } else {
+      const origAv   = origProf.avatar_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+(origProf.username||originalAuthorName||'u'));
+      displayAv     = origAv;
+      displayName   = origProf.full_name || origProf.username || originalAuthorName || 'Usuário';
+      displaySub    = '@'+(origProf.username || originalAuthorName || '');
+      displayRadius = '50%';
+      displayClick  = `loadProfilePage('${op.user_id || originalAuthorId}')`;
+    }
 
     // Atualizar avatar
     if(elAv){
-      const isEmoji = origAv && origAv.length <= 4 && !origAv.startsWith('http');
-      elAv.innerHTML = isEmoji
-        ? `<span style="font-size:16px;">${origAv}</span>`
-        : `<img src="${xss(origAv)}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;display:block;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${xss(origUser)}'">`;
+      elAv.innerHTML = `<img src="${xss(displayAv)}" style="width:28px;height:28px;border-radius:${displayRadius};object-fit:cover;display:block;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=x'">`;
       elAv.style.cursor = 'pointer';
-      elAv.onclick = ()=>loadProfilePage(origId);
+      elAv.onclick = ()=>{ try{ eval(displayClick); }catch(e){} };
     }
 
     // Atualizar nome
     if(elName){
-      elName.innerHTML = `<span style="cursor:pointer;color:var(--neon-cyan);" onclick="loadProfilePage('${xss(origId)}')">${xss(origName)}</span> <span style="color:var(--text-muted);font-size:9px;">@${xss(origUser)}</span>`;
+      elName.innerHTML = `<span style="cursor:pointer;color:var(--neon-cyan);" onclick="${xss(displayClick)}">${xss(displayName)}</span> <span style="color:var(--text-muted);font-size:9px;">${xss(displaySub)}</span>`;
     }
 
     // Limpar marcadores internos do conteúdo
