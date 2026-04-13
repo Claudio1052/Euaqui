@@ -9624,7 +9624,16 @@ function linkify(t){
     .replace(/\x00MDLINK:([^:]+):([^\x00]+)\x00/g, (_, href, label)=>{
       const decodedHref = decodeURIComponent(href);
       const decodedLabel = decodeURIComponent(label);
-      return `<a href="${decodedHref}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:linear-gradient(135deg,var(--neon-cyan),var(--neon-purple));color:var(--bg-deep);padding:4px 14px;border-radius:20px;font-family:'Silkscreen',monospace;font-size:10px;letter-spacing:.5px;text-decoration:none;font-weight:bold;margin:2px 0;">${decodedLabel}</a>`;
+      // Se é link de convite de comunidade, abre direto no app
+      const commMatch = decodedHref.match(/[?&]comm=([a-f0-9\-]{36})/);
+      const bizMatch  = decodedHref.match(/[?&]biz=([a-f0-9\-]{36})/);
+      let onclick = '';
+      if(commMatch){
+        onclick = `onclick="event.preventDefault();nav('communities');setTimeout(()=>openCommDetail('${commMatch[1]}'),400);"`;
+      } else if(bizMatch){
+        onclick = `onclick="event.preventDefault();openBizById('${bizMatch[1]}');"`;
+      }
+      return `<a href="${decodedHref}" ${onclick} style="display:inline-block;background:linear-gradient(135deg,var(--neon-cyan),var(--neon-purple));color:var(--bg-deep);padding:4px 14px;border-radius:20px;font-family:'Silkscreen',monospace;font-size:10px;letter-spacing:.5px;text-decoration:none;font-weight:bold;margin:2px 0;cursor:pointer;">${decodedLabel}</a>`;
     })
     .replace(/\x00BOLD:([^\x00]+)\x00/g, '<strong>$1</strong>');
 
