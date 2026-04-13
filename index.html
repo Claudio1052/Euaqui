@@ -7879,12 +7879,35 @@ async function acceptFriendFromNotif(btn){
     .eq('status','pending')
     .maybeSingle();
 
-  // Remove actions regardless (even if req not found - may have been handled)
   if(actionsEl) actionsEl.remove();
   notifEl.classList.remove('unrd');
 
   if(!req){ showToast('Solicitação já processada','success'); return; }
   await handleFriendReq(req.id, sender.id, 'accept');
+}
+
+async function joinCommFromNotif(commId, notifId, btn){
+  if(!CU) return;
+  const actionsEl = btn.closest('.ni-actions');
+  if(actionsEl) actionsEl.innerHTML='<span style="font-size:10px;color:var(--neon-cyan);">⏳ entrando...</span>';
+  try{
+    // Verificar se já é membro
+    const{data:existing}=await db.from('community_members')
+      .select('id').eq('community_id',commId).eq('user_id',CU.id).maybeSingle();
+    if(!existing){
+      const{error}=await db.from('community_members').insert({community_id:commId,user_id:CU.id,role:'member'});
+      if(error) throw error;
+    }
+    // Marcar notificação como lida
+    try{ await db.from('notifications').update({read:true}).eq('id',notifId); }catch(e){}
+    if(actionsEl) actionsEl.innerHTML='<span style="font-size:10px;color:var(--neon-cyan);">✓ Membro!</span>';
+    showToast('✅ Você entrou na comunidade!','success');
+    // Navegar para a comunidade
+    setTimeout(()=>{ nav('communities'); setTimeout(()=>openCommDetail(commId),400); }, 600);
+  }catch(e){
+    if(actionsEl) actionsEl.innerHTML='<span style="font-size:10px;color:var(--neon-pink);">Erro ao entrar</span>';
+    showToast('Erro ao entrar na comunidade','error');
+  }
 }
 
 async function markRead(id, el){
@@ -10419,7 +10442,10 @@ async function loadNotifTab(tabId){
     community_post:    name => `Nova postagem em <strong>${name}</strong>`,
     community_comment: name => `Novo comentário em <strong>${name}</strong>`,
     community_mention: name => `Você foi mencionado em <strong>${name}</strong>`,
-    community_invite:  name => `Você foi convidado para <strong>${name}</strong>`,
+    community_invite:  (name, n) => {
+      const actor = n.actor_username ? `<strong>@${xss(n.actor_username)}</strong>` : `<strong>seu amigo</strong>`;
+      return `${actor} te convidou para ser membro de <strong>${name}</strong>`;
+    },
     community_live:    name => `Live ao vivo em <strong>${name}</strong>`
   };
 
@@ -10432,10 +10458,17 @@ async function loadNotifTab(tabId){
       (_comms||[]).forEach(c=>{
         _commNameCache[c.id] = c.name;
         _commNameCache['av_'+c.id] = c.avatar_url || '';
-        // aproveita para popular o cache global do app
         if(!window._commCache) window._commCache={};
         if(!window._commCache[c.id]) window._commCache[c.id]=c;
       });
+    }catch(e){}
+  }
+  // Pré-carrega username dos remetentes de convites
+  const inviteActorIds = [...new Set(commNotifs.filter(n=>n.type==='community_invite'&&n.actor_id).map(n=>n.actor_id))];
+  if(inviteActorIds.length){
+    try{
+      const{data:actors}=await db.from('profiles').select('id,username,full_name').in('id',inviteActorIds);
+      (actors||[]).forEach(a=>{ _commNameCache['actor_'+a.id]=a.username||a.full_name||''; });
     }catch(e){}
   }
   await Promise.all(commNotifs.map(n=>_getCommName(n)));
@@ -10445,21 +10478,16 @@ async function loadNotifTab(tabId){
   function getNotifDisplayText(n){
     if(COMM_TYPES_SET.has(n.type)){
       const meta = (n.metadata && typeof n.metadata === 'object') ? n.metadata : {};
-      // Ordem de prioridade para o nome da comunidade:
-      // 1) community_name da view (JOIN direto no banco)
-      // 2) metadata.community_name
-      // 3) cache de queries anteriores
-      // 4) regex no content como último recurso
       const name = n.community_name
         || meta.community_name
         || _commNameCache[n.community_id]
         || (typeof n.content === 'string' && n.content.match(/"([^"]+)"/)?.[1])
         || '?';
+      // Injetar actor_username no objeto para o template usar
+      if(n.actor_id && !n.actor_username) n.actor_username = _commNameCache['actor_'+n.actor_id] || '';
       const tpl = COMM_LABEL_TPL[n.type];
-      // HTML direto — sem xss() para preservar <strong>
-      return tpl ? tpl(name) : `Notificação de comunidade: <strong>${name}</strong>`;
+      return tpl ? tpl(name, n) : `Notificação de comunidade: <strong>${name}</strong>`;
     }
-    // Todos os outros tipos: escapa normalmente (mantém @username)
     return xss(n.content || 'Nova notificação');
   }
 
@@ -10490,6 +10518,9 @@ async function loadNotifTab(tabId){
         ${n.type==='friend_request'?`<div class="ni-actions">
           <button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();acceptFriendFromNotif(this)">✓ Aceitar</button>
           <button class="ni-act-btn ni-act-rej" onclick="event.stopPropagation();">✕ Recusar</button>
+        </div>`:''}
+        ${n.type==='community_invite'&&(n.community_id||(n.content||'').match(/\?comm=([a-f0-9\-]{36})/)?.[1])?`<div class="ni-actions" style="margin-top:6px;">
+          <button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();joinCommFromNotif('${n.community_id||(n.content||'').match(/\?comm=([a-f0-9\-]{36})/)?.[1]||''}','${n.id}',this)">🏘 Ser Membro</button>
         </div>`:''}
       </div>
       <button class="ni-dismiss" title="Marcar como lida" onclick="event.stopPropagation();markRead('${n.id}',this)">✕</button>
@@ -15541,13 +15572,27 @@ async function copyCommInvite(commId, name){
 async function postCommInviteToFeed(commId, commName, url){
   if(!CU){ showToast('Faça login','error'); return; }
   try{
+    // Buscar banner/avatar da comunidade para incluir como imagem no post
+    let imgUrl = null;
+    const cached = window._commCache?.[commId];
+    if(cached){ imgUrl = cached.banner_url || cached.avatar_url || null; }
+    if(!imgUrl){
+      try{
+        const{data:cd}=await db.from('communities').select('avatar_url,banner_url').eq('id',commId).maybeSingle();
+        imgUrl = cd?.banner_url || cd?.avatar_url || null;
+      }catch(e){}
+    }
+
     const content = `🏘 Junte-se a mim na comunidade **${commName}**!\n\n${url}`;
-    const{error} = await db.from('posts').insert({
+    const postData = {
       user_id: CU.id,
       content,
       visibility: 'public',
       type: 'text'
-    });
+    };
+    if(imgUrl) postData.media_urls = [imgUrl];
+
+    const{error} = await db.from('posts').insert(postData);
     if(error) throw error;
     showToast('✅ Postado no seu feed!','success');
     document.querySelector('[style*="z-index: 4000"],[style*="z-index:4000"]')?.remove();
