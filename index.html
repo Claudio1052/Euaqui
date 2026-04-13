@@ -10111,6 +10111,9 @@ async function loadCommPosts(commId){
     .select('posts(id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url))')
     .eq('community_id',commId).order('created_at',{ascending:false}).limit(20);
   const posts = (cps||[]).map(cp=>cp.posts).filter(Boolean);
+  // Popular cache de posts para o compartilhador
+  if(!window._postCache) window._postCache={};
+  posts.forEach(p=>{ window._postCache[p.id]=p; });
   // Load reactions
   const postIds = posts.map(p=>p.id);
   const[rxRes,myRxRes]=await Promise.all([
@@ -13721,6 +13724,9 @@ async function loadCommPostsV2(commId,isMember,isMod){
     .eq('community_id',commId).order('created_at',{ascending:false}).limit(20);
   const posts=(cps||[]).map(cp=>cp.posts).filter(Boolean);
   if(!posts.length){el.innerHTML='<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhum post ainda</div>';return;}
+  // Popular cache de posts para o compartilhador funcionar
+  if(!window._postCache) window._postCache={};
+  posts.forEach(p=>{ window._postCache[p.id]=p; });
   const postIds=posts.map(p=>p.id);
   const[rxRes,myRxRes]=await Promise.all([
     db.from('likes').select('post_id,reaction_type').in('post_id',postIds),
