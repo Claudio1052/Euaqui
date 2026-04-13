@@ -7331,13 +7331,26 @@ function _renderPostShareBubble(postId, post, extraMsg, isSent){
     .trim();
   const preview = cleanContent.slice(0,120)+(cleanContent.length>120?'...':'');
 
-  // Thumbnail de mídia
+  // Thumbnail de mídia (vídeo ou imagem)
   const mediaUrls = Array.isArray(post.media_urls)?post.media_urls.filter(Boolean):[];
-  const thumbHtml = mediaUrls[0]
-    ? `<div style="border-radius:8px;overflow:hidden;margin-top:8px;max-height:140px;">
-         <img src="${xss(mediaUrls[0])}" style="width:100%;max-height:140px;object-fit:cover;display:block;" loading="lazy" onerror="this.style.display='none'">
-       </div>`
-    : '';
+  const mediaTyps2 = Array.isArray(post.media_types)?post.media_types:[];
+  let thumbHtml = '';
+  if(mediaUrls[0]){
+    const isVidThumb = (mediaTyps2[0]||'').startsWith('video') || /\.mp4$|\.webm$|\.mov$|\.ogg$/i.test(mediaUrls[0]);
+    const safeThumbUrl = xss(mediaUrls[0]);
+    thumbHtml = isVidThumb
+      ? `<div style="border-radius:8px;overflow:hidden;margin-top:8px;position:relative;background:#000;">
+           <video src="${safeThumbUrl}" class="feed-video"
+             muted loop playsinline preload="metadata"
+             style="width:100%;max-height:160px;display:block;object-fit:cover;border-radius:8px;"
+             onclick="event.stopPropagation()"></video>
+           <div class="share-vid-mute-btn" onclick="event.stopPropagation();this.previousElementSibling.muted=!this.previousElementSibling.muted;this.textContent=this.previousElementSibling.muted?'🔇':'🔊'"
+             style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,.55);border:none;border-radius:50%;width:28px;height:28px;font-size:13px;display:flex;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(4px);">🔇</div>
+         </div>`
+      : `<div style="border-radius:8px;overflow:hidden;margin-top:8px;max-height:140px;">
+           <img src="${safeThumbUrl}" style="width:100%;max-height:140px;object-fit:cover;display:block;" loading="lazy" onerror="this.style.display='none'">
+         </div>`;
+  }
 
   return `<div style="
       background:${bubbleBg};
@@ -8541,6 +8554,17 @@ async function showPostAuthorProfile(userId, triggerEl){
 // ── Navega até o post original no feed (usado ao clicar no card de repost) ──
 // Varre o container e hidrata todos os repost cards encontrados
 function _hydrateAllReposts(container){
+  // Após hidratar, registrar quaisquer novos .feed-video no observer
+  if(_feedObserver && window.innerWidth <= 768){
+    container.querySelectorAll('.feed-video:not([data-observed])').forEach(v=>{
+      v.setAttribute('data-observed','1');
+      _feedObserver.observe(v);
+    });
+    container.querySelectorAll('.yt-feed-iframe:not([data-observed])').forEach(f=>{
+      f.setAttribute('data-observed','1');
+      _feedObserver.observe(f);
+    });
+  }
   const nodes = (container||document).querySelectorAll('[data-repost-id]');
   nodes.forEach(el=>{
     const rid  = el.dataset.repostId;
@@ -9708,6 +9732,7 @@ async function loadCommPosts(commId){
   const myRxMap={};(myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
   el.innerHTML = posts.map(p=>renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||'')).join('') || '<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhum post ainda. Seja o primeiro!</div>';
   _hydrateAllReposts(el);
+  if(window.innerWidth <= 768) setTimeout(initFeedAutoplay, 100);
 }
 
 async function loadCommMembers(commId){
@@ -13201,6 +13226,7 @@ async function loadCommPostsV2(commId,isMember,isMod){
   }).join('');
   _hydrateAllReposts(el);
   updateCommentCounts(postIds);
+  if(window.innerWidth <= 768) setTimeout(initFeedAutoplay, 100);
 }
 
 async function delCommPost(commId,postId){
@@ -15239,13 +15265,12 @@ function initFeedAutoplay(){
     rootMargin: '0px'
   });
 
-  // Observar todos os vídeos nativos do feed
-  document.querySelectorAll('#feed .feed-video').forEach(v => {
+  // Observar TODOS os vídeos e iframes YT visíveis na página
+  // (feed principal, comunidades, perfil, posts compartilhados, etc.)
+  document.querySelectorAll('.feed-video').forEach(v => {
     _feedObserver.observe(v);
   });
-
-  // Observar todos os iframes YouTube do feed
-  document.querySelectorAll('#feed .yt-feed-iframe').forEach(iframe => {
+  document.querySelectorAll('.yt-feed-iframe').forEach(iframe => {
     _feedObserver.observe(iframe);
   });
 }
