@@ -6546,23 +6546,19 @@ async function createCommunity(){
       _commId = latest?.id || null;
     }catch(e){}
   }
+  // Insere membro dono (try/catch — Supabase v2 não suporta .catch() encadeado)
   if(_commId){
-    await db.from('community_members')
-      .insert({community_id:_commId,user_id:CU.id,role:'owner'}).catch(()=>{});
+    try{
+      await db.from('community_members')
+        .insert({community_id:_commId,user_id:CU.id,role:'owner'});
+    }catch(e){}
   }
 
-  // ── Mostra popup de sucesso e navega automaticamente ────────
-  // Remove overlay anterior se existir
+  // ── Popup de sucesso — sempre aparece independente do _commId ─
   document.getElementById('_cc_overlay')?.remove();
-
   const _ov = document.createElement('div');
   _ov.id = '_cc_overlay';
-  _ov.style.cssText = [
-    'position:fixed','inset:0','z-index:999999',
-    'background:rgba(0,0,0,.88)','backdrop-filter:blur(16px)',
-    'display:flex','align-items:center','justify-content:center'
-  ].join(';');
-
+  _ov.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,.88);backdrop-filter:blur(16px);display:flex;align-items:center;justify-content:center;';
   _ov.innerHTML =
     '<div style="background:linear-gradient(160deg,#0d0d35,#180a30);border:2px solid rgba(0,255,204,.4);border-radius:24px;padding:40px 28px 32px;text-align:center;max-width:290px;width:86%;box-shadow:0 0 60px rgba(0,255,204,.18);">' +
       '<div style="font-size:60px;margin-bottom:8px;">🎉</div>' +
@@ -6574,16 +6570,13 @@ async function createCommunity(){
         '<div id="_cc_bar" style="height:100%;width:100%;background:linear-gradient(90deg,#00ffcc,#bf5fff);border-radius:4px;transition:width 2.5s linear;"></div>' +
       '</div>' +
     '</div>';
-
   document.body.appendChild(_ov);
 
   // Anima barra regressiva
-  requestAnimationFrame(()=>{
-    requestAnimationFrame(()=>{
-      const b = document.getElementById('_cc_bar');
-      if(b) b.style.width = '0%';
-    });
-  });
+  setTimeout(()=>{
+    const b = document.getElementById('_cc_bar');
+    if(b) b.style.width = '0%';
+  }, 50);
 
   // Navega após 2.8s
   setTimeout(()=>{
