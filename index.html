@@ -8113,9 +8113,9 @@ async function loadHomeComms(){
     // Multi-strategy fetch to bypass RLS issues
     let data=[];
     // Strategy 1: owned by user
-    if(CU){ try{ const{data:o}=await db.from('communities').select('id,name,description,avatar_url,members_count,owner_id').eq('owner_id',CU.id).limit(20); const s=new Set(data.map(x=>x.id));(o||[]).forEach(d=>{if(!s.has(d.id))data.push(d);}); }catch(e){} }
+    if(CU){ try{ const{data:o}=await db.from('communities').select('id,name,description,avatar_url,banner_url,members_count,owner_id').eq('owner_id',CU.id).limit(20); const s=new Set(data.map(x=>x.id));(o||[]).forEach(d=>{if(!s.has(d.id))data.push(d);}); }catch(e){} }
     // Strategy 2: public communities
-    try{ const{data:p}=await db.from('communities').select('id,name,description,avatar_url,members_count,owner_id').eq('visibility','public').order('members_count',{ascending:false}).limit(30); const s=new Set(data.map(x=>x.id));(p||[]).forEach(d=>{if(!s.has(d.id))data.push(d);}); }catch(e){}
+    try{ const{data:p}=await db.from('communities').select('id,name,description,avatar_url,banner_url,members_count,owner_id').eq('visibility','public').order('members_count',{ascending:false}).limit(30); const s=new Set(data.map(x=>x.id));(p||[]).forEach(d=>{if(!s.has(d.id))data.push(d);}); }catch(e){}
     let ms=new Set();
     if(CU&&(data||[]).length){
       const{data:mem}=await db.from('community_members').select('community_id').eq('user_id',CU.id).in('community_id',(data||[]).map(c=>c.id));
@@ -8126,7 +8126,9 @@ async function loadHomeComms(){
     (data||[]).forEach(c=>{
       const card=document.createElement('div');card.className='comm-card';
       const isMember=ms.has(c.id);
-      card.innerHTML='<div class="comm-cover">'+((c.avatar_url&&c.avatar_url.startsWith('http'))?'<img src="'+xss(c.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;">':xss(c.avatar_url||'🏘'))+'</div><div class="comm-info"><div class="comm-name">'+xss(c.name)+'</div><div class="comm-desc">'+xss(c.description||'')+'</div><div class="comm-meta"><span>👥 '+(c.members_count||0)+'</span></div><button class="comm-join '+(isMember?'joined':'')+'" style="margin-top:8px;width:100%;">'+(isMember?'✓ Membro':'+ Entrar')+'</button></div>';
+      const _coverUrl3 = (c.banner_url&&c.banner_url.startsWith('http')) ? c.banner_url
+        : (c.avatar_url&&c.avatar_url.startsWith('http')) ? c.avatar_url : null;
+      card.innerHTML='<div class="comm-cover">'+(_coverUrl3?'<img src="'+xss(_coverUrl3)+'" style="width:100%;height:100%;object-fit:cover;">':xss(c.avatar_url||'🏘'))+'</div><div class="comm-info"><div class="comm-name">'+xss(c.name)+'</div><div class="comm-desc">'+xss(c.description||'')+'</div><div class="comm-meta"><span>👥 '+(c.members_count||0)+'</span></div><button class="comm-join '+(isMember?'joined':'')+'" style="margin-top:8px;width:100%;">'+(isMember?'✓ Membro':'+ Entrar')+'</button></div>';
       card.onclick=()=>openCommDetail(c.id);
       card.querySelector('button').onclick=(e)=>{e.stopPropagation();toggleJoinComm(c.id,isMember,card.querySelector('button'));};
       grid.appendChild(card);
@@ -9578,7 +9580,7 @@ async function loadCommGrid(mode){
   if(CU){
     try{
       const{data,error} = await db.from('communities')
-        .select('id,name,slug,description,avatar_url,visibility,members_count,posts_count,owner_id,created_at')
+        .select('id,name,slug,description,avatar_url,banner_url,visibility,members_count,posts_count,owner_id,created_at')
         .eq('owner_id',CU.id)
         .order('created_at',{ascending:false});
       if(error) errors.push('owner: '+error.message);
@@ -9589,7 +9591,7 @@ async function loadCommGrid(mode){
   // Strategy 2: Public communities only (simplest RLS-safe query)
   try{
     const{data,error} = await db.from('communities')
-      .select('id,name,slug,description,avatar_url,visibility,members_count,posts_count,owner_id,created_at')
+      .select('id,name,slug,description,avatar_url,banner_url,visibility,members_count,posts_count,owner_id,created_at')
       .eq('visibility','public')
       .order('created_at',{ascending:false}).limit(50);
     if(error) errors.push('public: '+error.message);
@@ -9607,7 +9609,7 @@ async function loadCommGrid(mode){
         const missing = ids.filter(id=>!known.has(id));
         if(missing.length){
           const{data:joined} = await db.from('communities')
-            .select('id,name,slug,description,avatar_url,visibility,members_count,posts_count,owner_id,created_at')
+            .select('id,name,slug,description,avatar_url,banner_url,visibility,members_count,posts_count,owner_id,created_at')
             .in('id',missing);
           (joined||[]).forEach(d=>comms.push(d));
         }
@@ -9694,7 +9696,9 @@ async function loadCommGrid(mode){
     const memberCount = realCountMap[comm.id] ?? (comm.members_count || 0);
     const card = document.createElement('div');
     card.className='comm-card';
-    card.innerHTML='<div class="comm-cover">'+((comm.avatar_url&&comm.avatar_url.startsWith('http'))?'<img src="'+xss(comm.avatar_url)+'" style="width:100%;height:100%;object-fit:cover;">':xss(comm.avatar_url||'🏘'))+'</div>'
+    const _coverUrl2 = (comm.banner_url&&comm.banner_url.startsWith('http')) ? comm.banner_url
+      : (comm.avatar_url&&comm.avatar_url.startsWith('http')) ? comm.avatar_url : null;
+    card.innerHTML='<div class="comm-cover">'+(_coverUrl2?'<img src="'+xss(_coverUrl2)+'" style="width:100%;height:100%;object-fit:cover;">':xss(comm.avatar_url||'🏘'))+'</div>'
       +'<div class="comm-info">'
         +'<div class="comm-name">'+xss(comm.name)+'</div>'
         +'<div class="comm-desc">'+xss(comm.description||'')+'</div>'
@@ -15246,6 +15250,14 @@ async function saveEditComm(commId,btn){
   if(error){showToast('Erro: '+error.message,'error');btn.disabled=false;btn.textContent='✅ Salvar';return;}
   btn.closest('[style*=fixed]').remove();
   showToast('✅ Comunidade atualizada!','success');
+  // Atualiza o cache e o grid para refletir banner/avatar novos imediatamente
+  if(window._commCache && window._commCache[commId]){
+    delete window._commCache[commId];
+  }
+  // Recarrega o grid visível (aba ativa)
+  const _activeTab = document.querySelector('#comm-tabs .ptab.active');
+  const _activeMode = _activeTab?.dataset?.tab === 'cm-mine' ? 'mine' : 'all';
+  loadCommGrid(_activeMode).catch(()=>{});
   openCommDetail(commId);
 }
 
