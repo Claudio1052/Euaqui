@@ -9916,6 +9916,7 @@ async function handleNotifNavigation(n){
     // ── CONVITE / POST DE COMUNIDADE ───────────────────────────
     case 'community_invite':
     case 'community_post':
+    case 'community_live':
     case 'community_mention':{
       // Tenta usar community_id direto; fallback: extrai do conteúdo
       const commId = n.community_id || null;
@@ -9940,7 +9941,7 @@ async function loadNotifTab(tabId){
     'nt-all':null,
     'nt-mentions':'mention',
     'nt-social':['follow','like','comment','friend_request','friend_accept','call_missed'],
-    'nt-system':['message','community_invite']
+    'nt-system':['message','community_invite','community_post','community_live']
   };
   const filter=typeMap[tabId];
   const el=document.getElementById('notif-list-'+tabId.replace('nt-',''));
@@ -13249,7 +13250,7 @@ async function postInCommV2(commId){
           user_id: m.user_id,
           actor_id: CU.id,
           type: 'community_post',
-          content: `@${authorName} publicou na comunidade ${commLabel}`,
+          content: `@${authorName} publicou na comunidade "${commLabel}"`,
           post_id: post?.id || null,
           community_id: commId,
           read: false
@@ -13953,6 +13954,29 @@ async function startCommLive(commId){
   _liveStartHeartbeat(commId);
   showToast('🎙 Live iniciada!','success');
   renderLiveRoom(commId, true);
+  // ── Notificar todos os membros da comunidade sobre a live ──
+  try{
+    const{data:commDataLive}=await db.from('communities').select('id,name').eq('id',commId).maybeSingle();
+    const commLabel = commDataLive?.name || 'Comunidade';
+    const authorName = CP?.username || 'alguém';
+    const{data:allMembers} = await db.from('community_members')
+      .select('user_id')
+      .eq('community_id', commId)
+      .neq('user_id', CU.id); // exclui o próprio host
+    if(allMembers?.length){
+      const notifRows = allMembers.map(m=>({
+        user_id: m.user_id,
+        actor_id: CU.id,
+        type: 'community_live',
+        content: `🎙 @${authorName} iniciou uma live na comunidade "${commLabel}": ${title}`,
+        community_id: commId,
+        read: false
+      }));
+      for(let i=0; i<notifRows.length; i+=50){
+        await db.from('notifications').insert(notifRows.slice(i, i+50));
+      }
+    }
+  }catch(eNotif){ console.warn('[live notif]', eNotif?.message); }
 }
 
 // ── Heartbeat: garante que se o host fechar a aba, a live é encerrada ──
