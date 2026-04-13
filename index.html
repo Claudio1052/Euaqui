@@ -8358,7 +8358,7 @@ async function loadHomeAlerts(){
   el.innerHTML=skeletons(3);
   // Usa a view enriquecida para obter community_name via JOIN automático
   let {data, error:_haErr}=await db.from('notifications_enriched')
-    .select('id,type,content,read,created_at,post_id,actor_id,business_id,community_id,community_name,metadata')
+    .select('id,type,content,read,created_at,post_id,actor_id,business_id,community_id,community_name,community_avatar_url,metadata')
     .eq('user_id',CU.id).eq('read',false)
     .gte('created_at',new Date(Date.now()-24*60*60*1000).toISOString())
     .order('created_at',{ascending:false}).limit(40);
@@ -8422,10 +8422,26 @@ async function loadHomeAlerts(){
     div.id='ni-'+n.id;
     div.dataset.notif=JSON.stringify(n);
 
-    // Ícone
+    // Ícone — para comunidade: logo real; para demais: emoji padrão
     const iconEl=document.createElement('div');
     iconEl.className='ni-icon';
-    iconEl.textContent=icons[n.type]||'🔔';
+    if(_HA_COMM_TYPES.has(n.type)){
+      const av=n.community_avatar_url||'';
+      if(av && av.startsWith('http')){
+        const img=document.createElement('img');
+        img.src=av;
+        img.style.cssText='width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid rgba(0,255,204,.35);flex-shrink:0;';
+        img.onerror=function(){this.outerHTML='<span style="font-size:20px">🏘️</span>';};
+        iconEl.appendChild(img);
+        iconEl.style.background='transparent';
+        iconEl.style.padding='0';
+      } else {
+        iconEl.textContent = (av && !av.startsWith('http')) ? av : '🏘️';
+        iconEl.style.fontSize='20px';
+      }
+    } else {
+      iconEl.textContent=icons[n.type]||'🔔';
+    }
 
     // Corpo clicável → navega para o contexto
     const body=document.createElement('div');
@@ -10001,7 +10017,7 @@ async function loadNotifTab(tabId){
   async function _fetchNotifs(extraCols){
     // Tenta usar a view notifications_enriched (inclui community_name por JOIN)
     let q=db.from('notifications_enriched')
-      .select('id,type,content,read,created_at,post_id,actor_id,business_id,community_id,community_name'+(extraCols?','+extraCols:''))
+      .select('id,type,content,read,created_at,post_id,actor_id,business_id,community_id,community_name,community_avatar_url'+(extraCols?','+extraCols:''))
       .eq('user_id',CU.id).eq('read',false)
       .order('created_at',{ascending:false}).limit(50);
     if(Array.isArray(filter)) q=q.in('type',filter);
@@ -10110,9 +10126,17 @@ async function loadNotifTab(tabId){
     const nJson=JSON.stringify(n).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
     const iconVal = icons[n.type];
     const iconDisp = typeof iconVal === 'function' ? iconVal(n) : (iconVal || '🔔');
+    // Para notificações de comunidade: exibe logo real no lugar do emoji
+    const isCommunityNotif = COMM_TYPES_SET.has(n.type);
+    const commAvatar = n.community_avatar_url || _commNameCache['avatar_'+n.community_id] || '';
+    const niIconHtml = isCommunityNotif
+      ? (commAvatar && commAvatar.startsWith('http')
+          ? `<img src="${commAvatar}" style="width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid rgba(0,255,204,.35);flex-shrink:0;" onerror="this.outerHTML='<span style=\"font-size:20px\">🏘️</span>'">`
+          : `<span style="font-size:20px">${commAvatar && !commAvatar.startsWith('http') ? commAvatar : '🏘️'}</span>`)
+      : iconDisp;
     return `
     <div class="ni${n.read?'':' unrd'}" id="ni-${n.id}">
-      <div class="ni-icon">${iconDisp}</div>
+      <div class="ni-icon">${niIconHtml}</div>
       <div class="ni-clickable-body" onclick="handleNotifNavigation(JSON.parse(this.closest('.ni').dataset.notif))">
         <div class="ni-txt">${getNotifDisplayText(n)}</div>
         <div class="ni-time">${timeAgo(n.created_at)}</div>
