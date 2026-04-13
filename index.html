@@ -9958,7 +9958,7 @@ async function loadNotifTab(tabId){
     return await q;
   }
   // Tenta com metadata+reaction_type; se a coluna não existir no banco, retenta sem
-  let res = await _fetchNotifs('metadata,reaction_type,community_avatar');
+  let res = await _fetchNotifs('metadata,reaction_type');
   if(res.error){
     console.warn('[notif] Colunas extras ausentes, retentando:', res.error.message);
     res = await _fetchNotifs('community_id');
@@ -9973,17 +9973,7 @@ async function loadNotifTab(tabId){
     return;
   }
 
-  // Parsear marcador [COMMNOTIF:avatar|nome] embutido no content
-  // Zero queries extras, zero colunas novas necessárias
-  const _commRx = /^\[COMMNOTIF:([^|]*)\|([^\]]+)\]\s*/;
-  data.forEach(n=>{
-    const m = (n.content||'').match(_commRx);
-    if(m){
-      n._commAvatar  = m[1] || null;   // URL ou emoji do avatar
-      n._commName    = m[2] || null;   // nome da comunidade
-      n._commContent = (n.content||'').replace(_commRx,'').trim(); // texto após o marcador
-    }
-  });
+
 
   const REACTION_EMOJI = {
     like:'👍', love:'❤️', haha:'😂', wow:'😮', sad:'😢', angry:'😡',
@@ -9997,39 +9987,21 @@ async function loadNotifTab(tabId){
       return REACTION_EMOJI[rxType] || rxType || '❤️';
     },
     comment:'💬',friend_request:'👥',friend_accept:'🎉',message:'💬',
-    community_invite:'🏘️',community_post:'🏘️',community_mention:'🏘️',
-    community_live:'🔴',
+    community_invite:'🏘️',community_post:'🏘️',community_mention:'🏘️',community_live:'🔴',
     biz_promo:'🏪',mention:'@',call_missed:'📞',share:'🔁'
   };
 
-  // Ícone da notificação — usa avatar embutido no marcador [COMMNOTIF:]
-  function _notifIconHtml(n){
-    const isCommType = ['community_post','community_mention','community_live','community_invite'].includes(n.type);
-    if(isCommType){
-      const av = n._commAvatar || null;
-      if(av && av.startsWith('http')){
-        return `<img src="${xss(av)}" style="width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid rgba(0,255,204,.3);" onerror="this.parentElement.textContent='🏘️'">`;
-      } else if(av){
-        return `<span style="font-size:22px;line-height:1;">${xss(av)}</span>`;
-      }
-      return `<span style="font-size:20px;">🏘️</span>`;
-    }
-    const iconVal = icons[n.type];
-    return typeof iconVal === 'function' ? iconVal(n) : (iconVal || '🔔');
-  }
+
 
   el.innerHTML=data.map(n=>{
     const nJson=JSON.stringify(n).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
-    const iconHtml = _notifIconHtml(n);
+    const iconVal = icons[n.type];
+    const iconDisp = typeof iconVal === 'function' ? iconVal(n) : (iconVal || '🔔');
     return `
     <div class="ni${n.read?'':' unrd'}" id="ni-${n.id}">
-      <div class="ni-icon">${iconHtml}</div>
+      <div class="ni-icon">${iconDisp}</div>
       <div class="ni-clickable-body" onclick="handleNotifNavigation(JSON.parse(this.closest('.ni').dataset.notif))">
-        ${n._commName
-        ? `<div style="font-family:'Silkscreen',monospace;font-size:11px;color:var(--neon-cyan);letter-spacing:.5px;margin-bottom:2px;">${xss(n._commName)}</div>
-           <div class="ni-txt">${xss(n._commContent||'')}</div>`
-        : `<div class="ni-txt">${xss(n.content||'Nova notificação')}</div>`
-      }
+        <div class="ni-txt">${xss(n.content||'Nova notificação')}</div>
         <div class="ni-time">${timeAgo(n.created_at)}</div>
         ${n.type==='friend_request'?`<div class="ni-actions">
           <button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();acceptFriendFromNotif(this)">✓ Aceitar</button>
@@ -13267,30 +13239,22 @@ async function postInCommV2(commId){
     addCommXP(commId,CU.id,'post',10);
     loadCommPostsV2(commId,true,false);
     cachedPostIds.clear();cachedPosts={};
-    // ── Notificar todos os membros da comunidade (exceto o autor) ──
+    // ── Notificar membros (igual ao padrão da loja) ──
     try{
       const commLabel = commData?.name || 'Comunidade';
-      const commAvatar = commData?.avatar_url || commData?.icon || null;
       const{data:allMembers} = await db.from('community_members')
-        .select('user_id')
-        .eq('community_id', commId)
-        .neq('user_id', CU.id); // exclui o próprio autor
+        .select('user_id').eq('community_id',commId).neq('user_id',CU.id);
       if(allMembers?.length){
-        // Envia em lote (max 50 por insert para não estourar payload)
         const notifRows = allMembers.map(m=>({
-          user_id: m.user_id,
-          actor_id: CU.id,
-          type: 'community_post',
-          content: `[COMMNOTIF:${commAvatar||''}|${commLabel}] Nova postagem`,
-          post_id: post?.id || null,
-          read: false
+          user_id:m.user_id, actor_id:CU.id,
+          type:'community_post',
+          content:`Nova postagem em ${commLabel}`,
+          post_id:post?.id||null, read:false
         }));
-        // Divide em fatias de 50
-        for(let i=0; i<notifRows.length; i+=50){
-          await db.from('notifications').insert(notifRows.slice(i, i+50));
-        }
+        for(let i=0;i<notifRows.length;i+=50)
+          await db.from('notifications').insert(notifRows.slice(i,i+50));
       }
-    }catch(eNotif){ console.warn('[comm notif]', eNotif?.message); }
+    }catch(eNotif){ console.warn('[comm notif]',eNotif?.message); }
   } finally {
     // PATCH 5: restaurar botão sempre
     if(btn){btn.disabled=false;btn.textContent='POSTAR ▶';btn.style.opacity='';btn.style.cursor='';}
@@ -13996,7 +13960,7 @@ async function startCommLive(commId){
         user_id: m.user_id,
         actor_id: CU.id,
         type: 'community_live',
-        content: `[COMMNOTIF:${lAv||''}|${lName}] 🔴 Ao vivo agora!`,
+        content: `🔴 ${lName} está ao vivo! Toque para entrar`,
         read: false
       }));
       for(let i=0;i<liveNotifs.length;i+=50){
