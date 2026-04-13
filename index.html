@@ -10554,6 +10554,17 @@ async function loadNotifTab(tabId){
   }
   await Promise.all(commNotifs.map(n=>_getCommName(n)));
 
+  // Pré-carrega logos das lojas para notificações biz_promo
+  const bizNotifs = data.filter(n=>n.type==='biz_promo' && n.business_id);
+  const _uniqueBizIds = [...new Set(bizNotifs.map(n=>n.business_id).filter(Boolean))];
+  const _bizLogoCache = {};
+  if(_uniqueBizIds.length){
+    try{
+      const{data:bizs}=await db.from('businesses').select('id,name,logo_url').in('id',_uniqueBizIds);
+      (bizs||[]).forEach(b=>{ _bizLogoCache[b.id] = b.logo_url || ''; });
+    }catch(e){}
+  }
+
   // ── Gera o texto de exibição ──────────────────────────────────
   // community_name já vem do JOIN da view notifications_enriched
   function getNotifDisplayText(n){
@@ -10576,24 +10587,37 @@ async function loadNotifTab(tabId){
     const nJson=JSON.stringify(n).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
     const iconVal = icons[n.type];
     const iconDisp = typeof iconVal === 'function' ? iconVal(n) : (iconVal || '🔔');
-    // Para notificações de comunidade: exibe logo real no lugar do emoji
+
+    // ── Logo de loja (biz_promo) ──
+    const isBizNotif = n.type === 'biz_promo';
+    const bizLogo = isBizNotif ? (_bizLogoCache[n.business_id] || '') : '';
+    const hasBizImg = isBizNotif && bizLogo && bizLogo.startsWith('http');
+
+    // ── Logo de comunidade ──
     const isCommunityNotif = COMM_TYPES_SET.has(n.type);
-    // Para community_invite sem community_id: extrai do content URL
     const effectiveCommId = n.community_id
       || (n.type==='community_invite' ? (n.content||'').match(/\?comm=([a-f0-9\-]{36})/)?.[1] : null)
       || null;
-    // Prioridade: 1) cache local av_ 2) _commCache global 3) community_avatar_url da view
     const commAvatar = (effectiveCommId && (_commNameCache['av_'+effectiveCommId]
       || (window._commCache&&window._commCache[effectiveCommId]&&window._commCache[effectiveCommId].avatar_url)))
       || n.community_avatar_url || '';
     const hasCommImg = isCommunityNotif && commAvatar && commAvatar.startsWith('http');
-    // ni-icon: sem background/padding quando exibe imagem
-    const niIconStyle = hasCommImg ? 'style="background:transparent;padding:0;"' : '';
-    const niIconHtml = isCommunityNotif
-      ? (hasCommImg
-          ? `<img src="${commAvatar}" style="width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid rgba(0,255,204,.35);">`
-          : `<span style="font-size:20px">🏘️</span>`)
-      : iconDisp;
+
+    // ── Montar ícone ──
+    let niIconStyle = '';
+    let niIconHtml = iconDisp;
+
+    if(hasBizImg){
+      niIconStyle = 'style="background:transparent;padding:0;"';
+      niIconHtml = `<img src="${bizLogo}" style="width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid rgba(255,204,0,.4);" onerror="this.src='';this.parentElement.textContent='🏪'">`;
+    } else if(isBizNotif){
+      niIconHtml = `<span style="font-size:20px">🏪</span>`;
+    } else if(hasCommImg){
+      niIconStyle = 'style="background:transparent;padding:0;"';
+      niIconHtml = `<img src="${commAvatar}" style="width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid rgba(0,255,204,.35);">`;
+    } else if(isCommunityNotif){
+      niIconHtml = `<span style="font-size:20px">🏘️</span>`;
+    }
     return `
     <div class="ni${n.read?'':' unrd'}" id="ni-${n.id}">
       <div class="ni-icon" ${niIconStyle}>${niIconHtml}</div>
