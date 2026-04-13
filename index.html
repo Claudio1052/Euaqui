@@ -6475,8 +6475,8 @@ async function createCommunity(){
   const vis=document.getElementById('cm-vis').value;
   if(!name||!slug)return showToast('Nome e slug obrigatórios','error');
   // 1 comunidade por usuário
-  const{data:exComm}=await db.from('communities').select('id,name').eq('owner_id',CU.id).maybeSingle();
-  if(exComm)return showToast(`Você já tem "${exComm.name}". Edite ou exclua antes de criar outra.`,'error');
+  const{data:exComms}=await db.from('communities').select('id,name').eq('owner_id',CU.id);
+  if((exComms?.length||0)>=3)return showToast(`Limite de 3 comunidades atingido. Exclua uma antes de criar outra.`,'error');
   // Upload de imagem se houver
   if(window._commImgFile){
     try{
@@ -15794,8 +15794,8 @@ function applyHashtagFilter(tag){
 
 async function checkCanCreateComm(){
   if(!CU) return false;
-  const{data}=await db.from('communities').select('id,name').eq('owner_id',CU.id).maybeSingle();
-  if(data){showToast(`Você já tem "${data.name}". Edite ou exclua antes de criar outra.`,'error');return false;}
+  const{data}=await db.from('communities').select('id').eq('owner_id',CU.id);
+  if((data?.length||0)>=3){showToast('Limite de 3 comunidades atingido. Exclua uma antes de criar outra.','error');return false;}
   return true;
 }
 
