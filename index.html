@@ -6567,15 +6567,15 @@ async function createCommunity(){
       '<div style="font-family:Silkscreen,monospace;font-size:13px;color:#bf5fff;margin-bottom:14px;word-break:break-word;">' + xss(name) + '</div>' +
       '<div style="font-size:12px;color:#8888bb;line-height:1.7;margin-bottom:24px;">foi criada com sucesso!<br>Abrindo agora... 🚀</div>' +
       '<div style="height:4px;background:rgba(255,255,255,.08);border-radius:4px;overflow:hidden;">' +
-        '<div id="_cc_bar" style="height:100%;width:100%;background:linear-gradient(90deg,#00ffcc,#bf5fff);border-radius:4px;transition:width 2.5s linear;"></div>' +
+        '<div id="_cc_bar" style="height:100%;width:0%;background:linear-gradient(90deg,#00ffcc,#bf5fff);border-radius:4px;transition:width 2.5s linear;"></div>' +
       '</div>' +
     '</div>';
   document.body.appendChild(_ov);
 
-  // Anima barra regressiva
+  // Anima barra progressiva (0% → 100%)
   setTimeout(()=>{
     const b = document.getElementById('_cc_bar');
-    if(b) b.style.width = '0%';
+    if(b) b.style.width = '100%';
   }, 50);
 
   // Navega após 2.8s
