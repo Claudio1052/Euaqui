@@ -15342,27 +15342,17 @@ async function deleteComm(commId){
 
   showToast('Excluindo...','');
 
-  // Deleta dependências primeiro
-  await db.from('community_members').delete().eq('community_id',commId).catch(()=>{});
-  await db.from('community_posts').delete().eq('community_id',commId).catch(()=>{});
-  await db.from('community_chat').delete().eq('community_id',commId).catch(()=>{});
-  await db.from('community_xp').delete().eq('community_id',commId).catch(()=>{});
+  // Deleta dependências com try/catch (Supabase v2 não suporta .catch() encadeado)
+  try{ await db.from('community_members').delete().eq('community_id',commId); }catch(e){}
+  try{ await db.from('community_posts').delete().eq('community_id',commId); }catch(e){}
+  try{ await db.from('community_chat').delete().eq('community_id',commId); }catch(e){}
+  try{ await db.from('community_xp').delete().eq('community_id',commId); }catch(e){}
 
-  // Tenta deletar a comunidade — estratégia 1: só pelo id (RLS já filtra por owner)
-  let deleteError = null;
-  const r1 = await db.from('communities').delete().eq('id',commId);
-  deleteError = r1.error;
+  // Deleta a comunidade
+  const {error:delErr} = await db.from('communities').delete().eq('id',commId);
 
-  // Estratégia 2: com owner_id explícito (fallback)
-  if(deleteError){
-    console.warn('[deleteComm] tentativa 1 falhou:', deleteError.message);
-    const r2 = await db.from('communities').delete().eq('id',commId).eq('owner_id',CU.id);
-    deleteError = r2.error;
-  }
-
-  if(deleteError){
-    console.error('[deleteComm] ERRO:', deleteError.code, deleteError.message);
-    showToast('ERRO: ' + deleteError.message, 'error');
+  if(delErr){
+    showToast('Erro: '+delErr.message,'error');
     return;
   }
 
