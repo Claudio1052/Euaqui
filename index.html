@@ -3842,6 +3842,7 @@ body.day-mode::before{
       <div class="page-tabs" id="comm-page-tabs">
         <button class="ptab active" data-tab="cm-all" onclick="switchPageTab('communities',this)">🌍 Todas</button>
         <button class="ptab" data-tab="cm-mine" onclick="switchPageTab('communities',this)">⭐ Minhas</button>
+        <button class="ptab" data-tab="cm-created" onclick="switchPageTab('communities',this)">👑 Criadas</button>
         <button class="ptab" data-tab="cm-create" onclick="switchPageTab('communities',this)">✦ Criar</button>
       </div>
       <div id="comm-search-wrap" style="position:relative;margin:10px 0 8px;">
@@ -3854,6 +3855,13 @@ body.day-mode::before{
       </div>
       <div class="tab-panel" id="cm-mine">
         <div id="comm-grid-mine" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-top:4px;"></div>
+      </div>
+      <div class="tab-panel" id="cm-created">
+        <div id="comm-created-header" style="display:flex;align-items:center;justify-content:space-between;margin:4px 0 12px;">
+          <div style="font-family:'Silkscreen',monospace;font-size:11px;color:var(--neon-yellow);letter-spacing:1px;">👑 COMUNIDADES QUE CRIEI</div>
+          <div id="comm-created-limit" style="font-size:10px;color:var(--text-muted);background:rgba(255,204,0,.08);border:1px solid rgba(255,204,0,.2);border-radius:20px;padding:3px 10px;">0 / 3 comunidades</div>
+        </div>
+        <div id="comm-grid-created" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;"></div>
       </div>
       <div class="tab-panel" id="cm-create">
         <div class="edit-section" style="max-width:500px;margin-top:4px;">
@@ -9515,10 +9523,11 @@ function switchPageTab(page, btn){
     // Mostra ou esconde a barra de busca conforme a aba
     const searchWrap = document.getElementById('comm-search-wrap');
     if(searchWrap){
-      searchWrap.style.display = (tabId === 'cm-create') ? 'none' : 'block';
+      searchWrap.style.display = (tabId === 'cm-create' || tabId === 'cm-created') ? 'none' : 'block';
     }
     if(tabId === 'cm-all') loadCommGrid('all');
     else if(tabId === 'cm-mine') loadCommGrid('mine');
+    else if(tabId === 'cm-created') loadCommGridCreated();
     else if(tabId === 'cm-create') buildCommIconGrid();
   } else if(page === 'notifications'){
     loadNotifTab(tabId);
@@ -9735,8 +9744,8 @@ async function loadCommGrid(mode){
     return;
   }
 
-  // Sort by creation date descending
-  comms.sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
+  // Sort by real member count descending (maior → menor)
+  comms.sort((a,b)=>(realCountMap[b.id]??b.members_count??0)-(realCountMap[a.id]??a.members_count??0));
 
   // ── Buscar contagem REAL de membros (counts em tempo real da tabela community_members) ──
   // A coluna members_count no banco fica desatualizada; aqui contamos as linhas reais.
@@ -9791,6 +9800,82 @@ async function loadCommGrid(mode){
   });
 }
 
+async function loadCommGridCreated(){
+  const grid = document.getElementById('comm-grid-created');
+  const limitEl = document.getElementById('comm-created-limit');
+  if(!grid) return;
+  if(!CU){ grid.innerHTML='<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Faça login para ver suas comunidades criadas.</div>'; return; }
+  grid.innerHTML = skeletons(3);
+
+  let comms = [];
+  try{
+    const{data,error} = await db.from('communities')
+      .select('id,name,slug,description,avatar_url,banner_url,visibility,members_count,posts_count,owner_id,created_at')
+      .eq('owner_id', CU.id)
+      .order('created_at',{ascending:false});
+    if(!error && data) comms = data;
+  }catch(e){ console.warn('loadCommGridCreated:', e?.message); }
+
+  // Contagem real de membros
+  const realCountMap = {};
+  if(comms.length){
+    try{
+      const{data:allMems}=await db.from('community_members').select('community_id').in('community_id',comms.map(c=>c.id));
+      (allMems||[]).forEach(m=>{ realCountMap[m.community_id]=(realCountMap[m.community_id]||0)+1; });
+    }catch(e){}
+  }
+
+  // Ordenar por membros desc
+  comms.sort((a,b)=>(realCountMap[b.id]??b.members_count??0)-(realCountMap[a.id]??a.members_count??0));
+
+  // Atualizar contador de limite
+  const count = comms.length;
+  const pct = count >= 3 ? 'var(--neon-pink)' : count === 2 ? 'var(--neon-yellow)' : 'var(--neon-cyan)';
+  if(limitEl){
+    limitEl.textContent = count+' / 3 comunidades';
+    limitEl.style.borderColor = count>=3?'rgba(255,51,102,.4)':'rgba(255,204,0,.2)';
+    limitEl.style.color = pct;
+    limitEl.style.background = count>=3?'rgba(255,51,102,.08)':'rgba(255,204,0,.08)';
+  }
+  // Aviso de limite atingido
+  const warnEl = document.getElementById('comm-created-warn');
+  if(count >= 3){
+    if(!warnEl){
+      const w = document.createElement('div');
+      w.id='comm-created-warn';
+      w.style.cssText='margin-bottom:12px;padding:10px 14px;border-radius:8px;background:rgba(255,51,102,.08);border:1px solid rgba(255,51,102,.25);font-size:11px;color:var(--neon-pink);display:flex;align-items:center;gap:8px;';
+      w.innerHTML='⚠ Limite atingido! Você já criou 3 comunidades. Para criar uma nova, exclua uma existente.';
+      grid.parentElement.insertBefore(w, grid);
+    }
+  } else {
+    document.getElementById('comm-created-warn')?.remove();
+  }
+
+  if(!comms.length){
+    grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px 20px;"><div style="font-size:48px;opacity:.3;margin-bottom:12px;">👑</div><div style="font-family:VT323,monospace;font-size:20px;color:var(--text-muted);">Você ainda não criou nenhuma comunidade</div><div style="font-size:12px;color:var(--text-muted);margin-top:6px;">Vá na aba ✦ Criar para começar!</div></div>';
+    return;
+  }
+
+  grid.innerHTML='';
+  comms.forEach(comm=>{
+    const memberCount = realCountMap[comm.id] ?? (comm.members_count||0);
+    const card = document.createElement('div');
+    card.className='comm-card';
+    card.style.position='relative';
+    const _coverUrl = (comm.banner_url&&comm.banner_url.startsWith('http'))?comm.banner_url:(comm.avatar_url&&comm.avatar_url.startsWith('http'))?comm.avatar_url:null;
+    card.innerHTML='<div class="comm-cover">'+(_coverUrl?'<img src="'+xss(_coverUrl)+'" style="width:100%;height:100%;object-fit:cover;">':xss(comm.avatar_url||'🏘'))+'</div>'
+      +'<div class="comm-info">'
+        +'<div class="comm-name" style="display:flex;align-items:center;gap:5px;"><span style="color:var(--neon-yellow);">👑</span>'+xss(comm.name)+'</div>'
+        +'<div class="comm-desc">'+xss(comm.description||'')+'</div>'
+        +'<div class="comm-meta"><span>👥 '+memberCount+'</span><span>'+(comm.visibility==='private'?'🔒 Privada':'🌍 Pública')+'</span><span style="color:var(--neon-cyan);font-size:9px;">'+new Date(comm.created_at).toLocaleDateString('pt-BR')+'</span></div>'
+        +'<button class="comm-join joined" style="margin-top:8px;width:100%;">✓ Gerenciar</button>'
+      +'</div>';
+    card.onclick=()=>openCommDetail(comm.id);
+    card.querySelector('button').onclick=(e)=>{e.stopPropagation();openCommDetail(comm.id);};
+    grid.appendChild(card);
+  });
+}
+
 // ── Filtro de busca de comunidades (debounced) ──
 let _commSearchTimer = null;
 function filterCommunities(){
@@ -9804,8 +9889,10 @@ function filterCommunities(){
   _commSearchTimer = setTimeout(()=>{
     // Recarrega o grid aplicando o filtro atual
     const activeTab = document.querySelector('#comm-page-tabs .ptab.active');
-    const mode = (activeTab?.dataset.tab==='cm-mine') ? 'mine' : 'all';
-    loadCommGrid(mode);
+    const tabId = activeTab?.dataset.tab;
+    const mode = tabId === 'cm-mine' ? 'mine' : 'all';
+    if(tabId === 'cm-created') loadCommGridCreated();
+    else loadCommGrid(mode);
   }, 250);
 }
 
