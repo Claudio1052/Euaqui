@@ -7685,7 +7685,7 @@ async function loadNotifCount(){
   updateNotifBadge(all.length);
   // Dots de Loja (biz_promo) e Comunidade (community_invite, community_post)
   const BIZ_TYPES  = ['biz_promo'];
-  const COMM_TYPES = ['community_invite','community_post','community_mention','community_live'];
+  const COMM_TYPES = ['community_invite','community_post','community_mention'];
   const hasBiz  = all.some(n=>BIZ_TYPES.includes(n.type));
   const hasComm = all.some(n=>COMM_TYPES.includes(n.type));
   ['bn-biz-dot','nb-biz-dot'].forEach(id=>{
@@ -9940,7 +9940,7 @@ async function loadNotifTab(tabId){
     'nt-all':null,
     'nt-mentions':'mention',
     'nt-social':['follow','like','comment','friend_request','friend_accept','call_missed'],
-    'nt-system':['message','community_invite','community_live','community_post']
+    'nt-system':['message','community_invite']
   };
   const filter=typeMap[tabId];
   const el=document.getElementById('notif-list-'+tabId.replace('nt-',''));
@@ -9961,10 +9961,7 @@ async function loadNotifTab(tabId){
   let res = await _fetchNotifs('metadata,reaction_type');
   if(res.error){
     console.warn('[notif] Colunas extras ausentes, retentando:', res.error.message);
-    res = await _fetchNotifs('community_id');
-    if(res.error){
-      res = await _fetchNotifs('');
-    }
+    res = await _fetchNotifs('');
   }
   const data = res.data;
 
@@ -9973,8 +9970,6 @@ async function loadNotifTab(tabId){
     return;
   }
 
-
-
   const REACTION_EMOJI = {
     like:'👍', love:'❤️', haha:'😂', wow:'😮', sad:'😢', angry:'😡',
     fire:'🔥', clap:'👏', heart:'❤️', thumbs_up:'👍'
@@ -9982,16 +9977,17 @@ async function loadNotifTab(tabId){
   const icons={
     follow:'👤',
     like: n => {
+      // reaction_type é salvo diretamente como emoji (ex: '😂', '❤️', '👍')
+      // Fallback para colunas opcionais: metadata.reaction_type ou reaction_type
       const meta = (typeof n.metadata === 'object' && n.metadata) ? n.metadata : {};
       const rxType = n.reaction_type || meta.reaction_type || meta.emoji || '';
+      // Se rxType já é um emoji, usa direto; senão tenta mapear pelo REACTION_EMOJI
       return REACTION_EMOJI[rxType] || rxType || '❤️';
     },
     comment:'💬',friend_request:'👥',friend_accept:'🎉',message:'💬',
-    community_invite:'🏘️',community_post:'🏘️',community_mention:'🏘️',community_live:'🔴',
+    community_invite:'🏘️',community_post:'🏘️',community_mention:'🏘️',
     biz_promo:'🏪',mention:'@',call_missed:'📞',share:'🔁'
   };
-
-
 
   el.innerHTML=data.map(n=>{
     const nJson=JSON.stringify(n).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
@@ -13239,22 +13235,31 @@ async function postInCommV2(commId){
     addCommXP(commId,CU.id,'post',10);
     loadCommPostsV2(commId,true,false);
     cachedPostIds.clear();cachedPosts={};
-    // ── Notificar membros (igual ao padrão da loja) ──
+    // ── Notificar todos os membros da comunidade (exceto o autor) ──
     try{
       const commLabel = commData?.name || 'Comunidade';
+      const authorName = CP?.username || 'alguém';
       const{data:allMembers} = await db.from('community_members')
-        .select('user_id').eq('community_id',commId).neq('user_id',CU.id);
+        .select('user_id')
+        .eq('community_id', commId)
+        .neq('user_id', CU.id); // exclui o próprio autor
       if(allMembers?.length){
+        // Envia em lote (max 50 por insert para não estourar payload)
         const notifRows = allMembers.map(m=>({
-          user_id:m.user_id, actor_id:CU.id,
-          type:'community_post',
-          content:`Nova postagem em ${commLabel}`,
-          post_id:post?.id||null, read:false
+          user_id: m.user_id,
+          actor_id: CU.id,
+          type: 'community_post',
+          content: `@${authorName} publicou na comunidade ${commLabel}`,
+          post_id: post?.id || null,
+          community_id: commId,
+          read: false
         }));
-        for(let i=0;i<notifRows.length;i+=50)
-          await db.from('notifications').insert(notifRows.slice(i,i+50));
+        // Divide em fatias de 50
+        for(let i=0; i<notifRows.length; i+=50){
+          await db.from('notifications').insert(notifRows.slice(i, i+50));
+        }
       }
-    }catch(eNotif){ console.warn('[comm notif]',eNotif?.message); }
+    }catch(eNotif){ console.warn('[comm notif]', eNotif?.message); }
   } finally {
     // PATCH 5: restaurar botão sempre
     if(btn){btn.disabled=false;btn.textContent='POSTAR ▶';btn.style.opacity='';btn.style.cursor='';}
@@ -13948,26 +13953,6 @@ async function startCommLive(commId){
   _liveStartHeartbeat(commId);
   showToast('🎙 Live iniciada!','success');
   renderLiveRoom(commId, true);
-  // Notificar todos os membros que a live começou
-  try{
-    const{data:commInfo}=await db.from('communities').select('name,avatar_url,icon').eq('id',commId).maybeSingle();
-    const lName = commInfo?.name || 'Comunidade';
-    const lAv   = commInfo?.avatar_url || commInfo?.icon || null;
-    const{data:liveMembers}=await db.from('community_members')
-      .select('user_id').eq('community_id',commId).neq('user_id',CU.id);
-    if(liveMembers?.length){
-      const liveNotifs = liveMembers.map(m=>({
-        user_id: m.user_id,
-        actor_id: CU.id,
-        type: 'community_live',
-        content: `🔴 ${lName} está ao vivo! Toque para entrar`,
-        read: false
-      }));
-      for(let i=0;i<liveNotifs.length;i+=50){
-        await db.from('notifications').insert(liveNotifs.slice(i,i+50));
-      }
-    }
-  }catch(eLive){ console.warn('[live notif]',eLive?.message); }
 }
 
 // ── Heartbeat: garante que se o host fechar a aba, a live é encerrada ──
