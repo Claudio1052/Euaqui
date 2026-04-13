@@ -5271,7 +5271,7 @@ async function _hydrateRepostCard(repostPostId, originalPostId, originalAuthorId
                muted loop playsinline preload="metadata"
                style="width:100%;max-height:220px;display:block;object-fit:cover;border-radius:8px;"
                onclick="event.stopPropagation()"></video>
-             <div onclick="event.stopPropagation();const v=this.previousElementSibling;v.muted=!v.muted;this.textContent=v.muted?'🔇':'🔊'"
+             <div class="inline-mute-btn" onclick="if(window.innerWidth<=768){_toggleGlobalMute(event)}else{event.stopPropagation();const v=this.previousElementSibling;v.muted=!v.muted;this.textContent=v.muted?'🔇':'🔊'}"
                style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,.55);border:none;border-radius:50%;width:28px;height:28px;font-size:13px;display:flex;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(4px);">🔇</div>
            </div>`
         : `<div style="margin-top:8px;border-radius:8px;overflow:hidden;">
@@ -7389,7 +7389,7 @@ function _renderPostShareBubble(postId, post, extraMsg, isSent){
              muted loop playsinline preload="metadata"
              style="width:100%;max-height:160px;display:block;object-fit:cover;border-radius:8px;"
              onclick="event.stopPropagation()"></video>
-           <div class="share-vid-mute-btn" onclick="event.stopPropagation();this.previousElementSibling.muted=!this.previousElementSibling.muted;this.textContent=this.previousElementSibling.muted?'🔇':'🔊'"
+           <div class="share-vid-mute-btn inline-mute-btn" onclick="if(window.innerWidth<=768){_toggleGlobalMute(event)}else{event.stopPropagation();this.previousElementSibling.muted=!this.previousElementSibling.muted;this.textContent=this.previousElementSibling.muted?'🔇':'🔊'}"
              style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,.55);border:none;border-radius:50%;width:28px;height:28px;font-size:13px;display:flex;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(4px);">🔇</div>
          </div>`
       : `<div style="border-radius:8px;overflow:hidden;margin-top:8px;max-height:140px;">
@@ -15522,6 +15522,53 @@ function _startDomWatcher(){
   _domWatcher.observe(document.body, { childList: true, subtree: true });
 }
 
+// ══════════════════════════════════════════════════════════════
+// GLOBAL MUTE STATE — estado único compartilhado por todos os vídeos
+// Começa mudo (true). Quando usuário remove o mute num vídeo,
+// todos ficam com som. Quando remuta, todos voltam ao mudo.
+// ══════════════════════════════════════════════════════════════
+let _globalMuted = true;
+
+// Aplica o estado global a todos os vídeos HTML5 do feed
+function _applyGlobalMuteToVideos(){
+  document.querySelectorAll('.feed-video').forEach(v => {
+    v.muted = _globalMuted;
+  });
+}
+
+// Aplica o estado global a todos os iframes YouTube do feed
+function _applyGlobalMuteToYT(){
+  document.querySelectorAll('.yt-feed-iframe').forEach(iframe => {
+    try{
+      iframe.contentWindow.postMessage(
+        JSON.stringify({ event:'command', func: _globalMuted ? 'mute' : 'unMute', args:[] }), '*'
+      );
+    }catch(e){}
+  });
+}
+
+// Sincroniza todos os botões de mute visíveis com o estado global
+function _syncAllMuteBtns(){
+  document.querySelectorAll('.feed-mute-btn').forEach(btn => {
+    btn.innerHTML    = _globalMuted ? '🔇' : '🔊';
+    btn.title        = _globalMuted ? 'Toque para ativar som' : 'Toque para silenciar';
+    btn.style.border = _globalMuted ? 'none' : '2px solid var(--neon-cyan)';
+  });
+  // Também sincroniza os botões inline de mute dos posts (div com onclick)
+  document.querySelectorAll('.inline-mute-btn').forEach(btn => {
+    btn.textContent = _globalMuted ? '🔇' : '🔊';
+  });
+}
+
+// Toggle global — chamado por qualquer botão de mute
+function _toggleGlobalMute(e){
+  if(e) e.stopPropagation();
+  _globalMuted = !_globalMuted;
+  _applyGlobalMuteToVideos();
+  _applyGlobalMuteToYT();
+  _syncAllMuteBtns();
+}
+
 function initFeedAutoplay(){
   // Só roda em mobile
   if(window.innerWidth > 768) return;
@@ -15536,9 +15583,8 @@ function initFeedAutoplay(){
       // ── Vídeos nativos HTML5 ──
       if(el.tagName === 'VIDEO'){
         if(entry.isIntersecting && entry.intersectionRatio >= 0.6){
-          el.muted = true;
+          el.muted = _globalMuted;   // respeita estado global
           el.play().catch(()=>{});
-          // Indicador visual mudo
           _showMuteIndicator(el);
         } else {
           el.pause();
@@ -15549,12 +15595,16 @@ function initFeedAutoplay(){
       // ── iframes YouTube ──
       if(el.classList.contains('yt-feed-iframe')){
         try{
-          const cmd = entry.isIntersecting && entry.intersectionRatio >= 0.6
-            ? 'playVideo' : 'pauseVideo';
-          el.contentWindow.postMessage(
-            JSON.stringify({ event:'command', func: cmd, args:[] }),
-            '*'
-          );
+          if(entry.isIntersecting && entry.intersectionRatio >= 0.6){
+            el.contentWindow.postMessage(JSON.stringify({event:'command',func:'playVideo',args:[]}), '*');
+            // Aplica mute global ao iframe que entrou em view
+            el.contentWindow.postMessage(
+              JSON.stringify({event:'command',func:_globalMuted?'mute':'unMute',args:[]}), '*'
+            );
+            _showYTMuteIndicator(el);
+          } else {
+            el.contentWindow.postMessage(JSON.stringify({event:'command',func:'pauseVideo',args:[]}), '*');
+          }
         }catch(e){}
         return;
       }
@@ -15565,7 +15615,6 @@ function initFeedAutoplay(){
   });
 
   // Observar TODOS os vídeos e iframes YT visíveis na página
-  // (feed principal, comunidades, perfil, posts compartilhados, etc.)
   document.querySelectorAll('.feed-video').forEach(v => {
     _feedObserver.observe(v);
   });
@@ -15574,30 +15623,55 @@ function initFeedAutoplay(){
   });
 }
 
-// Botão de toggle mudo flutuante sobre o vídeo
+// Botão flutuante de mute para vídeos HTML5
 function _showMuteIndicator(videoEl){
   const wrap = videoEl.closest('.mi');
-  if(!wrap || wrap.querySelector('.feed-mute-btn')) return;
-  const btn = document.createElement('button');
-  btn.className = 'feed-mute-btn';
-  btn.innerHTML = '🔇';
-  btn.title = 'Toque para ativar som';
-  btn.style.cssText = [
-    'position:absolute','top:8px','right:8px','z-index:10',
-    'background:rgba(0,0,0,.55)','border:none','border-radius:50%',
-    'width:34px','height:34px','font-size:16px',
-    'display:flex','align-items:center','justify-content:center',
-    'cursor:pointer','backdrop-filter:blur(4px)',
-    'transition:all .2s'
-  ].join(';');
-  // Garantir que o wrap tenha position:relative para o botão flutuar
-  wrap.style.position = 'relative';
-  btn.onclick = (e) => {
-    e.stopPropagation();
-    videoEl.muted = !videoEl.muted;
-    btn.innerHTML = videoEl.muted ? '🔇' : '🔊';
-  };
-  wrap.appendChild(btn);
+  if(!wrap) return;
+  // Reutiliza botão existente se já houver
+  let btn = wrap.querySelector('.feed-mute-btn');
+  if(!btn){
+    btn = document.createElement('button');
+    btn.className = 'feed-mute-btn';
+    btn.style.cssText = [
+      'position:absolute','top:8px','right:8px','z-index:10',
+      'background:rgba(0,0,0,.55)','border:none','border-radius:50%',
+      'width:34px','height:34px','font-size:16px',
+      'display:flex','align-items:center','justify-content:center',
+      'cursor:pointer','backdrop-filter:blur(4px)',
+      'transition:all .2s'
+    ].join(';');
+    wrap.style.position = 'relative';
+    btn.onclick = _toggleGlobalMute;
+    wrap.appendChild(btn);
+  }
+  btn.innerHTML = _globalMuted ? '🔇' : '🔊';
+  btn.title     = _globalMuted ? 'Toque para ativar som' : 'Toque para silenciar';
+  btn.style.border = _globalMuted ? 'none' : '2px solid var(--neon-cyan)';
+}
+
+// Botão flutuante de mute para iframes YouTube
+function _showYTMuteIndicator(iframeEl){
+  const wrap = iframeEl.parentElement;
+  if(!wrap) return;
+  let btn = wrap.querySelector('.feed-mute-btn');
+  if(!btn){
+    btn = document.createElement('button');
+    btn.className = 'feed-mute-btn';
+    btn.style.cssText = [
+      'position:absolute','top:8px','right:8px','z-index:10',
+      'background:rgba(0,0,0,.55)','border:none','border-radius:50%',
+      'width:34px','height:34px','font-size:16px',
+      'display:flex','align-items:center','justify-content:center',
+      'cursor:pointer','backdrop-filter:blur(4px)',
+      'transition:all .2s'
+    ].join(';');
+    if(getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
+    btn.onclick = _toggleGlobalMute;
+    wrap.appendChild(btn);
+  }
+  btn.innerHTML = _globalMuted ? '🔇' : '🔊';
+  btn.title     = _globalMuted ? 'Toque para ativar som' : 'Toque para silenciar';
+  btn.style.border = _globalMuted ? 'none' : '2px solid var(--neon-cyan)';
 }
 
 // Reobservar após navegação de volta ao feed
