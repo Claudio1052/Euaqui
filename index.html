@@ -8436,10 +8436,15 @@ async function loadHomeAlerts(){
       if(av && av.startsWith('http')){
         const img=document.createElement('img');
         img.src=av;
-        img.style.cssText='width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid rgba(0,255,204,.35);flex-shrink:0;';
-        img.onerror=function(){this.outerHTML='<span style="font-size:20px">🏘️</span>';};
+        img.style.cssText='width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid rgba(0,255,204,.35);display:block;';
+        img.onerror=function(){
+          iconEl.innerHTML='<span style="font-size:20px">🏘️</span>';
+          iconEl.style.cssText='';
+        };
+        // limpa qualquer conteúdo residual e remove background do wrapper
+        iconEl.innerHTML='';
+        iconEl.style.cssText='background:transparent;padding:0;border-radius:10px;overflow:hidden;width:36px;height:36px;flex-shrink:0;';
         iconEl.appendChild(img);
-        iconEl.style.cssText='background:transparent;padding:0;display:flex;align-items:center;justify-content:center;';
       } else {
         iconEl.textContent = (av && !av.startsWith('http')) ? av : '🏘️';
         iconEl.style.fontSize='20px';
@@ -10150,14 +10155,17 @@ async function loadNotifTab(tabId){
     const commAvatar = _commNameCache['av_'+n.community_id]
       || (window._commCache&&window._commCache[n.community_id]&&window._commCache[n.community_id].avatar_url)
       || n.community_avatar_url || '';
+    const hasCommImg = isCommunityNotif && commAvatar && commAvatar.startsWith('http');
+    // ni-icon: sem background/padding quando exibe imagem
+    const niIconStyle = hasCommImg ? 'style="background:transparent;padding:0;"' : '';
     const niIconHtml = isCommunityNotif
-      ? (commAvatar && commAvatar.startsWith('http')
-          ? `<img src="${commAvatar}" style="width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid rgba(0,255,204,.35);flex-shrink:0;" onerror="this.outerHTML='<span style=\"font-size:20px\">🏘️</span>'">`
+      ? (hasCommImg
+          ? `<img src="${commAvatar}" style="width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid rgba(0,255,204,.35);">`
           : `<span style="font-size:20px">${commAvatar && !commAvatar.startsWith('http') ? commAvatar : '🏘️'}</span>`)
       : iconDisp;
     return `
     <div class="ni${n.read?'':' unrd'}" id="ni-${n.id}">
-      <div class="ni-icon">${niIconHtml}</div>
+      <div class="ni-icon" ${niIconStyle}>${niIconHtml}</div>
       <div class="ni-clickable-body" onclick="handleNotifNavigation(JSON.parse(this.closest('.ni').dataset.notif))">
         <div class="ni-txt">${getNotifDisplayText(n)}</div>
         <div class="ni-time">${timeAgo(n.created_at)}</div>
