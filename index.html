@@ -5390,7 +5390,6 @@ function bnav_home(){
     // Limpa cache e recarrega feed silenciosamente
     cachedPostIds.clear(); cachedPosts = {}; lastFeedLoad = 0;
     loadFeed(true);
-    showToast('Feed atualizado ✨', 'success');
   } else {
     nav('home');
   }
