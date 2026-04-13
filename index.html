@@ -360,8 +360,7 @@ body.day-mode .repost-embed-card:hover{
 
 
 /* MUSIC PLAYER */
-.music-pl{position:fixed;bottom:16px;left:16px;background:var(--bg-card);border:1px solid var(--border-glow);border-radius:40px;padding:7px 14px;display:flex;align-items:center;gap:9px;backdrop-filter:blur(20px);z-index:500;font-size:12px;box-shadow:0 8px 24px rgba(0,0,0,.4);}
-.mnote{color:var(--neon-pink);}
+
 @keyframes bounce{from{transform:translateY(0)}to{transform:translateY(-3px)}}
 .mtitle{font-size:10px;color:var(--text-muted);font-style:italic;max-width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .mtgl{background:transparent;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;padding:2px;transition:color .2s;}
@@ -650,7 +649,7 @@ body{
 /* Mobile */
 @media(max-width:768px){
   /* Remove heavy effects */
-  .post-card,.composer,.wcard,.modal,.auth-card,nav,.sl,.sr,.music-pl,.mob-drawer{
+  .post-card,.composer,.wcard,.modal,.auth-card,nav,.sl,.sr,.mob-drawer{
     backdrop-filter:none!important;-webkit-backdrop-filter:none!important;
   }
   /* Layout */
@@ -663,7 +662,6 @@ body{
   .hamburger{display:flex;}
   .nav-center{display:none;}
   #nav-search{display:none;}
-  .music-pl{display:none;}
   .nav-logo{font-size:26px;}
   nav{padding:0 10px;height:52px;}
   --nav-h:52px;
@@ -4299,13 +4297,7 @@ body.day-mode::before{
   </div>
 </div>
 
-<!-- MUSIC PLAYER -->
-<div class="music-pl" id="music-pl">
-  <span class="mnote">♪</span>
-  <span class="mtitle">lo-fi hip hop radio ✨</span>
-  <button class="mtgl" onclick="toggleMusic()">⏸</button>
-  <button class="mtgl" onclick="document.getElementById('music-pl').style.display='none'">×</button>
-</div>
+
 </div>
 
 <!-- MODALS -->
@@ -9479,7 +9471,7 @@ function openLightbox(url){document.getElementById('lb-img').src=url;openM('m-li
 function openM(id){document.getElementById(id).classList.add('open');}
 function closeM(id){document.getElementById(id).classList.remove('open');}
 function showToast(msg,type='success'){const w=document.getElementById('tst-wrap');const t=document.createElement('div');t.className=`tst ${type}`;t.innerHTML=`<span>${type==='success'?'✓':'⚠'}</span> ${msg}`;w.appendChild(t);setTimeout(()=>t.remove(),3200);}
-function toggleMusic(){const mn=document.querySelector('.mnote');const btn=document.querySelector('.mtgl');if(btn.textContent==='⏸'){btn.textContent='▶';mn.style.animationPlayState='paused';}else{btn.textContent='⏸';mn.style.animationPlayState='running';}}
+
 // ===== PAGE TAB SYSTEM =====
 function switchPageTab(page, btn){
   const tabsEl = document.getElementById(page === 'friends' ? 'friends-page-tabs' : page === 'communities' ? 'comm-page-tabs' : 'notif-page-tabs');
