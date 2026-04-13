@@ -6532,14 +6532,11 @@ async function createCommunity(){
     }
     return;
   }
-  if(data?.id){
-    await db.from('community_members').insert({community_id:data.id,user_id:CU.id,role:'owner'}).catch(()=>{});
-  }
   // Limpa formulário
   ['cm-name','cm-slug','cm-desc','cm-icon'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('comm-create-error')?.remove();
 
-  // ── Garante que temos o ID da comunidade criada ─────────────
+  // ── Busca o ID real da comunidade recém-criada ──────────────
   let _commId = data?.id || null;
   if(!_commId){
     try{
@@ -6549,39 +6546,51 @@ async function createCommunity(){
       _commId = latest?.id || null;
     }catch(e){}
   }
-
-  // ── Popup celebratório ──────────────────────────────────────
-  function _goToNewComm(){
-    document.getElementById('_cc_overlay')?.remove();
-    if(_commId) openCommDetail(_commId);
-    else { nav('communities'); loadCommGrid('mine'); }
+  if(_commId){
+    await db.from('community_members')
+      .insert({community_id:_commId,user_id:CU.id,role:'owner'}).catch(()=>{});
   }
+
+  // ── Mostra popup de sucesso e navega automaticamente ────────
+  // Remove overlay anterior se existir
+  document.getElementById('_cc_overlay')?.remove();
 
   const _ov = document.createElement('div');
   _ov.id = '_cc_overlay';
-  _ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(14px);z-index:99999;display:flex;align-items:center;justify-content:center;';
-  _ov.innerHTML = `
-    <div style="background:linear-gradient(160deg,#0d0d35,#180a30);border:1px solid rgba(0,255,204,.4);border-radius:24px;padding:40px 28px 32px;text-align:center;max-width:300px;width:88%;position:relative;overflow:hidden;box-shadow:0 0 80px rgba(0,255,204,.12);">
-      <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 50% 0%,rgba(0,255,204,.08),transparent 65%);pointer-events:none;"></div>
-      <div style="font-size:56px;margin-bottom:4px;">🎉</div>
-      <div style="font-family:'Silkscreen',monospace;font-size:18px;color:var(--neon-cyan);letter-spacing:2px;margin-bottom:8px;text-shadow:0 0 16px rgba(0,255,204,.6);">PARABÉNS!</div>
-      <div style="font-size:13px;color:var(--text-light);margin-bottom:4px;">Sua comunidade</div>
-      <div style="font-family:'Silkscreen',monospace;font-size:13px;color:var(--neon-purple);margin-bottom:16px;word-break:break-word;">${xss(name)}</div>
-      <div style="font-size:12px;color:var(--text-muted);line-height:1.7;margin-bottom:22px;">foi criada com sucesso!<br>Preparando para você entrar... 🚀</div>
-      <div style="height:4px;background:rgba(255,255,255,.07);border-radius:4px;overflow:hidden;">
-        <div id="_cc_bar" style="height:100%;width:100%;background:linear-gradient(90deg,var(--neon-cyan),var(--neon-purple));border-radius:4px;transition:width 2.5s linear;"></div>
-      </div>
-    </div>`;
+  _ov.style.cssText = [
+    'position:fixed','inset:0','z-index:999999',
+    'background:rgba(0,0,0,.88)','backdrop-filter:blur(16px)',
+    'display:flex','align-items:center','justify-content:center'
+  ].join(';');
+
+  _ov.innerHTML =
+    '<div style="background:linear-gradient(160deg,#0d0d35,#180a30);border:2px solid rgba(0,255,204,.4);border-radius:24px;padding:40px 28px 32px;text-align:center;max-width:290px;width:86%;box-shadow:0 0 60px rgba(0,255,204,.18);">' +
+      '<div style="font-size:60px;margin-bottom:8px;">🎉</div>' +
+      '<div style="font-family:Silkscreen,monospace;font-size:18px;color:#00ffcc;letter-spacing:2px;margin-bottom:8px;">PARABÉNS!</div>' +
+      '<div style="font-size:12px;color:#e0e0ff;margin-bottom:6px;">Sua comunidade</div>' +
+      '<div style="font-family:Silkscreen,monospace;font-size:13px;color:#bf5fff;margin-bottom:14px;word-break:break-word;">' + xss(name) + '</div>' +
+      '<div style="font-size:12px;color:#8888bb;line-height:1.7;margin-bottom:24px;">foi criada com sucesso!<br>Abrindo agora... 🚀</div>' +
+      '<div style="height:4px;background:rgba(255,255,255,.08);border-radius:4px;overflow:hidden;">' +
+        '<div id="_cc_bar" style="height:100%;width:100%;background:linear-gradient(90deg,#00ffcc,#bf5fff);border-radius:4px;transition:width 2.5s linear;"></div>' +
+      '</div>' +
+    '</div>';
+
   document.body.appendChild(_ov);
 
-  // Anima a barra de progresso
-  requestAnimationFrame(()=>{ setTimeout(()=>{
-    const b=document.getElementById('_cc_bar');
-    if(b) b.style.width='0%';
-  },30); });
+  // Anima barra regressiva
+  requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
+      const b = document.getElementById('_cc_bar');
+      if(b) b.style.width = '0%';
+    });
+  });
 
-  // Fecha e navega após 2.8s
-  setTimeout(_goToNewComm, 2800);
+  // Navega após 2.8s
+  setTimeout(()=>{
+    document.getElementById('_cc_overlay')?.remove();
+    if(_commId) openCommDetail(_commId);
+    else { nav('communities'); loadCommGrid('all'); }
+  }, 2800);
 }
 async function toggleJoinComm(commId,isMember,btn){
   if(!CU)return showToast('Faça login primeiro','error');
@@ -15303,15 +15312,45 @@ async function saveEditComm(commId,btn){
 }
 
 async function deleteComm(commId){
-  if(!confirm('Excluir esta comunidade permanentemente?')) return;
-  await db.from('community_members').delete().eq('community_id',commId);
-  await db.from('community_posts').delete().eq('community_id',commId);
-  await db.from('community_chat').delete().eq('community_id',commId).catch(()=>{});
-  const{error}=await db.from('communities').delete().eq('id',commId).eq('owner_id',CU.id);
-  if(error){showToast('Erro: '+error.message,'error');return;}
-  showToast('Comunidade excluída','success');
-  nav('communities');
-  loadCommGrid('all');
+  // Popup de confirmação customizado (confirm() nativo é bloqueado em mobile/PWA)
+  await new Promise(resolve=>{
+    document.getElementById('_del_comm_ov')?.remove();
+    const ov = document.createElement('div');
+    ov.id = '_del_comm_ov';
+    ov.style.cssText = [
+      'position:fixed','inset:0','z-index:999999',
+      'background:rgba(0,0,0,.88)','backdrop-filter:blur(16px)',
+      'display:flex','align-items:center','justify-content:center'
+    ].join(';');
+    ov.innerHTML =
+      '<div style="background:#0f0f3a;border:1px solid rgba(255,51,102,.4);border-radius:20px;padding:32px 24px;text-align:center;max-width:280px;width:86%;box-shadow:0 0 40px rgba(255,51,102,.12);">' +
+        '<div style="font-size:44px;margin-bottom:12px;">🗑️</div>' +
+        '<div style="font-family:Silkscreen,monospace;font-size:13px;color:#ff3366;letter-spacing:1px;margin-bottom:10px;">EXCLUIR COMUNIDADE</div>' +
+        '<div style="font-size:12px;color:#e0e0ff;line-height:1.7;margin-bottom:8px;">Tem certeza que deseja excluir esta comunidade?</div>' +
+        '<div style="font-size:11px;color:#8888bb;margin-bottom:24px;">Esta ação é permanente e não pode ser desfeita.</div>' +
+        '<div style="display:flex;gap:10px;">' +
+          '<button id="_del_cancel" style="flex:1;padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:#e0e0ff;font-family:Space Mono,monospace;font-size:11px;cursor:pointer;">Cancelar</button>' +
+          '<button id="_del_confirm" style="flex:1;padding:12px;border-radius:10px;border:none;background:linear-gradient(135deg,#ff3366,#bf5fff);color:#fff;font-family:Silkscreen,monospace;font-size:10px;letter-spacing:1px;cursor:pointer;">✕ EXCLUIR</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(ov);
+    document.getElementById('_del_cancel').onclick  = ()=>{ ov.remove(); resolve(false); };
+    document.getElementById('_del_confirm').onclick = ()=>{ ov.remove(); resolve(true); };
+  }).then(async confirmed=>{
+    if(!confirmed) return;
+    // Feedback visual imediato
+    showToast('Excluindo...','');
+    await db.from('community_members').delete().eq('community_id',commId);
+    await db.from('community_posts').delete().eq('community_id',commId);
+    await db.from('community_chat').delete().eq('community_id',commId).catch(()=>{});
+    const{error}=await db.from('communities').delete().eq('id',commId).eq('owner_id',CU.id);
+    if(error){ showToast('Erro ao excluir: '+error.message,'error'); return; }
+    // Limpa cache
+    if(window._commCache) delete window._commCache[commId];
+    showToast('✅ Comunidade excluída!','success');
+    nav('communities');
+    setTimeout(()=>loadCommGrid('all'), 200);
+  });
 }
 
 const COMM_XP_TABLE={post:10,comment:5,like:2,chat:2,invite:20,join_invite:5};
