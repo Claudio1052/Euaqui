@@ -4188,21 +4188,38 @@ body.day-mode::before{
         <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:12px;margin-bottom:12px;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
             <div style="font-size:11px;color:var(--neon-yellow);font-family:Silkscreen,monospace;">🗺 Endereço Completo <span style="font-size:9px;color:var(--text-muted);font-family:'Space Mono',monospace;">(opcional)</span></div>
-            <button type="button" id="biz-map-btn" onclick="openBizMapPicker()" style="background:rgba(0,255,204,.1);border:1px solid var(--border-glow);color:var(--neon-cyan);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:9px;font-family:'Space Mono',monospace;display:none;">📌 Selecionar no mapa</button>
+            <button type="button" id="biz-map-btn" onclick="openBizMapPicker()" style="background:rgba(0,255,204,.1);border:1px solid var(--border-glow);color:var(--neon-cyan);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:9px;font-family:'Space Mono',monospace;display:none;">📌 Ver no mapa</button>
           </div>
-          <div class="igrp" style="margin-bottom:8px;"><label class="ilbl">Rua / Logradouro</label>
-            <input class="ainput" id="biz-street" placeholder="Ex: Rua das Flores, 123">
+
+          <!-- CEP com busca automática -->
+          <div class="igrp" style="margin-bottom:8px;">
+            <label class="ilbl">CEP</label>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input class="ainput" id="biz-cep" placeholder="00000-000" maxlength="9"
+                style="flex:1;"
+                oninput="formatBizCep(this)"
+                onkeyup="if(this.value.replace(/\D/g,'').length===8) buscarCep()">
+              <button type="button" onclick="buscarCep()"
+                style="background:linear-gradient(135deg,var(--neon-cyan),var(--neon-purple));border:none;color:var(--bg-deep);padding:9px 14px;border-radius:8px;cursor:pointer;font-family:'Silkscreen',monospace;font-size:9px;letter-spacing:.5px;white-space:nowrap;flex-shrink:0;">
+                🔍 Buscar
+              </button>
+            </div>
+            <div id="biz-cep-status" style="font-size:9px;color:var(--neon-cyan);margin-top:4px;display:none;"></div>
+          </div>
+
+          <div class="igrp" style="margin-bottom:8px;"><label class="ilbl">Rua / Logradouro e Número</label>
+            <input class="ainput" id="biz-street" placeholder="Ex: Rua das Flores, 123" oninput="updateBizMapBtn()">
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             <div class="igrp" style="margin:0;"><label class="ilbl">Bairro</label>
               <input class="ainput" id="biz-neighborhood" placeholder="Bairro">
             </div>
-            <div class="igrp" style="margin:0;"><label class="ilbl">CEP</label>
-              <input class="ainput" id="biz-cep" placeholder="00000-000" maxlength="9" oninput="formatBizCep(this)">
+            <div class="igrp" style="margin:0;"><label class="ilbl">Complemento</label>
+              <input class="ainput" id="biz-complement" placeholder="Apto, Sala...">
             </div>
           </div>
           <div style="font-size:9px;color:var(--text-muted);margin-top:8px;line-height:1.4;">
-            💡 Ao preencher o endereço completo, um botão 📌 de localização aparecerá na sua loja para os clientes encontrarem você facilmente.
+            💡 Digite o CEP e clique em <strong>Buscar</strong> para preencher o endereço automaticamente. Um botão 📌 aparecerá para os clientes encontrarem você no mapa.
           </div>
         </div>
 
@@ -10980,6 +10997,7 @@ function openBizForm(edit=false){
     document.getElementById('biz-doc').value = b.doc||'';
     document.getElementById('biz-street').value = b.street||'';
     document.getElementById('biz-neighborhood').value = b.neighborhood||'';
+    document.getElementById('biz-complement').value = b.complement||'';
     document.getElementById('biz-cep').value = b.cep||'';
     // Mostrar botão de mapa se tiver endereço
     const mapBtn = document.getElementById('biz-map-btn');
@@ -11003,7 +11021,10 @@ function openBizForm(edit=false){
     document.getElementById('biz-doc').value = '';
     document.getElementById('biz-street').value = '';
     document.getElementById('biz-neighborhood').value = '';
+    document.getElementById('biz-complement').value = '';
     document.getElementById('biz-cep').value = '';
+    const cepStatus = document.getElementById('biz-cep-status');
+    if(cepStatus) cepStatus.style.display='none';
     const termsCheck = document.getElementById('biz-terms-check');
     if(termsCheck) termsCheck.checked = false;
     document.getElementById('biz-city').value = bizCity;
@@ -11037,6 +11058,46 @@ async function detectFormLocation(){
   }, ()=>{ status.textContent='⚠️ Permissão negada — preencha manualmente'; });
 }
 
+async function buscarCep(){
+  const cepEl  = document.getElementById('biz-cep');
+  const status = document.getElementById('biz-cep-status');
+  if(!cepEl || !status) return;
+  const cep = cepEl.value.replace(/\D/g,'');
+  if(cep.length !== 8){ showToast('Digite um CEP válido com 8 dígitos','error'); return; }
+  status.style.display='block';
+  status.textContent = '⏳ Buscando endereço...';
+  status.style.color = 'var(--neon-cyan)';
+  try{
+    const r = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+    const d = await r.json();
+    if(d.erro){ status.textContent='❌ CEP não encontrado. Verifique e tente novamente.'; status.style.color='var(--neon-pink)'; return; }
+    // Preencher campos
+    const streetEl  = document.getElementById('biz-street');
+    const neighEl   = document.getElementById('biz-neighborhood');
+    const cityEl    = document.getElementById('biz-city');
+    const stateEl   = document.getElementById('biz-state');
+    if(streetEl  && d.logradouro) streetEl.value  = d.logradouro;
+    if(neighEl   && d.bairro)     neighEl.value   = d.bairro;
+    if(cityEl    && d.localidade) cityEl.value    = d.localidade;
+    if(stateEl   && d.uf)         stateEl.value   = d.uf;
+    status.textContent = `✅ Endereço encontrado: ${d.logradouro||''}, ${d.bairro||''} — ${d.localidade}/${d.uf}`;
+    status.style.color = 'var(--neon-cyan)';
+    updateBizMapBtn();
+    // Focar no campo de número após preencher rua
+    if(streetEl) setTimeout(()=>{ streetEl.focus(); streetEl.setSelectionRange(streetEl.value.length,streetEl.value.length); }, 100);
+  }catch(e){
+    status.textContent='❌ Erro ao buscar CEP. Verifique sua conexão.';
+    status.style.color='var(--neon-pink)';
+  }
+}
+
+function updateBizMapBtn(){
+  const street = document.getElementById('biz-street')?.value.trim();
+  const city   = document.getElementById('biz-city')?.value.trim();
+  const mapBtn = document.getElementById('biz-map-btn');
+  if(mapBtn) mapBtn.style.display = (street||city) ? 'block' : 'none';
+}
+
 function formatBizDoc(el){
   let v = el.value.replace(/\D/g,'');
   if(v.length <= 11){
@@ -11060,22 +11121,14 @@ function formatBizCep(el){
   el.value = v;
 }
 
-// Mostrar botão de mapa ao digitar rua
-document.addEventListener('input', function(e){
-  if(e.target.id==='biz-street'||e.target.id==='biz-city'){
-    const street = document.getElementById('biz-street')?.value.trim();
-    const city   = document.getElementById('biz-city')?.value.trim();
-    const mapBtn = document.getElementById('biz-map-btn');
-    if(mapBtn) mapBtn.style.display = (street||city) ? 'block' : 'none';
-  }
-});
-
 function openBizMapPicker(){
-  const street = document.getElementById('biz-street')?.value.trim();
+  const street       = document.getElementById('biz-street')?.value.trim();
+  const complement   = document.getElementById('biz-complement')?.value.trim();
   const neighborhood = document.getElementById('biz-neighborhood')?.value.trim();
-  const city   = document.getElementById('biz-city')?.value.trim();
-  const state  = document.getElementById('biz-state')?.value.trim();
-  const query  = encodeURIComponent([street, neighborhood, city, state, 'Brasil'].filter(Boolean).join(', '));
+  const city         = document.getElementById('biz-city')?.value.trim();
+  const state        = document.getElementById('biz-state')?.value.trim();
+  const cep          = document.getElementById('biz-cep')?.value.trim();
+  const query = encodeURIComponent([street, complement, neighborhood, city, state, cep, 'Brasil'].filter(Boolean).join(', '));
   window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
 }
 
@@ -11110,6 +11163,7 @@ async function saveBusiness(){
 
   const street       = document.getElementById('biz-street').value.trim();
   const neighborhood = document.getElementById('biz-neighborhood').value.trim();
+  const complement   = document.getElementById('biz-complement').value.trim();
   const cep          = document.getElementById('biz-cep').value.trim();
 
   const payload = {
@@ -11132,6 +11186,7 @@ async function saveBusiness(){
   if(doc)          payload.doc          = doc;
   if(street)       payload.street       = street;
   if(neighborhood) payload.neighborhood = neighborhood;
+  if(complement)   payload.complement   = complement;
   if(cep)          payload.cep          = cep;
   if(!editId){
     payload.terms_accepted    = true;
@@ -11481,8 +11536,8 @@ async function openBizDetail(biz){
     <div style="font-size:11px;color:var(--neon-yellow);margin-bottom:6px;">${xss(biz.segment)} · ${biz.category==='loja'?'🛍️ Loja':'🔧 Serviço'}</div>
     <div style="margin-bottom:10px;">${starsLine}</div>
     ${biz.description?`<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.6;">${xss(biz.description)}</div>`:''}
-    <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">📍 ${xss(biz.city||'—')}${biz.state?', '+xss(biz.state):''}${biz.street?` · ${xss(biz.street)}`:''}${biz.neighborhood?' — '+xss(biz.neighborhood):''}
-      ${(biz.street||biz.city)?`<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([biz.street,biz.neighborhood,biz.city,biz.state,'Brasil'].filter(Boolean).join(', '))}" target="_blank" style="display:inline-flex;align-items:center;gap:3px;margin-left:6px;background:rgba(0,255,204,.12);color:var(--neon-cyan);border:1px solid var(--border-glow);border-radius:6px;padding:2px 8px;font-size:9px;text-decoration:none;font-family:'Space Mono',monospace;vertical-align:middle;">📌 Ver no mapa</a>`:''}
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">📍 ${xss(biz.city||'—')}${biz.state?', '+xss(biz.state):''}${biz.street?` · ${xss(biz.street)}`:''}${biz.complement?' '+xss(biz.complement):''}${biz.neighborhood?' — '+xss(biz.neighborhood):''}${biz.cep?' · CEP '+xss(biz.cep):''}
+      ${(biz.street||biz.city)?`<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([biz.street,biz.complement,biz.neighborhood,biz.city,biz.state,biz.cep,'Brasil'].filter(Boolean).join(', '))}" target="_blank" style="display:inline-flex;align-items:center;gap:3px;margin-left:6px;background:rgba(0,255,204,.12);color:var(--neon-cyan);border:1px solid var(--border-glow);border-radius:6px;padding:2px 8px;font-size:9px;text-decoration:none;font-family:'Space Mono',monospace;vertical-align:middle;">📌 Ver no mapa</a>`:''}
     </div>
     ${statsSection}
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
