@@ -9793,18 +9793,18 @@ async function loadCommGrid(mode){
     card.innerHTML='<div class="comm-cover">'+(_coverUrl2?'<img src="'+xss(_coverUrl2)+'" style="width:100%;height:100%;object-fit:cover;">':xss(comm.avatar_url||'🏘'))+'</div>'
       +'<div class="comm-info">'
         +'<div class="comm-name">'+xss(comm.name)+'</div>'
-        +'<div class="comm-desc" id="cdesc-'+comm.id+'">'+xss(comm.description||'')+'</div>'
-        +((comm.description||'').length>60?'<button class="comm-desc-toggle" id="cdtog-'+comm.id+'">👁 ver mais</button>':'')
+        +'<div class="comm-desc">'+xss(comm.description||'')+'</div>'
+        +((comm.description||'').length>60?'<button class="comm-desc-toggle">👁 ver mais</button>':'')
         +'<div class="comm-meta"><span data-commcount="'+comm.id+'">👥 '+memberCount+'</span><span>'+(comm.visibility==='private'?'🔒 Privada':'🌍 Pública')+'</span>'+(comm.owner_id===CU?.id?'<span style="color:var(--neon-yellow);font-size:9px;">👑 Sua</span>':'')+'</div>'
         +'<button class="comm-join '+(isMember?'joined':'')+'" style="margin-top:8px;width:100%;">'+(isMember?'✓ Membro':'+ Entrar')+'</button>'
       +'</div>';
     card.onclick=()=>openCommDetail(comm.id);
-    // Botão expandir descrição
+    // Botão expandir descrição — usa referência direta ao elemento dentro do card
     const togBtn = card.querySelector('.comm-desc-toggle');
-    if(togBtn) togBtn.addEventListener('click', e=>{
+    const descEl = card.querySelector('.comm-desc');
+    if(togBtn && descEl) togBtn.addEventListener('click', e=>{
       e.stopPropagation();
-      const desc = document.getElementById('cdesc-'+comm.id);
-      const expanded = desc.classList.toggle('expanded');
+      const expanded = descEl.classList.toggle('expanded');
       togBtn.innerHTML = expanded ? '🙈 ver menos' : '👁 ver mais';
     });
     // Botão entrar/membro
@@ -9880,17 +9880,17 @@ async function loadCommGridCreated(){
     card.innerHTML='<div class="comm-cover">'+(_coverUrl?'<img src="'+xss(_coverUrl)+'" style="width:100%;height:100%;object-fit:cover;">':xss(comm.avatar_url||'🏘'))+'</div>'
       +'<div class="comm-info">'
         +'<div class="comm-name" style="display:flex;align-items:center;gap:5px;"><span style="color:var(--neon-yellow);">👑</span>'+xss(comm.name)+'</div>'
-        +'<div class="comm-desc" id="cdesc-'+comm.id+'">'+xss(comm.description||'')+'</div>'
-        +((comm.description||'').length>60?'<button class="comm-desc-toggle" id="cdtog-'+comm.id+'">👁 ver mais</button>':'')
+        +'<div class="comm-desc">'+xss(comm.description||'')+'</div>'
+        +((comm.description||'').length>60?'<button class="comm-desc-toggle">👁 ver mais</button>':'')
         +'<div class="comm-meta"><span>👥 '+memberCount+'</span><span>'+(comm.visibility==='private'?'🔒 Privada':'🌍 Pública')+'</span><span style="color:var(--neon-cyan);font-size:9px;">'+new Date(comm.created_at).toLocaleDateString('pt-BR')+'</span></div>'
         +'<button class="comm-join joined" style="margin-top:8px;width:100%;">✓ Gerenciar</button>'
       +'</div>';
     card.onclick=()=>openCommDetail(comm.id);
     const togBtn2 = card.querySelector('.comm-desc-toggle');
-    if(togBtn2) togBtn2.addEventListener('click', e=>{
+    const descEl2 = card.querySelector('.comm-desc');
+    if(togBtn2 && descEl2) togBtn2.addEventListener('click', e=>{
       e.stopPropagation();
-      const desc = document.getElementById('cdesc-'+comm.id);
-      const expanded = desc.classList.toggle('expanded');
+      const expanded = descEl2.classList.toggle('expanded');
       togBtn2.innerHTML = expanded ? '🙈 ver menos' : '👁 ver mais';
     });
     const manageBtn = card.querySelector('.comm-join');
