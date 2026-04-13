@@ -9794,23 +9794,24 @@ async function loadCommGrid(mode){
       +'<div class="comm-info">'
         +'<div class="comm-name">'+xss(comm.name)+'</div>'
         +'<div class="comm-desc" id="cdesc-'+comm.id+'">'+xss(comm.description||'')+'</div>'
-        +((comm.description||'').length>60?'<button class="comm-desc-toggle" id="cdtog-'+comm.id+'" onclick="toggleCommDesc(\''+comm.id+'\',event)">👁 ver mais</button>':'')
+        +((comm.description||'').length>60?'<button class="comm-desc-toggle" id="cdtog-'+comm.id+'">👁 ver mais</button>':'')
         +'<div class="comm-meta"><span data-commcount="'+comm.id+'">👥 '+memberCount+'</span><span>'+(comm.visibility==='private'?'🔒 Privada':'🌍 Pública')+'</span>'+(comm.owner_id===CU?.id?'<span style="color:var(--neon-yellow);font-size:9px;">👑 Sua</span>':'')+'</div>'
         +'<button class="comm-join '+(isMember?'joined':'')+'" style="margin-top:8px;width:100%;">'+(isMember?'✓ Membro':'+ Entrar')+'</button>'
       +'</div>';
     card.onclick=()=>openCommDetail(comm.id);
-    card.querySelector('button').onclick=(e)=>{e.stopPropagation();toggleJoinComm(comm.id,isMember,card.querySelector('button'));};
+    // Botão expandir descrição
+    const togBtn = card.querySelector('.comm-desc-toggle');
+    if(togBtn) togBtn.addEventListener('click', e=>{
+      e.stopPropagation();
+      const desc = document.getElementById('cdesc-'+comm.id);
+      const expanded = desc.classList.toggle('expanded');
+      togBtn.innerHTML = expanded ? '🙈 ver menos' : '👁 ver mais';
+    });
+    // Botão entrar/membro
+    const joinBtn = card.querySelector('.comm-join');
+    if(joinBtn) joinBtn.addEventListener('click', e=>{e.stopPropagation();toggleJoinComm(comm.id,isMember,joinBtn);});
     grid.appendChild(card);
   });
-}
-
-function toggleCommDesc(commId, e){
-  e.stopPropagation();
-  const desc = document.getElementById('cdesc-'+commId);
-  const tog  = document.getElementById('cdtog-'+commId);
-  if(!desc) return;
-  const expanded = desc.classList.toggle('expanded');
-  if(tog) tog.innerHTML = expanded ? '🙈 ver menos' : '👁 ver mais';
 }
 
 async function loadCommGridCreated(){
@@ -9880,12 +9881,20 @@ async function loadCommGridCreated(){
       +'<div class="comm-info">'
         +'<div class="comm-name" style="display:flex;align-items:center;gap:5px;"><span style="color:var(--neon-yellow);">👑</span>'+xss(comm.name)+'</div>'
         +'<div class="comm-desc" id="cdesc-'+comm.id+'">'+xss(comm.description||'')+'</div>'
-        +((comm.description||'').length>60?'<button class="comm-desc-toggle" id="cdtog-'+comm.id+'" onclick="toggleCommDesc(\''+comm.id+'\',event)">👁 ver mais</button>':'')
+        +((comm.description||'').length>60?'<button class="comm-desc-toggle" id="cdtog-'+comm.id+'">👁 ver mais</button>':'')
         +'<div class="comm-meta"><span>👥 '+memberCount+'</span><span>'+(comm.visibility==='private'?'🔒 Privada':'🌍 Pública')+'</span><span style="color:var(--neon-cyan);font-size:9px;">'+new Date(comm.created_at).toLocaleDateString('pt-BR')+'</span></div>'
         +'<button class="comm-join joined" style="margin-top:8px;width:100%;">✓ Gerenciar</button>'
       +'</div>';
     card.onclick=()=>openCommDetail(comm.id);
-    card.querySelector('button').onclick=(e)=>{e.stopPropagation();openCommDetail(comm.id);};
+    const togBtn2 = card.querySelector('.comm-desc-toggle');
+    if(togBtn2) togBtn2.addEventListener('click', e=>{
+      e.stopPropagation();
+      const desc = document.getElementById('cdesc-'+comm.id);
+      const expanded = desc.classList.toggle('expanded');
+      togBtn2.innerHTML = expanded ? '🙈 ver menos' : '👁 ver mais';
+    });
+    const manageBtn = card.querySelector('.comm-join');
+    if(manageBtn) manageBtn.addEventListener('click', e=>{e.stopPropagation();openCommDetail(comm.id);});
     grid.appendChild(card);
   });
 }
