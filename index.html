@@ -8975,6 +8975,16 @@ async function _shareOnEuAqui(postId, _ignored){
   const originalAuthor = originalPost.profiles?.username || originalPost.profiles?.full_name || 'usuário';
   const originalAuthorId = originalPost.user_id;
 
+  // Buscar perfil do usuário logado para exibir no cabeçalho do modal
+  let myProfile = null;
+  try{
+    const{data:mp} = await db.from('profiles').select('username,full_name,avatar_url').eq('id',CU.id).maybeSingle();
+    myProfile = mp;
+  }catch(e){}
+  const myName     = myProfile?.full_name || myProfile?.username || CU.email?.split('@')[0] || 'Você';
+  const myUsername = myProfile?.username  || '';
+  const myAvUrl    = myProfile?.avatar_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+myUsername);
+
   // Abrir modal de repost para o usuário adicionar comentário
   const overlay = document.createElement('div');
   overlay.id = 'repost-modal-overlay';
@@ -8985,7 +8995,13 @@ async function _shareOnEuAqui(postId, _ignored){
   overlay.innerHTML = `
     <div style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:18px;padding:20px;width:100%;max-width:500px;box-shadow:0 20px 60px rgba(0,0,0,.6);">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-        <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);">🔁 Repostar no EuAqui</div>
+        <div style="display:flex;align-items:center;gap:9px;">
+          <img src="${xss(myAvUrl)}" style="width:34px;height:34px;border-radius:50%;object-fit:cover;border:2px solid var(--neon-cyan);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${xss(myUsername)}'">
+          <div>
+            <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);">🔁 ${xss(myName)}</div>
+            ${myUsername ? `<div style="font-size:9px;color:var(--text-muted);">@${xss(myUsername)}</div>` : ''}
+          </div>
+        </div>
         <button onclick="document.getElementById('repost-modal-overlay').remove()" style="background:none;border:1px solid rgba(255,255,255,.12);color:var(--text-muted);width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;">✕</button>
       </div>
 
