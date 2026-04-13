@@ -8357,7 +8357,7 @@ async function loadHomeAlerts(){
   if(!el||!CU) return;
   el.innerHTML=skeletons(3);
   const{data}=await db.from('notifications')
-    .select('id,type,content,read,created_at,post_id,actor_id,business_id,community_id')
+    .select('id,type,content,read,created_at,post_id,actor_id,business_id,community_id,metadata')
     .eq('user_id',CU.id).eq('read',false)
     .gte('created_at',new Date(Date.now()-24*60*60*1000).toISOString())
     .order('created_at',{ascending:false}).limit(40);
@@ -8366,6 +8366,43 @@ async function loadHomeAlerts(){
     el.innerHTML='<div class="notif-empty"><div class="notif-empty-icon">🔔</div><div class="notif-empty-txt">Sem alertas</div></div>';
     return;
   }
+
+  // ── Pré-carrega nomes de comunidade via community_id (busca real no banco) ──
+  const _HA_COMM_TYPES = new Set(['community_post','community_comment','community_mention','community_invite','community_live']);
+  const _HA_commCache = {};
+  await Promise.all(data.filter(n=>_HA_COMM_TYPES.has(n.type)&&n.community_id).map(async n=>{
+    if(_HA_commCache[n.community_id]) return;
+    const meta=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
+    if(meta.community_name){_HA_commCache[n.community_id]=meta.community_name;return;}
+    try{
+      const{data:c}=await db.from('communities').select('name').eq('id',n.community_id).maybeSingle();
+      if(c?.name) _HA_commCache[n.community_id]=c.name;
+    }catch(e){}
+  }));
+  function _HA_commName(n){
+    const meta=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
+    return meta.community_name
+      || _HA_commCache[n.community_id]
+      || (typeof n.content==='string'&&n.content.match(/"([^"]+)"/)?.[1])
+      || '?';
+  }
+  const _HA_LABEL={
+    community_post:    name=>`Nova postagem em <strong>${name}</strong>`,
+    community_comment: name=>`Novo comentário em <strong>${name}</strong>`,
+    community_mention: name=>`Você foi mencionado em <strong>${name}</strong>`,
+    community_invite:  name=>`Você foi convidado para <strong>${name}</strong>`,
+    community_live:    name=>`Live ao vivo em <strong>${name}</strong>`
+  };
+  // ── Para comunidade: HTML direto (sem xss para preservar <strong>)
+  // ── Para demais tipos: xss() normal
+  function _HA_displayText(n){
+    if(_HA_COMM_TYPES.has(n.type)){
+      const tpl=_HA_LABEL[n.type];
+      return tpl?tpl(_HA_commName(n)):`Notificação de comunidade: <strong>${_HA_commName(n)}</strong>`;
+    }
+    return xss(n.content||'Nova notificação');
+  }
+
   const icons={follow:'👤',like:'❤️',comment:'💬',friend_request:'👥',friend_accept:'🎉',message:'💬',community_invite:'🏘️',community_post:'🏘️',community_mention:'🏘️',biz_promo:'🏪',mention:'@',call_missed:'📞',share:'🔁'};
   data.forEach(n=>{
     const div=document.createElement('div');
@@ -8381,28 +8418,8 @@ async function loadHomeAlerts(){
     // Corpo clicável → navega para o contexto
     const body=document.createElement('div');
     body.className='ni-clickable-body';
-    // ── BLOCO EXCLUSIVO PARA NOTIFICAÇÕES DE COMUNIDADE ────────────
-    const COMM_TYPES_DISPLAY = ['community_post','community_comment','community_mention','community_invite','community_live'];
-    let _notifDisplayText;
-    if(COMM_TYPES_DISPLAY.includes(n.type)){
-      const _meta = (n.metadata && typeof n.metadata === 'object') ? n.metadata : {};
-      const _commName = _meta.community_name
-        || (typeof n.content === 'string' && n.content.match(/"([^"]+)"$/)?.[1])
-        || 'Comunidade';
-      const _labelMap = {
-        community_post:    `Nova postagem em <strong>${_commName}</strong>`,
-        community_comment: `Novo comentário em <strong>${_commName}</strong>`,
-        community_mention: `Você foi mencionado em <strong>${_commName}</strong>`,
-        community_invite:  `Você foi convidado para <strong>${_commName}</strong>`,
-        community_live:    `Live ao vivo em <strong>${_commName}</strong>`
-      };
-      _notifDisplayText = _labelMap[n.type];
-    } else {
-      // ── TODOS OS OUTROS TIPOS: conteúdo original intacto (com @username) ──
-      _notifDisplayText = xss(n.content||'Nova notificação');
-    }
     body.innerHTML=
-      '<div class="ni-txt">'+_notifDisplayText+'</div>'+
+      '<div class="ni-txt">'+_HA_displayText(n)+'</div>'+
       '<div class="ni-time">'+timeAgo(n.created_at)+'</div>'+
       (n.type==='friend_request'&&!n.read
         ?'<div class="ni-actions">'+
@@ -10013,41 +10030,54 @@ async function loadNotifTab(tabId){
   // ── Formata o texto exibido da notificação ──────────────────────
   // ATENÇÃO: apenas os tipos de comunidade têm texto personalizado.
   // Todos os demais retornam n.content intacto (incluindo o @username).
-  function getNotifDisplayText(n){
+  // ── Cache de nomes de comunidade para evitar N queries ────────
+  const _commNameCache = {};
+  async function _getCommName(n){
     const meta = (n.metadata && typeof n.metadata === 'object') ? n.metadata : {};
-    // ── BLOCO EXCLUSIVO PARA NOTIFICAÇÕES DE COMUNIDADE ────────────
-    if(n.type === 'community_post'){
-      const commName = meta.community_name
-        || (typeof n.content === 'string' && n.content.match(/"([^"]+)"$/)?.[1])
-        || 'Comunidade';
-      return `Nova postagem em <strong>${commName}</strong>`;
+    // 1. Prioridade: metadata.community_name (notificações novas)
+    if(meta.community_name) return meta.community_name;
+    // 2. Busca pelo community_id no banco (mais confiável)
+    if(n.community_id){
+      if(_commNameCache[n.community_id]) return _commNameCache[n.community_id];
+      try{
+        const{data:comm}=await db.from('communities').select('name').eq('id',n.community_id).maybeSingle();
+        if(comm?.name){ _commNameCache[n.community_id]=comm.name; return comm.name; }
+      }catch(e){}
     }
-    if(n.type === 'community_comment'){
-      const commName = meta.community_name
+    // 3. Fallback: extrai do content entre aspas (notificações antigas)
+    const m = typeof n.content === 'string' && n.content.match(/"([^"]+)"/);
+    return (m && m[1]) || '?';
+  }
+
+  // ── BLOCO EXCLUSIVO PARA NOTIFICAÇÕES DE COMUNIDADE ──────────
+  const COMM_TYPES_SET = new Set(['community_post','community_comment','community_mention','community_invite','community_live']);
+  const COMM_LABEL_TPL = {
+    community_post:    name => `Nova postagem em <strong>${name}</strong>`,
+    community_comment: name => `Novo comentário em <strong>${name}</strong>`,
+    community_mention: name => `Você foi mencionado em <strong>${name}</strong>`,
+    community_invite:  name => `Você foi convidado para <strong>${name}</strong>`,
+    community_live:    name => `Live ao vivo em <strong>${name}</strong>`
+  };
+
+  // Pré-carrega os nomes de comunidade para todas as notificações de comunidade
+  const commNotifs = data.filter(n=>COMM_TYPES_SET.has(n.type));
+  await Promise.all(commNotifs.map(n=>_getCommName(n)));
+
+  // ── Gera o texto de exibição (síncrono após pré-carga) ─────────
+  function getNotifDisplayText(n){
+    if(COMM_TYPES_SET.has(n.type)){
+      // Nome já está no cache após o pré-carregamento acima
+      const meta = (n.metadata && typeof n.metadata === 'object') ? n.metadata : {};
+      const name = meta.community_name
+        || _commNameCache[n.community_id]
         || (typeof n.content === 'string' && n.content.match(/"([^"]+)"$/)?.[1])
-        || 'Comunidade';
-      return `Novo comentário em <strong>${commName}</strong>`;
+        || '?';
+      const tpl = COMM_LABEL_TPL[n.type];
+      // Retorna HTML diretamente — NÃO passa pelo xss() para preservar <strong>
+      return tpl ? tpl(name) : `Notificação de comunidade: <strong>${name}</strong>`;
     }
-    if(n.type === 'community_mention'){
-      const commName = meta.community_name
-        || (typeof n.content === 'string' && n.content.match(/"([^"]+)"$/)?.[1])
-        || 'Comunidade';
-      return `Você foi mencionado em <strong>${commName}</strong>`;
-    }
-    if(n.type === 'community_invite'){
-      const commName = meta.community_name
-        || (typeof n.content === 'string' && n.content.match(/"([^"]+)"$/)?.[1])
-        || 'Comunidade';
-      return `Você foi convidado para <strong>${commName}</strong>`;
-    }
-    if(n.type === 'community_live'){
-      const commName = meta.community_name
-        || (typeof n.content === 'string' && n.content.match(/"([^"]+)"$/)?.[1])
-        || 'Comunidade';
-      return `Live ao vivo em <strong>${commName}</strong>`;
-    }
-    // ── TODOS OS OUTROS TIPOS: retorna o conteúdo original intacto ──
-    return n.content || 'Nova notificação';
+    // ── TODOS OS OUTROS TIPOS: escapa normalmente (mantém @username) ──
+    return xss(n.content || 'Nova notificação');
   }
 
   el.innerHTML=data.map(n=>{
@@ -10058,7 +10088,7 @@ async function loadNotifTab(tabId){
     <div class="ni${n.read?'':' unrd'}" id="ni-${n.id}">
       <div class="ni-icon">${iconDisp}</div>
       <div class="ni-clickable-body" onclick="handleNotifNavigation(JSON.parse(this.closest('.ni').dataset.notif))">
-        <div class="ni-txt">${xss(getNotifDisplayText(n))}</div>
+        <div class="ni-txt">${getNotifDisplayText(n)}</div>
         <div class="ni-time">${timeAgo(n.created_at)}</div>
         ${n.type==='friend_request'?`<div class="ni-actions">
           <button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();acceptFriendFromNotif(this)">✓ Aceitar</button>
