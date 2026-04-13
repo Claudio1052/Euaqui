@@ -10476,7 +10476,12 @@ async function loadNotifTab(tabId){
 
   // Pré-carrega nomes E avatares das comunidades (query única por community_id único)
   const commNotifs = data.filter(n=>COMM_TYPES_SET.has(n.type));
-  const _uniqueCommIds = [...new Set(commNotifs.map(n=>n.community_id).filter(Boolean))];
+  // Extrai community_id também do content (para convites sem community_id no banco)
+  const _uniqueCommIds = [...new Set(commNotifs.map(n=>{
+    return n.community_id
+      || (n.type==='community_invite' ? (n.content||'').match(/\?comm=([a-f0-9\-]{36})/)?.[1] : null)
+      || null;
+  }).filter(Boolean))];
   if(_uniqueCommIds.length){
     try{
       const{data:_comms}=await db.from('communities').select('id,name,avatar_url').in('id',_uniqueCommIds);
@@ -10522,9 +10527,13 @@ async function loadNotifTab(tabId){
     const iconDisp = typeof iconVal === 'function' ? iconVal(n) : (iconVal || '🔔');
     // Para notificações de comunidade: exibe logo real no lugar do emoji
     const isCommunityNotif = COMM_TYPES_SET.has(n.type);
+    // Para community_invite sem community_id: extrai do content URL
+    const effectiveCommId = n.community_id
+      || (n.type==='community_invite' ? (n.content||'').match(/\?comm=([a-f0-9\-]{36})/)?.[1] : null)
+      || null;
     // Prioridade: 1) cache local av_ 2) _commCache global 3) community_avatar_url da view
-    const commAvatar = _commNameCache['av_'+n.community_id]
-      || (window._commCache&&window._commCache[n.community_id]&&window._commCache[n.community_id].avatar_url)
+    const commAvatar = (effectiveCommId && (_commNameCache['av_'+effectiveCommId]
+      || (window._commCache&&window._commCache[effectiveCommId]&&window._commCache[effectiveCommId].avatar_url)))
       || n.community_avatar_url || '';
     const hasCommImg = isCommunityNotif && commAvatar && commAvatar.startsWith('http');
     // ni-icon: sem background/padding quando exibe imagem
@@ -10532,7 +10541,7 @@ async function loadNotifTab(tabId){
     const niIconHtml = isCommunityNotif
       ? (hasCommImg
           ? `<img src="${commAvatar}" style="width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid rgba(0,255,204,.35);">`
-          : `<span style="font-size:20px">${commAvatar && !commAvatar.startsWith('http') ? commAvatar : '🏘️'}</span>`)
+          : `<span style="font-size:20px">🏘️</span>`)
       : iconDisp;
     return `
     <div class="ni${n.read?'':' unrd'}" id="ni-${n.id}">
@@ -15682,11 +15691,24 @@ async function sendCommInviteToFriends(commId, commName){
         user_id: friendId,
         actor_id: CU.id,
         type: 'community_invite',
+        community_id: commId,
         content: `@${senderName} te convidou para a comunidade "${commName}" — ${url}`,
         read: false
       });
       sent++;
-    }catch(e){ console.warn('invite notif error:', e?.message); }
+    }catch(e){
+      // Fallback sem community_id caso a coluna não exista
+      try{
+        await db.from('notifications').insert({
+          user_id: friendId,
+          actor_id: CU.id,
+          type: 'community_invite',
+          content: `@${senderName} te convidou para a comunidade "${commName}" — ${url}`,
+          read: false
+        });
+        sent++;
+      }catch(e2){ console.warn('invite notif error:', e2?.message); }
+    }
   }
 
   if(sent>0){
