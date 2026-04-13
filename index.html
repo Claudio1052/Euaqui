@@ -6685,18 +6685,59 @@ async function createCommunity(){
 }
 async function toggleJoinComm(commId,isMember,btn){
   if(!CU)return showToast('Faça login primeiro','error');
-  if(isMember){await db.from('community_members').delete().eq('community_id',commId).eq('user_id',CU.id);btn.textContent='+ Entrar';btn.classList.remove('joined');showToast('Saiu da comunidade','success');}
-  else{await db.from('community_members').insert({community_id:commId,user_id:CU.id,role:'member'});btn.textContent='✓ Membro';btn.classList.add('joined');showToast('Entrou na comunidade! 🎉','success');}
-  // ── Atualizar contador de membros (count em tempo real + cache na tabela) ──
+
+  // Bloquear duplo clique
+  if(btn.disabled) return;
+  btn.disabled = true;
+  const origText = btn.textContent;
+  btn.textContent = '⏳';
+
   try{
-    const{count}=await db.from('community_members')
-      .select('id',{count:'exact',head:true}).eq('community_id',commId);
-    const realCount=count||0;
-    // Tentar atualizar o cache (pode falhar por RLS em não-donos, tudo bem)
-    try{ await db.from('communities').update({members_count:realCount}).eq('id',commId); }catch(e){}
-    // Atualizar DOM
-    document.querySelectorAll(`[data-commcount="${commId}"]`).forEach(el=>{el.textContent=realCount;});
-  }catch(e){ console.warn('member count:',e?.message); }
+    if(isMember){
+      const{error}=await db.from('community_members').delete().eq('community_id',commId).eq('user_id',CU.id);
+      if(error) throw error;
+      btn.textContent='+ Entrar';
+      btn.classList.remove('joined');
+      showToast('Saiu da comunidade','success');
+    } else {
+      const{error}=await db.from('community_members').insert({community_id:commId,user_id:CU.id,role:'member'});
+      if(error) throw error;
+      btn.textContent='✓ Membro';
+      btn.classList.add('joined');
+      showToast('Entrou na comunidade! 🎉','success');
+    }
+
+    // Atualizar contador de membros no DOM
+    try{
+      const{count}=await db.from('community_members').select('id',{count:'exact',head:true}).eq('community_id',commId);
+      const realCount=count||0;
+      try{ await db.from('communities').update({members_count:realCount}).eq('id',commId); }catch(e){}
+      document.querySelectorAll(`[data-commcount="${commId}"]`).forEach(el=>{el.textContent=realCount;});
+    }catch(e){}
+
+    // Recarregar os grids ativos para refletir a mudança
+    const activeTab = document.querySelector('#comm-page-tabs .ptab.active');
+    const tabId = activeTab?.dataset?.tab;
+    if(tabId === 'cm-mine') loadCommGrid('mine');
+    else if(tabId === 'cm-all') loadCommGrid('all');
+    else if(tabId === 'cm-created') loadCommGridCreated();
+
+    // Se saiu, remover o card do grid "minhas" que pode estar visível em background
+    if(isMember){
+      const mineGrid = document.getElementById('comm-grid-mine');
+      if(mineGrid){
+        // Remover card desta comunidade do grid minhas
+        mineGrid.querySelectorAll('.comm-card').forEach(card=>{
+          if(card.querySelector(`[data-commcount="${commId}"]`)) card.remove();
+        });
+      }
+    }
+  }catch(e){
+    btn.textContent = origText;
+    showToast('Erro: '+(e?.message||'tente novamente'),'error');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ── Recalcula e retorna contagem real de membros (usado ao abrir detalhe) ──
