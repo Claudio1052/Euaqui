@@ -4275,7 +4275,7 @@ body.day-mode::before{
 <!-- BOTTOM NAV (mobile) -->
 <div class="bottom-nav">
   <div class="bnav-items">
-    <button class="bnav-btn active" id="bn-home" onclick="nav('home')" aria-label="Feed">
+    <button class="bnav-btn active" id="bn-home" onclick="bnav_home()" aria-label="Feed">
       <svg class="bni" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
     </button>
     <button class="bnav-btn" id="bn-explore" onclick="nav('explore')" aria-label="Explorar">
@@ -5374,6 +5374,28 @@ async function react(postId,reaction,btn){
     }
   }catch(e){console.warn('react error:',e);}
 }
+function bnav_home(){
+  const isOnHome = document.getElementById('page-home')?.classList.contains('active');
+  if(isOnHome){
+    // Já está na home — rolar ao topo com feedback visual e atualizar feed
+    const fc = document.getElementById('fc-main');
+    if(fc) fc.scrollTo({top:0, behavior:'smooth'});
+    // Animação de "pulso" no ícone para confirmar o toque
+    const btn = document.getElementById('bn-home');
+    if(btn){
+      btn.style.transform = 'scale(1.35)';
+      btn.style.transition = 'transform .15s ease';
+      setTimeout(()=>{ btn.style.transform = ''; }, 180);
+    }
+    // Limpa cache e recarrega feed silenciosamente
+    cachedPostIds.clear(); cachedPosts = {}; lastFeedLoad = 0;
+    loadFeed(true);
+    showToast('Feed atualizado ✨', 'success');
+  } else {
+    nav('home');
+  }
+}
+
 function adjustRxCount(btn,delta){
   const sp=btn.querySelector('.rxcnt');
   const cur=parseInt(sp.textContent)||0;
