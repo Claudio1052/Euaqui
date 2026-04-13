@@ -3567,8 +3567,8 @@ body.day-mode::before{
     </div>
     <div class="nav-right">
       <input type="text" id="nav-search" placeholder="🔍 Buscar..." oninput="quickSearch()" onclick="nav('explore')">
-      <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()" title="Alternar Dia/Noite">🌙</button>
       <button class="theme-toggle" id="trending-nav-btn" onclick="openTrendingModal()" title="Em Alta" style="color:var(--neon-pink);font-weight:700;font-size:15px;">🔥</button>
+      <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()" title="Alternar Dia/Noite">🌙</button>
       <button class="theme-toggle" id="header-notif-btn" onclick="nav('notifications')" title="Notificações" style="position:relative;">🔔<span class="nbadge" id="header-notif-badge" style="display:none;position:absolute;top:-4px;right:-4px;">0</span></button>
       <img class="nav-av" id="nav-av" src="https://api.dicebear.com/7.x/pixel-art/svg?seed=default" onclick="nav('profile')">
       <button class="hamburger" onclick="toggleDrawer()">☰</button>
@@ -7168,15 +7168,6 @@ async function loadMsgs(userId){
 
   let lastDate='', html='';
   for(const m of msgs){
-    // ── PATCH 4: Mensagens ocultas globalmente ──
-    if(m.is_hidden){
-      const isSent = m.sender_id===CU.id;
-      html += `<div class="mb ${isSent?'sent':'recv'}" data-msg-id="${m.id}" style="opacity:.5;">
-        <div class="mb-bubble" style="font-style:italic;color:var(--text-muted);font-size:11px;">🙈 Mensagem oculta</div>
-        <div class="mb-time">${timeAgo(m.created_at)}</div>
-      </div>`;
-      continue;
-    }
     const isSent = m.sender_id===CU.id;
     const msgDate = new Date(m.created_at).toLocaleDateString('pt-BR');
     if(msgDate!==lastDate){
@@ -7222,11 +7213,7 @@ async function loadMsgs(userId){
     if(isCallMsg){
       html += '<div style="display:flex;justify-content:center;align-items:center;gap:6px;margin:6px 0;">'+contentHtml+'<span style="font-size:10px;color:var(--text-muted);">'+timeAgo(m.created_at)+'</span></div>';
     } else {
-      // Botão 🙈 para ocultar globalmente (visível para o remetente)
-      const hideBtn = isSent
-        ? `<button onclick="hideMessageGlobal('${m.id}',this)" title="Ocultar mensagem para todos" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;opacity:.5;padding:0 2px;transition:opacity .2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.5">🙈</button>`
-        : '';
-      html += '<div class="mb '+(isSent?'sent':'recv')+'" data-msg-id="'+m.id+'" style="position:relative;">'+mediaHtml+contentHtml+'<div style="display:flex;align-items:center;gap:4px;justify-content:'+(isSent?'flex-end':'flex-start')+';">'+timeHtml+hideBtn+'</div></div>';
+      html += '<div class="mb '+(isSent?'sent':'recv')+'" data-msg-id="'+m.id+'">'+mediaHtml+contentHtml+timeHtml+'</div>';
     }
   }
   area.innerHTML = html;
@@ -7612,31 +7599,7 @@ async function sendMsg(){
   }
 }
 
-// ── PATCH 4: Ocultar mensagem globalmente via Supabase ──
-async function hideMessageGlobal(messageId, btn){
-  if(!CU) return;
-  if(!confirm('Ocultar esta mensagem para todos os participantes?')) return;
-  if(btn) btn.disabled = true;
-  const { error } = await db.from('messages')
-    .update({ is_hidden: true })
-    .eq('id', messageId)
-    .eq('sender_id', CU.id); // só o remetente pode ocultar
-  if(error){
-    showToast('Erro ao ocultar: ' + error.message, 'error');
-    if(btn) btn.disabled = false;
-    return;
-  }
-  // Atualizar bolha imediatamente no DOM sem recarregar tudo
-  const msgDiv = document.querySelector(`[data-msg-id="${messageId}"]`);
-  if(msgDiv){
-    msgDiv.style.opacity = '.5';
-    const bubble = msgDiv.querySelector('.mb-bubble');
-    if(bubble){ bubble.style.fontStyle='italic'; bubble.style.color='var(--text-muted)'; bubble.style.fontSize='11px'; bubble.textContent='🙈 Mensagem oculta'; }
-    const hideButtonWrap = msgDiv.querySelector('button[title="Ocultar mensagem para todos"]');
-    if(hideButtonWrap) hideButtonWrap.remove();
-  }
-  showToast('Mensagem oculta para todos 🙈', 'success');
-}
+// hideMessageGlobal removido
 
 // ===== NOTIFICATIONS =====
 async function loadNotifCount(){
