@@ -6535,21 +6535,77 @@ async function createCommunity(){
   if(data?.id){
     await db.from('community_members').insert({community_id:data.id,user_id:CU.id,role:'owner'}).catch(()=>{});
   }
-  // Clear form
+  // Limpa formulário
   ['cm-name','cm-slug','cm-desc','cm-icon'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('comm-create-error')?.remove();
-  // Popup de sucesso
-  const overlay=document.createElement('div');
-  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);z-index:5000;display:flex;align-items:center;justify-content:center;';
-  overlay.innerHTML=`<div style="background:var(--bg-mid);border:1px solid rgba(0,255,204,.4);border-radius:20px;padding:32px 28px;text-align:center;max-width:320px;width:90%;animation:authIn .3s ease;">
-    <div style="font-size:52px;margin-bottom:12px;">🏘</div>
-    <div style="font-family:'Silkscreen',monospace;font-size:14px;color:var(--neon-cyan);margin-bottom:8px;">COMUNIDADE CRIADA!</div>
-    <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px;">Sua comunidade foi criada com sucesso. Agora você pode convidar membros!</div>
-    <button class="post-btn" onclick="this.closest('[style*=fixed]').remove();document.querySelector('#comm-page-tabs .ptab[data-tab=\'cm-mine\']')?.click();" style="width:100%;">✓ Ver minha comunidade</button>
-  </div>`;
+
+  // ── Popup celebratório ──────────────────────────────────────
+  const _commId = data?.id || null;
+  const _commName = name;
+  const _commAvatar = icon || '🏘️';
+  const _hasImg = _commAvatar.startsWith('http');
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.82);backdrop-filter:blur(12px);z-index:9000;display:flex;align-items:center;justify-content:center;animation:fadeIn .25s ease;';
+
+  overlay.innerHTML = `
+    <div style="background:linear-gradient(160deg,#0f0f3a,#1a0a3a);border:1px solid rgba(0,255,204,.35);border-radius:24px;padding:36px 28px;text-align:center;max-width:320px;width:90%;box-shadow:0 0 60px rgba(0,255,204,.15),0 0 120px rgba(191,95,255,.08);position:relative;overflow:hidden;animation:authIn .35s ease;">
+      <!-- brilho de fundo -->
+      <div style="position:absolute;top:-40px;left:50%;transform:translateX(-50%);width:200px;height:200px;background:radial-gradient(circle,rgba(0,255,204,.12),transparent 70%);pointer-events:none;"></div>
+
+      <!-- avatar da comunidade -->
+      <div style="width:80px;height:80px;border-radius:18px;margin:0 auto 16px;border:3px solid rgba(0,255,204,.5);overflow:hidden;display:flex;align-items:center;justify-content:center;background:rgba(0,255,204,.07);box-shadow:0 0 24px rgba(0,255,204,.2);">
+        ${_hasImg
+          ? `<img src="${_commAvatar}" style="width:100%;height:100%;object-fit:cover;">`
+          : `<span style="font-size:38px;">${_commAvatar}</span>`}
+      </div>
+
+      <!-- confete emoji -->
+      <div style="font-size:28px;margin-bottom:10px;">🎉</div>
+
+      <div style="font-family:'Silkscreen',monospace;font-size:15px;color:var(--neon-cyan);letter-spacing:1px;margin-bottom:6px;text-shadow:0 0 12px rgba(0,255,204,.5);">PARABÉNS!</div>
+      <div style="font-family:'Silkscreen',monospace;font-size:11px;color:var(--neon-purple);margin-bottom:10px;letter-spacing:.5px;">COMUNIDADE CRIADA</div>
+      <div style="font-size:13px;color:var(--text-light);font-weight:600;margin-bottom:6px;">${xss(_commName)}</div>
+      <div style="font-size:11px;color:var(--text-muted);line-height:1.6;margin-bottom:24px;">Sua comunidade está pronta!<br>Convide membros e comece a postar.</div>
+
+      <!-- barra de progresso que conta o tempo -->
+      <div style="height:3px;background:rgba(255,255,255,.08);border-radius:2px;margin-bottom:20px;overflow:hidden;">
+        <div id="_cc_bar" style="height:100%;width:100%;background:linear-gradient(90deg,var(--neon-cyan),var(--neon-purple));border-radius:2px;transition:width 2.8s linear;"></div>
+      </div>
+
+      <button onclick="
+        document.getElementById('_cc_overlay')?.remove();
+        ${_commId ? `openCommDetail('${_commId}')` : `nav('communities')`};
+      " style="width:100%;background:linear-gradient(135deg,var(--neon-cyan),var(--neon-purple));border:none;color:#fff;padding:13px;border-radius:12px;font-family:'Silkscreen',monospace;font-size:11px;letter-spacing:1px;cursor:pointer;box-shadow:0 4px 20px rgba(0,255,204,.3);">
+        🏘️ ABRIR COMUNIDADE
+      </button>
+    </div>`;
+
+  overlay.id = '_cc_overlay';
   document.body.appendChild(overlay);
-  // Fechar automaticamente após 4s
-  setTimeout(()=>{ overlay.remove(); document.querySelector('#comm-page-tabs .ptab[data-tab="cm-mine"]')?.click(); }, 4000);
+
+  // Inicia a barra de contagem regressiva
+  requestAnimationFrame(()=>{
+    const bar = document.getElementById('_cc_bar');
+    if(bar){ setTimeout(()=>{ bar.style.width='0%'; }, 50); }
+  });
+
+  // Auto-navega após 3s
+  const _ccTimer = setTimeout(()=>{
+    document.getElementById('_cc_overlay')?.remove();
+    if(_commId) openCommDetail(_commId);
+    else nav('communities');
+  }, 3000);
+
+  // Fechar ao clicar fora do card
+  overlay.addEventListener('click', e=>{
+    if(e.target === overlay){
+      clearTimeout(_ccTimer);
+      overlay.remove();
+      if(_commId) openCommDetail(_commId);
+      else nav('communities');
+    }
+  });
 }
 async function toggleJoinComm(commId,isMember,btn){
   if(!CU)return showToast('Faça login primeiro','error');
