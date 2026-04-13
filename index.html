@@ -9744,9 +9744,6 @@ async function loadCommGrid(mode){
     return;
   }
 
-  // Sort by real member count descending (maior → menor)
-  comms.sort((a,b)=>(realCountMap[b.id]??b.members_count??0)-(realCountMap[a.id]??a.members_count??0));
-
   // ── Buscar contagem REAL de membros (counts em tempo real da tabela community_members) ──
   // A coluna members_count no banco fica desatualizada; aqui contamos as linhas reais.
   const realCountMap = {};
@@ -9759,6 +9756,9 @@ async function loadCommGrid(mode){
       realCountMap[m.community_id] = (realCountMap[m.community_id]||0)+1;
     });
   }catch(e){ console.warn('real member count:',e?.message); }
+
+  // Sort by real member count descending (maior → menor)
+  comms.sort((a,b)=>(realCountMap[b.id]??b.members_count??0)-(realCountMap[a.id]??a.members_count??0));
 
   // ── Aplicar filtro de busca (se houver) ──
   const searchInput = document.getElementById('comm-search-input');
