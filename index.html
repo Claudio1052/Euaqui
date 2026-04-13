@@ -8954,52 +8954,57 @@ async function _shareOnEuAqui(postId, _ignored){
   if(!CU){ showToast('Faça login para compartilhar','error'); return; }
   document.getElementById('share-modal-overlay')?.remove();
 
-  // Buscar post original completo no banco (inclui community_id)
+  // Buscar post original completo no banco (sem community_id que pode não existir)
   let originalPost = null;
   try{
     const{data} = await db.from('posts')
-      .select('id,user_id,content,media_urls,media_types,visibility,community_id,profiles(id,username,full_name,avatar_url)')
+      .select('id,user_id,content,media_urls,media_types,visibility,profiles(id,username,full_name,avatar_url)')
       .eq('id', postId).maybeSingle();
     originalPost = data;
   }catch(e){}
 
   if(!originalPost){ showToast('Post não encontrado','error'); return; }
 
-  // Limpar marcadores internos do conteúdo
-  let cleanContent = originalPost.content || '';
-  cleanContent = cleanContent.replace(/^\[COMM_POST:[^\]]*\]\n?/, '');
-  cleanContent = cleanContent.replace(/^\[BIZ_PROMO:[^\]]*\]\n?/, '');
-  cleanContent = cleanContent.replace(/^\[REPOST:[^\]]*\]\n?/, '');
-  cleanContent = cleanContent.trim();
+  // Detectar se é post de comunidade pelo marcador [COMM_POST:commId:...] no conteúdo
+  const rawContent = originalPost.content || '';
+  const commMatch  = rawContent.match(/^\[COMM_POST:([^:\]]+)(?::([^\]]*))?\]/);
+  const commId     = commMatch ? commMatch[1] : null;
+
+  // Limpar marcadores internos
+  let cleanContent = rawContent
+    .replace(/^\[COMM_POST:[^\]]*\]\n?/, '')
+    .replace(/^\[BIZ_PROMO:[^\]]*\]\n?/, '')
+    .replace(/^\[REPOST:[^\]]*\]\n?/, '')
+    .trim();
 
   const originalAuthor   = originalPost.profiles?.username || originalPost.profiles?.full_name || 'usuário';
   const originalAuthorId = originalPost.user_id;
   const originalAvUrl    = originalPost.profiles?.avatar_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+originalAuthor);
 
-  // Detectar se é post de comunidade e buscar dados da comunidade
-  const commId = originalPost.community_id
-    || (originalPost.content||'').match(/^\[COMM_POST:([^\]]+)\]/)?.[1]
-    || null;
-
+  // Se for post de comunidade, buscar dados da comunidade
   let commData = null;
   if(commId){
-    try{
-      const{data:cd} = await db.from('communities')
-        .select('id,name,avatar_url,banner_url').eq('id',commId).maybeSingle();
-      commData = cd;
-    }catch(e){}
+    // Tentar cache primeiro
+    commData = window._commCache?.[commId] || null;
+    if(!commData){
+      try{
+        const{data:cd} = await db.from('communities')
+          .select('id,name,avatar_url,banner_url').eq('id',commId).maybeSingle();
+        commData = cd;
+      }catch(e){}
+    }
   }
 
-  // Fonte do post: comunidade ou autor
-  const isCommPost  = !!commData;
-  const sourceAvUrl = isCommPost
-    ? (commData.avatar_url||commData.banner_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+commData.name)
+  // Definir fonte visual: comunidade ou autor
+  const isCommPost   = !!commData;
+  const sourceAvUrl  = isCommPost
+    ? (commData.avatar_url || commData.banner_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+commData.name))
     : originalAvUrl;
-  const sourceName  = isCommPost ? commData.name : (originalPost.profiles?.full_name || originalAuthor);
-  const sourceSub   = isCommPost ? ('🏘 Comunidade') : ('@'+originalAuthor);
+  const sourceName   = isCommPost ? commData.name : (originalPost.profiles?.full_name || originalAuthor);
+  const sourceSub    = isCommPost ? '🏘 Comunidade' : ('@'+originalAuthor);
   const sourceRadius = isCommPost ? '8px' : '50%';
 
-  // Abrir modal de repost
+  // Abrir modal
   const overlay = document.createElement('div');
   overlay.id = 'repost-modal-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(8px);z-index:6000;display:flex;align-items:center;justify-content:center;padding:16px;';
@@ -9011,13 +9016,12 @@ async function _shareOnEuAqui(postId, _ignored){
         <button onclick="document.getElementById('repost-modal-overlay').remove()" style="background:none;border:1px solid rgba(255,255,255,.12);color:var(--text-muted);width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;">✕</button>
       </div>
 
-      <!-- Campo de comentário do compartilhador -->
       <textarea id="repost-comment-txt" placeholder="Adicione um comentário ao compartilhar... (opcional)" style="width:100%;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:10px 12px;color:var(--text-light);font-family:'Space Mono',monospace;font-size:12px;resize:none;outline:none;line-height:1.5;margin-bottom:12px;min-height:70px;" maxlength="300"></textarea>
 
-      <!-- Card do post original — mostra comunidade ou autor -->
+      <!-- Card do post original: mostra comunidade ou autor conforme origem -->
       <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:12px;margin-bottom:16px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-          <img src="${xss(sourceAvUrl)}" style="width:34px;height:34px;border-radius:${sourceRadius};object-fit:cover;border:2px solid ${isCommPost?'rgba(0,255,204,.4)':'rgba(0,255,204,.3)'};" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=x'">
+          <img src="${xss(sourceAvUrl)}" style="width:34px;height:34px;border-radius:${sourceRadius};object-fit:cover;border:2px solid rgba(0,255,204,.35);" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=x'">
           <div>
             <div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--neon-cyan);">${xss(sourceName)}</div>
             <div style="font-size:9px;color:var(--text-muted);">${xss(sourceSub)}</div>
@@ -9027,7 +9031,6 @@ async function _shareOnEuAqui(postId, _ignored){
         ${(Array.isArray(originalPost.media_urls) && originalPost.media_urls[0]) ? `<div style="margin-top:8px;border-radius:8px;overflow:hidden;max-height:100px;"><img src="${xss(originalPost.media_urls[0])}" style="width:100%;height:100px;object-fit:cover;display:block;"></div>` : ''}
       </div>
 
-      <!-- Visibilidade -->
       <div style="display:flex;gap:6px;margin-bottom:14px;">
         <button class="vis-opt sel" data-v="public" onclick="document.querySelectorAll('#repost-modal-overlay .vis-opt').forEach(o=>o.classList.remove('sel'));this.classList.add('sel')" style="flex:1;padding:7px 4px;text-align:center;border-radius:6px;font-size:10px;font-family:'Space Mono',monospace;cursor:pointer;border:1px solid rgba(255,255,255,.07);">🌍 Público</button>
         <button class="vis-opt" data-v="friends" onclick="document.querySelectorAll('#repost-modal-overlay .vis-opt').forEach(o=>o.classList.remove('sel'));this.classList.add('sel')" style="flex:1;padding:7px 4px;text-align:center;border-radius:6px;font-size:10px;font-family:'Space Mono',monospace;cursor:pointer;border:1px solid rgba(255,255,255,.07);">👥 Amigos</button>
