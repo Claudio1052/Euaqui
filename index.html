@@ -5323,11 +5323,15 @@ async function react(postId,reaction,btn){
       try{
         const{data:postOwner}=await db.from('posts').select('user_id').eq('id',postId).maybeSingle();
         if(postOwner && postOwner.user_id!==CU.id){
+          // Mapa de emoji → label legível
+          const RX_LABEL={'👍':'👍','❤️':'❤️','😂':'😂','😮':'😮','😢':'😢'};
+          const rxEmoji = RX_LABEL[reaction] || reaction;
           await db.from('notifications').insert({
             user_id:postOwner.user_id, actor_id:CU.id,
             type:'like',
-            content:`@${CP?.username||'alguém'} reagiu à sua postagem`,
-            post_id:postId, read:false
+            content:`@${CP?.username||'alguém'} reagiu à sua postagem ${rxEmoji}`,
+            post_id:postId, read:false,
+            reaction_type: reaction   // salvo para exibição dinâmica no ícone
           });
         }
       }catch(e_notif){}
@@ -9891,10 +9895,12 @@ async function loadNotifTab(tabId){
   const icons={
     follow:'👤',
     like: n => {
-      // Tenta extrair emoji da reação real salva no metadata ou action_type
-      const meta = n.metadata || n.reaction_metadata || {};
-      const rxType = meta.reaction_type || meta.emoji || meta.reaction || n.reaction_type || '';
-      return REACTION_EMOJI[rxType] || '❤️';
+      // reaction_type é salvo diretamente como emoji (ex: '😂', '❤️', '👍')
+      // Fallback para colunas opcionais: metadata.reaction_type ou reaction_type
+      const meta = (typeof n.metadata === 'object' && n.metadata) ? n.metadata : {};
+      const rxType = n.reaction_type || meta.reaction_type || meta.emoji || '';
+      // Se rxType já é um emoji, usa direto; senão tenta mapear pelo REACTION_EMOJI
+      return REACTION_EMOJI[rxType] || rxType || '❤️';
     },
     comment:'💬',friend_request:'👥',friend_accept:'🎉',message:'💬',
     community_invite:'🏘️',community_post:'🏘️',community_mention:'🏘️',
