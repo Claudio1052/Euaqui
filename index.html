@@ -4207,8 +4207,11 @@ body.day-mode::before{
             <div id="biz-cep-status" style="font-size:9px;color:var(--neon-cyan);margin-top:4px;display:none;"></div>
           </div>
 
-          <div class="igrp" style="margin-bottom:8px;"><label class="ilbl">Rua / Logradouro e Número</label>
-            <input class="ainput" id="biz-street" placeholder="Ex: Rua das Flores, 123" oninput="updateBizMapBtn()">
+          <div class="igrp" style="margin-bottom:8px;"><label class="ilbl">Rua / Logradouro</label>
+            <div style="display:grid;grid-template-columns:1fr 90px;gap:8px;">
+              <input class="ainput" id="biz-street" placeholder="Ex: Rua das Flores" oninput="updateBizMapBtn()">
+              <input class="ainput" id="biz-street-num" placeholder="Nº" style="text-align:center;">
+            </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             <div class="igrp" style="margin:0;"><label class="ilbl">Bairro</label>
@@ -10996,6 +10999,7 @@ function openBizForm(edit=false){
     document.getElementById('biz-state').value = b.state||'';
     document.getElementById('biz-doc').value = b.doc||'';
     document.getElementById('biz-street').value = b.street||'';
+    document.getElementById('biz-street-num').value = b.street_num||'';
     document.getElementById('biz-neighborhood').value = b.neighborhood||'';
     document.getElementById('biz-complement').value = b.complement||'';
     document.getElementById('biz-cep').value = b.cep||'';
@@ -11020,6 +11024,7 @@ function openBizForm(edit=false){
     document.getElementById('biz-edit-id').value = '';
     document.getElementById('biz-doc').value = '';
     document.getElementById('biz-street').value = '';
+    document.getElementById('biz-street-num').value = '';
     document.getElementById('biz-neighborhood').value = '';
     document.getElementById('biz-complement').value = '';
     document.getElementById('biz-cep').value = '';
@@ -11162,9 +11167,11 @@ async function saveBusiness(){
   if(desc){ const mod=await moderateContent(name+' '+desc); if(!mod.allowed){showModerationError(mod.categories);return;} }
 
   const street       = document.getElementById('biz-street').value.trim();
+  const streetNum    = document.getElementById('biz-street-num').value.trim();
   const neighborhood = document.getElementById('biz-neighborhood').value.trim();
   const complement   = document.getElementById('biz-complement').value.trim();
   const cep          = document.getElementById('biz-cep').value.trim();
+  const editId       = document.getElementById('biz-edit-id').value;
 
   const payload = {
     owner_id:  CU.id,
@@ -11184,7 +11191,7 @@ async function saveBusiness(){
 
   // Adicionar campos opcionais se existirem
   if(doc)          payload.doc          = doc;
-  if(street)       payload.street       = street;
+  if(street)       payload.street       = street + (streetNum ? ', '+streetNum : '');
   if(neighborhood) payload.neighborhood = neighborhood;
   if(complement)   payload.complement   = complement;
   if(cep)          payload.cep          = cep;
@@ -11192,8 +11199,6 @@ async function saveBusiness(){
     payload.terms_accepted    = true;
     payload.terms_accepted_at = new Date().toISOString();
   }
-
-  const editId = document.getElementById('biz-edit-id').value;
   let error;
   if(editId){
     ({error} = await db.from('businesses').update({...payload, updated_at:new Date().toISOString()}).eq('id',editId));
