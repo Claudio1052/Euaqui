@@ -15361,19 +15361,8 @@ async function deleteComm(commId){
   }
 
   if(deleteError){
-    console.error('[deleteComm] erro final:', deleteError);
-    // Mostra o SQL necessário para corrigir RLS
-    showToast('Erro de permissão. Execute o SQL de correção no Supabase.','error');
-    const sqlFix = `-- Cole no Supabase SQL Editor:
-DROP POLICY IF EXISTS "comm_del" ON communities;
-CREATE POLICY "comm_del" ON communities
-  FOR DELETE USING (owner_id = auth.uid());`;
-    console.log(sqlFix);
-    // Exibe o SQL na tela para o admin
-    const errDiv = document.createElement('div');
-    errDiv.style.cssText='position:fixed;bottom:80px;left:12px;right:12px;background:#1a0a0a;border:1px solid #ff3366;border-radius:10px;padding:12px;font-size:10px;color:#ff3366;z-index:9999;word-break:break-all;';
-    errDiv.innerHTML='<b>Erro RLS:</b> Execute no Supabase → SQL Editor:<br><code style="color:#00ffcc;display:block;margin-top:6px;">'+sqlFix.replace(/\n/g,'<br>')+'</code><button onclick="this.parentElement.remove()" style="margin-top:8px;background:#ff3366;border:none;color:#fff;padding:4px 10px;border-radius:6px;cursor:pointer;">Fechar</button>';
-    document.body.appendChild(errDiv);
+    console.error('[deleteComm] ERRO:', deleteError.code, deleteError.message);
+    showToast('ERRO: ' + deleteError.message, 'error');
     return;
   }
 
