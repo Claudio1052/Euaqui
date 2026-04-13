@@ -10575,10 +10575,14 @@ async function loadNotifTab(tabId){
         || _commNameCache[n.community_id]
         || (typeof n.content === 'string' && n.content.match(/"([^"]+)"/)?.[1])
         || '?';
-      // Injetar actor_username no objeto para o template usar
       if(n.actor_id && !n.actor_username) n.actor_username = _commNameCache['actor_'+n.actor_id] || '';
       const tpl = COMM_LABEL_TPL[n.type];
       return tpl ? tpl(name, n) : `Notificação de comunidade: <strong>${name}</strong>`;
+    }
+    if(n.type === 'biz_promo'){
+      // Remove URL do content antes de exibir
+      const clean = (n.content||'').replace(/https?:\/\/[^\s]+/g,'').replace(/—\s*$/,'').trim();
+      return xss(clean || 'Nova notificação de loja');
     }
     return xss(n.content || 'Nova notificação');
   }
@@ -10631,7 +10635,7 @@ async function loadNotifTab(tabId){
         ${n.type==='community_invite'&&(n.community_id||(n.content||'').match(/\?comm=([a-f0-9\-]{36})/)?.[1])?`<div class="ni-actions" style="margin-top:6px;">
           <button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();joinCommFromNotif('${n.community_id||(n.content||'').match(/\?comm=([a-f0-9\-]{36})/)?.[1]||''}','${n.id}',this)">🏘 Ser Membro</button>
         </div>`:''}
-        ${n.type==='biz_promo'&&n.business_id?`<div class="ni-actions" style="margin-top:6px;">
+        ${n.type==='biz_promo'&&n.business_id&&(n.content||'').includes('?biz=')?`<div class="ni-actions" style="margin-top:6px;">
           <button class="ni-act-btn ni-act-acc" id="biz-follow-notif-${n.business_id}" onclick="event.stopPropagation();followBizFromNotif('${n.business_id}','${n.id}',this)" style="color:var(--neon-yellow);border-color:rgba(255,204,0,.3);background:rgba(255,204,0,.08);">🛍️ Seguir Loja</button>
         </div>`:''}
       </div>
