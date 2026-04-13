@@ -5378,9 +5378,11 @@ async function react(postId,reaction,btn){
 function bnav_home(){
   const isOnHome = document.getElementById('page-home')?.classList.contains('active');
   if(isOnHome){
-    // Já está na home — rolar ao topo com feedback visual e atualizar feed
-    const fc = document.getElementById('fc-main');
-    if(fc) fc.scrollTo({top:0, behavior:'smooth'});
+    // Já está na home — rola window E o container fc ao topo, depois atualiza feed
+    window.scrollTo({top:0, behavior:'smooth'});
+    document.getElementById('fc-main')?.scrollTo({top:0, behavior:'smooth'});
+    document.querySelector('.fc')?.scrollTo({top:0, behavior:'smooth'});
+    document.documentElement.scrollTo({top:0, behavior:'smooth'});
     // Animação de "pulso" no ícone para confirmar o toque
     const btn = document.getElementById('bn-home');
     if(btn){
@@ -5388,11 +5390,17 @@ function bnav_home(){
       btn.style.transition = 'transform .15s ease';
       setTimeout(()=>{ btn.style.transform = ''; }, 180);
     }
-    // Limpa cache e recarrega feed silenciosamente
+    // Limpa cache e recarrega feed
     cachedPostIds.clear(); cachedPosts = {}; lastFeedLoad = 0;
     loadFeed(true);
   } else {
     nav('home');
+    // Ao chegar na home vindo de outra página, também vai ao topo
+    setTimeout(()=>{
+      window.scrollTo({top:0, behavior:'smooth'});
+      document.getElementById('fc-main')?.scrollTo({top:0, behavior:'smooth'});
+      document.querySelector('.fc')?.scrollTo({top:0, behavior:'smooth'});
+    }, 80);
   }
 }
 
