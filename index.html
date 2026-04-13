@@ -148,6 +148,8 @@ nav{position:fixed;top:0;left:0;right:0;background:#0a0a2a;border-bottom:1px sol
 .rxbtn:hover{background:rgba(255,255,255,.08);transform:scale(1.05);}
 .rxbtn.active{background:rgba(0,255,204,.1);border-color:var(--border-glow);color:var(--neon-cyan);}
 .rxcnt{font-family:'VT323',monospace;font-size:16px;min-width:12px;display:inline-block;text-align:left;}
+.rxbtn[data-rx="heart"]{color:#ff3366;}
+.rxbtn[data-rx="heart"].active{background:rgba(255,51,102,.12);border-color:rgba(255,51,102,.35);color:#ff3366;}
 
 /* POST ACTIONS */
 .pactions{display:flex;gap:2px;padding-top:10px;border-top:1px solid rgba(255,255,255,.05);flex-wrap:wrap;}
@@ -5054,7 +5056,8 @@ function renderPost(post,rxCounts={},myRx='',_origPostMap){
   const REACTIONS=['👍','❤','😂','😮','😢'];
   const rxHtml=REACTIONS.map(r=>{
     const cnt=rxCounts[r]||0;
-    return`<button class="rxbtn${myRx===r?' active':''}" onclick="react('${post.id}','${r}',this)">${r} <span class="rxcnt">${cnt>0?cnt:''}</span></button>`;
+    const dataRx=r==='❤'?' data-rx="heart"':'';
+    return`<button class="rxbtn${myRx===r?' active':''}"${dataRx} onclick="react('${post.id}','${r}',this)">${r} <span class="rxcnt">${cnt>0?cnt:''}</span></button>`;
   }).join('');
   // Mídia
   const mediaUrls=Array.isArray(post.media_urls)?post.media_urls.filter(Boolean):[];
