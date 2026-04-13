@@ -13235,6 +13235,31 @@ async function postInCommV2(commId){
     addCommXP(commId,CU.id,'post',10);
     loadCommPostsV2(commId,true,false);
     cachedPostIds.clear();cachedPosts={};
+    // ── Notificar todos os membros da comunidade (exceto o autor) ──
+    try{
+      const commLabel = commData?.name || 'Comunidade';
+      const authorName = CP?.username || 'alguém';
+      const{data:allMembers} = await db.from('community_members')
+        .select('user_id')
+        .eq('community_id', commId)
+        .neq('user_id', CU.id); // exclui o próprio autor
+      if(allMembers?.length){
+        // Envia em lote (max 50 por insert para não estourar payload)
+        const notifRows = allMembers.map(m=>({
+          user_id: m.user_id,
+          actor_id: CU.id,
+          type: 'community_post',
+          content: `@${authorName} publicou na comunidade ${commLabel}`,
+          post_id: post?.id || null,
+          community_id: commId,
+          read: false
+        }));
+        // Divide em fatias de 50
+        for(let i=0; i<notifRows.length; i+=50){
+          await db.from('notifications').insert(notifRows.slice(i, i+50));
+        }
+      }
+    }catch(eNotif){ console.warn('[comm notif]', eNotif?.message); }
   } finally {
     // PATCH 5: restaurar botão sempre
     if(btn){btn.disabled=false;btn.textContent='POSTAR ▶';btn.style.opacity='';btn.style.cursor='';}
