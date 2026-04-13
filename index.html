@@ -8356,11 +8356,21 @@ async function loadHomeAlerts(){
   const el=document.getElementById('ht-alerts-list');
   if(!el||!CU) return;
   el.innerHTML=skeletons(3);
-  const{data}=await db.from('notifications')
-    .select('id,type,content,read,created_at,post_id,actor_id,business_id,community_id,metadata')
+  // Usa a view enriquecida para obter community_name via JOIN automático
+  let {data, error:_haErr}=await db.from('notifications_enriched')
+    .select('id,type,content,read,created_at,post_id,actor_id,business_id,community_id,community_name,metadata')
     .eq('user_id',CU.id).eq('read',false)
     .gte('created_at',new Date(Date.now()-24*60*60*1000).toISOString())
     .order('created_at',{ascending:false}).limit(40);
+  // Fallback: se a view não existir ainda, usa a tabela notifications normal
+  if(_haErr){
+    const fb=await db.from('notifications')
+      .select('id,type,content,read,created_at,post_id,actor_id,business_id,community_id')
+      .eq('user_id',CU.id).eq('read',false)
+      .gte('created_at',new Date(Date.now()-24*60*60*1000).toISOString())
+      .order('created_at',{ascending:false}).limit(40);
+    data=fb.data;
+  }
   el.innerHTML='';
   if(!data?.length){
     el.innerHTML='<div class="notif-empty"><div class="notif-empty-icon">🔔</div><div class="notif-empty-txt">Sem alertas</div></div>';
@@ -8381,7 +8391,9 @@ async function loadHomeAlerts(){
   }));
   function _HA_commName(n){
     const meta=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
-    return meta.community_name
+    // n.community_name vem direto da view notifications_enriched via JOIN
+    return n.community_name
+      || meta.community_name
       || _HA_commCache[n.community_id]
       || (typeof n.content==='string'&&n.content.match(/"([^"]+)"/)?.[1])
       || '?';
@@ -9985,21 +9997,29 @@ async function loadNotifTab(tabId){
   if(!el) return;
   el.innerHTML=skeletons(3);
 
-  // ✅ Busca não lidas — fallback seguro se colunas opcionais não existirem
+  // ✅ Busca via view enriquecida (traz community_name via JOIN automático)
   async function _fetchNotifs(extraCols){
-    let q=db.from('notifications')
-      .select('id,type,content,read,created_at,post_id,actor_id,business_id,community_id'+(extraCols?','+extraCols:''))
+    // Tenta usar a view notifications_enriched (inclui community_name por JOIN)
+    let q=db.from('notifications_enriched')
+      .select('id,type,content,read,created_at,post_id,actor_id,business_id,community_id,community_name'+(extraCols?','+extraCols:''))
       .eq('user_id',CU.id).eq('read',false)
       .order('created_at',{ascending:false}).limit(50);
     if(Array.isArray(filter)) q=q.in('type',filter);
     else if(filter) q=q.eq('type',filter);
     return await q;
   }
-  // Tenta com metadata+reaction_type; se a coluna não existir no banco, retenta sem
+  // Tenta com metadata+reaction_type; se a view/coluna não existir, retenta na tabela base
   let res = await _fetchNotifs('metadata,reaction_type');
   if(res.error){
-    console.warn('[notif] Colunas extras ausentes, retentando:', res.error.message);
-    res = await _fetchNotifs('');
+    console.warn('[notif] View enriquecida indisponível, usando tabela base:', res.error.message);
+    // Fallback: tabela notifications normal
+    let q2=db.from('notifications')
+      .select('id,type,content,read,created_at,post_id,actor_id,business_id,community_id')
+      .eq('user_id',CU.id).eq('read',false)
+      .order('created_at',{ascending:false}).limit(50);
+    if(Array.isArray(filter)) q2=q2.in('type',filter);
+    else if(filter) q2=q2.eq('type',filter);
+    res = await q2;
   }
   const data = res.data;
 
@@ -10063,20 +10083,26 @@ async function loadNotifTab(tabId){
   const commNotifs = data.filter(n=>COMM_TYPES_SET.has(n.type));
   await Promise.all(commNotifs.map(n=>_getCommName(n)));
 
-  // ── Gera o texto de exibição (síncrono após pré-carga) ─────────
+  // ── Gera o texto de exibição ──────────────────────────────────
+  // community_name já vem do JOIN da view notifications_enriched
   function getNotifDisplayText(n){
     if(COMM_TYPES_SET.has(n.type)){
-      // Nome já está no cache após o pré-carregamento acima
       const meta = (n.metadata && typeof n.metadata === 'object') ? n.metadata : {};
-      const name = meta.community_name
+      // Ordem de prioridade para o nome da comunidade:
+      // 1) community_name da view (JOIN direto no banco)
+      // 2) metadata.community_name
+      // 3) cache de queries anteriores
+      // 4) regex no content como último recurso
+      const name = n.community_name
+        || meta.community_name
         || _commNameCache[n.community_id]
-        || (typeof n.content === 'string' && n.content.match(/"([^"]+)"$/)?.[1])
+        || (typeof n.content === 'string' && n.content.match(/"([^"]+)"/)?.[1])
         || '?';
       const tpl = COMM_LABEL_TPL[n.type];
-      // Retorna HTML diretamente — NÃO passa pelo xss() para preservar <strong>
+      // HTML direto — sem xss() para preservar <strong>
       return tpl ? tpl(name) : `Notificação de comunidade: <strong>${name}</strong>`;
     }
-    // ── TODOS OS OUTROS TIPOS: escapa normalmente (mantém @username) ──
+    // Todos os outros tipos: escapa normalmente (mantém @username)
     return xss(n.content || 'Nova notificação');
   }
 
