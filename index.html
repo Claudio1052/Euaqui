@@ -4912,6 +4912,9 @@ async function loadFeed(force=false){
     try{ return renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||''); }
     catch(e){ console.warn('renderPost error:',e?.message,p?.id); return ''; }
   });
+  // Popular cache de posts para o compartilhador
+  if(!window._postCache) window._postCache = {};
+  filteredPosts.forEach(p=>{ window._postCache[p.id] = p; });
   const validPosts = rendered.filter(h=>h.length>0);
   const html = validPosts.join('');
   feed.innerHTML = html || '<div style="text-align:center;padding:40px;color:var(--text-muted);"><div style="font-size:40px;margin-bottom:12px;">📭</div><div style="font-family:VT323,monospace;font-size:20px;">Nenhuma postagem ainda</div></div>';
@@ -8954,16 +8957,59 @@ async function _shareOnEuAqui(postId, _ignored){
   if(!CU){ showToast('Faça login para compartilhar','error'); return; }
   document.getElementById('share-modal-overlay')?.remove();
 
-  // Buscar post original completo no banco (sem community_id que pode não existir)
-  let originalPost = null;
-  try{
-    const{data} = await db.from('posts')
-      .select('id,user_id,content,media_urls,media_types,visibility,profiles(id,username,full_name,avatar_url)')
-      .eq('id', postId).maybeSingle();
-    originalPost = data;
-  }catch(e){}
+  // Sanitizar postId
+  postId = String(postId).trim();
 
-  if(!originalPost){ showToast('Post não encontrado','error'); return; }
+  // Tentar recuperar dados do post já carregado no DOM (cache local)
+  let originalPost = null;
+
+  // Primeiro: cache em memória se disponível
+  if(window._postCache && window._postCache[postId]){
+    originalPost = window._postCache[postId];
+  }
+
+  // Segundo: query com join de profiles
+  if(!originalPost){
+    try{
+      const{data, error} = await db.from('posts')
+        .select('id,user_id,content,media_urls,media_types,visibility,profiles(id,username,full_name,avatar_url)')
+        .eq('id', postId).maybeSingle();
+      if(!error && data){ originalPost = data; }
+      else if(error) console.warn('share q1:', error.message, error.code);
+    }catch(e){ console.warn('share ex1:', e?.message); }
+  }
+
+  // Terceiro: query sem join (mais simples, passa em qualquer RLS)
+  if(!originalPost){
+    try{
+      const{data, error} = await db.from('posts')
+        .select('id,user_id,content,media_urls,visibility')
+        .eq('id', postId).maybeSingle();
+      if(!error && data){ originalPost = data; }
+      else if(error) console.warn('share q2:', error.message, error.code);
+    }catch(e){ console.warn('share ex2:', e?.message); }
+  }
+
+  // Quarto: extrair dados diretamente do card no DOM
+  if(!originalPost){
+    const card = document.querySelector(`.post-card[data-id="${postId}"]`)
+               || document.querySelector(`[data-postid="${postId}"]`)
+               || document.getElementById('post-'+postId);
+    const contentEl = card?.querySelector('.pcontent');
+    const nameEl    = card?.querySelector('.pun');
+    const imgEl     = card?.querySelector('.pav');
+    if(card || contentEl){
+      originalPost = {
+        id: postId,
+        user_id: '',
+        content: contentEl?.textContent || '',
+        media_urls: [],
+        profiles: nameEl ? { username: nameEl.textContent, full_name: nameEl.textContent, avatar_url: imgEl?.src||'' } : null
+      };
+    }
+  }
+
+  if(!originalPost){ showToast('Não foi possível carregar o post','error'); return; }
 
   // Detectar se é post de comunidade pelo marcador [COMM_POST:commId:...] no conteúdo
   const rawContent = originalPost.content || '';
