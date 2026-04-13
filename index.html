@@ -4923,7 +4923,7 @@ async function loadFeed(force=false){
   });
   if(commIdsInFeed.length) _hydrateCommAvatars(commIdsInFeed);
   // Autoplay mudo no mobile
-  if(window.innerWidth <= 768) initFeedAutoplay();
+  if(window.innerWidth <= 768){ initFeedAutoplay(); _startDomWatcher(); }
 }
 
 async function updateCommentCounts(postIds){
@@ -5258,18 +5258,42 @@ async function _hydrateRepostCard(repostPostId, originalPostId, originalAuthorId
       .replace(/^\[REPOST:[^\]]*\]\n?/, '')
       .trim();
 
-    // Mídia do original
+    // Mídia do original — detecta vídeo para autoplay mudo
     const origMediaUrls = Array.isArray(op.media_urls) ? op.media_urls.filter(Boolean) : [];
-    const origMediaHtml = origMediaUrls.length
-      ? `<div style="margin-top:8px;border-radius:8px;overflow:hidden;">
-           <img src="${xss(origMediaUrls[0])}" style="width:100%;max-height:220px;object-fit:cover;display:block;border-radius:8px;" loading="lazy" onerror="this.style.display='none'">
-         </div>`
-      : '';
+    const origMediaTyps = Array.isArray(op.media_types) ? op.media_types : [];
+    let origMediaHtml = '';
+    if(origMediaUrls.length){
+      const isOrigVid = (origMediaTyps[0]||'').startsWith('video') || /\.mp4$|\.webm$|\.mov$|\.ogg$/i.test(origMediaUrls[0]);
+      const safeOrigUrl = xss(origMediaUrls[0]);
+      origMediaHtml = isOrigVid
+        ? `<div style="margin-top:8px;border-radius:8px;overflow:hidden;background:#000;position:relative;">
+             <video src="${safeOrigUrl}" class="feed-video"
+               muted loop playsinline preload="metadata"
+               style="width:100%;max-height:220px;display:block;object-fit:cover;border-radius:8px;"
+               onclick="event.stopPropagation()"></video>
+             <div onclick="event.stopPropagation();const v=this.previousElementSibling;v.muted=!v.muted;this.textContent=v.muted?'🔇':'🔊'"
+               style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,.55);border:none;border-radius:50%;width:28px;height:28px;font-size:13px;display:flex;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(4px);">🔇</div>
+           </div>`
+        : `<div style="margin-top:8px;border-radius:8px;overflow:hidden;">
+             <img src="${safeOrigUrl}" style="width:100%;max-height:220px;object-fit:cover;display:block;border-radius:8px;" loading="lazy" onerror="this.style.display='none'">
+           </div>`;
+    }
 
     if(elCont){
       elCont.innerHTML = (cleanContent
         ? `<div style="font-size:13px;color:var(--text-light);line-height:1.6;word-break:break-word;margin-bottom:4px;">${linkify(cleanContent)}</div>`
         : '') + origMediaHtml;
+      // Registrar no observer APÓS injeção async (YouTube iframes e vídeos nativos)
+      if(_feedObserver && window.innerWidth <= 768){
+        elCont.querySelectorAll('.yt-feed-iframe:not([data-observed])').forEach(f=>{
+          f.setAttribute('data-observed','1');
+          _feedObserver.observe(f);
+        });
+        elCont.querySelectorAll('.feed-video:not([data-observed])').forEach(v=>{
+          v.setAttribute('data-observed','1');
+          _feedObserver.observe(v);
+        });
+      }
     }
 
     // Tornar o card clicável para ir ao post original no feed
@@ -15222,6 +15246,30 @@ async function loadCommRanking(commId){
 
 // ===== FEED AUTOPLAY (mobile only) =====
 let _feedObserver = null;
+let _domWatcher = null; // MutationObserver global para iframes YT adicionados dinamicamente
+
+function _startDomWatcher(){
+  if(_domWatcher || window.innerWidth > 768) return;
+  _domWatcher = new MutationObserver(mutations => {
+    if(!_feedObserver) return;
+    for(const mut of mutations){
+      for(const node of mut.addedNodes){
+        if(node.nodeType !== 1) continue;
+        // Verifica se o próprio nó é um alvo
+        if((node.classList?.contains('yt-feed-iframe') || node.classList?.contains('feed-video')) && !node.dataset.observed){
+          node.dataset.observed = '1';
+          _feedObserver.observe(node);
+        }
+        // Verifica filhos
+        node.querySelectorAll?.('.yt-feed-iframe:not([data-observed]),.feed-video:not([data-observed])').forEach(el=>{
+          el.dataset.observed = '1';
+          _feedObserver.observe(el);
+        });
+      }
+    }
+  });
+  _domWatcher.observe(document.body, { childList: true, subtree: true });
+}
 
 function initFeedAutoplay(){
   // Só roda em mobile
