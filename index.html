@@ -11133,6 +11133,10 @@ async function saveBusiness(){
   if(street)       payload.street       = street;
   if(neighborhood) payload.neighborhood = neighborhood;
   if(cep)          payload.cep          = cep;
+  if(!editId){
+    payload.terms_accepted    = true;
+    payload.terms_accepted_at = new Date().toISOString();
+  }
 
   const editId = document.getElementById('biz-edit-id').value;
   let error;
