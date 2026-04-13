@@ -9794,7 +9794,7 @@ async function loadCommGrid(mode){
       +'<div class="comm-info">'
         +'<div class="comm-name">'+xss(comm.name)+'</div>'
         +'<div class="comm-desc">'+xss(comm.description||'')+'</div>'
-        +((comm.description||'').length>60?'<button class="comm-desc-toggle">👁 ver mais</button>':'')
+        +((comm.description||'').length>60?'<button class="comm-desc-toggle"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:3px;"><ellipse cx="12" cy="12" rx="10" ry="6"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg> ver mais</button>':'')
         +'<div class="comm-meta"><span data-commcount="'+comm.id+'">👥 '+memberCount+'</span><span>'+(comm.visibility==='private'?'🔒 Privada':'🌍 Pública')+'</span>'+(comm.owner_id===CU?.id?'<span style="color:var(--neon-yellow);font-size:9px;">👑 Sua</span>':'')+'</div>'
         +'<button class="comm-join '+(isMember?'joined':'')+'" style="margin-top:8px;width:100%;">'+(isMember?'✓ Membro':'+ Entrar')+'</button>'
       +'</div>';
@@ -9805,7 +9805,9 @@ async function loadCommGrid(mode){
     if(togBtn && descEl) togBtn.addEventListener('click', e=>{
       e.stopPropagation();
       const expanded = descEl.classList.toggle('expanded');
-      togBtn.innerHTML = expanded ? '🙈 ver menos' : '👁 ver mais';
+      const eyeOpen  = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:3px;"><ellipse cx="12" cy="12" rx="10" ry="6"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg>';
+      const eyeClosed = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:3px;"><path d="M2 12s4-6 10-6 10 6 10 6"/><line x1="4" y1="18" x2="20" y2="6"/></svg>';
+      togBtn.innerHTML = expanded ? eyeClosed+' ver menos' : eyeOpen+' ver mais';
     });
     // Botão entrar/membro
     const joinBtn = card.querySelector('.comm-join');
@@ -9881,7 +9883,7 @@ async function loadCommGridCreated(){
       +'<div class="comm-info">'
         +'<div class="comm-name" style="display:flex;align-items:center;gap:5px;"><span style="color:var(--neon-yellow);">👑</span>'+xss(comm.name)+'</div>'
         +'<div class="comm-desc">'+xss(comm.description||'')+'</div>'
-        +((comm.description||'').length>60?'<button class="comm-desc-toggle">👁 ver mais</button>':'')
+        +((comm.description||'').length>60?'<button class="comm-desc-toggle"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:3px;"><ellipse cx="12" cy="12" rx="10" ry="6"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg> ver mais</button>':'')
         +'<div class="comm-meta"><span>👥 '+memberCount+'</span><span>'+(comm.visibility==='private'?'🔒 Privada':'🌍 Pública')+'</span><span style="color:var(--neon-cyan);font-size:9px;">'+new Date(comm.created_at).toLocaleDateString('pt-BR')+'</span></div>'
         +'<button class="comm-join joined" style="margin-top:8px;width:100%;">✓ Gerenciar</button>'
       +'</div>';
@@ -9891,7 +9893,9 @@ async function loadCommGridCreated(){
     if(togBtn2 && descEl2) togBtn2.addEventListener('click', e=>{
       e.stopPropagation();
       const expanded = descEl2.classList.toggle('expanded');
-      togBtn2.innerHTML = expanded ? '🙈 ver menos' : '👁 ver mais';
+      const eyeOpen2  = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:3px;"><ellipse cx="12" cy="12" rx="10" ry="6"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg>';
+      const eyeClosed2 = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:3px;"><path d="M2 12s4-6 10-6 10 6 10 6"/><line x1="4" y1="18" x2="20" y2="6"/></svg>';
+      togBtn2.innerHTML = expanded ? eyeClosed2+' ver menos' : eyeOpen2+' ver mais';
     });
     const manageBtn = card.querySelector('.comm-join');
     if(manageBtn) manageBtn.addEventListener('click', e=>{e.stopPropagation();openCommDetail(comm.id);});
