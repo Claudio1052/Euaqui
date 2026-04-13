@@ -10631,6 +10631,9 @@ async function loadNotifTab(tabId){
         ${n.type==='community_invite'&&(n.community_id||(n.content||'').match(/\?comm=([a-f0-9\-]{36})/)?.[1])?`<div class="ni-actions" style="margin-top:6px;">
           <button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();joinCommFromNotif('${n.community_id||(n.content||'').match(/\?comm=([a-f0-9\-]{36})/)?.[1]||''}','${n.id}',this)">🏘 Ser Membro</button>
         </div>`:''}
+        ${n.type==='biz_promo'&&n.business_id?`<div class="ni-actions" style="margin-top:6px;">
+          <button class="ni-act-btn ni-act-acc" id="biz-follow-notif-${n.business_id}" onclick="event.stopPropagation();followBizFromNotif('${n.business_id}','${n.id}',this)" style="color:var(--neon-yellow);border-color:rgba(255,204,0,.3);background:rgba(255,204,0,.08);">🛍️ Seguir Loja</button>
+        </div>`:''}
       </div>
       <button class="ni-dismiss" title="Marcar como lida" onclick="event.stopPropagation();markRead('${n.id}',this)">✕</button>
     </div>`;
@@ -11276,8 +11279,35 @@ async function loadBizDashboard(){
 
 
 // ── Detalhe do negócio ────────────────────────────────────────────
+async function followBizFromNotif(bizId, notifId, btn){
+  if(!CU) return;
+  const actionsEl = btn.closest('.ni-actions');
+  if(actionsEl) actionsEl.innerHTML='<span style="font-size:10px;color:var(--neon-yellow);">⏳ seguindo...</span>';
+  try{
+    const{data:existing}=await db.from('business_followers')
+      .select('id').eq('business_id',bizId).eq('user_id',CU.id).maybeSingle();
+    if(!existing){
+      await db.from('business_followers').insert({business_id:bizId,user_id:CU.id});
+      // Incrementar contagem
+      try{ await db.from('businesses').update({followers_count:db.rpc?undefined:0}).eq('id',bizId); }catch(e){}
+    }
+    try{ await db.from('notifications').update({read:true}).eq('id',notifId); }catch(e){}
+    if(actionsEl) actionsEl.innerHTML='<span style="font-size:10px;color:var(--neon-yellow);">✓ Seguindo!</span>';
+    showToast('✅ Seguindo a loja!','success');
+  }catch(e){
+    if(actionsEl) actionsEl.innerHTML='<span style="font-size:10px;color:var(--neon-pink);">Erro ao seguir</span>';
+    showToast('Erro ao seguir','error');
+  }
+}
+
 async function openBizDetail(biz){
-  // Show modal immediately with skeleton, then fill data
+  // Prevenir abertura de múltiplos modais — fecha o anterior antes de abrir
+  const existing = document.querySelector('[data-biz-overlay]');
+  if(existing){ existing.remove(); }
+  // Flag para evitar duplo clique durante carregamento
+  if(window._bizDetailOpen){ return; }
+  window._bizDetailOpen = true;
+  setTimeout(()=>{ window._bizDetailOpen = false; }, 800);
   const overlay=document.createElement('div');
   overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);z-index:3000;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;';
   const modal=document.createElement('div');
