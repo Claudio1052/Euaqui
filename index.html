@@ -5681,7 +5681,7 @@ async function submitCmt(postId, btnEl){
   }
 }
 async function deleteCmt(cmtId,postId){
-  if(!confirm('Excluir este comentário?'))return;
+  if(!await _euConfirm('Deseja excluir este comentário?','💬')) return;
   const{error}=await db.from('comments').update({deleted:true}).eq('id',cmtId).eq('user_id',CU.id);
   if(error){
     // Migração não rodada — hard delete
@@ -5966,8 +5966,30 @@ async function createPost(){
     btn.style.cursor='';
   }
 }
+// ── Popup de confirmação padrão EuAqui (substitui confirm() nativo) ──
+function _euConfirm(msg, icon){
+  return new Promise(resolve=>{
+    document.getElementById('_eu_confirm_ov')?.remove();
+    const ov=document.createElement('div');
+    ov.id='_eu_confirm_ov';
+    ov.style.cssText='position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,.82);backdrop-filter:blur(14px);display:flex;align-items:center;justify-content:center;';
+    ov.innerHTML=
+      '<div style="background:#0f0f3a;border:1px solid rgba(255,51,102,.35);border-radius:20px;padding:30px 24px;text-align:center;max-width:280px;width:86%;box-shadow:0 0 40px rgba(255,51,102,.1);">'+
+        '<div style="font-size:40px;margin-bottom:12px;">'+(icon||'🗑️')+'</div>'+
+        '<div style="font-size:13px;color:#e0e0ff;line-height:1.7;margin-bottom:22px;">'+msg+'</div>'+
+        '<div style="display:flex;gap:10px;">'+
+          '<button id="_eu_conf_no"  style="flex:1;padding:11px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:#e0e0ff;font-family:Space Mono,monospace;font-size:11px;cursor:pointer;">Cancelar</button>'+
+          '<button id="_eu_conf_yes" style="flex:1;padding:11px;border-radius:10px;border:none;background:linear-gradient(135deg,#ff3366,#bf5fff);color:#fff;font-family:Silkscreen,monospace;font-size:10px;letter-spacing:1px;cursor:pointer;">✕ EXCLUIR</button>'+
+        '</div>'+
+      '</div>';
+    document.body.appendChild(ov);
+    document.getElementById('_eu_conf_no').onclick =()=>{ ov.remove(); resolve(false); };
+    document.getElementById('_eu_conf_yes').onclick=()=>{ ov.remove(); resolve(true);  };
+  });
+}
+
 async function deletePost(postId){
-  if(!confirm('Deletar este post?'))return;
+  if(!await _euConfirm('Deseja excluir este post?<br>Esta ação não pode ser desfeita.','🗑️')) return;
   await db.from('posts').delete().eq('id',postId).eq('user_id',CU.id);
   document.getElementById('post-'+postId)?.remove();
   cachedPostIds.delete(postId);cachedPosts={};
@@ -13517,7 +13539,7 @@ async function loadCommPostsV2(commId,isMember,isMod){
 }
 
 async function delCommPost(commId,postId){
-  if(!confirm('Remover post da comunidade?')) return;
+  if(!await _euConfirm('Remover este post da comunidade?','🏘️')) return;
   await db.from('community_posts').delete().eq('community_id',commId).eq('post_id',postId);
   document.getElementById('post-'+postId)?.remove();
   showToast('Post removido','success');
