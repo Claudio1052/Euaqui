@@ -3568,6 +3568,7 @@ body.day-mode::before{
     <div class="nav-right">
       <input type="text" id="nav-search" placeholder="🔍 Buscar..." oninput="quickSearch()" onclick="nav('explore')">
       <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()" title="Alternar Dia/Noite">🌙</button>
+      <button class="theme-toggle" id="trending-nav-btn" onclick="openTrendingModal()" title="Em Alta" style="color:var(--neon-pink);font-weight:700;font-size:15px;">🔥</button>
       <button class="theme-toggle" id="header-notif-btn" onclick="nav('notifications')" title="Notificações" style="position:relative;">🔔<span class="nbadge" id="header-notif-badge" style="display:none;position:absolute;top:-4px;right:-4px;">0</span></button>
       <img class="nav-av" id="nav-av" src="https://api.dicebear.com/7.x/pixel-art/svg?seed=default" onclick="nav('profile')">
       <button class="hamburger" onclick="toggleDrawer()">☰</button>
@@ -3594,6 +3595,7 @@ body.day-mode::before{
     <div class="ums" id="dr-status">...</div>
   </div>
   <div class="slink" onclick="nav('home');toggleDrawer()"><span class="ic">🏠</span> Feed</div>
+  <div class="slink" onclick="openTrendingModal();toggleDrawer()" style="color:var(--neon-pink);font-weight:700;"><span class="ic">🔥</span> Em Alta</div>
   <div class="slink" onclick="nav('profile');toggleDrawer()"><span class="ic">👤</span> Meu Perfil</div>
   <div class="slink" onclick="nav('friends');toggleDrawer()"><span class="ic">👥</span> Amigos</div>
   <div class="slink" onclick="nav('communities');toggleDrawer()"><span class="ic">🏘</span> Comunidades</div>
@@ -9896,14 +9898,23 @@ async function loadNotifTab(tabId){
   if(!el) return;
   el.innerHTML=skeletons(3);
 
-  // ✅ Busca não lidas — SEM marcar como lida automaticamente
-  let q=db.from('notifications')
-    .select('id,type,content,read,created_at,post_id,actor_id,business_id,community_id,metadata,reaction_type')
-    .eq('user_id',CU.id).eq('read',false)
-    .order('created_at',{ascending:false}).limit(50);
-  if(Array.isArray(filter)) q=q.in('type',filter);
-  else if(filter) q=q.eq('type',filter);
-  const{data}=await q;
+  // ✅ Busca não lidas — fallback seguro se colunas opcionais não existirem
+  async function _fetchNotifs(extraCols){
+    let q=db.from('notifications')
+      .select('id,type,content,read,created_at,post_id,actor_id,business_id,community_id'+(extraCols?','+extraCols:''))
+      .eq('user_id',CU.id).eq('read',false)
+      .order('created_at',{ascending:false}).limit(50);
+    if(Array.isArray(filter)) q=q.in('type',filter);
+    else if(filter) q=q.eq('type',filter);
+    return await q;
+  }
+  // Tenta com metadata+reaction_type; se a coluna não existir no banco, retenta sem
+  let res = await _fetchNotifs('metadata,reaction_type');
+  if(res.error){
+    console.warn('[notif] Colunas extras ausentes, retentando:', res.error.message);
+    res = await _fetchNotifs('');
+  }
+  const data = res.data;
 
   if(!data?.length){
     el.innerHTML=`<div class="notif-empty"><div class="notif-empty-icon">🔔</div><div class="notif-empty-txt">Tudo em dia!</div></div>`;
