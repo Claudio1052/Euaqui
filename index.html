@@ -1934,7 +1934,8 @@ body.day-mode .bnav-btn.active .bni{
 body.day-mode .yt-link{ color:#6b7280; }
 
 /* Feed autoplay — botão mudo flutuante */
-.feed-mute-btn:hover{ transform:scale(1.12); background:rgba(0,0,0,.75) !important; }
+.feed-mute-btn{ opacity:.45; transition:opacity .25s,transform .2s !important; }
+.feed-mute-btn:active{ opacity:.9; transform:scale(.92) !important; }
 .feed-video::-webkit-media-controls-play-button{ display:none; }
 /* Em mobile, remove barra de controles padrão quando o autoplay está ativo */
 @media(max-width:768px){
@@ -15552,7 +15553,7 @@ function _syncAllMuteBtns(){
   document.querySelectorAll('.feed-mute-btn').forEach(btn => {
     btn.innerHTML    = _globalMuted ? '🔇' : '🔊';
     btn.title        = _globalMuted ? 'Toque para ativar som' : 'Toque para silenciar';
-    btn.style.border = _globalMuted ? 'none' : '2px solid var(--neon-cyan)';
+    btn.style.opacity = '0.45';
   });
   // Também sincroniza os botões inline de mute dos posts (div com onclick)
   document.querySelectorAll('.inline-mute-btn').forEach(btn => {
@@ -15633,12 +15634,12 @@ function _showMuteIndicator(videoEl){
     btn = document.createElement('button');
     btn.className = 'feed-mute-btn';
     btn.style.cssText = [
-      'position:absolute','top:8px','right:8px','z-index:10',
-      'background:rgba(0,0,0,.55)','border:none','border-radius:50%',
-      'width:34px','height:34px','font-size:16px',
+      'position:absolute','bottom:8px','right:8px','z-index:10',
+      'background:rgba(0,0,0,.25)','border:none','border-radius:50%',
+      'width:22px','height:22px','font-size:10px',
       'display:flex','align-items:center','justify-content:center',
-      'cursor:pointer','backdrop-filter:blur(4px)',
-      'transition:all .2s'
+      'cursor:pointer','backdrop-filter:blur(2px)',
+      'opacity:.4','transition:opacity .25s'
     ].join(';');
     wrap.style.position = 'relative';
     btn.onclick = _toggleGlobalMute;
@@ -15646,7 +15647,7 @@ function _showMuteIndicator(videoEl){
   }
   btn.innerHTML = _globalMuted ? '🔇' : '🔊';
   btn.title     = _globalMuted ? 'Toque para ativar som' : 'Toque para silenciar';
-  btn.style.border = _globalMuted ? 'none' : '2px solid var(--neon-cyan)';
+  btn.style.opacity = '0.45';
 }
 
 // Botão flutuante de mute para iframes YouTube
@@ -15658,12 +15659,12 @@ function _showYTMuteIndicator(iframeEl){
     btn = document.createElement('button');
     btn.className = 'feed-mute-btn';
     btn.style.cssText = [
-      'position:absolute','top:8px','right:8px','z-index:10',
-      'background:rgba(0,0,0,.55)','border:none','border-radius:50%',
-      'width:34px','height:34px','font-size:16px',
+      'position:absolute','bottom:8px','right:8px','z-index:10',
+      'background:rgba(0,0,0,.25)','border:none','border-radius:50%',
+      'width:22px','height:22px','font-size:10px',
       'display:flex','align-items:center','justify-content:center',
-      'cursor:pointer','backdrop-filter:blur(4px)',
-      'transition:all .2s'
+      'cursor:pointer','backdrop-filter:blur(2px)',
+      'opacity:.4','transition:opacity .25s'
     ].join(';');
     if(getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
     btn.onclick = _toggleGlobalMute;
@@ -15671,7 +15672,7 @@ function _showYTMuteIndicator(iframeEl){
   }
   btn.innerHTML = _globalMuted ? '🔇' : '🔊';
   btn.title     = _globalMuted ? 'Toque para ativar som' : 'Toque para silenciar';
-  btn.style.border = _globalMuted ? 'none' : '2px solid var(--neon-cyan)';
+  btn.style.opacity = '0.45';
 }
 
 // Reobservar após navegação de volta ao feed
