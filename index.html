@@ -9609,10 +9609,28 @@ function getYouTubeId(url){
 }
 
 function linkify(t){
+  // 0. Processar markdown antes do xss
+  // [texto](url) → link estilizado
+  t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, (_, label, href)=>{
+    return `\x00MDLINK:${encodeURIComponent(href)}:${encodeURIComponent(label)}\x00`;
+  });
+  // **negrito**
+  t = t.replace(/\*\*([^*]+)\*\*/g, '\x00BOLD:$1\x00');
+
   const safe = xss(t);
+
+  // Restaurar markdown após xss
+  let result = safe
+    .replace(/\x00MDLINK:([^:]+):([^\x00]+)\x00/g, (_, href, label)=>{
+      const decodedHref = decodeURIComponent(href);
+      const decodedLabel = decodeURIComponent(label);
+      return `<a href="${decodedHref}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:linear-gradient(135deg,var(--neon-cyan),var(--neon-purple));color:var(--bg-deep);padding:4px 14px;border-radius:20px;font-family:'Silkscreen',monospace;font-size:10px;letter-spacing:.5px;text-decoration:none;font-weight:bold;margin:2px 0;">${decodedLabel}</a>`;
+    })
+    .replace(/\x00BOLD:([^\x00]+)\x00/g, '<strong>$1</strong>');
+
   // 1. Detect YouTube links and replace with embed player
   const ytRegex = /https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})[^\s]*/g;
-  let result = safe.replace(ytRegex, (match, videoId)=>{
+  result = result.replace(ytRegex, (match, videoId)=>{
     return `<div class="yt-embed-wrap yt-feed-wrap" data-ytid="${videoId}">
       <iframe class="yt-embed yt-feed-iframe"
         src="https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1&enablejsapi=1&mute=1&playsinline=1&autoplay=0"
@@ -9625,10 +9643,8 @@ function linkify(t){
     </div>`;
   });
   // 2. Detect remaining generic URLs (not already inside href or iframe)
-  // Uses a placeholder approach: replace non-YT URLs with clickable links
   const urlRegex = /(?<![=">])https?:\/\/[^\s<>"]+/g;
   result = result.replace(urlRegex, (url)=>{
-    // Skip if it's already inside an HTML tag attribute (href, src)
     return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color:var(--neon-cyan);text-decoration:underline;word-break:break-all;">${url}</a>`;
   });
   // 3. Mentions and hashtags
@@ -15583,7 +15599,8 @@ async function postCommInviteToFeed(commId, commName, url){
       }catch(e){}
     }
 
-    const content = `🏘 Junte-se a mim na comunidade **${commName}**!\n\n${url}`;
+    // Conteúdo com link oculto dentro do texto âncora (o link real fica no texto mas exibido como "Seja Membro")
+    const content = `🏘 Junte-se a mim na comunidade **${commName}**!\n\n👉 [Seja Membro](${url})`;
     const postData = {
       user_id: CU.id,
       content,
