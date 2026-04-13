@@ -15313,7 +15313,7 @@ async function saveEditComm(commId,btn){
 
 async function deleteComm(commId){
   // Popup de confirmação customizado (confirm() nativo é bloqueado em mobile/PWA)
-  await new Promise(resolve=>{
+  const confirmed = await new Promise(resolve=>{
     document.getElementById('_del_comm_ov')?.remove();
     const ov = document.createElement('div');
     ov.id = '_del_comm_ov';
@@ -15336,21 +15336,52 @@ async function deleteComm(commId){
     document.body.appendChild(ov);
     document.getElementById('_del_cancel').onclick  = ()=>{ ov.remove(); resolve(false); };
     document.getElementById('_del_confirm').onclick = ()=>{ ov.remove(); resolve(true); };
-  }).then(async confirmed=>{
-    if(!confirmed) return;
-    // Feedback visual imediato
-    showToast('Excluindo...','');
-    await db.from('community_members').delete().eq('community_id',commId);
-    await db.from('community_posts').delete().eq('community_id',commId);
-    await db.from('community_chat').delete().eq('community_id',commId).catch(()=>{});
-    const{error}=await db.from('communities').delete().eq('id',commId).eq('owner_id',CU.id);
-    if(error){ showToast('Erro ao excluir: '+error.message,'error'); return; }
-    // Limpa cache
-    if(window._commCache) delete window._commCache[commId];
-    showToast('✅ Comunidade excluída!','success');
-    nav('communities');
-    setTimeout(()=>loadCommGrid('all'), 200);
   });
+
+  if(!confirmed) return;
+
+  showToast('Excluindo...','');
+
+  // Deleta dependências primeiro
+  await db.from('community_members').delete().eq('community_id',commId).catch(()=>{});
+  await db.from('community_posts').delete().eq('community_id',commId).catch(()=>{});
+  await db.from('community_chat').delete().eq('community_id',commId).catch(()=>{});
+  await db.from('community_xp').delete().eq('community_id',commId).catch(()=>{});
+
+  // Tenta deletar a comunidade — estratégia 1: só pelo id (RLS já filtra por owner)
+  let deleteError = null;
+  const r1 = await db.from('communities').delete().eq('id',commId);
+  deleteError = r1.error;
+
+  // Estratégia 2: com owner_id explícito (fallback)
+  if(deleteError){
+    console.warn('[deleteComm] tentativa 1 falhou:', deleteError.message);
+    const r2 = await db.from('communities').delete().eq('id',commId).eq('owner_id',CU.id);
+    deleteError = r2.error;
+  }
+
+  if(deleteError){
+    console.error('[deleteComm] erro final:', deleteError);
+    // Mostra o SQL necessário para corrigir RLS
+    showToast('Erro de permissão. Execute o SQL de correção no Supabase.','error');
+    const sqlFix = `-- Cole no Supabase SQL Editor:
+DROP POLICY IF EXISTS "comm_del" ON communities;
+CREATE POLICY "comm_del" ON communities
+  FOR DELETE USING (owner_id = auth.uid());`;
+    console.log(sqlFix);
+    // Exibe o SQL na tela para o admin
+    const errDiv = document.createElement('div');
+    errDiv.style.cssText='position:fixed;bottom:80px;left:12px;right:12px;background:#1a0a0a;border:1px solid #ff3366;border-radius:10px;padding:12px;font-size:10px;color:#ff3366;z-index:9999;word-break:break-all;';
+    errDiv.innerHTML='<b>Erro RLS:</b> Execute no Supabase → SQL Editor:<br><code style="color:#00ffcc;display:block;margin-top:6px;">'+sqlFix.replace(/\n/g,'<br>')+'</code><button onclick="this.parentElement.remove()" style="margin-top:8px;background:#ff3366;border:none;color:#fff;padding:4px 10px;border-radius:6px;cursor:pointer;">Fechar</button>';
+    document.body.appendChild(errDiv);
+    return;
+  }
+
+  // Sucesso
+  if(window._commCache) delete window._commCache[commId];
+  showToast('✅ Comunidade excluída!','success');
+  nav('communities');
+  setTimeout(()=>loadCommGrid('all'), 300);
 }
 
 const COMM_XP_TABLE={post:10,comment:5,like:2,chat:2,invite:20,join_invite:5};
