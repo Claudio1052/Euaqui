@@ -9974,32 +9974,64 @@ async function loadNotifTab(tabId){
   }
 
   // Buscar dados reais das comunidades para notificações de tipo community_*
-  // Estratégia: buscar via community_id sem depender de colunas extras no banco
-  const commNotifs = (data||[]).filter(n=>
-    ['community_post','community_live','community_mention','community_invite'].includes(n.type) && n.community_id
+  // Estratégia A: via post_id → community_posts → communities (não depende de community_id na tabela)
+  // Estratégia B: via actor_id → busca comunidades onde o ator é owner (para notifs de live)
+  const _commDataMap = {}; // commId → {name, avatar}
+  const _postToComm  = {}; // postId → commId
+
+  const commPostNotifs = (data||[]).filter(n=>
+    ['community_post','community_mention'].includes(n.type) && n.post_id
   );
-  const _commDataMap = {};
-  if(commNotifs.length){
-    const commIds = [...new Set(commNotifs.map(n=>n.community_id))];
-    try{
+  const commLiveNotifs = (data||[]).filter(n=> n.type==='community_live' && n.actor_id);
+
+  try{
+    // Estratégia A — via post_id
+    if(commPostNotifs.length){
+      const postIds = [...new Set(commPostNotifs.map(n=>n.post_id))];
+      const{data:cpRows} = await db.from('community_posts')
+        .select('post_id,community_id')
+        .in('post_id', postIds);
+      (cpRows||[]).forEach(r=>{ if(r.community_id) _postToComm[r.post_id]=r.community_id; });
+    }
+
+    // Coletar todos os community_ids encontrados
+    const allCommIds = [...new Set(Object.values(_postToComm))];
+
+    // Estratégia B — para lives: busca communidades onde o actor_id é owner ou membro
+    if(commLiveNotifs.length){
+      const actorIds = [...new Set(commLiveNotifs.map(n=>n.actor_id))];
+      const{data:liveComms} = await db.from('communities')
+        .select('id,name,avatar_url,icon,owner_id')
+        .in('owner_id', actorIds);
+      (liveComms||[]).forEach(c=>{
+        if(!allCommIds.includes(c.id)) allCommIds.push(c.id);
+        _commDataMap[c.id]={name:c.name,avatar:c.avatar_url||c.icon||null};
+        // Associar actor_id → comunidade para lives
+        commLiveNotifs.forEach(n=>{ if(n.actor_id===c.owner_id) n._liveCommId=c.id; });
+      });
+    }
+
+    // Buscar dados de todas as comunidades identificadas
+    if(allCommIds.length){
       const{data:comms} = await db.from('communities')
         .select('id,name,avatar_url,icon')
-        .in('id', commIds);
+        .in('id', allCommIds);
       (comms||[]).forEach(c=>{
-        _commDataMap[c.id] = {
-          name: c.name || 'Comunidade',
-          avatar: c.avatar_url || c.icon || null
-        };
+        _commDataMap[c.id]={name:c.name||'Comunidade', avatar:c.avatar_url||c.icon||null};
       });
-    }catch(e){ console.warn('[notif comm lookup]', e?.message); }
-    // Enriquecer notificações com dados reais da comunidade
+    }
+
+    // Enriquecer cada notificação com nome e avatar real
     data.forEach(n=>{
-      if(n.community_id && _commDataMap[n.community_id]){
-        n._commName   = _commDataMap[n.community_id].name;
-        n._commAvatar = _commDataMap[n.community_id].avatar;
+      let commId = null;
+      if(n.post_id && _postToComm[n.post_id])    commId = _postToComm[n.post_id];
+      else if(n._liveCommId)                      commId = n._liveCommId;
+      if(commId && _commDataMap[commId]){
+        n._commName   = _commDataMap[commId].name;
+        n._commAvatar = _commDataMap[commId].avatar;
       }
     });
-  }
+  }catch(eComm){ console.warn('[notif comm lookup]', eComm?.message); }
 
   const REACTION_EMOJI = {
     like:'👍', love:'❤️', haha:'😂', wow:'😮', sad:'😢', angry:'😡',
@@ -10050,15 +10082,11 @@ async function loadNotifTab(tabId){
     <div class="ni${n.read?'':' unrd'}" id="ni-${n.id}">
       <div class="ni-icon">${iconHtml}</div>
       <div class="ni-clickable-body" onclick="handleNotifNavigation(JSON.parse(this.closest('.ni').dataset.notif))">
-        <div class="ni-txt">${xss(
-        // Para notificações de comunidade, substituir "Comunidade" pelo nome real se disponível
-        (n._commName && n.content && n.content.includes('Comunidade'))
-          ? n.content.replace('Comunidade', n._commName)
-          : (n.content||'Nova notificação')
-      )}</div>
-      ${(n._commName && ['community_post','community_live'].includes(n.type))
-        ? `<div style="font-size:10px;color:var(--neon-cyan);margin-top:2px;font-family:'Silkscreen',monospace;opacity:.8;">🏘 ${xss(n._commName)}</div>`
-        : ''}
+        ${(['community_post','community_live','community_mention','community_invite'].includes(n.type) && n._commName)
+        ? `<div style="font-family:'Silkscreen',monospace;font-size:11px;color:var(--neon-cyan);font-weight:700;letter-spacing:.5px;">${xss(n._commName)}</div>
+           <div class="ni-txt" style="font-size:11px;margin-top:2px;">${xss(n.content||'Nova notificação')}</div>`
+        : `<div class="ni-txt">${xss(n.content||'Nova notificação')}</div>`
+      }
         <div class="ni-time">${timeAgo(n.created_at)}</div>
         ${n.type==='friend_request'?`<div class="ni-actions">
           <button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();acceptFriendFromNotif(this)">✓ Aceitar</button>
