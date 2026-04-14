@@ -6373,78 +6373,99 @@ async function compressImage(file){
   return new File([out], name, {type:'image/jpeg'});
 }
 
-// --- Compressão de vídeo via FFmpeg.wasm 0.11.6 (funciona em qualquer host) ---
-// Versão 0.11 não precisa de headers COOP/COEP nem de Worker cross-origin.
-let _ffmpeg=null, _ffmpegLoading=null;
-async function getFFmpeg(){
-  if(_ffmpeg) return _ffmpeg;
-  if(_ffmpegLoading) return _ffmpegLoading;
-  _ffmpegLoading = (async()=>{
-    console.log('[FFmpeg] carregando ffmpeg.min.js (0.11.6)...');
-    await _loadScript('https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js');
-    if(!window.FFmpeg || !window.FFmpeg.createFFmpeg){
-      throw new Error('FFmpeg 0.11 não carregou (bloqueio de CDN?)');
-    }
-    const { createFFmpeg } = window.FFmpeg;
-    const ff = createFFmpeg({
-      log: false,
-      corePath: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js'
-    });
-    console.log('[FFmpeg] carregando core WASM...');
-    await ff.load();
-    console.log('[FFmpeg] pronto.');
-    _ffmpeg = ff;
-    return ff;
-  })().catch(e=>{ _ffmpegLoading=null; throw e; });
-  return _ffmpegLoading;
-}
+// --- Compressão de vídeo via MediaRecorder (API NATIVA, sem CDN/WASM) ---
+// Funciona em qualquer hospedagem, sem headers especiais.
+// Re-codifica num <canvas> + MediaStream -> MediaRecorder.
 async function compressVideo(file, onProgress){
-  let ff;
   try{
-    ff = await getFFmpeg();
-  }catch(e){
-    console.error('[FFmpeg] falhou ao carregar, enviando ORIGINAL:', e);
-    showToast('⚠️ Compressor indisponível, enviando vídeo original','error');
-    return file;
-  }
-  const { fetchFile } = window.FFmpeg;
-  const ext = (file.name.match(/\.[^.]+$/)?.[0] || '.mp4').toLowerCase();
-  const inName  = 'in'+ext;
-  const outName = 'out.mp4';
-  try{
-    // Limpa resíduos de rodadas anteriores
-    try{ ff.FS('unlink', inName); }catch(_){}
-    try{ ff.FS('unlink', outName); }catch(_){}
-    ff.FS('writeFile', inName, await fetchFile(file));
-    // Compressão ADAPTATIVA: quanto maior o vídeo, mais agressivo
+    if(typeof MediaRecorder === 'undefined'){
+      console.warn('[MediaRecorder] não suportado, enviando original');
+      return file;
+    }
+    const url = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    video.src = url; video.muted = false; video.playsInline = true;
+    video.preload = 'auto';
+    await new Promise((res,rej)=>{
+      video.onloadedmetadata = ()=>res();
+      video.onerror = ()=>rej(new Error('não consegui ler o vídeo'));
+    });
+    // Resolução alvo (adaptativa por tamanho)
     const sizeMB = file.size/1024/1024;
     let maxH = R2_VIDEO_MAX_HEIGHT; // 720
-    let crf  = R2_VIDEO_CRF;        // 28
-    if(sizeMB > 30){ maxH = 540; crf = 30; }
-    if(sizeMB > 80){ maxH = 480; crf = 32; }
-    console.log(`[FFmpeg] entrada=${sizeMB.toFixed(1)}MB -> maxH=${maxH} crf=${crf}`);
-    if(onProgress) ff.setProgress(({ratio})=>onProgress(Math.min(0.99, Math.max(0, ratio||0))));
-    await ff.run(
-      '-i', inName,
-      '-vf', `scale=-2:'min(${maxH},ih)'`,
-      '-c:v','libx264','-preset','veryfast','-crf', String(crf),
-      '-c:a','aac','-b:a','96k',
-      '-movflags','+faststart',
-      outName
-    );
-    const data = ff.FS('readFile', outName);
-    try{ ff.FS('unlink', inName); }catch(_){}
-    try{ ff.FS('unlink', outName); }catch(_){}
-    const blob = new Blob([data.buffer], {type:'video/mp4'});
-    const newMB = blob.size/1024/1024;
-    console.log(`[FFmpeg] saída=${newMB.toFixed(1)}MB (original ${sizeMB.toFixed(1)}MB)`);
-    const name = file.name.replace(/\.[^.]+$/,'')+'.mp4';
-    return new File([blob], name, {type:'video/mp4'});
+    let vBitrate = 1_800_000;       // 1.8 Mbps
+    if(sizeMB > 30){ maxH = 540; vBitrate = 1_200_000; }
+    if(sizeMB > 80){ maxH = 480; vBitrate = 900_000;  }
+    let w = video.videoWidth||640, h = video.videoHeight||480;
+    if(h > maxH){ w = Math.round(w*maxH/h); h = maxH; }
+    w -= w%2; h -= h%2; // dimensões pares
+    console.log(`[MediaRecorder] ${sizeMB.toFixed(1)}MB ${video.videoWidth}x${video.videoHeight} -> ${w}x${h} @ ${Math.round(vBitrate/1000)}kbps`);
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    const vStream = canvas.captureStream(30);
+    // Áudio: tenta capturar do próprio elemento de vídeo
+    let aTracks = [];
+    try{
+      const s = video.captureStream ? video.captureStream() : (video.mozCaptureStream?video.mozCaptureStream():null);
+      if(s) aTracks = s.getAudioTracks();
+    }catch(_){}
+    const combined = new MediaStream([...vStream.getVideoTracks(), ...aTracks]);
+    // Escolhe o melhor MIME disponível
+    const mimes = [
+      'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+      'video/mp4',
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+      'video/webm'
+    ];
+    let mimeType = '';
+    for(const m of mimes){ if(MediaRecorder.isTypeSupported(m)){ mimeType = m; break; } }
+    if(!mimeType){ console.warn('[MediaRecorder] nenhum MIME suportado'); URL.revokeObjectURL(url); return file; }
+    console.log('[MediaRecorder] MIME:', mimeType);
+    const recOpts = { mimeType, videoBitsPerSecond: vBitrate, audioBitsPerSecond: 96_000 };
+    const rec = new MediaRecorder(combined, recOpts);
+    const chunks = [];
+    rec.ondataavailable = e=>{ if(e.data && e.data.size) chunks.push(e.data); };
+    const result = await new Promise((resolve,reject)=>{
+      let stopped = false;
+      const stop = ()=>{ if(stopped) return; stopped=true; try{ rec.stop(); }catch(_){} };
+      rec.onstop = ()=>{
+        URL.revokeObjectURL(url);
+        const outType = mimeType.split(';')[0]; // video/mp4 ou video/webm
+        const ext = outType.includes('mp4') ? '.mp4' : '.webm';
+        const blob = new Blob(chunks, { type: outType });
+        const name = file.name.replace(/\.[^.]+$/,'') + ext;
+        const out = new File([blob], name, { type: outType });
+        console.log(`[MediaRecorder] saída=${(out.size/1024/1024).toFixed(1)}MB`);
+        resolve(out);
+      };
+      rec.onerror = (e)=>{ stop(); reject(e.error||new Error('MediaRecorder erro')); };
+      video.onended = stop;
+      const draw = ()=>{
+        if(stopped) return;
+        if(video.ended){ stop(); return; }
+        ctx.drawImage(video, 0, 0, w, h);
+        if(onProgress && video.duration){
+          onProgress(Math.min(0.99, video.currentTime/video.duration));
+        }
+        requestAnimationFrame(draw);
+      };
+      rec.start(1000); // chunks de 1s
+      video.play().then(()=>requestAnimationFrame(draw)).catch(err=>{ stop(); reject(err); });
+      // Timeout de segurança: duração do vídeo + 30s
+      const maxMs = ((video.duration||60)+30)*1000;
+      setTimeout(stop, maxMs);
+    });
+    // Só mantém o original se a "compressão" ficou maior que 98% dele
+    if(result.size >= file.size*0.98){
+      console.log('[MediaRecorder] saída ~= original, mantendo original');
+      return file;
+    }
+    return result;
   }catch(e){
-    console.error('[FFmpeg] exec falhou:', e);
-    showToast('⚠️ Falha ao comprimir, enviando original: '+(e.message||e),'error');
-    try{ ff.FS('unlink', inName); }catch(_){}
-    try{ ff.FS('unlink', outName); }catch(_){}
+    console.error('[MediaRecorder] falhou:', e);
+    showToast('⚠️ Não consegui comprimir, enviando original','error');
     return file;
   }
 }
