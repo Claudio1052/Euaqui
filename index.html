@@ -6503,8 +6503,20 @@ async function r2GetPresign(file){
 }
 async function r2UploadToPresigned(uploadUrl, file, extraHeaders){
   const headers = Object.assign({'Content-Type':file.type}, extraHeaders||{});
-  const r = await fetch(uploadUrl, { method:'PUT', headers, body:file });
-  if(!r.ok) throw new Error('upload R2 HTTP '+r.status);
+  let r;
+  try{
+    r = await fetch(uploadUrl, { method:'PUT', headers, body:file });
+  }catch(netErr){
+    const e = new Error('UPLOAD_NETWORK');
+    e.userMessage = '🌐 Falha de rede no PUT pro Worker: '+(netErr.message||netErr)+'. Verifique CORS/ALLOWED_ORIGIN no Worker.';
+    throw e;
+  }
+  if(!r.ok){
+    const txt = await r.text().catch(()=> '');
+    const e = new Error('upload R2 HTTP '+r.status);
+    e.userMessage = `☁️ Worker recusou o upload (HTTP ${r.status}): ${txt||r.statusText||'sem mensagem'}`;
+    throw e;
+  }
 }
 async function r2Finalize(key, publicUrl, contentType){
   const r = await fetch(R2_BACKEND_URL+'/api/r2/finalize', {
@@ -6516,43 +6528,43 @@ async function r2Finalize(key, publicUrl, contentType){
   return r.json(); // { approved, reason? }
 }
 
-// --- Pipeline completo p/ um arquivo. Retorna publicUrl ou lança erro. ---
+// --- Pipeline SIMPLIFICADO (modo debug). Só comprime e sobe no R2.
+//     Depois que estiver funcionando, religamos NSFW e Sightengine. ---
 async function uploadWithPipeline(file, type, setStatus){
   const S = setStatus || (()=>{});
   // 1) Compressão
   S('🗜 Comprimindo '+(type==='video'?'vídeo':'foto')+'...');
-  const compressed = (type==='video')
-    ? await compressVideo(file, p=>S('🗜 Comprimindo vídeo... '+Math.round(p*100)+'%'))
-    : await compressImage(file);
-  // 1.5) Limite final pós-compressão (o que de fato vai pro R2)
+  console.log('[pipeline] 1/4 compressão — entrada:', file.name, (file.size/1024/1024).toFixed(2)+'MB', file.type);
+  let compressed;
+  try{
+    compressed = (type==='video')
+      ? await compressVideo(file, p=>S('🗜 Comprimindo vídeo... '+Math.round(p*100)+'%'))
+      : await compressImage(file);
+  }catch(e){
+    console.error('[pipeline] erro na compressão:', e);
+    compressed = file; // segue com original
+  }
+  console.log('[pipeline] compressão OK — saída:', compressed.name, (compressed.size/1024/1024).toFixed(2)+'MB', compressed.type);
+  // 1.5) Limite final
   if(compressed.size > R2_MAX_UPLOAD_MB*1024*1024){
     const err = new Error('TOO_LARGE_AFTER_COMPRESS');
     const mb = (compressed.size/1024/1024).toFixed(1);
-    err.userMessage = `🚫 Mesmo após compressão o arquivo ficou ${mb}MB (máx. ${R2_MAX_UPLOAD_MB}MB). Tente um vídeo mais curto ou de menor qualidade.`;
+    err.userMessage = `🚫 Mesmo após compressão ficou ${mb}MB (máx. ${R2_MAX_UPLOAD_MB}MB).`;
     throw err;
   }
-  // 2) Filtro grátis (NSFWJS)
-  S('🛡 Verificando conteúdo (IA local)...');
-  const nsfw = (type==='video') ? await nsfwCheckVideo(compressed) : await nsfwCheckImage(compressed);
-  if(!nsfw.safe){
-    const err = new Error('NSFW_BLOCKED');
-    err.userMessage='🚫 Conteúdo explícito detectado. Upload cancelado.';
-    throw err;
-  }
-  // 3) Presign (Java autoriza)
-  S('🔐 Autorizando upload...');
+  // 2) [PULADO] NSFWJS — será religado depois
+  // 3) Presign
+  S('🔐 Pedindo autorização ao Worker...');
+  console.log('[pipeline] 2/3 presign — chamando:', R2_BACKEND_URL+'/api/r2/presign');
   const pres = await r2GetPresign(compressed);
-  // 4) Upload direto p/ R2
-  S('☁️ Enviando para Cloudflare R2...');
+  console.log('[pipeline] presign OK:', pres);
+  // 4) Upload direto pro Worker/R2
+  S('☁️ Enviando ao Cloudflare R2...');
+  console.log('[pipeline] 3/3 PUT em:', pres.uploadUrl);
   await r2UploadToPresigned(pres.uploadUrl, compressed, pres.headers);
-  // 5) Auditoria profissional (Java -> Sightengine)
-  S('🔎 Auditoria final (Sightengine)...');
-  const fin = await r2Finalize(pres.key, pres.publicUrl, compressed.type);
-  if(!fin.approved){
-    const err = new Error('SIGHTENGINE_BLOCKED');
-    err.userMessage='🚫 Reprovado na auditoria: '+(fin.reason||'conteúdo impróprio');
-    throw err;
-  }
+  console.log('[pipeline] upload OK — URL pública:', pres.publicUrl);
+  // 5) [PULADO] Sightengine/finalize — aprova direto
+  S('✅ Enviado!');
   return pres.publicUrl;
 }
 
