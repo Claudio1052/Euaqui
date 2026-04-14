@@ -6373,29 +6373,25 @@ async function compressImage(file){
   return new File([out], name, {type:'image/jpeg'});
 }
 
-// --- Compressão de vídeo via FFmpeg.wasm ---
+// --- Compressão de vídeo via FFmpeg.wasm 0.11.6 (funciona em qualquer host) ---
+// Versão 0.11 não precisa de headers COOP/COEP nem de Worker cross-origin.
 let _ffmpeg=null, _ffmpegLoading=null;
 async function getFFmpeg(){
   if(_ffmpeg) return _ffmpeg;
   if(_ffmpegLoading) return _ffmpegLoading;
   _ffmpegLoading = (async()=>{
-    console.log('[FFmpeg] carregando scripts...');
-    await _loadScript('https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js');
-    await _loadScript('https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js');
-    if(!window.FFmpegWASM || !window.FFmpegUtil){
-      throw new Error('FFmpeg UMD não expôs FFmpegWASM/FFmpegUtil (bloqueio de CDN?)');
+    console.log('[FFmpeg] carregando ffmpeg.min.js (0.11.6)...');
+    await _loadScript('https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js');
+    if(!window.FFmpeg || !window.FFmpeg.createFFmpeg){
+      throw new Error('FFmpeg 0.11 não carregou (bloqueio de CDN?)');
     }
-    const { FFmpeg } = window.FFmpegWASM;
-    const { toBlobURL } = window.FFmpegUtil;
-    const base = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
-    console.log('[FFmpeg] convertendo core para blob URLs (evita CORS)...');
-    // toBlobURL baixa o arquivo do CDN e gera URL same-origin — contorna CORS
-    const coreURL = await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript');
-    const wasmURL = await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm');
-    const ff = new FFmpeg();
-    ff.on('log', ({message})=>{ if(message && !message.includes('frame=')) console.log('[ffmpeg]', message); });
+    const { createFFmpeg } = window.FFmpeg;
+    const ff = createFFmpeg({
+      log: false,
+      corePath: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js'
+    });
     console.log('[FFmpeg] carregando core WASM...');
-    await ff.load({ coreURL, wasmURL });
+    await ff.load();
     console.log('[FFmpeg] pronto.');
     _ffmpeg = ff;
     return ff;
@@ -6408,60 +6404,80 @@ async function compressVideo(file, onProgress){
     ff = await getFFmpeg();
   }catch(e){
     console.error('[FFmpeg] falhou ao carregar, enviando ORIGINAL:', e);
-    showToast('⚠️ Compressor indisponível, enviando vídeo original. '+(e.message||''),'error');
+    showToast('⚠️ Compressor indisponível, enviando vídeo original','error');
     return file;
   }
-  const { fetchFile } = window.FFmpegUtil;
-  const inName='in_'+Date.now()+(file.name.match(/\.[^.]+$/)?.[0]||'.mp4');
-  const outName='out_'+Date.now()+'.mp4';
+  const { fetchFile } = window.FFmpeg;
+  const ext = (file.name.match(/\.[^.]+$/)?.[0] || '.mp4').toLowerCase();
+  const inName  = 'in'+ext;
+  const outName = 'out.mp4';
   try{
-    await ff.writeFile(inName, await fetchFile(file));
-    // Compressão ADAPTATIVA: vídeo grande = mais agressivo
+    // Limpa resíduos de rodadas anteriores
+    try{ ff.FS('unlink', inName); }catch(_){}
+    try{ ff.FS('unlink', outName); }catch(_){}
+    ff.FS('writeFile', inName, await fetchFile(file));
+    // Compressão ADAPTATIVA: quanto maior o vídeo, mais agressivo
     const sizeMB = file.size/1024/1024;
     let maxH = R2_VIDEO_MAX_HEIGHT; // 720
     let crf  = R2_VIDEO_CRF;        // 28
     if(sizeMB > 30){ maxH = 540; crf = 30; }
     if(sizeMB > 80){ maxH = 480; crf = 32; }
     console.log(`[FFmpeg] entrada=${sizeMB.toFixed(1)}MB -> maxH=${maxH} crf=${crf}`);
-    if(onProgress) ff.on('progress', ({progress})=>onProgress(Math.min(0.99, progress||0)));
-    await ff.exec([
+    if(onProgress) ff.setProgress(({ratio})=>onProgress(Math.min(0.99, Math.max(0, ratio||0))));
+    await ff.run(
       '-i', inName,
       '-vf', `scale=-2:'min(${maxH},ih)'`,
       '-c:v','libx264','-preset','veryfast','-crf', String(crf),
       '-c:a','aac','-b:a','96k',
       '-movflags','+faststart',
       outName
-    ]);
-    const data = await ff.readFile(outName);
-    await ff.deleteFile(inName).catch(()=>{});
-    await ff.deleteFile(outName).catch(()=>{});
+    );
+    const data = ff.FS('readFile', outName);
+    try{ ff.FS('unlink', inName); }catch(_){}
+    try{ ff.FS('unlink', outName); }catch(_){}
     const blob = new Blob([data.buffer], {type:'video/mp4'});
     const newMB = blob.size/1024/1024;
     console.log(`[FFmpeg] saída=${newMB.toFixed(1)}MB (original ${sizeMB.toFixed(1)}MB)`);
-    // Só mantém o original se FFmpeg gerou algo MAIOR que 95% do original
-    if(blob.size >= file.size*0.95){
-      console.log('[FFmpeg] ganho pequeno, mantendo arquivo comprimido mesmo assim');
-    }
     const name = file.name.replace(/\.[^.]+$/,'')+'.mp4';
     return new File([blob], name, {type:'video/mp4'});
   }catch(e){
     console.error('[FFmpeg] exec falhou:', e);
     showToast('⚠️ Falha ao comprimir, enviando original: '+(e.message||e),'error');
-    try{ await ff.deleteFile(inName); }catch(_){}
-    try{ await ff.deleteFile(outName); }catch(_){}
+    try{ ff.FS('unlink', inName); }catch(_){}
+    try{ ff.FS('unlink', outName); }catch(_){}
     return file;
   }
 }
 
 // --- R2: pega presigned URL do Java ---
+function _r2BackendOk(){
+  return R2_BACKEND_URL && !/SEU-BACKEND-JAVA\.example\.com/i.test(R2_BACKEND_URL);
+}
 async function r2GetPresign(file){
+  if(!_r2BackendOk()){
+    const e = new Error('BACKEND_NAO_CONFIGURADO');
+    e.userMessage = '⚙️ Backend Java não configurado. Defina window.R2_BACKEND_URL ou edite R2_BACKEND_URL no código para a URL real do seu servidor Java.';
+    throw e;
+  }
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
-  const r = await fetch(R2_BACKEND_URL+'/api/r2/presign', {
-    method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer '+(CU?.id||'')},
-    body: JSON.stringify({ filename:safeName, contentType:file.type, size:file.size, userId:CU?.id })
-  });
-  if(!r.ok) throw new Error('presign HTTP '+r.status);
+  let r;
+  try{
+    r = await fetch(R2_BACKEND_URL+'/api/r2/presign', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+(CU?.id||'')},
+      body: JSON.stringify({ filename:safeName, contentType:file.type, size:file.size, userId:CU?.id })
+    });
+  }catch(netErr){
+    const e = new Error('BACKEND_OFFLINE');
+    e.userMessage = '🌐 Não foi possível falar com o backend Java ('+R2_BACKEND_URL+'). Verifique se está no ar, se a URL está correta e se tem CORS liberado.';
+    throw e;
+  }
+  if(!r.ok){
+    const txt = await r.text().catch(()=> '');
+    const e = new Error('presign HTTP '+r.status);
+    e.userMessage = '🔐 Backend recusou o presign ('+r.status+'): '+(txt||r.statusText);
+    throw e;
+  }
   return r.json(); // { uploadUrl, key, publicUrl, headers? }
 }
 async function r2UploadToPresigned(uploadUrl, file, extraHeaders){
