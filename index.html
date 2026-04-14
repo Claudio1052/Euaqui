@@ -4342,40 +4342,29 @@ body.day-mode::before{
             <div class="igrp"><label class="ilbl">Twitter / X</label><input class="ainput" type="text" id="set-tw" placeholder="https://x.com/..."></div>
             <div class="igrp"><label class="ilbl">GitHub</label><input class="ainput" type="text" id="set-gh" placeholder="https://github.com/..."></div>
           </div>
-          <!-- Interesses / Algoritmo de Feed -->
+          <!-- Interesses / Algoritmo de Feed — visível apenas para o próprio usuário -->
           <div class="edit-section">
             <div class="edit-section-title">🎯 INTERESSES & PREFERÊNCIAS</div>
-            <div style="font-size:10px;color:var(--text-muted);margin-bottom:14px;">Marque o que você curte — usamos isso para personalizar seu feed!</div>
-
-            <!-- Categorias de interesse -->
-            <div style="font-size:10px;color:var(--neon-cyan);font-family:Silkscreen,monospace;margin-bottom:8px;">O QUE VOCÊ CURTE?</div>
-            <div id="interests-grid" style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:16px;">
-              ${[
-                ['tech','💻 Tecnologia'],['games','🎮 Games'],['music','🎵 Música'],
-                ['movies','🎬 Filmes & Séries'],['sports','⚽ Esportes'],['religion','✝️ Religioso/Espiritualidade'],
-                ['food','🍕 Gastronomia'],['travel','✈️ Viagens'],['fashion','👗 Moda'],
-                ['fitness','💪 Academia/Fitness'],['art','🎨 Arte & Design'],['reading','📚 Leitura'],
-                ['pets','🐾 Pets'],['cars','🚗 Carros & Motos'],['nature','🌿 Natureza'],
-                ['business','💼 Negócios'],['politics','🗳️ Política'],['science','🔬 Ciência'],
-                ['anime','🇯🇵 Anime/Mangá'],['humor','😂 Humor & Memes']
-              ].map(([k,v])=>`<button type="button" data-interest="${k}" onclick="toggleInterest(this)"
-                style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);color:var(--text-muted);padding:6px 12px;border-radius:20px;cursor:pointer;font-size:10px;font-family:'Space Mono',monospace;transition:all .2s;">${v}</button>`).join('')}
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+              <span style="font-size:10px;color:var(--text-muted);">Marque o que você curte — usamos para personalizar seu feed.</span>
+              <span style="font-size:9px;background:rgba(255,204,0,.1);color:var(--neon-yellow);border:1px solid rgba(255,204,0,.2);border-radius:10px;padding:2px 8px;white-space:nowrap;">🔒 Só você vê</span>
             </div>
 
-            <!-- Time do coração -->
+            <div style="font-size:10px;color:var(--neon-cyan);font-family:Silkscreen,monospace;margin-bottom:8px;">O QUE VOCÊ CURTE?</div>
+            <div id="interests-grid" style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:16px;"></div>
+
             <div class="igrp">
               <label class="ilbl">⚽ Torce para qual time? <span style="color:var(--text-muted);font-size:9px;">(opcional)</span></label>
               <input class="ainput" id="pref-team" placeholder="Ex: Flamengo, Corinthians...">
             </div>
 
-            <!-- Esportes pratica -->
             <div style="margin-bottom:12px;">
-              <label style="font-size:9px;color:var(--text-muted);letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:6px;">🏃 Pratica esporte?</label>
-              <div style="display:flex;gap:8px;margin-bottom:6px;">
-                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px;color:var(--text-light);">
+              <label style="font-size:9px;color:var(--text-muted);letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:8px;">🏃 Pratica esporte?</label>
+              <div style="display:flex;gap:10px;margin-bottom:8px;">
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;color:var(--text-light);background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:7px 14px;">
                   <input type="radio" name="pref-sport" id="pref-sport-yes" value="yes" onchange="document.getElementById('pref-sport-name-wrap').style.display='block'" style="accent-color:var(--neon-cyan);"> Sim
                 </label>
-                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px;color:var(--text-light);">
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;color:var(--text-light);background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:7px 14px;">
                   <input type="radio" name="pref-sport" id="pref-sport-no" value="no" onchange="document.getElementById('pref-sport-name-wrap').style.display='none'" style="accent-color:var(--neon-cyan);"> Não
                 </label>
               </div>
@@ -4384,41 +4373,26 @@ body.day-mode::before{
               </div>
             </div>
 
-            <!-- Música favorita -->
             <div class="igrp">
               <label class="ilbl">🎵 Estilo de música favorito <span style="color:var(--text-muted);font-size:9px;">(opcional)</span></label>
               <input class="ainput" id="pref-music" placeholder="Ex: Sertanejo, Funk, Rock, MPB...">
             </div>
 
-            <!-- Série/Filme favorito -->
             <div class="igrp">
               <label class="ilbl">🎬 Série ou filme favorito <span style="color:var(--text-muted);font-size:9px;">(opcional)</span></label>
               <input class="ainput" id="pref-show" placeholder="Ex: Breaking Bad, Stranger Things...">
             </div>
 
-            <!-- Faixa etária -->
             <div style="margin-bottom:12px;">
-              <label style="font-size:9px;color:var(--text-muted);letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:6px;">📅 Faixa etária</label>
-              <div style="display:flex;flex-wrap:wrap;gap:6px;">
-                ${[['u18','Menor de 18'],['18-24','18-24'],['25-34','25-34'],['35-44','35-44'],['45-54','45-54'],['55p','55+']].map(([k,v])=>
-                  `<label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:10px;color:var(--text-light);background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:5px 10px;">
-                    <input type="radio" name="pref-age" value="${k}" style="accent-color:var(--neon-cyan);"> ${v}
-                  </label>`).join('')}
-              </div>
+              <label style="font-size:9px;color:var(--text-muted);letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:8px;">📅 Faixa etária</label>
+              <div id="pref-age-grid" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
             </div>
 
-            <!-- Relacionamento -->
             <div style="margin-bottom:12px;">
-              <label style="font-size:9px;color:var(--text-muted);letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:6px;">💕 Situação amorosa</label>
-              <div style="display:flex;flex-wrap:wrap;gap:6px;">
-                ${[['single','Solteiro(a)'],['relationship','Namorando'],['married','Casado(a)'],['complicated','Complicado'],['prefer_not','Prefiro não dizer']].map(([k,v])=>
-                  `<label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:10px;color:var(--text-light);background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:5px 10px;">
-                    <input type="radio" name="pref-relationship" value="${k}" style="accent-color:var(--neon-pink);"> ${v}
-                  </label>`).join('')}
-              </div>
+              <label style="font-size:9px;color:var(--text-muted);letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:8px;">💕 Situação amorosa</label>
+              <div id="pref-rel-grid" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
             </div>
 
-            <!-- Ocupação -->
             <div class="igrp">
               <label class="ilbl">💼 Ocupação <span style="color:var(--text-muted);font-size:9px;">(opcional)</span></label>
               <input class="ainput" id="pref-job" placeholder="Ex: Estudante, Empresário, Programador...">
@@ -6352,7 +6326,53 @@ function applyRetroAvatar(){
   showToast('✅ Avatar selecionado! Salve para confirmar.','success');
 }
 
-// ── Interesses ──────────────────────────────────────────────────
+// ── Constrói grids de interesses/preferências via JS ────────────
+function buildInterestsGrid(){
+  const INTERESTS = [
+    ['tech','💻 Tecnologia'],['games','🎮 Games'],['music','🎵 Música'],
+    ['movies','🎬 Filmes & Séries'],['sports','⚽ Esportes'],['religion','✝ Religioso'],
+    ['food','🍕 Gastronomia'],['travel','✈ Viagens'],['fashion','👗 Moda'],
+    ['fitness','💪 Fitness'],['art','🎨 Arte & Design'],['reading','📚 Leitura'],
+    ['pets','🐾 Pets'],['cars','🚗 Carros & Motos'],['nature','🌿 Natureza'],
+    ['business','💼 Negócios'],['politics','🗳 Política'],['science','🔬 Ciência'],
+    ['anime','🇯🇵 Anime/Mangá'],['humor','😂 Humor & Memes']
+  ];
+  const AGES = [['u18','- de 18'],['18-24','18–24'],['25-34','25–34'],['35-44','35–44'],['45-54','45–54'],['55p','55+']];
+  const RELS = [['single','Solteiro(a)'],['relationship','Namorando'],['married','Casado(a)'],['complicated','Complicado'],['prefer_not','Prefiro não dizer']];
+
+  // Interesses
+  const ig = document.getElementById('interests-grid');
+  if(ig && !ig.dataset.built){
+    ig.dataset.built = '1';
+    ig.innerHTML = INTERESTS.map(([k,v])=>
+      `<button type="button" data-interest="${k}" onclick="toggleInterest(this)"
+        style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);color:var(--text-muted);padding:7px 13px;border-radius:20px;cursor:pointer;font-size:10px;font-family:'Space Mono',monospace;transition:all .2s;white-space:nowrap;">${v}</button>`
+    ).join('');
+  }
+
+  // Faixa etária
+  const ag = document.getElementById('pref-age-grid');
+  if(ag && !ag.dataset.built){
+    ag.dataset.built = '1';
+    ag.innerHTML = AGES.map(([k,v])=>
+      `<label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:10px;color:var(--text-light);background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:6px 12px;">
+        <input type="radio" name="pref-age" value="${k}" style="accent-color:var(--neon-cyan);"> ${v}
+      </label>`
+    ).join('');
+  }
+
+  // Situação amorosa
+  const rg = document.getElementById('pref-rel-grid');
+  if(rg && !rg.dataset.built){
+    rg.dataset.built = '1';
+    rg.innerHTML = RELS.map(([k,v])=>
+      `<label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:10px;color:var(--text-light);background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:6px 12px;">
+        <input type="radio" name="pref-relationship" value="${k}" style="accent-color:var(--neon-pink);"> ${v}
+      </label>`
+    ).join('');
+  }
+}
+
 function toggleInterest(btn){
   const active = btn.dataset.active==='1';
   btn.dataset.active = active ? '0' : '1';
@@ -10524,6 +10544,7 @@ function loadEditForm(){
   if(setGh) setGh.value = CP.github||'';
   updateAvPreview();
   buildRetroGrid();
+  buildInterestsGrid();
   // Carregar preferências do usuário
   if(CU){
     db.from('user_preferences').select('preferences').eq('user_id',CU.id).maybeSingle()
