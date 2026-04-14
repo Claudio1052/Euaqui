@@ -4933,7 +4933,8 @@ function nav(page){
   document.querySelector('.fc')?.scrollTo(0,0);
   setTimeout(()=>{
     if(page==='home'){
-      loadFeed();
+      loadFeed(true);
+      setTimeout(_initFeedScrollObserver, 500);
     }
     else if(page==='explore')        loadExploreFeed();
     else if(page==='friends')        loadFriendsList('friends');
@@ -4954,160 +4955,213 @@ function toggleDrawer(){
   document.getElementById('mob-overlay').classList.toggle('open');
 }
 
-// ===== FEED (with caching to prevent flicker) =====
-async function loadFeed(force=false){
-  const feed=document.getElementById('feed');
-  if(!feed)return;
-  const now=Date.now();
-  const cacheKey=`feed_${feedTab}`;
-  // Mostra cache imediatamente, busca novidades em background
-  if(cachedPosts[cacheKey]&&!force){
-    if(feed.children.length===0)feed.innerHTML=cachedPosts[cacheKey];
-    if(now-lastFeedLoad<CACHE_TTL)return;
-  } else if(feed.children.length===0){
-    feed.innerHTML=skeletons(3);
-  }
-  lastFeedLoad=now;
-  if(force){ cachedPostIds.clear(); cachedPosts={}; }
-  // Select seguro — sem colunas que podem não existir
-  const SEL='id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url,status_message)';
-  let q;
-  if(feedTab==='popular'){
-    q=db.from('posts').select(SEL).order('likes_count',{ascending:false}).range(0,24);
-  } else if(feedTab==='friends'&&CU){
-    const{data:fws}=await db.from('friends').select('friend_id').eq('user_id',CU.id);
-    const ids=(fws||[]).map(f=>f.friend_id);
-    if(!ids.length){
-      if(feed.children.length===0)feed.innerHTML='<div style="text-align:center;padding:40px;color:var(--text-muted);font-family:\'VT323\',monospace;font-size:20px;">Adicione amigos para ver os posts deles aqui!</div>';
-      return;
-    }
-    q=db.from('posts').select(SEL).in('user_id',[...ids,CU.id]).order('created_at',{ascending:false}).range(0,24);
-  } else {
-    q=db.from('posts').select(SEL).order('created_at',{ascending:false}).range(0,24);
-  }
-  const{data:posts,error:fetchErr}=await q;
-  if(fetchErr){console.error('Feed error:',fetchErr.message);if(feed.children.length===0)feed.innerHTML='<div style="text-align:center;padding:30px;color:var(--neon-pink);font-size:12px;">Erro ao carregar feed.<br>'+fetchErr.message+'</div>';return;}
+// ===== FEED — Sistema de Prioridades + Scroll Infinito =====
+let _feedPage       = 0;          // offset atual
+let _feedLoading    = false;      // lock para evitar dupla requisição
+let _feedExhausted  = false;      // não há mais posts
+let _feedScrollObs  = null;       // IntersectionObserver do sentinel
+const FEED_LIMIT    = 20;
 
-  // ── FILTRO DE VISIBILIDADE ──────────────────────────────────────────────────
-  // • public  → aparece para TODOS os usuários globais
-  // • friends → aparece APENAS para amigos e seguidores do autor
-  // • private → aparece APENAS para o próprio autor
-  let filteredPosts = posts || [];
+async function loadFeed(force=false){
+  const feed = document.getElementById('feed');
+  if(!feed) return;
+
+  // Reset ao forçar reload ou trocar aba
+  if(force){
+    _feedPage      = 0;
+    _feedLoading   = false;
+    _feedExhausted = false;
+    cachedPostIds.clear();
+    cachedPosts = {};
+    feed.innerHTML = skeletons(3);
+    document.getElementById('feed-end')?.setAttribute('style','display:none');
+    _initFeedScrollObserver();
+  }
+
+  if(_feedLoading || _feedExhausted) return;
+  _feedLoading = true;
+
   try{
-    // Monta set de amigos/seguidores do usuário atual para checar posts "friends"
-    let myFriendSet = new Set();
-    let myFollowingSet = new Set();
-    if(CU){
-      const[frRes, folRes] = await Promise.all([
+    let posts = [];
+
+    // ── Aba "popular": ranking simples por likes ──────────────────
+    if(feedTab === 'popular'){
+      const{data} = await db.from('posts')
+        .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url,status_message)')
+        .eq('visibility','public')
+        .order('likes_count',{ascending:false})
+        .range(_feedPage * FEED_LIMIT, (_feedPage + 1) * FEED_LIMIT - 1);
+      posts = data || [];
+
+    // ── Aba "friends": só amigos e seguidos ──────────────────────
+    } else if(feedTab === 'friends' && CU){
+      const{data:fws} = await db.from('friends').select('friend_id').eq('user_id',CU.id);
+      const{data:fols} = await db.from('follows').select('following_id').eq('follower_id',CU.id);
+      const ids = [
+        ...(fws||[]).map(f=>f.friend_id),
+        ...(fols||[]).map(f=>f.following_id),
+        CU.id
+      ];
+      if(!ids.length){
+        feed.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);font-family:\'VT323\',monospace;font-size:20px;">Adicione amigos para ver os posts deles aqui!</div>';
+        _feedLoading = false; return;
+      }
+      const{data} = await db.from('posts')
+        .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url,status_message)')
+        .in('user_id',[...new Set(ids)])
+        .order('created_at',{ascending:false})
+        .range(_feedPage * FEED_LIMIT, (_feedPage + 1) * FEED_LIMIT - 1);
+      posts = data || [];
+
+    // ── Aba "recent" (padrão): RPC com sistema de prioridades ─────
+    } else {
+      // Tenta usar a stored procedure get_custom_feed
+      const userId = CU?.id || '00000000-0000-0000-0000-000000000000';
+      const{data, error} = await db.rpc('get_custom_feed', {
+        p_user_id: userId,
+        p_limit:   FEED_LIMIT,
+        p_offset:  _feedPage * FEED_LIMIT
+      });
+
+      if(!error && data){
+        // RPC retorna campos achatados — remonta o formato profiles{}
+        posts = data.map(p=>({
+          ...p,
+          profiles: {
+            id:           p.user_id,
+            username:     p.author_username,
+            full_name:    p.author_name,
+            avatar_url:   p.author_avatar,
+            status_message: ''
+          }
+        }));
+      } else {
+        // Fallback: query simples se RPC não existir ainda
+        if(error) console.warn('get_custom_feed RPC:', error.message, '— usando fallback');
+        const{data:fb} = await db.from('posts')
+          .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url,status_message)')
+          .eq('visibility','public')
+          .order('created_at',{ascending:false})
+          .range(_feedPage * FEED_LIMIT, (_feedPage + 1) * FEED_LIMIT - 1);
+        posts = fb || [];
+      }
+    }
+
+    // ── Detectar fim do feed ──────────────────────────────────────
+    if(posts.length < FEED_LIMIT){
+      _feedExhausted = true;
+      const endEl = document.getElementById('feed-end');
+      if(endEl) endEl.style.display = 'block';
+    }
+
+    // ── Filtro de visibilidade (posts friends/private) ────────────
+    if(posts.length && CU && feedTab !== 'popular'){
+      const[frRes,folRes] = await Promise.all([
         db.from('friends').select('friend_id').eq('user_id',CU.id),
         db.from('follows').select('following_id').eq('follower_id',CU.id)
       ]);
-      (frRes.data||[]).forEach(f=>myFriendSet.add(f.friend_id));
-      (folRes.data||[]).forEach(f=>myFollowingSet.add(f.following_id));
-    }
-
-    filteredPosts = filteredPosts.filter(p=>{
-      const vis = p.visibility || 'public';
-      const isOwn = CU && p.user_id === CU.id;
-
-      // Sempre mostra os próprios posts de qualquer visibilidade
-      if(isOwn) return true;
-
-      if(vis === 'public'){
-        // Público: aparece para todos
-        return true;
-      } else if(vis === 'friends'){
-        // Amigos: só para amigos e seguidores do autor
-        if(!CU) return false;
-        return myFriendSet.has(p.user_id) || myFollowingSet.has(p.user_id);
-      } else if(vis === 'private'){
-        // Privado: só para o próprio autor (já retornou true acima se isOwn)
+      const myFriendSet   = new Set((frRes.data||[]).map(f=>f.friend_id));
+      const myFollowingSet= new Set((folRes.data||[]).map(f=>f.following_id));
+      posts = posts.filter(p=>{
+        const vis = p.visibility||'public';
+        if(p.user_id===CU.id) return true;
+        if(vis==='public') return true;
+        if(vis==='friends') return myFriendSet.has(p.user_id)||myFollowingSet.has(p.user_id);
         return false;
-      }
-      return true; // fallback: público
-    });
-  }catch(e){ console.warn('Visibility filter:', e?.message); }
-  // ──────────────────────────────────────────────────────────────────────────
-
-  // ── Filtro de posts de comunidade: só membros podem ver no feed principal ──
-  // Detecta posts com marker [COMM_POST:commId:...] e remove do feed
-  // se o usuário atual NÃO for membro daquela comunidade.
-  try{
-    const commPostMap = new Map(); // postIndex -> commId
-    (filteredPosts).forEach((p,idx)=>{
-      const c = p?.content||'';
-      if(c.startsWith('[COMM_POST:')){
-        const end = c.indexOf(']');
-        if(end>11){
-          const inner = c.substring(11,end);
-          const colon = inner.indexOf(':');
-          if(colon>0) commPostMap.set(idx, inner.substring(0,colon));
-        }
-      }
-    });
-    if(commPostMap.size>0){
-      const allCommIds=[...new Set([...commPostMap.values()])];
-      let myCommSet = new Set();
-      if(CU){
-        const{data:myMems}=await db.from('community_members')
-          .select('community_id').eq('user_id',CU.id).in('community_id',allCommIds);
-        (myMems||[]).forEach(m=>myCommSet.add(m.community_id));
-      }
-      filteredPosts = filteredPosts.filter((p,idx)=>{
-        const cId = commPostMap.get(idx);
-        if(!cId) return true;             // não é post de comunidade → mantém
-        return myCommSet.has(cId);        // é post de comunidade → só se for membro
       });
     }
-  }catch(e){ console.warn('Comm filter:',e?.message); }
-  if(!filteredPosts?.length&&feed.children.length===0){
-    feed.innerHTML='<div style="text-align:center;padding:40px;color:var(--text-muted);font-family:\'VT323\',monospace;font-size:20px;">SEM POSTS AINDA ✨<br><span style="font-size:14px;font-family:\'Space Mono\',monospace;">Seja o primeiro!</span></div>';
-    return;
-  }
-  if(!filteredPosts?.length)return;
-  // Incremental: não re-renderiza posts que já estão na tela
-  const newPosts=[];
-  for(const p of filteredPosts){if(!cachedPostIds.has(p.id))newPosts.push(p);}
-  if(newPosts.length===0&&feed.children.length>0&&!force)return;
-  // Busca reações para todos os posts de uma vez
-  const postIds=filteredPosts.map(p=>p.id);
-  const[rxRes,myRxRes]=await Promise.all([
-    db.from('likes').select('post_id,reaction_type').in('post_id',postIds),
-    CU?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id):{data:[]}
-  ]);
-  const rxMap={};
-  (rxRes.data||[]).forEach(r=>{
-    if(!rxMap[r.post_id])rxMap[r.post_id]={};
-    rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1;
-  });
-  const myRxMap={};
-  (myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
-  const rendered = filteredPosts.map(p=>{
-    try{ return renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||''); }
-    catch(e){ console.warn('renderPost error:',e?.message,p?.id); return ''; }
-  });
-  // Popular cache de posts para o compartilhador
-  if(!window._postCache) window._postCache = {};
-  filteredPosts.forEach(p=>{ window._postCache[p.id] = p; });
-  const validPosts = rendered.filter(h=>h.length>0);
-  const html = validPosts.join('');
-  feed.innerHTML = html || '<div style="text-align:center;padding:40px;color:var(--text-muted);"><div style="font-size:40px;margin-bottom:12px;">📭</div><div style="font-family:VT323,monospace;font-size:20px;">Nenhuma postagem ainda</div></div>';
-  _hydrateAllReposts(feed);
-  filteredPosts.forEach(p=>cachedPostIds.add(p.id));
-  cachedPosts[cacheKey]=html;
-  updateCommentCounts(filteredPosts.map(p=>p.id));
-  // Hidrata avatares/nomes das comunidades em posts COMM_POST
-  const commIdsInFeed=[];
-  filteredPosts.forEach(p=>{
-    const c=p?.content||'';
-    if(c.startsWith('[COMM_POST:')){
-      const e=c.indexOf(']');
-      if(e>11){const inner=c.substring(11,e);const col=inner.indexOf(':');if(col>0)commIdsInFeed.push(inner.substring(0,col));}
+
+    // ── Filtro posts de comunidade (só membros veem) ──────────────
+    try{
+      const commPostMap = new Map();
+      posts.forEach((p,idx)=>{
+        const c = p?.content||'';
+        if(c.startsWith('[COMM_POST:')){
+          const end=c.indexOf(']');
+          if(end>11){const inner=c.substring(11,end);const colon=inner.indexOf(':');if(colon>0)commPostMap.set(idx,inner.substring(0,colon));}
+        }
+      });
+      if(commPostMap.size>0 && CU){
+        const allCommIds=[...new Set([...commPostMap.values()])];
+        const{data:myMems}=await db.from('community_members').select('community_id').eq('user_id',CU.id).in('community_id',allCommIds);
+        const myCommSet=new Set((myMems||[]).map(m=>m.community_id));
+        posts=posts.filter((p,idx)=>{const cId=commPostMap.get(idx);return !cId||myCommSet.has(cId);});
+      }
+    }catch(e){}
+
+    if(!posts.length && _feedPage===0){
+      feed.innerHTML='<div style="text-align:center;padding:40px;color:var(--text-muted);font-family:\'VT323\',monospace;font-size:20px;">SEM POSTS AINDA ✨<br><span style="font-size:14px;font-family:\'Space Mono\',monospace;">Seja o primeiro!</span></div>';
+      _feedLoading=false; return;
     }
+
+    // ── Busca reações e renderiza ─────────────────────────────────
+    const postIds = posts.map(p=>p.id);
+    const[rxRes,myRxRes] = await Promise.all([
+      db.from('likes').select('post_id,reaction_type').in('post_id',postIds),
+      CU ? db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id) : {data:[]}
+    ]);
+    const rxMap={};
+    (rxRes.data||[]).forEach(r=>{if(!rxMap[r.post_id])rxMap[r.post_id]={};rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1;});
+    const myRxMap={};
+    (myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
+
+    // Popular _postCache
+    if(!window._postCache) window._postCache={};
+    posts.forEach(p=>{window._postCache[p.id]=p;});
+
+    const rendered = posts
+      .filter(p=>!cachedPostIds.has(p.id))
+      .map(p=>{ try{return renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||'');}catch(e){return '';} })
+      .filter(Boolean);
+
+    if(rendered.length){
+      if(_feedPage===0) feed.innerHTML='';
+      const tmp=document.createElement('div');
+      tmp.innerHTML=rendered.join('');
+      [...tmp.children].forEach(el=>feed.appendChild(el));
+      _hydrateAllReposts(feed);
+      posts.forEach(p=>cachedPostIds.add(p.id));
+      updateCommentCounts(postIds);
+      // Hidrata avatares de comunidade
+      _hydrateCommAvatars(posts);
+    }
+
+    _feedPage++;
+
+  }catch(err){
+    console.error('loadFeed error:',err?.message);
+    if(_feedPage===0) feed.innerHTML='<div style="text-align:center;padding:30px;color:var(--neon-pink);font-size:12px;">Erro ao carregar feed.</div>';
+  }finally{
+    _feedLoading=false;
+  }
+}
+
+// ── Scroll Infinito ────────────────────────────────────────────
+function _initFeedScrollObserver(){
+  if(_feedScrollObs) _feedScrollObs.disconnect();
+  const sentinel = document.getElementById('feed-end');
+  if(!sentinel) return;
+  _feedScrollObs = new IntersectionObserver(entries=>{
+    if(entries[0].isIntersecting && !_feedLoading && !_feedExhausted){
+      loadFeed();
+    }
+  }, {rootMargin:'200px'});
+  _feedScrollObs.observe(sentinel);
+}
+
+// Helper: hidrata avatares de comunidade no feed
+async function _hydrateCommAvatars(posts){
+  const commIds=[];
+  posts.forEach(p=>{
+    const c=p?.content||'';
+    if(c.startsWith('[COMM_POST:')){const e=c.indexOf(']');if(e>11){const inner=c.substring(11,e);const col=inner.indexOf(':');if(col>0)commIds.push(inner.substring(0,col));}}
   });
-  if(commIdsInFeed.length) _hydrateCommAvatars(commIdsInFeed);
-  // Autoplay mudo no mobile
-  if(window.innerWidth <= 768){ initFeedAutoplay(); _startDomWatcher(); }
+  const unique=[...new Set(commIds)].filter(id=>!_commCache[id]);
+  if(!unique.length) return;
+  try{
+    const{data}=await db.from('communities').select('id,name,avatar_url').in('id',unique);
+    (data||[]).forEach(c=>{_commCache[c.id]=c;});
+  }catch(e){}
 }
 
 async function updateCommentCounts(postIds){
