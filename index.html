@@ -114,6 +114,7 @@ nav{position:fixed;top:0;left:0;right:0;background:#0a0a2a;border-bottom:1px sol
 @keyframes popIn{from{opacity:0;transform:scale(.8) translateY(20px)}to{opacity:1;transform:scale(1) translateY(0)}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(0,255,204,.4)}50%{box-shadow:0 0 0 10px rgba(0,255,204,0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
 .ph{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
 .pav{width:42px;height:42px;border-radius:50%;border:2px solid rgba(0,255,204,.25);object-fit:cover;cursor:pointer;transition:border-color .2s;flex-shrink:0;}
 .pav:hover{border-color:var(--neon-cyan);}
@@ -3698,7 +3699,24 @@ body.day-mode::before{
           <button class="ftab" onclick="switchTab('friends',this)">👥 Amigos</button>
         </div>
         <div id="feed"></div>
-        <div id="feed-end" style="text-align:center;padding:20px;color:var(--text-muted);font-family:'VT323',monospace;font-size:18px;display:none;">— FIM DO FEED —</div>
+
+        <!-- Loader de scroll infinito -->
+        <div id="feed-loader" style="display:none;text-align:center;padding:20px 0;">
+          <div style="display:inline-flex;align-items:center;gap:10px;background:rgba(0,255,204,.06);border:1px solid rgba(0,255,204,.15);border-radius:20px;padding:8px 18px;">
+            <div style="width:14px;height:14px;border:2px solid var(--neon-cyan);border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;"></div>
+            <span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--neon-cyan);">Carregando mais...</span>
+          </div>
+        </div>
+
+        <!-- Sentinel (detectado pelo IntersectionObserver) + fim do feed -->
+        <div id="feed-end" style="text-align:center;padding:24px 0;display:none;">
+          <div style="display:inline-flex;align-items:center;gap:8px;color:var(--text-muted);font-family:'VT323',monospace;font-size:16px;">
+            <span style="flex:1;height:1px;background:rgba(255,255,255,.08);display:inline-block;width:50px;"></span>
+            FIM DO FEED
+            <span style="flex:1;height:1px;background:rgba(255,255,255,.08);display:inline-block;width:50px;"></span>
+          </div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:6px;font-family:'Space Mono',monospace;">Você está em dia! ✨</div>
+        </div>
       </div>
 
       <!-- TAB: AMIGOS -->
@@ -4975,11 +4993,16 @@ async function loadFeed(force=false){
     cachedPosts = {};
     feed.innerHTML = skeletons(3);
     document.getElementById('feed-end')?.setAttribute('style','display:none');
+    const ld = document.getElementById('feed-loader'); if(ld) ld.style.display='none';
     _initFeedScrollObserver();
   }
 
   if(_feedLoading || _feedExhausted) return;
   _feedLoading = true;
+
+  // Mostrar spinner de carregamento (não na primeira carga — já tem skeleton)
+  const loaderEl = document.getElementById('feed-loader');
+  if(_feedPage > 0 && loaderEl) loaderEl.style.display = 'block';
 
   try{
     let posts = [];
@@ -5133,6 +5156,8 @@ async function loadFeed(force=false){
     if(_feedPage===0) feed.innerHTML='<div style="text-align:center;padding:30px;color:var(--neon-pink);font-size:12px;">Erro ao carregar feed.</div>';
   }finally{
     _feedLoading=false;
+    const loaderEl2 = document.getElementById('feed-loader');
+    if(loaderEl2) loaderEl2.style.display='none';
   }
 }
 
