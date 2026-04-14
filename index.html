@@ -6379,31 +6379,55 @@ async function getFFmpeg(){
   if(_ffmpeg) return _ffmpeg;
   if(_ffmpegLoading) return _ffmpegLoading;
   _ffmpegLoading = (async()=>{
+    console.log('[FFmpeg] carregando scripts...');
     await _loadScript('https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js');
     await _loadScript('https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js');
+    if(!window.FFmpegWASM || !window.FFmpegUtil){
+      throw new Error('FFmpeg UMD não expôs FFmpegWASM/FFmpegUtil (bloqueio de CDN?)');
+    }
     const { FFmpeg } = window.FFmpegWASM;
+    const { toBlobURL } = window.FFmpegUtil;
+    const base = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+    console.log('[FFmpeg] convertendo core para blob URLs (evita CORS)...');
+    // toBlobURL baixa o arquivo do CDN e gera URL same-origin — contorna CORS
+    const coreURL = await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript');
+    const wasmURL = await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm');
     const ff = new FFmpeg();
-    await ff.load({
-      coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
-      wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm'
-    });
+    ff.on('log', ({message})=>{ if(message && !message.includes('frame=')) console.log('[ffmpeg]', message); });
+    console.log('[FFmpeg] carregando core WASM...');
+    await ff.load({ coreURL, wasmURL });
+    console.log('[FFmpeg] pronto.');
     _ffmpeg = ff;
     return ff;
-  })();
+  })().catch(e=>{ _ffmpegLoading=null; throw e; });
   return _ffmpegLoading;
 }
 async function compressVideo(file, onProgress){
+  let ff;
   try{
-    const ff = await getFFmpeg();
-    const { fetchFile } = window.FFmpegUtil;
-    const inName='in_'+Date.now()+(file.name.match(/\.[^.]+$/)?.[0]||'.mp4');
-    const outName='out_'+Date.now()+'.mp4';
+    ff = await getFFmpeg();
+  }catch(e){
+    console.error('[FFmpeg] falhou ao carregar, enviando ORIGINAL:', e);
+    showToast('⚠️ Compressor indisponível, enviando vídeo original. '+(e.message||''),'error');
+    return file;
+  }
+  const { fetchFile } = window.FFmpegUtil;
+  const inName='in_'+Date.now()+(file.name.match(/\.[^.]+$/)?.[0]||'.mp4');
+  const outName='out_'+Date.now()+'.mp4';
+  try{
     await ff.writeFile(inName, await fetchFile(file));
-    if(onProgress) ff.on('progress', ({progress})=>onProgress(Math.min(0.99, progress)));
+    // Compressão ADAPTATIVA: vídeo grande = mais agressivo
+    const sizeMB = file.size/1024/1024;
+    let maxH = R2_VIDEO_MAX_HEIGHT; // 720
+    let crf  = R2_VIDEO_CRF;        // 28
+    if(sizeMB > 30){ maxH = 540; crf = 30; }
+    if(sizeMB > 80){ maxH = 480; crf = 32; }
+    console.log(`[FFmpeg] entrada=${sizeMB.toFixed(1)}MB -> maxH=${maxH} crf=${crf}`);
+    if(onProgress) ff.on('progress', ({progress})=>onProgress(Math.min(0.99, progress||0)));
     await ff.exec([
       '-i', inName,
-      '-vf', `scale=-2:'min(${R2_VIDEO_MAX_HEIGHT},ih)'`,
-      '-c:v','libx264','-preset','veryfast','-crf', String(R2_VIDEO_CRF),
+      '-vf', `scale=-2:'min(${maxH},ih)'`,
+      '-c:v','libx264','-preset','veryfast','-crf', String(crf),
       '-c:a','aac','-b:a','96k',
       '-movflags','+faststart',
       outName
@@ -6412,12 +6436,20 @@ async function compressVideo(file, onProgress){
     await ff.deleteFile(inName).catch(()=>{});
     await ff.deleteFile(outName).catch(()=>{});
     const blob = new Blob([data.buffer], {type:'video/mp4'});
-    if(blob.size>=file.size) return file;
+    const newMB = blob.size/1024/1024;
+    console.log(`[FFmpeg] saída=${newMB.toFixed(1)}MB (original ${sizeMB.toFixed(1)}MB)`);
+    // Só mantém o original se FFmpeg gerou algo MAIOR que 95% do original
+    if(blob.size >= file.size*0.95){
+      console.log('[FFmpeg] ganho pequeno, mantendo arquivo comprimido mesmo assim');
+    }
     const name = file.name.replace(/\.[^.]+$/,'')+'.mp4';
     return new File([blob], name, {type:'video/mp4'});
   }catch(e){
-    console.warn('FFmpeg falhou, enviando original:', e);
-    return file; // fallback: manda o original
+    console.error('[FFmpeg] exec falhou:', e);
+    showToast('⚠️ Falha ao comprimir, enviando original: '+(e.message||e),'error');
+    try{ await ff.deleteFile(inName); }catch(_){}
+    try{ await ff.deleteFile(outName); }catch(_){}
+    return file;
   }
 }
 
