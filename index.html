@@ -6255,6 +6255,228 @@ function showModerationError(categories){
   setTimeout(()=>banner.remove(), 5000);
 }
 
+/* =========================================================================
+   ===== PIPELINE DE MÍDIA (R2 + FFmpeg.wasm + NSFWJS + Sightengine) =====
+   =========================================================================
+   FLUXO:
+     1) Compressão no navegador (FFmpeg.wasm p/ vídeo, Canvas p/ foto)
+     2) Filtro grátis local: NSFWJS (cancela antes de subir se for explícito)
+     3) Autorização: Java devolve Presigned URL do Cloudflare R2
+     4) Upload direto Navegador -> R2 (PUT com a Presigned URL)
+     5) Auditoria profissional: Java chama Sightengine no link final
+     6) Decisão: Java grava URL no Supabase OU apaga do R2 e bloqueia
+
+   ⚠️ SEGURANÇA — LEIA ANTES DE PUBLICAR:
+   As chaves que você enviou (R2 Secret Access Key e Sightengine API Secret)
+   NUNCA podem ficar neste HTML. Este arquivo roda no navegador do usuário
+   e tudo aqui é público. Essas chaves DEVEM ficar APENAS no backend Java.
+   O frontend só conhece a URL do backend. Se as chaves já vazaram no chat,
+   rotacione-as agora no painel do Cloudflare e do Sightengine.
+
+   ENDPOINTS ESPERADOS NO BACKEND JAVA (troque R2_BACKEND_URL abaixo):
+     POST {BACKEND}/api/r2/presign
+        body: { filename, contentType, size, userId }
+        resp: { uploadUrl, key, publicUrl, headers? }
+     POST {BACKEND}/api/r2/finalize
+        body: { key, publicUrl, contentType, userId }
+        resp: { approved: true } | { approved: false, reason: "..." }
+        (este endpoint é quem chama Sightengine e decide apagar do R2)
+   ========================================================================= */
+const R2_BACKEND_URL = (window.R2_BACKEND_URL || 'https://SEU-BACKEND-JAVA.example.com');
+const R2_MAX_IMAGE_DIM = 1920;         // reduz lado maior da foto
+const R2_IMAGE_QUALITY = 0.82;         // 0..1 JPEG/WEBP
+const R2_VIDEO_CRF = 28;               // qualidade FFmpeg (maior = menor arquivo)
+const R2_VIDEO_MAX_HEIGHT = 720;       // downscale vertical
+const NSFW_THRESHOLD = 0.60;           // score mínimo p/ bloquear (Porn+Hentai+Sexy)
+
+// --- lazy loaders (só baixam as libs quando o usuário posta mídia) ---
+let _nsfwModel=null, _nsfwLoading=null;
+function _loadScript(src){
+  return new Promise((res,rej)=>{
+    if(document.querySelector('script[data-src="'+src+'"]')) return res();
+    const s=document.createElement('script'); s.src=src; s.dataset.src=src;
+    s.onload=()=>res(); s.onerror=()=>rej(new Error('falha ao carregar '+src));
+    document.head.appendChild(s);
+  });
+}
+async function loadNsfwModel(){
+  if(_nsfwModel) return _nsfwModel;
+  if(_nsfwLoading) return _nsfwLoading;
+  _nsfwLoading = (async()=>{
+    await _loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js');
+    await _loadScript('https://cdn.jsdelivr.net/npm/nsfwjs@2.4.2/dist/nsfwjs.min.js');
+    _nsfwModel = await nsfwjs.load(); // modelo padrão MobileNetV2
+    return _nsfwModel;
+  })();
+  return _nsfwLoading;
+}
+
+// --- NSFW check (retorna {safe, scores}) ---
+async function nsfwCheckImage(file){
+  const model = await loadNsfwModel();
+  const img = await new Promise((res,rej)=>{
+    const i=new Image(); i.onload=()=>res(i); i.onerror=rej;
+    i.src=URL.createObjectURL(file);
+  });
+  const preds = await model.classify(img);
+  URL.revokeObjectURL(img.src);
+  const s = {}; preds.forEach(p=>s[p.className]=p.probability);
+  const bad = (s.Porn||0) + (s.Hentai||0) + (s.Sexy||0);
+  return { safe: bad < NSFW_THRESHOLD, scores: s };
+}
+async function nsfwCheckVideo(file){
+  // Extrai 3 frames (início/meio/fim) e roda NSFWJS em cada um
+  const model = await loadNsfwModel();
+  const url = URL.createObjectURL(file);
+  const v = document.createElement('video');
+  v.src=url; v.muted=true; v.playsInline=true; v.crossOrigin='anonymous';
+  await new Promise((res,rej)=>{ v.onloadedmetadata=res; v.onerror=rej; });
+  const dur = v.duration||1;
+  const points = [0.05*dur, 0.5*dur, 0.95*dur];
+  const canvas = document.createElement('canvas');
+  canvas.width=Math.min(v.videoWidth||320,640);
+  canvas.height=Math.min(v.videoHeight||240,480);
+  const ctx = canvas.getContext('2d');
+  let worst=0, allScores=[];
+  for(const t of points){
+    await new Promise(res=>{ v.currentTime=t; v.onseeked=()=>res(); });
+    ctx.drawImage(v,0,0,canvas.width,canvas.height);
+    const preds = await model.classify(canvas);
+    const s={}; preds.forEach(p=>s[p.className]=p.probability);
+    const bad=(s.Porn||0)+(s.Hentai||0)+(s.Sexy||0);
+    if(bad>worst) worst=bad;
+    allScores.push(s);
+  }
+  URL.revokeObjectURL(url);
+  return { safe: worst < NSFW_THRESHOLD, scores: allScores, worst };
+}
+
+// --- Compressão de imagem via Canvas (sem lib externa) ---
+async function compressImage(file){
+  if(file.type==='image/gif') return file; // preserva GIF animado
+  const img = await new Promise((res,rej)=>{
+    const i=new Image(); i.onload=()=>res(i); i.onerror=rej;
+    i.src=URL.createObjectURL(file);
+  });
+  let {width:w, height:h} = img;
+  const max = R2_MAX_IMAGE_DIM;
+  if(w>max||h>max){ const r=Math.min(max/w,max/h); w=Math.round(w*r); h=Math.round(h*r); }
+  const c=document.createElement('canvas'); c.width=w; c.height=h;
+  c.getContext('2d').drawImage(img,0,0,w,h);
+  URL.revokeObjectURL(img.src);
+  const out = await new Promise(res=>c.toBlob(res, 'image/jpeg', R2_IMAGE_QUALITY));
+  if(!out || out.size>=file.size) return file; // se não comprimiu, mantém original
+  const name = file.name.replace(/\.[^.]+$/,'')+'.jpg';
+  return new File([out], name, {type:'image/jpeg'});
+}
+
+// --- Compressão de vídeo via FFmpeg.wasm ---
+let _ffmpeg=null, _ffmpegLoading=null;
+async function getFFmpeg(){
+  if(_ffmpeg) return _ffmpeg;
+  if(_ffmpegLoading) return _ffmpegLoading;
+  _ffmpegLoading = (async()=>{
+    await _loadScript('https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js');
+    await _loadScript('https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js');
+    const { FFmpeg } = window.FFmpegWASM;
+    const ff = new FFmpeg();
+    await ff.load({
+      coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
+      wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm'
+    });
+    _ffmpeg = ff;
+    return ff;
+  })();
+  return _ffmpegLoading;
+}
+async function compressVideo(file, onProgress){
+  try{
+    const ff = await getFFmpeg();
+    const { fetchFile } = window.FFmpegUtil;
+    const inName='in_'+Date.now()+(file.name.match(/\.[^.]+$/)?.[0]||'.mp4');
+    const outName='out_'+Date.now()+'.mp4';
+    await ff.writeFile(inName, await fetchFile(file));
+    if(onProgress) ff.on('progress', ({progress})=>onProgress(Math.min(0.99, progress)));
+    await ff.exec([
+      '-i', inName,
+      '-vf', `scale=-2:'min(${R2_VIDEO_MAX_HEIGHT},ih)'`,
+      '-c:v','libx264','-preset','veryfast','-crf', String(R2_VIDEO_CRF),
+      '-c:a','aac','-b:a','96k',
+      '-movflags','+faststart',
+      outName
+    ]);
+    const data = await ff.readFile(outName);
+    await ff.deleteFile(inName).catch(()=>{});
+    await ff.deleteFile(outName).catch(()=>{});
+    const blob = new Blob([data.buffer], {type:'video/mp4'});
+    if(blob.size>=file.size) return file;
+    const name = file.name.replace(/\.[^.]+$/,'')+'.mp4';
+    return new File([blob], name, {type:'video/mp4'});
+  }catch(e){
+    console.warn('FFmpeg falhou, enviando original:', e);
+    return file; // fallback: manda o original
+  }
+}
+
+// --- R2: pega presigned URL do Java ---
+async function r2GetPresign(file){
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+  const r = await fetch(R2_BACKEND_URL+'/api/r2/presign', {
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+(CU?.id||'')},
+    body: JSON.stringify({ filename:safeName, contentType:file.type, size:file.size, userId:CU?.id })
+  });
+  if(!r.ok) throw new Error('presign HTTP '+r.status);
+  return r.json(); // { uploadUrl, key, publicUrl, headers? }
+}
+async function r2UploadToPresigned(uploadUrl, file, extraHeaders){
+  const headers = Object.assign({'Content-Type':file.type}, extraHeaders||{});
+  const r = await fetch(uploadUrl, { method:'PUT', headers, body:file });
+  if(!r.ok) throw new Error('upload R2 HTTP '+r.status);
+}
+async function r2Finalize(key, publicUrl, contentType){
+  const r = await fetch(R2_BACKEND_URL+'/api/r2/finalize', {
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+(CU?.id||'')},
+    body: JSON.stringify({ key, publicUrl, contentType, userId:CU?.id })
+  });
+  if(!r.ok) throw new Error('finalize HTTP '+r.status);
+  return r.json(); // { approved, reason? }
+}
+
+// --- Pipeline completo p/ um arquivo. Retorna publicUrl ou lança erro. ---
+async function uploadWithPipeline(file, type, setStatus){
+  const S = setStatus || (()=>{});
+  // 1) Compressão
+  S('🗜 Comprimindo '+(type==='video'?'vídeo':'foto')+'...');
+  const compressed = (type==='video')
+    ? await compressVideo(file, p=>S('🗜 Comprimindo vídeo... '+Math.round(p*100)+'%'))
+    : await compressImage(file);
+  // 2) Filtro grátis (NSFWJS)
+  S('🛡 Verificando conteúdo (IA local)...');
+  const nsfw = (type==='video') ? await nsfwCheckVideo(compressed) : await nsfwCheckImage(compressed);
+  if(!nsfw.safe){
+    const err = new Error('NSFW_BLOCKED');
+    err.userMessage='🚫 Conteúdo explícito detectado. Upload cancelado.';
+    throw err;
+  }
+  // 3) Presign (Java autoriza)
+  S('🔐 Autorizando upload...');
+  const pres = await r2GetPresign(compressed);
+  // 4) Upload direto p/ R2
+  S('☁️ Enviando para Cloudflare R2...');
+  await r2UploadToPresigned(pres.uploadUrl, compressed, pres.headers);
+  // 5) Auditoria profissional (Java -> Sightengine)
+  S('🔎 Auditoria final (Sightengine)...');
+  const fin = await r2Finalize(pres.key, pres.publicUrl, compressed.type);
+  if(!fin.approved){
+    const err = new Error('SIGHTENGINE_BLOCKED');
+    err.userMessage='🚫 Reprovado na auditoria: '+(fin.reason||'conteúdo impróprio');
+    throw err;
+  }
+  return pres.publicUrl;
+}
+
 async function createPost(){
   if(!CU)return showToast('Faça login para postar','error');
   const content=document.getElementById('post-txt').value.trim();
@@ -6291,17 +6513,28 @@ async function createPost(){
     }
   }
 
-  // Upload de mídia (tenta Storage, falha silenciosamente se bucket não existir)
+  // ===== NOVO PIPELINE: R2 + FFmpeg.wasm + NSFWJS + Sightengine =====
+  // Substitui o Supabase Storage. O Supabase agora guarda APENAS a URL
+  // pública do R2 em media_urls — economiza espaço no banco.
+  const setStatus = (msg)=>{ btn.textContent = msg; };
   for(let i=0;i<mediaFiles.length;i++){
-    const f=mediaFiles[i];const t=mediaTypes[i];
+    const f = mediaFiles[i];
+    const t = mediaTypes[i];
     try{
-      const safeName=f.name.replace(/[^a-zA-Z0-9._-]/g,'_');
-      const path=`${CU.id}/${Date.now()}-${i}-${safeName}`;
-      const{data:upData,error:upErr}=await db.storage.from('media').upload(path,f,{upsert:true,contentType:f.type});
-      if(upErr){showToast('Upload de mídia falhou: crie o bucket "media" no Supabase Storage','error');console.warn('Storage error:',upErr.message);}
-      else if(upData){const{data:u}=db.storage.from('media').getPublicUrl(path);urls.push(u.publicUrl);mTypes.push(t);}
-    }catch(e){console.warn('Storage exception:',e);}
+      setStatus(`[${i+1}/${mediaFiles.length}] preparando...`);
+      const publicUrl = await uploadWithPipeline(f, t, (m)=>setStatus(`[${i+1}/${mediaFiles.length}] ${m}`));
+      urls.push(publicUrl);
+      mTypes.push(t);
+    }catch(e){
+      console.error('Pipeline upload falhou:', e);
+      const msg = e.userMessage || ('Falha ao enviar mídia: '+(e.message||'erro desconhecido'));
+      showToast(msg, 'error');
+      btn.textContent='POSTAR ▶'; btn.disabled=false;
+      btn.style.opacity=''; btn.style.cursor='';
+      return;
+    }
   }
+  setStatus('⏳ Publicando...');
   // Monta payload — colunas garantidas pelo SQL de migração
   const payload={
     user_id: CU.id,
