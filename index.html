@@ -4270,7 +4270,7 @@ body.day-mode::before{
             </div>
             <div class="ftabs" style="margin-bottom:12px;">
               <button class="ftab active" onclick="switchAvTab('upload',this)">📷 Upload</button>
-              <button class="ftab" onclick="switchAvTab('retro',this)">🎮 Ícones Retro</button>
+              <button class="ftab" onclick="switchAvTab('retro',this)">🎮 Gerar Avatar</button>
             </div>
             <div id="av-upload-sec">
               <input type="file" id="av-input" accept="image/*" style="display:none;" onchange="previewAvatar(this)">
@@ -4278,7 +4278,54 @@ body.day-mode::before{
               <div id="av-file-preview" style="margin-top:8px;text-align:center;font-size:11px;color:var(--neon-cyan);"></div>
             </div>
             <div id="av-retro-sec" style="display:none;">
-              <div class="avatar-picker-grid" id="av-retro-grid"></div>
+              <!-- Gerador de Avatar Retro -->
+              <div style="background:rgba(0,255,204,.04);border:1px solid var(--border-glow);border-radius:12px;padding:14px;margin-bottom:12px;">
+                <div style="font-size:10px;color:var(--neon-yellow);font-family:Silkscreen,monospace;margin-bottom:10px;">✨ GERADOR DE AVATAR RETRO</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+                  <div>
+                    <label style="font-size:9px;color:var(--text-muted);letter-spacing:1px;text-transform:uppercase;">Estilo</label>
+                    <select class="ainput" id="av-gen-style" style="margin-top:4px;font-size:11px;" onchange="generateRetroAvatar()">
+                      <option value="pixel-art">🎮 Pixel Art</option>
+                      <option value="adventurer">🧝 Aventureiro</option>
+                      <option value="avataaars">😊 Cartoon</option>
+                      <option value="bottts">🤖 Robô</option>
+                      <option value="fun-emoji">🎭 Emoji Fun</option>
+                      <option value="lorelei">🧑 Lorelei</option>
+                      <option value="micah">✏️ Micah</option>
+                      <option value="notionists">🎨 Notionists</option>
+                      <option value="open-peeps">👤 Open Peeps</option>
+                      <option value="croodles">🖊️ Croodles</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style="font-size:9px;color:var(--text-muted);letter-spacing:1px;text-transform:uppercase;">Cor de fundo</label>
+                    <select class="ainput" id="av-gen-bg" style="margin-top:4px;font-size:11px;" onchange="generateRetroAvatar()">
+                      <option value="0a0a2a">🌌 Noturno</option>
+                      <option value="1a1a4e">💙 Azul escuro</option>
+                      <option value="2d1b69">💜 Roxo</option>
+                      <option value="1b4332">🌲 Verde escuro</option>
+                      <option value="7f1d1d">❤️ Vermelho</option>
+                      <option value="78350f">🟠 Laranja escuro</option>
+                      <option value="064e3b">🩵 Verde água</option>
+                      <option value="transparent">🔲 Sem fundo</option>
+                    </select>
+                  </div>
+                </div>
+                <!-- Preview do avatar gerado -->
+                <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px;">
+                  <div id="av-gen-preview" style="width:80px;height:80px;border-radius:50%;border:3px solid var(--neon-cyan);overflow:hidden;background:rgba(0,255,204,.05);flex-shrink:0;display:flex;align-items:center;justify-content:center;">
+                    <span style="font-size:30px;">🎮</span>
+                  </div>
+                  <div style="flex:1;">
+                    <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px;">Cada clique em "Novo" gera um diferente!</div>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                      <button type="button" onclick="generateRetroAvatar()" style="background:rgba(0,255,204,.12);border:1px solid var(--border-glow);color:var(--neon-cyan);padding:6px 12px;border-radius:7px;cursor:pointer;font-family:'Space Mono',monospace;font-size:10px;">🎲 Novo</button>
+                      <button type="button" onclick="applyRetroAvatar()" style="background:linear-gradient(135deg,var(--neon-pink),var(--neon-purple));border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-family:'Silkscreen',monospace;font-size:9px;">✓ Usar este</button>
+                    </div>
+                  </div>
+                </div>
+                <div id="av-gen-url" style="display:none;"></div>
+              </div>
             </div>
           </div>
           <!-- Info -->
@@ -4295,6 +4342,89 @@ body.day-mode::before{
             <div class="igrp"><label class="ilbl">Twitter / X</label><input class="ainput" type="text" id="set-tw" placeholder="https://x.com/..."></div>
             <div class="igrp"><label class="ilbl">GitHub</label><input class="ainput" type="text" id="set-gh" placeholder="https://github.com/..."></div>
           </div>
+          <!-- Interesses / Algoritmo de Feed -->
+          <div class="edit-section">
+            <div class="edit-section-title">🎯 INTERESSES & PREFERÊNCIAS</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-bottom:14px;">Marque o que você curte — usamos isso para personalizar seu feed!</div>
+
+            <!-- Categorias de interesse -->
+            <div style="font-size:10px;color:var(--neon-cyan);font-family:Silkscreen,monospace;margin-bottom:8px;">O QUE VOCÊ CURTE?</div>
+            <div id="interests-grid" style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:16px;">
+              ${[
+                ['tech','💻 Tecnologia'],['games','🎮 Games'],['music','🎵 Música'],
+                ['movies','🎬 Filmes & Séries'],['sports','⚽ Esportes'],['religion','✝️ Religioso/Espiritualidade'],
+                ['food','🍕 Gastronomia'],['travel','✈️ Viagens'],['fashion','👗 Moda'],
+                ['fitness','💪 Academia/Fitness'],['art','🎨 Arte & Design'],['reading','📚 Leitura'],
+                ['pets','🐾 Pets'],['cars','🚗 Carros & Motos'],['nature','🌿 Natureza'],
+                ['business','💼 Negócios'],['politics','🗳️ Política'],['science','🔬 Ciência'],
+                ['anime','🇯🇵 Anime/Mangá'],['humor','😂 Humor & Memes']
+              ].map(([k,v])=>`<button type="button" data-interest="${k}" onclick="toggleInterest(this)"
+                style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);color:var(--text-muted);padding:6px 12px;border-radius:20px;cursor:pointer;font-size:10px;font-family:'Space Mono',monospace;transition:all .2s;">${v}</button>`).join('')}
+            </div>
+
+            <!-- Time do coração -->
+            <div class="igrp">
+              <label class="ilbl">⚽ Torce para qual time? <span style="color:var(--text-muted);font-size:9px;">(opcional)</span></label>
+              <input class="ainput" id="pref-team" placeholder="Ex: Flamengo, Corinthians...">
+            </div>
+
+            <!-- Esportes pratica -->
+            <div style="margin-bottom:12px;">
+              <label style="font-size:9px;color:var(--text-muted);letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:6px;">🏃 Pratica esporte?</label>
+              <div style="display:flex;gap:8px;margin-bottom:6px;">
+                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px;color:var(--text-light);">
+                  <input type="radio" name="pref-sport" id="pref-sport-yes" value="yes" onchange="document.getElementById('pref-sport-name-wrap').style.display='block'" style="accent-color:var(--neon-cyan);"> Sim
+                </label>
+                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px;color:var(--text-light);">
+                  <input type="radio" name="pref-sport" id="pref-sport-no" value="no" onchange="document.getElementById('pref-sport-name-wrap').style.display='none'" style="accent-color:var(--neon-cyan);"> Não
+                </label>
+              </div>
+              <div id="pref-sport-name-wrap" style="display:none;">
+                <input class="ainput" id="pref-sport-name" placeholder="Qual esporte? Ex: Futebol, Natação...">
+              </div>
+            </div>
+
+            <!-- Música favorita -->
+            <div class="igrp">
+              <label class="ilbl">🎵 Estilo de música favorito <span style="color:var(--text-muted);font-size:9px;">(opcional)</span></label>
+              <input class="ainput" id="pref-music" placeholder="Ex: Sertanejo, Funk, Rock, MPB...">
+            </div>
+
+            <!-- Série/Filme favorito -->
+            <div class="igrp">
+              <label class="ilbl">🎬 Série ou filme favorito <span style="color:var(--text-muted);font-size:9px;">(opcional)</span></label>
+              <input class="ainput" id="pref-show" placeholder="Ex: Breaking Bad, Stranger Things...">
+            </div>
+
+            <!-- Faixa etária -->
+            <div style="margin-bottom:12px;">
+              <label style="font-size:9px;color:var(--text-muted);letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:6px;">📅 Faixa etária</label>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                ${[['u18','Menor de 18'],['18-24','18-24'],['25-34','25-34'],['35-44','35-44'],['45-54','45-54'],['55p','55+']].map(([k,v])=>
+                  `<label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:10px;color:var(--text-light);background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:5px 10px;">
+                    <input type="radio" name="pref-age" value="${k}" style="accent-color:var(--neon-cyan);"> ${v}
+                  </label>`).join('')}
+              </div>
+            </div>
+
+            <!-- Relacionamento -->
+            <div style="margin-bottom:12px;">
+              <label style="font-size:9px;color:var(--text-muted);letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:6px;">💕 Situação amorosa</label>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                ${[['single','Solteiro(a)'],['relationship','Namorando'],['married','Casado(a)'],['complicated','Complicado'],['prefer_not','Prefiro não dizer']].map(([k,v])=>
+                  `<label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:10px;color:var(--text-light);background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:5px 10px;">
+                    <input type="radio" name="pref-relationship" value="${k}" style="accent-color:var(--neon-pink);"> ${v}
+                  </label>`).join('')}
+              </div>
+            </div>
+
+            <!-- Ocupação -->
+            <div class="igrp">
+              <label class="ilbl">💼 Ocupação <span style="color:var(--text-muted);font-size:9px;">(opcional)</span></label>
+              <input class="ainput" id="pref-job" placeholder="Ex: Estudante, Empresário, Programador...">
+            </div>
+          </div>
+
           <button class="asubmit" onclick="saveSettings()">💾 SALVAR ALTERAÇÕES</button>
         </div>
       </div>
@@ -6187,20 +6317,96 @@ function insertEmojiToPost(emoji){
   closeM('m-emoji');
 }
 function buildRetroGrid(){
-  const grid=document.getElementById('av-retro-grid');
-  if(!grid){ console.warn('av-retro-grid not found'); return; }
-  if(!RETRO_ICONS?.length){ console.warn('RETRO_ICONS empty'); return; }
-  grid.innerHTML=RETRO_ICONS.map(function(ic){
-    const sel=retroIconSelected===ic?' sel':'';
-    return '<div class="av-pick-item'+sel+'" data-icon="'+ic+'" onclick="selectRetroIcon(this.dataset.icon)" title="'+ic+'">'+ic+'</div>';
-  }).join('');
-  console.log('buildRetroGrid: rendered',RETRO_ICONS.length,'icons');
+  // Legacy — now replaced by generator, keep stub for compatibility
 }
 function selectRetroIcon(ic){
   retroIconSelected=ic; avatarFile=null;
-  buildRetroGrid();
   const prev=document.getElementById('av-current-preview');
   if(prev){ prev.innerHTML=''; prev.textContent=ic; }
+}
+
+// ── Gerador de Avatar Retro (DiceBear API) ──────────────────────
+let _retro_av_url = null;
+function generateRetroAvatar(){
+  const style = document.getElementById('av-gen-style')?.value || 'pixel-art';
+  const bg    = document.getElementById('av-gen-bg')?.value || '0a0a2a';
+  const seed  = Math.random().toString(36).slice(2,10);
+  const bgParam = bg === 'transparent' ? '' : `&backgroundColor=${bg}`;
+  const url = `https://api.dicebear.com/7.x/${style}/svg?seed=${seed}${bgParam}&size=128`;
+  _retro_av_url = url;
+  document.getElementById('av-gen-url').textContent = url;
+  const preview = document.getElementById('av-gen-preview');
+  if(preview){
+    preview.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='<span style=font-size:30px>🎮</span>'">`;
+  }
+}
+function applyRetroAvatar(){
+  if(!_retro_av_url){ showToast('Gere um avatar primeiro!','error'); return; }
+  avatarFile = null;
+  retroIconSelected = null;
+  // Usar a URL do avatar gerado como avatar_url diretamente
+  window._generatedAvatarUrl = _retro_av_url;
+  // Atualizar preview atual
+  const prev = document.getElementById('av-current-preview');
+  if(prev) prev.innerHTML = `<img src="${_retro_av_url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+  showToast('✅ Avatar selecionado! Salve para confirmar.','success');
+}
+
+// ── Interesses ──────────────────────────────────────────────────
+function toggleInterest(btn){
+  const active = btn.dataset.active==='1';
+  btn.dataset.active = active ? '0' : '1';
+  if(active){
+    btn.style.background='rgba(255,255,255,.04)';
+    btn.style.borderColor='rgba(255,255,255,.1)';
+    btn.style.color='var(--text-muted)';
+  } else {
+    btn.style.background='rgba(0,255,204,.12)';
+    btn.style.borderColor='var(--neon-cyan)';
+    btn.style.color='var(--neon-cyan)';
+  }
+}
+function getSelectedInterests(){
+  return [...document.querySelectorAll('#interests-grid [data-interest][data-active="1"]')].map(b=>b.dataset.interest);
+}
+function setSelectedInterests(arr){
+  if(!arr?.length) return;
+  document.querySelectorAll('#interests-grid [data-interest]').forEach(btn=>{
+    if(arr.includes(btn.dataset.interest)){
+      btn.dataset.active='1';
+      btn.style.background='rgba(0,255,204,.12)';
+      btn.style.borderColor='var(--neon-cyan)';
+      btn.style.color='var(--neon-cyan)';
+    }
+  });
+}
+function loadUserPreferences(prefs){
+  if(!prefs) return;
+  try{
+    const p = typeof prefs === 'string' ? JSON.parse(prefs) : prefs;
+    if(p.interests) setSelectedInterests(p.interests);
+    if(p.team)      { const el=document.getElementById('pref-team'); if(el) el.value=p.team; }
+    if(p.sport_active){ const r=document.getElementById('pref-sport-'+p.sport_active); if(r){ r.checked=true; if(p.sport_active==='yes') document.getElementById('pref-sport-name-wrap').style.display='block'; } }
+    if(p.sport_name){ const el=document.getElementById('pref-sport-name'); if(el) el.value=p.sport_name; }
+    if(p.music)     { const el=document.getElementById('pref-music'); if(el) el.value=p.music; }
+    if(p.show)      { const el=document.getElementById('pref-show'); if(el) el.value=p.show; }
+    if(p.age)       { const r=document.querySelector(`input[name="pref-age"][value="${p.age}"]`); if(r) r.checked=true; }
+    if(p.relationship){ const r=document.querySelector(`input[name="pref-relationship"][value="${p.relationship}"]`); if(r) r.checked=true; }
+    if(p.job)       { const el=document.getElementById('pref-job'); if(el) el.value=p.job; }
+  }catch(e){}
+}
+function getUserPreferences(){
+  return {
+    interests:    getSelectedInterests(),
+    team:         document.getElementById('pref-team')?.value.trim()||'',
+    sport_active: document.querySelector('input[name="pref-sport"]:checked')?.value||'',
+    sport_name:   document.getElementById('pref-sport-name')?.value.trim()||'',
+    music:        document.getElementById('pref-music')?.value.trim()||'',
+    show:         document.getElementById('pref-show')?.value.trim()||'',
+    age:          document.querySelector('input[name="pref-age"]:checked')?.value||'',
+    relationship: document.querySelector('input[name="pref-relationship"]:checked')?.value||'',
+    job:          document.getElementById('pref-job')?.value.trim()||''
+  };
 }
 function previewAvatar(inp){
   if(!inp.files[0])return;
@@ -6217,7 +6423,7 @@ function switchAvTab(t,btn){
   const r=document.getElementById('av-retro-sec');
   if(u) u.style.display=t==='upload'?'block':'none';
   if(r) r.style.display=t==='retro'?'block':'none';
-  if(t==='retro') buildRetroGrid();
+  if(t==='retro' && !_retro_av_url) generateRetroAvatar();
 }
 function toggleAvPicker(){const s=document.getElementById('av-retro-sec')?.parentElement;s.style.display=s.style.display==='none'?'block':'none';}
 
@@ -6295,7 +6501,12 @@ async function saveSettings(){
     }
   }
   let avatarUrl=CP?.avatar_url;let avatarType='upload';let retroIcon=null;
-  if(retroIconSelected){avatarType='retro_icon';retroIcon=retroIconSelected;avatarUrl=retroIconSelected;}
+  // Avatar gerado pelo gerador retro
+  if(window._generatedAvatarUrl){
+    avatarUrl = window._generatedAvatarUrl;
+    avatarType = 'generated';
+    window._generatedAvatarUrl = null;
+  } else if(retroIconSelected){avatarType='retro_icon';retroIcon=retroIconSelected;avatarUrl=retroIconSelected;}
   else if(avatarFile){
     try{
       const ext=avatarFile.name.split('.').pop()||'jpg';
@@ -6342,6 +6553,15 @@ async function saveSettings(){
     console.error('saveSettings error:',err);
     return showToast('Erro ao salvar: '+err.message,'error');
   }
+  // Salvar preferências/interesses na tabela user_preferences
+  try{
+    const prefs = getUserPreferences();
+    await db.from('user_preferences').upsert({
+      user_id: CU.id,
+      preferences: JSON.stringify(prefs),
+      updated_at: new Date().toISOString()
+    }, {onConflict:'user_id'});
+  }catch(e){ console.warn('prefs save:', e?.message); }
   Object.assign(CP,updates,{avatar_type:avatarType,retro_icon:retroIcon});
   refreshUI();
   // Close modal if open, otherwise stay on edit tab
@@ -10302,10 +10522,14 @@ function loadEditForm(){
   if(setIg) setIg.value = CP.instagram||'';
   if(setTw) setTw.value = CP.twitter||'';
   if(setGh) setGh.value = CP.github||'';
-  // Show current avatar
   updateAvPreview();
-  // Build retro grid
   buildRetroGrid();
+  // Carregar preferências do usuário
+  if(CU){
+    db.from('user_preferences').select('preferences').eq('user_id',CU.id).maybeSingle()
+      .then(({data})=>{ if(data?.preferences) loadUserPreferences(data.preferences); })
+      .catch(e=>console.warn('load prefs:',e?.message));
+  }
 }
 
 function updateAvPreview(){
