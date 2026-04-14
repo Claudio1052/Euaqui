@@ -114,7 +114,6 @@ nav{position:fixed;top:0;left:0;right:0;background:#0a0a2a;border-bottom:1px sol
 @keyframes popIn{from{opacity:0;transform:scale(.8) translateY(20px)}to{opacity:1;transform:scale(1) translateY(0)}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(0,255,204,.4)}50%{box-shadow:0 0 0 10px rgba(0,255,204,0)}}
-@keyframes spin{to{transform:rotate(360deg)}}
 .ph{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
 .pav{width:42px;height:42px;border-radius:50%;border:2px solid rgba(0,255,204,.25);object-fit:cover;cursor:pointer;transition:border-color .2s;flex-shrink:0;}
 .pav:hover{border-color:var(--neon-cyan);}
@@ -3699,24 +3698,7 @@ body.day-mode::before{
           <button class="ftab" onclick="switchTab('friends',this)">👥 Amigos</button>
         </div>
         <div id="feed"></div>
-
-        <!-- Loader de scroll infinito -->
-        <div id="feed-loader" style="display:none;text-align:center;padding:20px 0;">
-          <div style="display:inline-flex;align-items:center;gap:10px;background:rgba(0,255,204,.06);border:1px solid rgba(0,255,204,.15);border-radius:20px;padding:8px 18px;">
-            <div style="width:14px;height:14px;border:2px solid var(--neon-cyan);border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;"></div>
-            <span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--neon-cyan);">Carregando mais...</span>
-          </div>
-        </div>
-
-        <!-- Sentinel (detectado pelo IntersectionObserver) + fim do feed -->
-        <div id="feed-end" style="text-align:center;padding:24px 0;display:none;">
-          <div style="display:inline-flex;align-items:center;gap:8px;color:var(--text-muted);font-family:'VT323',monospace;font-size:16px;">
-            <span style="flex:1;height:1px;background:rgba(255,255,255,.08);display:inline-block;width:50px;"></span>
-            FIM DO FEED
-            <span style="flex:1;height:1px;background:rgba(255,255,255,.08);display:inline-block;width:50px;"></span>
-          </div>
-          <div style="font-size:10px;color:var(--text-muted);margin-top:6px;font-family:'Space Mono',monospace;">Você está em dia! ✨</div>
-        </div>
+        <div id="feed-end" style="text-align:center;padding:20px;color:var(--text-muted);font-family:'VT323',monospace;font-size:18px;display:none;">— FIM DO FEED —</div>
       </div>
 
       <!-- TAB: AMIGOS -->
@@ -4951,8 +4933,7 @@ function nav(page){
   document.querySelector('.fc')?.scrollTo(0,0);
   setTimeout(()=>{
     if(page==='home'){
-      loadFeed(true);
-      setTimeout(_initFeedScrollObserver, 500);
+      loadFeed();
     }
     else if(page==='explore')        loadExploreFeed();
     else if(page==='friends')        loadFriendsList('friends');
@@ -4973,220 +4954,303 @@ function toggleDrawer(){
   document.getElementById('mob-overlay').classList.toggle('open');
 }
 
-// ===== FEED — Sistema de Prioridades + Scroll Infinito =====
-let _feedPage       = 0;          // offset atual
-let _feedLoading    = false;      // lock para evitar dupla requisição
-let _feedExhausted  = false;      // não há mais posts
-let _feedScrollObs  = null;       // IntersectionObserver do sentinel
-const FEED_LIMIT    = 20;
+// ===== FEED (with caching to prevent flicker) =====
+// ═══════════════════════════════════════════════════════════════════════════
+// FEED PRIORITIZADO + SCROLL INFINITO
+// Prioridade: 1° Amigos/Seguidores  2° Lojas/Serviços  3° Comunidades
+//             4° Interesses/Preferências  5° Tendências
+// Limite por página: 20  |  Scroll infinito via IntersectionObserver
+// ═══════════════════════════════════════════════════════════════════════════
+const FEED_PAGE_SIZE = 20;
+let feedPage = 0;
+let feedHasMore = true;
+let feedLoading = false;
+let feedScrollObserver = null;
+// Contexto de prioridade (cacheado por sessão de carregamento)
+let _feedCtx = null;
 
-async function loadFeed(force=false){
-  const feed = document.getElementById('feed');
-  if(!feed) return;
-
-  // Reset ao forçar reload ou trocar aba
-  if(force){
-    _feedPage      = 0;
-    _feedLoading   = false;
-    _feedExhausted = false;
-    cachedPostIds.clear();
-    cachedPosts = {};
-    feed.innerHTML = skeletons(3);
-    document.getElementById('feed-end')?.setAttribute('style','display:none');
-    const ld = document.getElementById('feed-loader'); if(ld) ld.style.display='none';
-    _initFeedScrollObserver();
-  }
-
-  if(_feedLoading || _feedExhausted) return;
-  _feedLoading = true;
-
-  // Mostrar spinner de carregamento (não na primeira carga — já tem skeleton)
-  const loaderEl = document.getElementById('feed-loader');
-  if(_feedPage > 0 && loaderEl) loaderEl.style.display = 'block';
-
+async function _buildFeedContext(){
+  // Monta sets de amigos, seguidores (quem eu sigo), comunidades e interesses
+  const ctx = {
+    friends: new Set(),
+    following: new Set(),
+    communities: new Set(),
+    interests: []
+  };
+  if(!CU) return ctx;
   try{
-    let posts = [];
-
-    // ── Aba "popular": ranking simples por likes ──────────────────
-    if(feedTab === 'popular'){
-      const{data} = await db.from('posts')
-        .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url,status_message)')
-        .eq('visibility','public')
-        .order('likes_count',{ascending:false})
-        .range(_feedPage * FEED_LIMIT, (_feedPage + 1) * FEED_LIMIT - 1);
-      posts = data || [];
-
-    // ── Aba "friends": só amigos e seguidos ──────────────────────
-    } else if(feedTab === 'friends' && CU){
-      const{data:fws} = await db.from('friends').select('friend_id').eq('user_id',CU.id);
-      const{data:fols} = await db.from('follows').select('following_id').eq('follower_id',CU.id);
-      const ids = [
-        ...(fws||[]).map(f=>f.friend_id),
-        ...(fols||[]).map(f=>f.following_id),
-        CU.id
-      ];
-      if(!ids.length){
-        feed.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);font-family:\'VT323\',monospace;font-size:20px;">Adicione amigos para ver os posts deles aqui!</div>';
-        _feedLoading = false; return;
-      }
-      const{data} = await db.from('posts')
-        .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url,status_message)')
-        .in('user_id',[...new Set(ids)])
-        .order('created_at',{ascending:false})
-        .range(_feedPage * FEED_LIMIT, (_feedPage + 1) * FEED_LIMIT - 1);
-      posts = data || [];
-
-    // ── Aba "recent" (padrão): RPC com sistema de prioridades ─────
-    } else {
-      // Tenta usar a stored procedure get_custom_feed
-      const userId = CU?.id || '00000000-0000-0000-0000-000000000000';
-      const{data, error} = await db.rpc('get_custom_feed', {
-        p_user_id: userId,
-        p_limit:   FEED_LIMIT,
-        p_offset:  _feedPage * FEED_LIMIT
-      });
-
-      if(!error && data){
-        // RPC retorna campos achatados — remonta o formato profiles{}
-        posts = data.map(p=>({
-          ...p,
-          profiles: {
-            id:           p.user_id,
-            username:     p.author_username,
-            full_name:    p.author_name,
-            avatar_url:   p.author_avatar,
-            status_message: ''
-          }
-        }));
-      } else {
-        // Fallback: query simples se RPC não existir ainda
-        if(error) console.warn('get_custom_feed RPC:', error.message, '— usando fallback');
-        const{data:fb} = await db.from('posts')
-          .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url,status_message)')
-          .eq('visibility','public')
-          .order('created_at',{ascending:false})
-          .range(_feedPage * FEED_LIMIT, (_feedPage + 1) * FEED_LIMIT - 1);
-        posts = fb || [];
-      }
-    }
-
-    // ── Detectar fim do feed ──────────────────────────────────────
-    if(posts.length < FEED_LIMIT){
-      _feedExhausted = true;
-      const endEl = document.getElementById('feed-end');
-      if(endEl) endEl.style.display = 'block';
-    }
-
-    // ── Filtro de visibilidade (posts friends/private) ────────────
-    if(posts.length && CU && feedTab !== 'popular'){
-      const[frRes,folRes] = await Promise.all([
-        db.from('friends').select('friend_id').eq('user_id',CU.id),
-        db.from('follows').select('following_id').eq('follower_id',CU.id)
-      ]);
-      const myFriendSet   = new Set((frRes.data||[]).map(f=>f.friend_id));
-      const myFollowingSet= new Set((folRes.data||[]).map(f=>f.following_id));
-      posts = posts.filter(p=>{
-        const vis = p.visibility||'public';
-        if(p.user_id===CU.id) return true;
-        if(vis==='public') return true;
-        if(vis==='friends') return myFriendSet.has(p.user_id)||myFollowingSet.has(p.user_id);
-        return false;
-      });
-    }
-
-    // ── Filtro posts de comunidade (só membros veem) ──────────────
+    const[fr, fol, cm, pref] = await Promise.all([
+      db.from('friends').select('friend_id').eq('user_id',CU.id),
+      db.from('follows').select('following_id').eq('follower_id',CU.id),
+      db.from('community_members').select('community_id').eq('user_id',CU.id),
+      db.from('user_preferences').select('preferences').eq('user_id',CU.id).maybeSingle()
+    ]);
+    (fr.data||[]).forEach(r=>ctx.friends.add(r.friend_id));
+    (fol.data||[]).forEach(r=>ctx.following.add(r.following_id));
+    (cm.data||[]).forEach(r=>ctx.communities.add(r.community_id));
     try{
-      const commPostMap = new Map();
-      posts.forEach((p,idx)=>{
-        const c = p?.content||'';
-        if(c.startsWith('[COMM_POST:')){
-          const end=c.indexOf(']');
-          if(end>11){const inner=c.substring(11,end);const colon=inner.indexOf(':');if(colon>0)commPostMap.set(idx,inner.substring(0,colon));}
-        }
-      });
-      if(commPostMap.size>0 && CU){
-        const allCommIds=[...new Set([...commPostMap.values()])];
-        const{data:myMems}=await db.from('community_members').select('community_id').eq('user_id',CU.id).in('community_id',allCommIds);
-        const myCommSet=new Set((myMems||[]).map(m=>m.community_id));
-        posts=posts.filter((p,idx)=>{const cId=commPostMap.get(idx);return !cId||myCommSet.has(cId);});
+      const raw = pref?.data?.preferences;
+      if(raw){
+        const parsed = typeof raw==='string' ? JSON.parse(raw) : raw;
+        ctx.interests = (parsed.interests||[]).map(s=>String(s).toLowerCase());
       }
     }catch(e){}
-
-    if(!posts.length && _feedPage===0){
-      feed.innerHTML='<div style="text-align:center;padding:40px;color:var(--text-muted);font-family:\'VT323\',monospace;font-size:20px;">SEM POSTS AINDA ✨<br><span style="font-size:14px;font-family:\'Space Mono\',monospace;">Seja o primeiro!</span></div>';
-      _feedLoading=false; return;
-    }
-
-    // ── Busca reações e renderiza ─────────────────────────────────
-    const postIds = posts.map(p=>p.id);
-    const[rxRes,myRxRes] = await Promise.all([
-      db.from('likes').select('post_id,reaction_type').in('post_id',postIds),
-      CU ? db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id) : {data:[]}
-    ]);
-    const rxMap={};
-    (rxRes.data||[]).forEach(r=>{if(!rxMap[r.post_id])rxMap[r.post_id]={};rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1;});
-    const myRxMap={};
-    (myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
-
-    // Popular _postCache
-    if(!window._postCache) window._postCache={};
-    posts.forEach(p=>{window._postCache[p.id]=p;});
-
-    const rendered = posts
-      .filter(p=>!cachedPostIds.has(p.id))
-      .map(p=>{ try{return renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||'');}catch(e){return '';} })
-      .filter(Boolean);
-
-    if(rendered.length){
-      if(_feedPage===0) feed.innerHTML='';
-      const tmp=document.createElement('div');
-      tmp.innerHTML=rendered.join('');
-      [...tmp.children].forEach(el=>feed.appendChild(el));
-      _hydrateAllReposts(feed);
-      posts.forEach(p=>cachedPostIds.add(p.id));
-      updateCommentCounts(postIds);
-      // Hidrata avatares de comunidade
-      _hydrateCommAvatars(posts);
-    }
-
-    _feedPage++;
-
-  }catch(err){
-    console.error('loadFeed error:',err?.message);
-    if(_feedPage===0) feed.innerHTML='<div style="text-align:center;padding:30px;color:var(--neon-pink);font-size:12px;">Erro ao carregar feed.</div>';
-  }finally{
-    _feedLoading=false;
-    const loaderEl2 = document.getElementById('feed-loader');
-    if(loaderEl2) loaderEl2.style.display='none';
-  }
+  }catch(e){ console.warn('feedCtx:',e?.message); }
+  return ctx;
 }
 
-// ── Scroll Infinito ────────────────────────────────────────────
-function _initFeedScrollObserver(){
-  if(_feedScrollObs) _feedScrollObs.disconnect();
+function _classifyPostPriority(p, ctx){
+  // Retorna tier: 1 (friends/follows), 2 (stores/services), 3 (communities),
+  //               4 (interests), 5 (trending/recent fallback)
+  if(!p) return 5;
+  const uid = p.user_id;
+  const content = String(p.content||'').toLowerCase();
+  const type = String(p.type||'').toLowerCase();
+
+  // TIER 1 — Amigos e Seguidores
+  if(CU && (ctx.friends.has(uid) || ctx.following.has(uid) || uid===CU.id)) return 1;
+
+  // TIER 2 — Lojas e Serviços (detecção por type ou tags)
+  if(['store','shop','loja','service','servico','serviço','business','product','produto','ad','anuncio'].includes(type)) return 2;
+  if(/#(loja|venda|servico|serviço|produto|oferta|promocao|promoção)/.test(content)) return 2;
+
+  // TIER 3 — Comunidades (posts [COMM_POST:id:...] de comunidades das quais sou membro)
+  if(content.startsWith('[comm_post:')){
+    const end = content.indexOf(']');
+    if(end>11){
+      const inner = content.substring(11,end);
+      const colon = inner.indexOf(':');
+      const cId = colon>0 ? inner.substring(0,colon) : inner;
+      if(ctx.communities.has(cId)) return 3;
+    }
+  }
+
+  // TIER 4 — Interesses (match por hashtag ou palavra-chave)
+  if(ctx.interests.length){
+    for(const it of ctx.interests){
+      if(!it) continue;
+      if(content.includes('#'+it) || content.includes(it)) return 4;
+    }
+  }
+
+  // TIER 5 — Tendências (fallback)
+  return 5;
+}
+
+async function loadFeed(force=false){
+  const feed=document.getElementById('feed');
+  if(!feed)return;
+  const feedEnd=document.getElementById('feed-end');
+
+  if(force){
+    feedPage = 0;
+    feedHasMore = true;
+    feedLoading = false;
+    cachedPostIds.clear();
+    cachedPosts={};
+    _feedCtx = null;
+    if(feedScrollObserver){ try{ feedScrollObserver.disconnect(); }catch(e){} feedScrollObserver=null; }
+    feed.innerHTML = skeletons(3);
+    if(feedEnd) feedEnd.style.display='none';
+  }
+
+  if(feedLoading || !feedHasMore) return;
+  feedLoading = true;
+  lastFeedLoad = Date.now();
+
+  // Monta contexto de prioridade uma vez por sessão
+  if(!_feedCtx) _feedCtx = await _buildFeedContext();
+  const ctx = _feedCtx;
+
+  // Select seguro — sem colunas que podem não existir
+  const SEL='id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url,status_message)';
+
+  // Mostra indicador de "carregando mais" se não for primeira página
+  if(feedPage>0 && feedEnd){
+    feedEnd.style.display='block';
+    feedEnd.textContent='⟳ carregando mais...';
+  }
+
+  // Query de busca — mantém comportamento das abas, mas com paginação real
+  const from = feedPage * FEED_PAGE_SIZE;
+  const to   = from + FEED_PAGE_SIZE - 1;
+  let q;
+  if(feedTab==='popular'){
+    q=db.from('posts').select(SEL).order('likes_count',{ascending:false}).range(from,to);
+  } else if(feedTab==='friends'&&CU){
+    const ids=[...ctx.friends, ...ctx.following];
+    if(!ids.length){
+      if(feed.children.length===0 || feedPage===0){
+        feed.innerHTML='<div style="text-align:center;padding:40px;color:var(--text-muted);font-family:\'VT323\',monospace;font-size:20px;">Adicione amigos para ver os posts deles aqui!</div>';
+      }
+      feedHasMore=false; feedLoading=false;
+      if(feedEnd){ feedEnd.style.display='block'; feedEnd.textContent='— FIM DO FEED —'; }
+      return;
+    }
+    q=db.from('posts').select(SEL).in('user_id',[...ids,CU.id]).order('created_at',{ascending:false}).range(from,to);
+  } else {
+    // Aba "Recentes" — ordena por recência; classificação de prioridade é aplicada in-memory
+    q=db.from('posts').select(SEL).order('created_at',{ascending:false}).range(from,to);
+  }
+  const{data:posts,error:fetchErr}=await q;
+  if(fetchErr){
+    console.error('Feed error:',fetchErr.message);
+    if(feed.children.length===0)feed.innerHTML='<div style="text-align:center;padding:30px;color:var(--neon-pink);font-size:12px;">Erro ao carregar feed.<br>'+fetchErr.message+'</div>';
+    feedLoading=false;
+    return;
+  }
+
+  // Detecta fim do feed
+  if(!posts || posts.length < FEED_PAGE_SIZE){
+    feedHasMore = false;
+  }
+
+  // ── FILTRO DE VISIBILIDADE ──────────────────────────────────────────────────
+  // Usa sets já montados no _feedCtx (evita requisição dupla)
+  let filteredPosts = posts || [];
+  try{
+    filteredPosts = filteredPosts.filter(p=>{
+      const vis = p.visibility || 'public';
+      const isOwn = CU && p.user_id === CU.id;
+      if(isOwn) return true;
+      if(vis === 'public') return true;
+      if(vis === 'friends'){
+        if(!CU) return false;
+        return ctx.friends.has(p.user_id) || ctx.following.has(p.user_id);
+      }
+      if(vis === 'private') return false;
+      return true;
+    });
+  }catch(e){ console.warn('Visibility filter:', e?.message); }
+
+  // ── Filtro de posts de comunidade: só membros podem ver no feed principal ──
+  try{
+    filteredPosts = filteredPosts.filter(p=>{
+      const c = p?.content||'';
+      if(!c.startsWith('[COMM_POST:')) return true;
+      const end = c.indexOf(']');
+      if(end<=11) return true;
+      const inner = c.substring(11,end);
+      const colon = inner.indexOf(':');
+      const cId = colon>0 ? inner.substring(0,colon) : inner;
+      return ctx.communities.has(cId);
+    });
+  }catch(e){ console.warn('Comm filter:',e?.message); }
+
+  // ── ORDENAÇÃO POR PRIORIDADE (apenas aba "Recentes") ────────────────────────
+  // 1° Amigos/Seguidores  2° Lojas/Serviços  3° Comunidades  4° Interesses  5° Tendências
+  if(feedTab==='recent'){
+    filteredPosts = filteredPosts
+      .map(p=>({p, tier:_classifyPostPriority(p, ctx), t:new Date(p.created_at).getTime()}))
+      .sort((a,b)=>{
+        if(a.tier!==b.tier) return a.tier-b.tier;
+        return b.t-a.t; // dentro do mesmo tier, mais recente primeiro
+      })
+      .map(x=>x.p);
+  }
+
+  // Remove posts já exibidos (evita duplicatas entre páginas)
+  filteredPosts = filteredPosts.filter(p=>!cachedPostIds.has(p.id));
+
+  if(!filteredPosts.length){
+    if(feedPage===0 && feed.children.length===0){
+      feed.innerHTML='<div style="text-align:center;padding:40px;color:var(--text-muted);font-family:\'VT323\',monospace;font-size:20px;">SEM POSTS AINDA ✨<br><span style="font-size:14px;font-family:\'Space Mono\',monospace;">Seja o primeiro!</span></div>';
+    }
+    // Tenta próxima página se ainda houver; senão encerra
+    feedPage++;
+    feedLoading=false;
+    if(feedHasMore){
+      return loadFeed(false);
+    } else if(feedEnd){
+      feedEnd.style.display='block';
+      feedEnd.textContent='— FIM DO FEED —';
+    }
+    return;
+  }
+
+  // Busca reações para os posts desta página
+  const postIds=filteredPosts.map(p=>p.id);
+  const[rxRes,myRxRes]=await Promise.all([
+    db.from('likes').select('post_id,reaction_type').in('post_id',postIds),
+    CU?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id):{data:[]}
+  ]);
+  const rxMap={};
+  (rxRes.data||[]).forEach(r=>{
+    if(!rxMap[r.post_id])rxMap[r.post_id]={};
+    rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1;
+  });
+  const myRxMap={};
+  (myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
+
+  const rendered = filteredPosts.map(p=>{
+    try{ return renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||''); }
+    catch(e){ console.warn('renderPost error:',e?.message,p?.id); return ''; }
+  }).filter(h=>h.length>0);
+
+  // Cache de posts para o compartilhador
+  if(!window._postCache) window._postCache = {};
+  filteredPosts.forEach(p=>{ window._postCache[p.id] = p; });
+
+  const html = rendered.join('');
+
+  // APPEND se for página >0, REPLACE na primeira página
+  if(feedPage===0){
+    feed.innerHTML = html || '<div style="text-align:center;padding:40px;color:var(--text-muted);"><div style="font-size:40px;margin-bottom:12px;">📭</div><div style="font-family:VT323,monospace;font-size:20px;">Nenhuma postagem ainda</div></div>';
+  } else {
+    feed.insertAdjacentHTML('beforeend', html);
+  }
+
+  _hydrateAllReposts(feed);
+  filteredPosts.forEach(p=>cachedPostIds.add(p.id));
+  updateCommentCounts(filteredPosts.map(p=>p.id));
+
+  // Hidrata avatares/nomes das comunidades em posts COMM_POST
+  const commIdsInFeed=[];
+  filteredPosts.forEach(p=>{
+    const c=p?.content||'';
+    if(c.startsWith('[COMM_POST:')){
+      const e=c.indexOf(']');
+      if(e>11){const inner=c.substring(11,e);const col=inner.indexOf(':');if(col>0)commIdsInFeed.push(inner.substring(0,col));}
+    }
+  });
+  if(commIdsInFeed.length) _hydrateCommAvatars(commIdsInFeed);
+
+  // Autoplay mudo no mobile (mantido)
+  if(window.innerWidth <= 768){ initFeedAutoplay(); _startDomWatcher(); }
+
+  // Atualiza indicador de fim
+  if(feedEnd){
+    if(feedHasMore){
+      feedEnd.style.display='none';
+    } else {
+      feedEnd.style.display='block';
+      feedEnd.textContent='— FIM DO FEED —';
+    }
+  }
+
+  feedPage++;
+  feedLoading=false;
+
+  // Ativa observer de scroll infinito (primeira vez)
+  _initInfiniteScroll();
+}
+
+// ═════════════ SCROLL INFINITO via IntersectionObserver ═════════════════════
+function _initInfiniteScroll(){
+  if(feedScrollObserver) return; // já ativo
   const sentinel = document.getElementById('feed-end');
   if(!sentinel) return;
-  _feedScrollObs = new IntersectionObserver(entries=>{
-    if(entries[0].isIntersecting && !_feedLoading && !_feedExhausted){
-      loadFeed();
-    }
-  }, {rootMargin:'200px'});
-  _feedScrollObs.observe(sentinel);
-}
-
-// Helper: hidrata avatares de comunidade no feed
-async function _hydrateCommAvatars(posts){
-  const commIds=[];
-  posts.forEach(p=>{
-    const c=p?.content||'';
-    if(c.startsWith('[COMM_POST:')){const e=c.indexOf(']');if(e>11){const inner=c.substring(11,e);const col=inner.indexOf(':');if(col>0)commIds.push(inner.substring(0,col));}}
-  });
-  const unique=[...new Set(commIds)].filter(id=>!_commCache[id]);
-  if(!unique.length) return;
-  try{
-    const{data}=await db.from('communities').select('id,name,avatar_url').in('id',unique);
-    (data||[]).forEach(c=>{_commCache[c.id]=c;});
-  }catch(e){}
+  feedScrollObserver = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting && feedHasMore && !feedLoading){
+        loadFeed(false);
+      }
+    });
+  }, { rootMargin: '400px 0px' }); // pré-carrega antes de chegar no fim
+  // Precisa estar visível para ser observado — garante display:block quando há mais
+  sentinel.style.display='block';
+  sentinel.textContent='⟳ carregando mais...';
+  feedScrollObserver.observe(sentinel);
 }
 
 async function updateCommentCounts(postIds){
@@ -6308,23 +6372,21 @@ async function deletePost(postId){
 // ===== POST CONTROLS =====
 function setVis(v,el){postVisibility=v;document.querySelectorAll('.vis-opt').forEach(o=>o.classList.remove('sel'));el.classList.add('sel');}
 function switchTab(t,btn){
-  if(feedTab===t && btn){
-    // Same tab clicked again — just re-fetch
-    const feed=document.getElementById('feed');
-    if(feed) feed.innerHTML='';
-    cachedPosts={};lastFeedLoad=0;
-    loadFeed(true);
-    return;
-  }
   feedTab=t;
   document.querySelectorAll('.ftab').forEach(b=>b.classList.remove('active'));
   if(btn) btn.classList.add('active');
-  // Clear ALL cache to force fresh query
+  // Reset completo da paginação + scroll infinito
   cachedPostIds.clear();
   cachedPosts={};
   lastFeedLoad=0;
+  feedPage=0;
+  feedHasMore=true;
+  feedLoading=false;
+  _feedCtx=null;
+  if(feedScrollObserver){ try{ feedScrollObserver.disconnect(); }catch(e){} feedScrollObserver=null; }
   const feed=document.getElementById('feed');
   if(feed) feed.innerHTML=skeletons(3);
+  const fe=document.getElementById('feed-end'); if(fe) fe.style.display='none';
   loadFeed(true);
 }
 function updateChar(){const v=document.getElementById('post-txt').value.length;const el=document.getElementById('c-char');el.textContent=v+' / 500';el.className='cchar'+(v>450?' danger':v>350?' warn':'');}
