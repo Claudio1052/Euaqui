@@ -6288,6 +6288,9 @@ const R2_IMAGE_QUALITY = 0.82;         // 0..1 JPEG/WEBP
 const R2_VIDEO_CRF = 28;               // qualidade FFmpeg (maior = menor arquivo)
 const R2_VIDEO_MAX_HEIGHT = 720;       // downscale vertical
 const NSFW_THRESHOLD = 0.60;           // score mínimo p/ bloquear (Porn+Hentai+Sexy)
+const R2_MAX_VIDEO_INPUT_MB = 500;     // tamanho MÁX do vídeo ANTES de comprimir
+const R2_MAX_IMAGE_INPUT_MB = 50;      // tamanho MÁX da imagem ANTES de comprimir
+const R2_MAX_UPLOAD_MB = 50;           // tamanho MÁX DEPOIS de comprimir (o que vai pro R2)
 
 // --- lazy loaders (só baixam as libs quando o usuário posta mídia) ---
 let _nsfwModel=null, _nsfwLoading=null;
@@ -6452,6 +6455,13 @@ async function uploadWithPipeline(file, type, setStatus){
   const compressed = (type==='video')
     ? await compressVideo(file, p=>S('🗜 Comprimindo vídeo... '+Math.round(p*100)+'%'))
     : await compressImage(file);
+  // 1.5) Limite final pós-compressão (o que de fato vai pro R2)
+  if(compressed.size > R2_MAX_UPLOAD_MB*1024*1024){
+    const err = new Error('TOO_LARGE_AFTER_COMPRESS');
+    const mb = (compressed.size/1024/1024).toFixed(1);
+    err.userMessage = `🚫 Mesmo após compressão o arquivo ficou ${mb}MB (máx. ${R2_MAX_UPLOAD_MB}MB). Tente um vídeo mais curto ou de menor qualidade.`;
+    throw err;
+  }
   // 2) Filtro grátis (NSFWJS)
   S('🛡 Verificando conteúdo (IA local)...');
   const nsfw = (type==='video') ? await nsfwCheckVideo(compressed) : await nsfwCheckImage(compressed);
@@ -6506,8 +6516,10 @@ async function createPost(){
       btn.textContent='POSTAR ▶';btn.disabled=false;
       return;
     }
-    if(f.size > 50*1024*1024){
-      showToast('🚫 Arquivo muito grande (máx. 50MB): '+f.name,'error');
+    const isVid = f.type.startsWith('video/');
+    const limitMB = isVid ? R2_MAX_VIDEO_INPUT_MB : R2_MAX_IMAGE_INPUT_MB;
+    if(f.size > limitMB*1024*1024){
+      showToast(`🚫 ${isVid?'Vídeo':'Imagem'} muito grande (máx. ${limitMB}MB): `+f.name,'error');
       btn.textContent='POSTAR ▶';btn.disabled=false;
       return;
     }
