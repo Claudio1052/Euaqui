@@ -6396,7 +6396,7 @@ const R2_MAX_IMAGE_DIM = 1920;         // reduz lado maior da foto
 const R2_IMAGE_QUALITY = 0.82;         // 0..1 JPEG/WEBP
 const R2_VIDEO_CRF = 28;               // qualidade FFmpeg (maior = menor arquivo)
 const R2_VIDEO_MAX_HEIGHT = 720;       // downscale vertical
-const NSFW_THRESHOLD = 0.60;           // score mínimo p/ bloquear (Porn+Hentai+Sexy)
+const NSFW_THRESHOLD = 0.30;           // score mínimo p/ bloquear (Porn+Hentai+Sexy) — baixo para pegar hentai/cartoon
 const R2_MAX_VIDEO_INPUT_MB = 500;     // tamanho MÁX do vídeo ANTES de comprimir
 const R2_MAX_IMAGE_INPUT_MB = 50;      // tamanho MÁX da imagem ANTES de comprimir
 const R2_MAX_UPLOAD_MB = 50;           // tamanho MÁX DEPOIS de comprimir (o que vai pro R2)
@@ -6415,30 +6415,35 @@ async function loadNsfwModel(){
   if(_nsfwModel) return _nsfwModel;
   if(_nsfwLoading) return _nsfwLoading;
   _nsfwLoading = (async()=>{
-    // TF 3.x + nsfwjs 2.4.2 — versões testadas e compatíveis
-    // Timeout de 20s por script (evita travar em conexões lentas)
-    const loadWithTimeout = (src, ms)=>Promise.race([
-      _loadScript(src),
-      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout: '+src)), ms||20000))
-    ]);
-    await loadWithTimeout('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js');
-    await loadWithTimeout('https://cdn.jsdelivr.net/npm/nsfwjs@2.4.2/dist/nsfwjs.min.js');
-    // Tenta InceptionV3 (mais preciso); fallback para MobileNetV2 (menor, mais rápido)
     try {
-      _nsfwModel = await Promise.race([
-        nsfwjs.load('https://cdn.jsdelivr.net/npm/nsfwjs@2.4.2/dist/InceptionV3/'),
-        new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout InceptionV3')),15000))
+      // Timeout de 20s por script (evita travar em conexões lentas)
+      const loadWithTimeout = (src, ms)=>Promise.race([
+        _loadScript(src),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout: '+src)), ms||20000))
       ]);
-      console.log('[NSFW] modelo InceptionV3 carregado com sucesso');
-    } catch(e1) {
-      console.warn('[NSFW] InceptionV3 falhou, tentando MobileNetV2:', e1.message);
-      _nsfwModel = await Promise.race([
-        nsfwjs.load('https://cdn.jsdelivr.net/npm/nsfwjs@2.4.2/dist/mobilenet_v2/'),
-        new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout MobileNetV2')),15000))
-      ]);
-      console.log('[NSFW] modelo MobileNetV2 carregado (fallback) ✓');
+      await loadWithTimeout('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js');
+      await loadWithTimeout('https://cdn.jsdelivr.net/npm/nsfwjs@2.4.2/dist/nsfwjs.min.js');
+      // Tenta InceptionV3 (mais preciso p/ hentai/cartoon); fallback para MobileNetV2
+      try {
+        _nsfwModel = await Promise.race([
+          nsfwjs.load('https://cdn.jsdelivr.net/npm/nsfwjs@2.4.2/dist/InceptionV3/'),
+          new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout InceptionV3')),15000))
+        ]);
+        console.log('[NSFW] modelo InceptionV3 carregado com sucesso');
+      } catch(e1) {
+        console.warn('[NSFW] InceptionV3 falhou, tentando MobileNetV2:', e1.message);
+        _nsfwModel = await Promise.race([
+          nsfwjs.load('https://cdn.jsdelivr.net/npm/nsfwjs@2.4.2/dist/mobilenet_v2/'),
+          new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout MobileNetV2')),15000))
+        ]);
+        console.log('[NSFW] modelo MobileNetV2 carregado (fallback) ✓');
+      }
+      return _nsfwModel;
+    } catch(err) {
+      // Reset para permitir nova tentativa na próxima chamada
+      _nsfwLoading = null;
+      throw err;
     }
-    return _nsfwModel;
   })();
   return _nsfwLoading;
 }
@@ -6701,10 +6706,11 @@ async function uploadWithPipeline(file, type, setStatus){
     console.log('[NSFW] conteúdo aprovado ✓');
   }catch(e){
     if(e.message==='NSFW_BLOCKED') throw e;
-    // Modelo não carregou (CDN indisponível, CSP, conexão lenta, etc.)
-    // → PERMITE o upload e registra aviso no console (não bloqueia o usuário)
-    console.warn('[NSFW] modelo não carregou, pulando verificação local:', e.message);
-    _nsfwPassed = false; // marcado como não verificado, mas prossegue
+    // Modelo não carregou (CDN indisponível, CSP, timeout) → bloqueia por segurança
+    console.error('[NSFW] falha ao verificar:', e.message);
+    const err = new Error('NSFW_LOAD_FAILED');
+    err.userMessage = '⚠️ Não foi possível carregar o filtro de conteúdo. Aguarde alguns segundos e tente novamente.';
+    throw err;
   }
 
   // 2) Compressão
