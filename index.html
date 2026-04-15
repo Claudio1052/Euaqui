@@ -4866,18 +4866,23 @@ function refreshUI(){
 // Retorna URL de avatar passando Dicebear pelo Worker (cache de 7 dias)
 function dicebearUrl(seed, style, bg){
   const s=encodeURIComponent(seed||'user');
-  // Gerador de retro avatar usa style/bg customizados — vai direto ao Dicebear
-  if(style && style !== 'pixel-art'){
-    const bgParam = bg && bg !== 'transparent' ? '&backgroundColor='+bg : '';
-    return 'https://api.dicebear.com/7.x/'+style+'/svg?seed='+s+bgParam+'&size=128';
-  }
-  // Avatar padrão pixel-art: passa pelo Worker (cache de 7 dias na borda Cloudflare)
-  try{
-    const base=new URL(AVATAR_WORKER_URL);
-    return base.origin+'/avatar/dicebear?seed='+s;
-  }catch(e){
-    return'https://api.dicebear.com/7.x/pixel-art/svg?seed='+s;
-  }
+  const st=style||'pixel-art';
+  const bgParam = bg && bg !== 'transparent' ? '&backgroundColor='+bg : '';
+  // Enquanto o Worker não tiver a rota /avatar/dicebear deployada,
+  // todos os estilos vão direto ao Dicebear.
+  // Quando o Worker estiver pronto, remova este bloco e descomente o de baixo.
+  return 'https://api.dicebear.com/7.x/'+st+'/svg?seed='+s+bgParam+(bg?'':'&size=128');
+
+  // -- ATIVAR APÓS DEPLOY DO WORKER --
+  // if(st !== 'pixel-art'){
+  //   return 'https://api.dicebear.com/7.x/'+st+'/svg?seed='+s+bgParam+'&size=128';
+  // }
+  // try{
+  //   const base=new URL(AVATAR_WORKER_URL);
+  //   return base.origin+'/avatar/dicebear?seed='+s;
+  // }catch(e){
+  //   return 'https://api.dicebear.com/7.x/pixel-art/svg?seed='+s;
+  // }
 }
 function getAvatar(profile){
   if(!profile)return dicebearUrl('default');
