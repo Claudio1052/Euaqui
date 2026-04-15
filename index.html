@@ -4864,10 +4864,14 @@ function refreshUI(){
   loadUserStats();updateLevel();
 }
 // Retorna URL de avatar passando Dicebear pelo Worker (cache de 7 dias)
-function dicebearUrl(seed){
+function dicebearUrl(seed, style, bg){
   const s=encodeURIComponent(seed||'user');
-  // Se AVATAR_WORKER_URL for o próprio Worker de mídia, usa endpoint /avatar/dicebear
-  // Caso contrário usa Dicebear direto (fallback seguro)
+  // Gerador de retro avatar usa style/bg customizados — vai direto ao Dicebear
+  if(style && style !== 'pixel-art'){
+    const bgParam = bg && bg !== 'transparent' ? '&backgroundColor='+bg : '';
+    return 'https://api.dicebear.com/7.x/'+style+'/svg?seed='+s+bgParam+'&size=128';
+  }
+  // Avatar padrão pixel-art: passa pelo Worker (cache de 7 dias na borda Cloudflare)
   try{
     const base=new URL(AVATAR_WORKER_URL);
     return base.origin+'/avatar/dicebear?seed='+s;
@@ -6790,13 +6794,13 @@ function generateRetroAvatar(){
   const style = document.getElementById('av-gen-style')?.value || 'pixel-art';
   const bg    = document.getElementById('av-gen-bg')?.value || '0a0a2a';
   const seed  = Math.random().toString(36).slice(2,10);
-  const bgParam = bg === 'transparent' ? '' : `&backgroundColor=${bg}`;
-  const url = `https://api.dicebear.com/7.x/${style}/svg?seed=${seed}${bgParam}&size=128`;
+  const url = dicebearUrl(seed, style, bg);
   _retro_av_url = url;
   document.getElementById('av-gen-url').textContent = url;
   const preview = document.getElementById('av-gen-preview');
   if(preview){
-    preview.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='<span style=font-size:30px>🎮</span>'">`;
+    // data-dicebear-direct: exclui do MutationObserver de proxy (usa Dicebear com estilo/bg customizados)
+    preview.innerHTML = `<img src="${url}" data-dicebear-direct="1" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='<span style=font-size:30px>🎮</span>'">`;
   }
 }
 function applyRetroAvatar(){
@@ -17644,7 +17648,7 @@ async function checkCanCreateComm(){
 // Isso cobre os src estáticos no HTML e os onerror handlers dinâmicos.
 (function patchDicebearSrcs(){
   function _patch(){
-    document.querySelectorAll('img[src*="api.dicebear.com"]').forEach(img=>{
+    document.querySelectorAll('img[src*="api.dicebear.com"]:not([data-dicebear-direct])').forEach(img=>{
       try{
         const u=new URL(img.src);
         const seed=u.searchParams.get('seed')||'user';
@@ -17670,7 +17674,7 @@ async function checkCanCreateComm(){
         const imgs=n.matches?.('img')?[n]:[...n.querySelectorAll?.('img[src*="api.dicebear.com"],img[data-fb*="api.dicebear.com"]')||[]];
         imgs.forEach(img=>{
           try{
-            if(img.src?.includes('api.dicebear.com')){
+            if(img.src?.includes('api.dicebear.com')&&!img.dataset?.dicebearDirect){
               const u=new URL(img.src);img.src=dicebearUrl(u.searchParams.get('seed')||'user');
             }
             if(img.dataset?.fb?.includes('api.dicebear.com')){
