@@ -6388,10 +6388,10 @@ function showModerationError(categories){
         resp: { approved: true } | { approved: false, reason: "..." }
         (este endpoint é quem chama Sightengine e decide apagar do R2)
    ========================================================================= */
-const R2_BACKEND_URL = (window.R2_BACKEND_URL || 'https://euaqui-media.claudioalbertomaiasilva6.workers.dev');
+const R2_BACKEND_URL = (window.R2_BACKEND_URL || 'https://media.euaqui.store');
 // Avatar proxy: Cloudflare Worker que cacheia Dicebear por 7 dias e serve avatares R2
 // Troque pela URL do seu Worker após criá-lo (ver comentário no final do script)
-const AVATAR_WORKER_URL = (window.AVATAR_WORKER_URL || R2_BACKEND_URL);
+const AVATAR_WORKER_URL = (window.AVATAR_WORKER_URL || 'https://media.euaqui.store');
 const R2_MAX_IMAGE_DIM = 1920;         // reduz lado maior da foto
 const R2_IMAGE_QUALITY = 0.82;         // 0..1 JPEG/WEBP
 const R2_VIDEO_CRF = 28;               // qualidade FFmpeg (maior = menor arquivo)
@@ -17955,7 +17955,7 @@ export default {
 
 ==========================================================================
  Após adicionar o código acima ao Worker, defina no HTML:
-   window.AVATAR_WORKER_URL = 'https://euaqui-media.claudioalbertomaiasilva6.workers.dev';
+   window.AVATAR_WORKER_URL = 'https://media.euaqui.store';
  (já é o valor padrão — não precisa mudar se usar o mesmo Worker)
 ==========================================================================
 */
