@@ -4698,8 +4698,6 @@ function showApp(){
   setTimeout(()=>{ try{ initTheme(); }catch(e){} }, 50);
   setTimeout(()=>{ try{ checkBizInviteUrl(); }catch(e){} }, 1200);
   setTimeout(()=>{ try{ checkCommInviteUrl(); }catch(e){} }, 1400);
-  // Pré-carrega modelo NSFW em background para estar pronto quando o usuário postar
-  setTimeout(()=>{ loadNsfwModel().catch(e=>console.warn("[NSFW] pré-carregamento falhou:",e.message)); }, 3000);
 }
 function showAuth(){
   hideLS();
@@ -6398,13 +6396,87 @@ const R2_MAX_IMAGE_DIM = 1920;         // reduz lado maior da foto
 const R2_IMAGE_QUALITY = 0.82;         // 0..1 JPEG/WEBP
 const R2_VIDEO_CRF = 28;               // qualidade FFmpeg (maior = menor arquivo)
 const R2_VIDEO_MAX_HEIGHT = 720;       // downscale vertical
-const NSFW_THRESHOLD = 0.30;           // score mínimo p/ bloquear (Porn+Hentai+Sexy) — baixo para pegar hentai/cartoon
 const R2_MAX_VIDEO_INPUT_MB = 500;     // tamanho MÁX do vídeo ANTES de comprimir
 const R2_MAX_IMAGE_INPUT_MB = 50;      // tamanho MÁX da imagem ANTES de comprimir
 const R2_MAX_UPLOAD_MB = 50;           // tamanho MÁX DEPOIS de comprimir (o que vai pro R2)
 
-// --- lazy loaders (só baixam as libs quando o usuário posta mídia) ---
-let _nsfwModel=null, _nsfwLoading=null;
+// =====================================================================
+//  SIGHTENGINE — moderação de mídia via API (nude, hentai, porn, etc.)
+// =====================================================================
+const SE_USER   = '883231561';
+const SE_SECRET = 'XJgZAAhhexEcFJGDH48J5kL52t4M36iE';
+const SE_MODELS = 'nudity-2.0,nudity,weapon,recreational_drug,medical,gore-2.0';
+
+// Verifica imagem/vídeo na Sightengine.
+// Retorna { safe: bool, reason: string|null }
+// Se a API falhar por qualquer motivo → safe=true (não bloqueia o usuário)
+async function sightengineCheck(file, type){
+  try{
+    const fd = new FormData();
+    fd.append('media', file, file.name);
+    fd.append('models', SE_MODELS);
+    fd.append('api_user', SE_USER);
+    fd.append('api_secret', SE_SECRET);
+
+    const endpoint = (type === 'video')
+      ? 'https://api.sightengine.com/1.0/video/check-sync.json'
+      : 'https://api.sightengine.com/1.0/check.json';
+
+    const resp = await Promise.race([
+      fetch(endpoint, { method:'POST', body: fd }),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout Sightengine')), 30000))
+    ]);
+
+    if(!resp.ok){
+      console.warn('[Sightengine] HTTP', resp.status, '— permitindo upload');
+      return { safe: true, reason: null };
+    }
+
+    const data = await resp.json();
+    console.log('[Sightengine] resultado:', JSON.stringify(data));
+
+    if(data.status === 'failure'){
+      console.warn('[Sightengine] status failure:', data.error?.message, '— permitindo upload');
+      return { safe: true, reason: null };
+    }
+
+    // --- Para imagem: data.nudity, data.gore, etc. ---
+    const reasons = [];
+
+    // nudity-2.0
+    const nud = data.nudity || {};
+    if((nud.sexual_activity||0) > 0.5) reasons.push('conteúdo sexual explícito');
+    if((nud.sexual_display||0)  > 0.5) reasons.push('nudez explícita');
+    if((nud.erotica||0)         > 0.6) reasons.push('conteúdo erótico');
+    if((nud.sextoy||0)          > 0.5) reasons.push('objetos sexuais');
+    // gore
+    const gore = data.gore || {};
+    if((gore.prob||0) > 0.7) reasons.push('gore/violência gráfica');
+
+    // --- Para vídeo: data.data.frames[] ---
+    if(type === 'video' && data.data && Array.isArray(data.data.frames)){
+      for(const frame of data.data.frames){
+        const fn = frame.nudity || {};
+        if((fn.sexual_activity||0)>0.5||(fn.sexual_display||0)>0.5||(fn.erotica||0)>0.6){
+          reasons.push('nudez/conteúdo explícito em vídeo');
+          break;
+        }
+      }
+    }
+
+    if(reasons.length > 0){
+      return { safe: false, reason: reasons[0] };
+    }
+    return { safe: true, reason: null };
+
+  }catch(e){
+    // Qualquer erro de rede/timeout → permite upload silenciosamente
+    console.warn('[Sightengine] erro ao verificar, permitindo upload:', e.message);
+    return { safe: true, reason: null };
+  }
+}
+
+// Mantém _loadScript para outros usos no código
 function _loadScript(src){
   return new Promise((res,rej)=>{
     if(document.querySelector('script[data-src="'+src+'"]')) return res();
@@ -6412,97 +6484,6 @@ function _loadScript(src){
     s.onload=()=>res(); s.onerror=()=>rej(new Error('falha ao carregar '+src));
     document.head.appendChild(s);
   });
-}
-async function loadNsfwModel(){
-  if(_nsfwModel) return _nsfwModel;
-  if(_nsfwLoading) return _nsfwLoading;
-  _nsfwLoading = (async()=>{
-    try {
-      // Timeout de 20s por script (evita travar em conexões lentas)
-      const loadWithTimeout = (src, ms)=>Promise.race([
-        _loadScript(src),
-        new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout: '+src)), ms||20000))
-      ]);
-      await loadWithTimeout('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js');
-      await loadWithTimeout('https://cdn.jsdelivr.net/npm/nsfwjs@2.4.2/dist/nsfwjs.min.js');
-      // Tenta InceptionV3 (mais preciso p/ hentai/cartoon); fallback para MobileNetV2
-      try {
-        _nsfwModel = await Promise.race([
-          nsfwjs.load('https://cdn.jsdelivr.net/npm/nsfwjs@2.4.2/dist/InceptionV3/'),
-          new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout InceptionV3')),15000))
-        ]);
-        console.log('[NSFW] modelo InceptionV3 carregado com sucesso');
-      } catch(e1) {
-        console.warn('[NSFW] InceptionV3 falhou, tentando MobileNetV2:', e1.message);
-        _nsfwModel = await Promise.race([
-          nsfwjs.load('https://cdn.jsdelivr.net/npm/nsfwjs@2.4.2/dist/mobilenet_v2/'),
-          new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout MobileNetV2')),15000))
-        ]);
-        console.log('[NSFW] modelo MobileNetV2 carregado (fallback) ✓');
-      }
-      return _nsfwModel;
-    } catch(err) {
-      // Reset para permitir nova tentativa na próxima chamada
-      _nsfwLoading = null;
-      throw err;
-    }
-  })();
-  return _nsfwLoading;
-}
-
-// --- NSFW check (retorna {safe, scores}) ---
-async function nsfwCheckImage(file){
-  const model = await loadNsfwModel();
-  const objUrl = URL.createObjectURL(file);
-  const img = await new Promise((res,rej)=>{
-    const i=new Image();
-    i.crossOrigin='anonymous';
-    i.onload=()=>res(i);
-    i.onerror=(e)=>rej(new Error('Falha ao carregar imagem para análise: '+e));
-    i.src=objUrl;
-  });
-  const preds = await model.classify(img);
-  URL.revokeObjectURL(objUrl);
-  const s = {}; preds.forEach(p=>s[p.className]=p.probability);
-  const bad = (s.Porn||0) + (s.Hentai||0) + (s.Sexy||0);
-  console.log('[NSFW img] scores:', JSON.stringify(s), '| bad total:', bad.toFixed(3), '| threshold:', NSFW_THRESHOLD);
-  return { safe: bad < NSFW_THRESHOLD, scores: s, bad };
-}
-async function nsfwCheckVideo(file){
-  // Extrai 3 frames (5%, 50%, 95%) e roda NSFWJS em cada um
-  const model = await loadNsfwModel();
-  const objUrl = URL.createObjectURL(file);
-  const v = document.createElement('video');
-  v.src=objUrl; v.muted=true; v.playsInline=true; v.preload='metadata';
-  await new Promise((res,rej)=>{
-    const t=setTimeout(()=>rej(new Error('timeout ao carregar metadados do vídeo')),10000);
-    v.onloadedmetadata=()=>{ clearTimeout(t); res(); };
-    v.onerror=()=>{ clearTimeout(t); rej(new Error('erro ao carregar vídeo')); };
-  });
-  const dur = v.duration||1;
-  const points = [0.05*dur, 0.5*dur, 0.95*dur];
-  const canvas = document.createElement('canvas');
-  canvas.width=Math.min(v.videoWidth||320,640);
-  canvas.height=Math.min(v.videoHeight||240,480);
-  const ctx2d = canvas.getContext('2d');
-  let worst=0, allScores=[];
-  for(const t of points){
-    await new Promise((res)=>{
-      const to=setTimeout(res,3000); // timeout por frame
-      v.onseeked=()=>{ clearTimeout(to); res(); };
-      v.currentTime=t;
-    });
-    ctx2d.drawImage(v,0,0,canvas.width,canvas.height);
-    const preds = await model.classify(canvas);
-    const s={}; preds.forEach(p=>s[p.className]=p.probability);
-    const bad=(s.Porn||0)+(s.Hentai||0)+(s.Sexy||0);
-    console.log('[NSFW vid] frame @'+t.toFixed(1)+'s:', JSON.stringify(s), '| bad:', bad.toFixed(3));
-    if(bad>worst) worst=bad;
-    allScores.push(s);
-  }
-  URL.revokeObjectURL(objUrl);
-  console.log('[NSFW vid] pior frame:', worst.toFixed(3), '| threshold:', NSFW_THRESHOLD, '| safe:', worst < NSFW_THRESHOLD);
-  return { safe: worst < NSFW_THRESHOLD, scores: allScores, worst };
 }
 
 // --- Compressão de imagem via Canvas (sem lib externa) ---
@@ -6692,26 +6673,20 @@ async function uploadWithPipeline(file, type, setStatus){
     S('PROGRESS:' + _progVal + ':' + (label||'Carregando post'));
   }
 
-  // 1) Filtro NSFW local — tenta verificar, mas NÃO bloqueia se o modelo falhar
+  // 1) Moderação via Sightengine API — não bloqueia se API falhar
   progress(2, 'Verificando conteúdo');
-  let _nsfwPassed = false;
   try{
-    const check = (type==='video')
-      ? await nsfwCheckVideo(file)
-      : await nsfwCheckImage(file);
+    const check = await sightengineCheck(file, type);
     if(!check.safe){
       const err = new Error('NSFW_BLOCKED');
-      err.userMessage = '🚫 Conteúdo bloqueado: imagem/vídeo contém nudez ou conteúdo explícito (score: '+(check.bad||check.worst||0).toFixed(2)+').';
+      err.userMessage = '🚫 Conteúdo bloqueado: ' + (check.reason || 'nudez ou conteúdo explícito detectado') + '.';
       throw err;
     }
-    _nsfwPassed = true;
-    console.log('[NSFW] conteúdo aprovado ✓');
+    console.log('[Sightengine] conteúdo aprovado ✓');
   }catch(e){
     if(e.message==='NSFW_BLOCKED') throw e;
-    // Modelo não carregou (CDN lento, mobile, CSP, etc.)
-    // → PERMITE o upload normalmente (não pune o usuário por falha de CDN)
-    console.warn('[NSFW] modelo indisponível, pulando verificação local:', e.message);
-    _nsfwPassed = false;
+    // Falha inesperada → permite upload normalmente
+    console.warn('[Sightengine] erro inesperado, permitindo upload:', e.message);
   }
 
   // 2) Compressão
