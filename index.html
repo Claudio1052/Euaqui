@@ -4875,6 +4875,8 @@ async function handleLogout(){
   try{
     // Limpar estado local imediatamente
     CU = null; CP = null;
+    sessionStorage.removeItem('_cp_cache_at');
+    sessionStorage.removeItem('_fctx_cache_at');
     // Fechar canais realtime ativos
     try{ if(window._callListenCh){ db.removeChannel(window._callListenCh); window._callListenCh=null; } }catch(e){}
     try{ clearInterval(window._msgPollInterval); }catch(e){}
@@ -4895,13 +4897,16 @@ function hideAErr(){document.getElementById('aerr').classList.remove('show');}
 // ===== PROFILE LOAD =====
 async function loadProfile(){
   if(!CU)return;
+  // Cache 5 min — evita rebuscar o perfil a cada navegação de página
+  const _cpAt=parseInt(sessionStorage.getItem('_cp_cache_at')||'0');
+  if(CP && (Date.now()-_cpAt)<300000) return;
   let data=null;
   try{
     const res=await db.from('profiles').select('id,username,full_name,email,avatar_url,avatar_type,retro_icon,bio,instagram,twitter,github,status_message,created_at').eq('id',CU.id).maybeSingle();
     data=res.data;
     if(res.error)console.warn('Profile fetch:',res.error.message);
   }catch(e){ console.warn('loadProfile exception:',e.message); }
-  if(data){CP=data;return;}
+  if(data){CP=data;sessionStorage.setItem('_cp_cache_at',Date.now());return;}
   const meta=CU.user_metadata||{};
   let base=(meta.username||meta.user_name||meta.name||CU.email?.split('@')[0]||'user').toLowerCase().replace(/[^a-z0-9_]/g,'_').substring(0,18);
   let uname=base,s=1;
@@ -5076,8 +5081,8 @@ async function _buildFeedContext(){
   if(!CU) return ctx;
   try{
     const[fr, fol, cm, pref] = await Promise.all([
-      db.from('friends').select('friend_id').eq('user_id',CU.id),
-      db.from('follows').select('following_id').eq('follower_id',CU.id),
+      db.from('friends').select('friend_id').eq('user_id',CU.id).limit(200),
+      db.from('follows').select('following_id').eq('follower_id',CU.id).limit(200),
       db.from('community_members').select('community_id').eq('user_id',CU.id),
       db.from('user_preferences').select('preferences').eq('user_id',CU.id).maybeSingle()
     ]);
@@ -5155,7 +5160,12 @@ async function loadFeed(force=false){
   lastFeedLoad = Date.now();
 
   // Monta contexto de prioridade uma vez por sessão
-  if(!_feedCtx) _feedCtx = await _buildFeedContext();
+  // Cache do contexto do feed por 5 minutos
+  const _fctxAt=parseInt(sessionStorage.getItem('_fctx_cache_at')||'0');
+  if(!_feedCtx || (Date.now()-_fctxAt)>300000){
+    _feedCtx = await _buildFeedContext();
+    sessionStorage.setItem('_fctx_cache_at', Date.now());
+  }
   const ctx = _feedCtx;
 
   // Select seguro — sem colunas que podem não existir
@@ -7172,6 +7182,7 @@ async function saveSettings(){
   if(statusEl&&statusEl.value.trim()) updates.status_message=statusEl.value.trim();
 
   const{error:err}=await db.from('profiles').update(updates).eq('id',CU.id);
+  sessionStorage.removeItem('_cp_cache_at'); // invalida cache do perfil
   if(err){
     console.error('saveSettings error:',err);
     return showToast('Erro ao salvar: '+err.message,'error');
@@ -7667,7 +7678,7 @@ async function openCommDetail(commId){
   const el=document.getElementById('comm-detail-content');
   if(el) el.innerHTML=skeletons(2);
   const [{data:comm},{data:memRow}]=await Promise.all([
-    db.from('communities').select('*,profiles!communities_owner_id_fkey(username,full_name)').eq('id',commId).single(),
+    db.from('communities').select('id,name,slug,description,avatar_url,banner_url,visibility,members_count,posts_count,owner_id,created_at,profiles!communities_owner_id_fkey(username,full_name)').eq('id',commId).single(),
     CU?db.from('community_members').select('id,role,banned_until').eq('community_id',commId).eq('user_id',CU.id).maybeSingle():{data:null}
   ]);
   if(!comm){if(el)el.innerHTML='<div style="padding:30px;text-align:center;color:var(--neon-pink);">Comunidade não encontrada</div>';return;}
@@ -8174,7 +8185,7 @@ async function loadConversations(){
   const{data:msgs} = await db.from('messages')
     .select('sender_id,receiver_id,content,created_at')
     .or('sender_id.eq.'+CU.id+',receiver_id.eq.'+CU.id)
-    .order('created_at',{ascending:false}).limit(100);
+    .order('created_at',{ascending:false}).limit(50);
 
   const seen=new Set(), convos=[];
   (msgs||[]).forEach(m=>{
@@ -8187,7 +8198,7 @@ async function loadConversations(){
 
   // Add friends not yet messaged
   try{
-    const{data:frs}=await db.from('friends').select('friend_id').eq('user_id',CU.id);
+    const{data:frs}=await db.from('friends').select('friend_id').eq('user_id',CU.id).limit(200);
     (frs||[]).forEach(f=>{
       if(f.friend_id && !seen.has(f.friend_id)){
         seen.add(f.friend_id);
@@ -8276,20 +8287,20 @@ async function loadMsgs(userId){
   // Buscar com coluna 'received'; se não existir, fallback sem ela
   let msgs, err;
   {
+    // limit(60): traz só as 60 msgs mais recentes — reduz egress na conversa
     const r = await db.from('messages')
       .select('id,sender_id,receiver_id,content,media_url,media_type,read,received,created_at,is_hidden')
       .or(`and(sender_id.eq.${CU.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${CU.id})`)
-      .order('created_at');
+      .order('created_at',{ascending:false}).limit(60);
     if(r.error && /received/.test(r.error.message||'')){
-      // Coluna 'received' não existe — buscar sem ela
       const r2 = await db.from('messages')
         .select('id,sender_id,receiver_id,content,media_url,media_type,read,created_at,is_hidden')
         .or(`and(sender_id.eq.${CU.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${CU.id})`)
-        .order('created_at');
-      msgs = r2.data;
+        .order('created_at',{ascending:false}).limit(60);
+      msgs = (r2.data||[]).reverse();
       err = r2.error;
     } else {
-      msgs = r.data;
+      msgs = (r.data||[]).reverse(); // inverte: mais antigas primeiro
       err = r.error;
     }
   }
@@ -8777,7 +8788,7 @@ async function loadNotifCount(force=false){
   }
   const{data:notifs}=await db.from('notifications')
     .select('id,type')
-    .eq('user_id',CU.id).eq('read',false);
+    .eq('user_id',CU.id).eq('read',false).limit(100);
   const all=notifs||[];
   const BIZ_TYPES=['biz_promo'];
   const COMM_TYPES=['community_invite','community_post','community_mention'];
@@ -9165,7 +9176,7 @@ async function loadHomeFriendsList(type){
     });
 
   }else if(type==='friends'){
-    const{data}=await db.from('friends').select('id,friend_id,profiles!friends_friend_id_fkey(id,username,full_name,avatar_url)').eq('user_id',CU.id);
+    const{data}=await db.from('friends').select('id,friend_id,profiles!friends_friend_id_fkey(id,username,full_name,avatar_url)').eq('user_id',CU.id).limit(200);
     if(!(data||[]).length){list.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px;">Nenhum amigo ainda</div>';return;}
     list.innerHTML='';
     (data||[]).forEach(f=>{
@@ -9177,7 +9188,7 @@ async function loadHomeFriendsList(type){
     });
 
   }else if(type==='following'){
-    const{data}=await db.from('follows').select('id,following_id,profiles!follows_following_id_fkey(id,username,full_name,avatar_url)').eq('follower_id',CU.id);
+    const{data}=await db.from('follows').select('id,following_id,profiles!follows_following_id_fkey(id,username,full_name,avatar_url)').eq('follower_id',CU.id).limit(200);
     if(!(data||[]).length){list.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px;">Não segue ninguém</div>';return;}
     list.innerHTML='';
     (data||[]).forEach(f=>{
@@ -9274,7 +9285,7 @@ async function loadHomeChat(){
 
   // Add friends not yet messaged
   try{
-    const{data:frs}=await db.from('friends').select('friend_id').eq('user_id',CU.id);
+    const{data:frs}=await db.from('friends').select('friend_id').eq('user_id',CU.id).limit(200);
     (frs||[]).forEach(f=>{
       if(f.friend_id && !seen.has(f.friend_id)){
         seen.add(f.friend_id);
@@ -9355,7 +9366,7 @@ async function loadHomeMsgs(userId){
   if(!CU) return;
   const area=document.getElementById('ht-msgs-area');
   if(!area) return;
-  const{data:msgs}=await db.from('messages').select('id,sender_id,content,media_url,media_type,created_at').or('and(sender_id.eq.'+CU.id+',receiver_id.eq.'+userId+'),and(sender_id.eq.'+userId+',receiver_id.eq.'+CU.id+')').order('created_at');
+  const{data:msgs}=await db.from('messages').select('id,sender_id,content,media_url,media_type,created_at').or('and(sender_id.eq.'+CU.id+',receiver_id.eq.'+userId+'),and(sender_id.eq.'+userId+',receiver_id.eq.'+CU.id+')').order('created_at',{ascending:false}).limit(60).then(r=>({data:(r.data||[]).reverse(),error:r.error})).then(r=>r);
   if(!msgs?.length){area.innerHTML='<div style="text-align:center;color:var(--text-muted);font-size:11px;padding:20px;">Início da conversa 👋</div>';return;}
 
   // Pré-buscar posts compartilhados
@@ -9473,14 +9484,14 @@ async function loadHomeAlerts(){
   el.innerHTML=skeletons(3);
   // Usa a view enriquecida para obter community_name via JOIN automático
   let {data, error:_haErr}=await db.from('notifications_enriched')
-    .select('id,type,content,read,created_at,post_id,actor_id,business_id,community_id,community_name,community_avatar_url,metadata')
+    .select('id,type,content,read,created_at,post_id,actor_id,business_id,community_id,community_name,community_avatar_url,metadata').limit(30)
     .eq('user_id',CU.id).eq('read',false)
     .gte('created_at',new Date(Date.now()-24*60*60*1000).toISOString())
     .order('created_at',{ascending:false}).limit(40);
   // Fallback: se a view não existir ainda, usa a tabela notifications normal
   if(_haErr){
     const fb=await db.from('notifications')
-      .select('id,type,content,read,created_at,post_id,actor_id,business_id,community_id')
+      .select('id,type,content,read,created_at,post_id,actor_id,business_id,community_id').limit(30)
       .eq('user_id',CU.id).eq('read',false)
       .gte('created_at',new Date(Date.now()-24*60*60*1000).toISOString())
       .order('created_at',{ascending:false}).limit(40);
@@ -17110,7 +17121,7 @@ async function checkCommInviteUrl(){
 }
 
 async function openEditComm(commId){
-  const{data:comm}=await db.from('communities').select('*').eq('id',commId).maybeSingle();
+  const{data:comm}=await db.from('communities').select('id,name,slug,description,avatar_url,banner_url,visibility,members_count,posts_count,owner_id,created_at').eq('id',commId).maybeSingle();
   if(!comm) return;
   const overlay=document.createElement('div');
   overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(6px);z-index:4000;display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto;';
