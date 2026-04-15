@@ -5747,6 +5747,7 @@ async function react(postId,reaction,btn){
       }catch(e_notif){}
     }
   }catch(e){console.warn('react error:',e);}
+  // UI já atualizada otimisticamente — sem necessidade de recarregar o feed
 }
 function bnav_home(){
   const isOnHome = document.getElementById('page-home')?.classList.contains('active');
@@ -8635,24 +8636,29 @@ async function sendMsg(){
 // hideMessageGlobal removido
 
 // ===== NOTIFICATIONS =====
-async function loadNotifCount(){
+// ── Cache de notificações (30s) — evita query a cada chamada ──
+let _notifCache=null, _notifCacheAt=0;
+const NOTIF_CACHE_TTL=30000;
+function invalidateNotifCache(){_notifCache=null;_notifCacheAt=0;}
+function _applyNotifCache({count,hasBiz,hasComm}){
+  updateNotifBadge(count);
+  ['bn-biz-dot','nb-biz-dot'].forEach(id=>document.getElementById(id)?.classList.toggle('active',hasBiz));
+  ['bn-comm-dot','nb-comm-dot'].forEach(id=>document.getElementById(id)?.classList.toggle('active',hasComm));
+}
+async function loadNotifCount(force=false){
   if(!CU)return;
+  if(!force && _notifCache!==null && (Date.now()-_notifCacheAt)<NOTIF_CACHE_TTL){
+    _applyNotifCache(_notifCache);return;
+  }
   const{data:notifs}=await db.from('notifications')
     .select('id,type')
     .eq('user_id',CU.id).eq('read',false);
-  const all = notifs||[];
-  updateNotifBadge(all.length);
-  // Dots de Loja (biz_promo) e Comunidade (community_invite, community_post)
-  const BIZ_TYPES  = ['biz_promo'];
-  const COMM_TYPES = ['community_invite','community_post','community_mention'];
-  const hasBiz  = all.some(n=>BIZ_TYPES.includes(n.type));
-  const hasComm = all.some(n=>COMM_TYPES.includes(n.type));
-  ['bn-biz-dot','nb-biz-dot'].forEach(id=>{
-    document.getElementById(id)?.classList.toggle('active', hasBiz);
-  });
-  ['bn-comm-dot','nb-comm-dot'].forEach(id=>{
-    document.getElementById(id)?.classList.toggle('active', hasComm);
-  });
+  const all=notifs||[];
+  const BIZ_TYPES=['biz_promo'];
+  const COMM_TYPES=['community_invite','community_post','community_mention'];
+  _notifCache={count:all.length,hasBiz:all.some(n=>BIZ_TYPES.includes(n.type)),hasComm:all.some(n=>COMM_TYPES.includes(n.type))};
+  _notifCacheAt=Date.now();
+  _applyNotifCache(_notifCache);
 }
 
 function updateNotifBadge(n){
@@ -8769,6 +8775,7 @@ async function markRead(id, el){
     setTimeout(() => niEl.remove(), 320);
   }
 
+  invalidateNotifCache();
   loadNotifCount();
 }
 
@@ -8816,7 +8823,8 @@ function setupRealtime(){
   db.channel('rt-notifs-'+CU.id)
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'user_id=eq.'+CU.id},(pl)=>{
       showToast('🔔 '+pl.new.content,'success');
-      loadNotifCount(); // já atualiza dots de biz/comm internamente
+      invalidateNotifCache(); // invalida cache para forçar atualização imediata
+      loadNotifCount(true);
       if(document.getElementById('ht-alerts-list')?.children.length>0) loadHomeAlerts();
     }).subscribe();
 
@@ -8831,9 +8839,9 @@ function setupRealtime(){
       _updateMsgTicksLive(pl.new);
     }).subscribe();
 
-  // Polling fallback every 5s — ensures messages arrive even if realtime drops
+  // Polling fallback every 60s — Realtime já cobre msgs e notifs em tempo real
   clearInterval(_msgPollInterval);
-  _msgPollInterval = setInterval(()=>{ pollNewMessages(); loadUnreadMsgCount(); loadNotifCount(); pollTickUpdates(); }, 5000);
+  _msgPollInterval = setInterval(()=>{ pollNewMessages(); loadUnreadMsgCount(); loadNotifCount(); pollTickUpdates(); }, 60000);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -12477,18 +12485,20 @@ async function submitBizReview(bizId){
   loadBizBrowse();
 }
 
-// ── Biz Chat Realtime Polling ─────────────────────────────────────
-let _bizMsgPoll = null;
+// ── Biz Chat via Realtime (sem polling de 3s) ─────────────────────
+let _bizRealtimeCh = null;
 
 function startBizChatPoll(){
   stopBizChatPoll();
-  _bizMsgPoll = setInterval(async ()=>{
-    if(currentBizChat) await loadBizMsgs(currentBizChat);
-  }, 3000);
+  if(!currentBizChat||!CU) return;
+  _bizRealtimeCh = db.channel('biz-msgs-'+currentBizChat)
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'receiver_id=eq.'+CU.id},async()=>{
+      await loadBizMsgs(currentBizChat);
+    }).subscribe();
 }
 
 function stopBizChatPoll(){
-  if(_bizMsgPoll){ clearInterval(_bizMsgPoll); _bizMsgPoll=null; }
+  if(_bizRealtimeCh){ try{db.removeChannel(_bizRealtimeCh);}catch(e){} _bizRealtimeCh=null; }
 }
 
 // ── Deal / Venda Modal (professional) ────────────────────────────
@@ -17520,76 +17530,20 @@ function closeTrendingModal(){
   document.getElementById('trending-modal-overlay').style.display = 'none';
 }
 
-async function loadTrending(period, clickedBtn){
-  // Atualizar botões ativos
-  document.querySelectorAll('.trend-period-btn').forEach(b=>{
-    b.style.background = 'transparent';
-    b.style.borderColor = 'rgba(255,255,255,.1)';
-    b.style.color = 'var(--text-muted)';
-    b.classList.remove('active');
-  });
-  if(clickedBtn){
-    clickedBtn.style.background = 'rgba(0,255,204,.12)';
-    clickedBtn.style.borderColor = 'var(--neon-cyan)';
-    clickedBtn.style.color = 'var(--neon-cyan)';
-    clickedBtn.classList.add('active');
-  }
+// ── Cache de trending (10 min por período) ─────────────────────
+const _trendCache={}, _trendCacheAt={};
+const TREND_TTL=600000;
 
-  const listEl = document.getElementById('trending-list');
-  listEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:20px;">⏳ Calculando...</div>';
-
-  // Definir janela de tempo
-  const now = new Date();
-  let since;
-  if(period === 'hours'){
-    since = new Date(now.getTime() - 6 * 60 * 60 * 1000).toISOString();
-  } else if(period === 'today'){
-    since = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-  } else if(period === 'week'){
-    const dayOfWeek = now.getDay(); // 0=dom, 1=seg...
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - dayOfWeek);
-    startOfWeek.setHours(0,0,0,0);
-    since = startOfWeek.toISOString();
-  } else {
-    since = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-  }
-
-  // Buscar posts e comentários do período
-  const [postsRes, cmtsRes] = await Promise.all([
-    db.from('posts').select('content').gte('created_at', since).eq('visibility','public').limit(500),
-    db.from('comments').select('content').gte('created_at', since).limit(500)
-  ]);
-
-  const allTexts = [
-    ...(postsRes.data || []).map(r => r.content || ''),
-    ...(cmtsRes.data || []).map(r => r.content || '')
-  ];
-
-  // Extrair e contabilizar hashtags
-  const tagCount = {};
-  const hashRx = /#([a-zA-ZÀ-ú0-9_]{2,})/g;
-  for(const text of allTexts){
-    let m;
-    while((m = hashRx.exec(text)) !== null){
-      const tag = m[1].toLowerCase();
-      tagCount[tag] = (tagCount[tag] || 0) + 1;
-    }
-  }
-
-  const sorted = Object.entries(tagCount).sort((a,b)=>b[1]-a[1]).slice(0,10);
-
+function _renderTrendingList(listEl, sorted){
   if(!sorted.length){
-    listEl.innerHTML = '<div style="text-align:center;padding:30px;"><div style="font-size:36px;opacity:.3;">🏷</div><div style="font-size:12px;color:var(--text-muted);margin-top:8px;">Nenhuma hashtag encontrada neste período.</div></div>';
+    listEl.innerHTML='<div style="text-align:center;padding:30px;"><div style="font-size:36px;opacity:.3;">🏷</div><div style="font-size:12px;color:var(--text-muted);margin-top:8px;">Nenhuma hashtag encontrada neste período.</div></div>';
     return;
   }
-
-  const maxCount = sorted[0][1];
-  const rankIcons = ['🥇','🥈','🥉'];
-
-  listEl.innerHTML = sorted.map(([tag, count], i) => {
-    const pct = Math.round((count / maxCount) * 100);
-    const icon = i < 3 ? rankIcons[i] : `<span style="font-family:'VT323',monospace;font-size:16px;color:var(--text-muted);">#${i+1}</span>`;
+  const maxCount=sorted[0][1];
+  const rankIcons=['🥇','🥈','🥉'];
+  listEl.innerHTML=sorted.map(([tag,count],i)=>{
+    const pct=Math.round((count/maxCount)*100);
+    const icon=i<3?rankIcons[i]:`<span style="font-family:'VT323',monospace;font-size:16px;color:var(--text-muted);">#${i+1}</span>`;
     return `<div onclick="applyHashtagFilter('${tag}')" style="cursor:pointer;padding:12px 14px;border-radius:10px;margin-bottom:8px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);transition:all .2s;" onmouseover="this.style.background='rgba(0,255,204,.06)';this.style.borderColor='rgba(0,255,204,.25)'" onmouseout="this.style.background='rgba(255,255,255,.03)';this.style.borderColor='rgba(255,255,255,.07)'">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
         <span style="font-size:18px;width:24px;text-align:center;flex-shrink:0;">${icon}</span>
@@ -17602,6 +17556,53 @@ async function loadTrending(period, clickedBtn){
       </div>
     </div>`;
   }).join('');
+}
+
+async function loadTrending(period, clickedBtn){
+  document.querySelectorAll('.trend-period-btn').forEach(b=>{
+    b.style.background='transparent';b.style.borderColor='rgba(255,255,255,.1)';b.style.color='var(--text-muted)';b.classList.remove('active');
+  });
+  if(clickedBtn){
+    clickedBtn.style.background='rgba(0,255,204,.12)';clickedBtn.style.borderColor='var(--neon-cyan)';clickedBtn.style.color='var(--neon-cyan)';clickedBtn.classList.add('active');
+  }
+
+  const listEl=document.getElementById('trending-list');
+
+  // Usa cache se válido — sem nenhuma query ao banco
+  if(_trendCache[period] && (Date.now()-_trendCacheAt[period])<TREND_TTL){
+    _renderTrendingList(listEl,_trendCache[period]);return;
+  }
+
+  listEl.innerHTML='<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:20px;">⏳ Calculando...</div>';
+
+  const now=new Date();
+  let since;
+  if(period==='hours'){ since=new Date(now.getTime()-6*60*60*1000).toISOString(); }
+  else if(period==='today'){ since=new Date(now.getFullYear(),now.getMonth(),now.getDate()).toISOString(); }
+  else if(period==='week'){ const s=new Date(now);s.setDate(now.getDate()-now.getDay());s.setHours(0,0,0,0);since=s.toISOString(); }
+  else{ since=new Date(now.getFullYear(),now.getMonth(),1).toISOString(); }
+
+  // limit reduzido de 500 → 200 por tabela
+  const [postsRes,cmtsRes]=await Promise.all([
+    db.from('posts').select('content').gte('created_at',since).eq('visibility','public').limit(200),
+    db.from('comments').select('content').gte('created_at',since).limit(200)
+  ]);
+
+  const tagCount={};
+  const hashRx=/#([a-zA-ZÀ-ú0-9_]{2,})/g;
+  for(const row of [...(postsRes.data||[]),...(cmtsRes.data||[])]){
+    hashRx.lastIndex=0;
+    let m;
+    while((m=hashRx.exec(row.content||''))!==null){
+      const tag=m[1].toLowerCase();
+      tagCount[tag]=(tagCount[tag]||0)+1;
+    }
+  }
+
+  const sorted=Object.entries(tagCount).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  _trendCache[period]=sorted;
+  _trendCacheAt[period]=Date.now();
+  _renderTrendingList(listEl,sorted);
 }
 
 function applyHashtagFilter(tag){
