@@ -4698,6 +4698,8 @@ function showApp(){
   setTimeout(()=>{ try{ initTheme(); }catch(e){} }, 50);
   setTimeout(()=>{ try{ checkBizInviteUrl(); }catch(e){} }, 1200);
   setTimeout(()=>{ try{ checkCommInviteUrl(); }catch(e){} }, 1400);
+  // Pré-carrega modelo NSFW em background para estar pronto quando o usuário postar
+  setTimeout(()=>{ loadNsfwModel().catch(e=>console.warn("[NSFW] pré-carregamento falhou:",e.message)); }, 3000);
 }
 function showAuth(){
   hideLS();
@@ -6690,7 +6692,7 @@ async function uploadWithPipeline(file, type, setStatus){
     S('PROGRESS:' + _progVal + ':' + (label||'Carregando post'));
   }
 
-  // 1) Filtro NSFW local — cancela ANTES de subir qualquer byte
+  // 1) Filtro NSFW local — tenta verificar, mas NÃO bloqueia se o modelo falhar
   progress(2, 'Verificando conteúdo');
   let _nsfwPassed = false;
   try{
@@ -6706,11 +6708,10 @@ async function uploadWithPipeline(file, type, setStatus){
     console.log('[NSFW] conteúdo aprovado ✓');
   }catch(e){
     if(e.message==='NSFW_BLOCKED') throw e;
-    // Modelo não carregou (CDN indisponível, CSP, timeout) → bloqueia por segurança
-    console.error('[NSFW] falha ao verificar:', e.message);
-    const err = new Error('NSFW_LOAD_FAILED');
-    err.userMessage = '⚠️ Não foi possível carregar o filtro de conteúdo. Aguarde alguns segundos e tente novamente.';
-    throw err;
+    // Modelo não carregou (CDN lento, mobile, CSP, etc.)
+    // → PERMITE o upload normalmente (não pune o usuário por falha de CDN)
+    console.warn('[NSFW] modelo indisponível, pulando verificação local:', e.message);
+    _nsfwPassed = false;
   }
 
   // 2) Compressão
