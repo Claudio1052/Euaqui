@@ -6409,7 +6409,7 @@ async function compressVideo(file, onProgress){
     }
     const url = URL.createObjectURL(file);
     const video = document.createElement('video');
-    video.src = url; video.muted = false; video.playsInline = true;
+    video.src = url; video.muted = true; video.playsInline = true; video.volume = 0;
     video.preload = 'auto';
     await new Promise((res,rej)=>{
       video.onloadedmetadata = ()=>res();
@@ -6557,39 +6557,62 @@ async function r2Finalize(key, publicUrl, contentType){
 //     Depois que estiver funcionando, religamos NSFW e Sightengine. ---
 async function uploadWithPipeline(file, type, setStatus){
   const S = setStatus || (()=>{});
-  // 1) Compressão
-  S('🗜 Comprimindo '+(type==='video'?'vídeo':'foto')+'...');
-  console.log('[pipeline] 1/4 compressão — entrada:', file.name, (file.size/1024/1024).toFixed(2)+'MB', file.type);
+
+  // ── Progresso visual unificado ──
+  // S recebe: 'PROGRESS:N' para atualizar % ou texto livre para mensagem
+  let _progVal = 0;
+  function progress(pct, label){
+    _progVal = Math.round(pct);
+    S('PROGRESS:' + _progVal + ':' + (label||'Carregando post'));
+  }
+
+  // 1) Filtro NSFW local — 3 frames (5%, 50%, 95%) — cancela ANTES de subir qualquer byte
+  try{
+    progress(2, 'Verificando conteúdo');
+    const check = (type==='video')
+      ? await nsfwCheckVideo(file)
+      : await nsfwCheckImage(file);
+    if(!check.safe){
+      const err = new Error('NSFW_BLOCKED');
+      err.userMessage = '🚫 Conteúdo bloqueado por violar as diretrizes da comunidade.';
+      throw err;
+    }
+  }catch(e){
+    if(e.message==='NSFW_BLOCKED') throw e;
+    // Se NSFWJS falhar (rede, modelo), segue sem bloquear — log apenas
+    console.warn('[NSFW] falha no filtro, seguindo sem verificar:', e.message);
+  }
+
+  // 2) Compressão
+  progress(5, 'Carregando post');
+  console.log('[pipeline] compressão — entrada:', file.name, (file.size/1024/1024).toFixed(2)+'MB');
   let compressed;
   try{
     compressed = (type==='video')
-      ? await compressVideo(file, p=>S('🗜 Comprimindo vídeo... '+Math.round(p*100)+'%'))
+      ? await compressVideo(file, p=>progress(5 + Math.round(p*75), 'Carregando post'))
       : await compressImage(file);
+    if(type!=='video') progress(80, 'Carregando post');
   }catch(e){
     console.error('[pipeline] erro na compressão:', e);
-    compressed = file; // segue com original
+    compressed = file;
   }
-  console.log('[pipeline] compressão OK — saída:', compressed.name, (compressed.size/1024/1024).toFixed(2)+'MB', compressed.type);
-  // 1.5) Limite final
+
+  // 2.5) Limite de tamanho
   if(compressed.size > R2_MAX_UPLOAD_MB*1024*1024){
     const err = new Error('TOO_LARGE_AFTER_COMPRESS');
-    const mb = (compressed.size/1024/1024).toFixed(1);
-    err.userMessage = `🚫 Mesmo após compressão ficou ${mb}MB (máx. ${R2_MAX_UPLOAD_MB}MB).`;
+    err.userMessage = `🚫 Mesmo após compressão ficou ${(compressed.size/1024/1024).toFixed(1)}MB (máx. ${R2_MAX_UPLOAD_MB}MB).`;
     throw err;
   }
-  // 2) [PULADO] NSFWJS — será religado depois
+
   // 3) Presign
-  S('🔐 Pedindo autorização ao Worker...');
-  console.log('[pipeline] 2/3 presign — chamando:', R2_BACKEND_URL+'/api/r2/presign');
+  progress(82, 'Carregando post');
   const pres = await r2GetPresign(compressed);
-  console.log('[pipeline] presign OK:', pres);
-  // 4) Upload direto pro Worker/R2
-  S('☁️ Enviando ao Cloudflare R2...');
-  console.log('[pipeline] 3/3 PUT em:', pres.uploadUrl);
+
+  // 4) Upload para R2
+  progress(88, 'Carregando post');
   await r2UploadToPresigned(pres.uploadUrl, compressed, pres.headers);
-  console.log('[pipeline] upload OK — URL pública:', pres.publicUrl);
-  // 5) [PULADO] Sightengine/finalize — aprova direto
-  S('✅ Enviado!');
+
+  progress(100, 'Carregando post');
   return pres.publicUrl;
 }
 
@@ -6634,25 +6657,41 @@ async function createPost(){
   // ===== NOVO PIPELINE: R2 + FFmpeg.wasm + NSFWJS + Sightengine =====
   // Substitui o Supabase Storage. O Supabase agora guarda APENAS a URL
   // pública do R2 em media_urls — economiza espaço no banco.
-  const setStatus = (msg)=>{ btn.textContent = msg; };
+  // Renderiza barra de progresso no botão de postar
+  function setStatus(msg){
+    if(msg.startsWith('PROGRESS:')){
+      const parts = msg.split(':');
+      const pct   = parseInt(parts[1])||0;
+      const label = parts.slice(2).join(':') || 'Carregando post';
+      btn.innerHTML =
+        '<div style="display:flex;flex-direction:column;align-items:center;gap:3px;width:100%;padding:0 4px;">' +
+          '<span style="font-size:9px;letter-spacing:1px;white-space:nowrap;">' + label.toUpperCase() + ' ' + pct + '%</span>' +
+          '<div style="width:100%;height:3px;background:rgba(255,255,255,.15);border-radius:2px;overflow:hidden;">' +
+            '<div style="height:100%;width:' + pct + '%;background:linear-gradient(90deg,var(--neon-cyan),var(--neon-purple));border-radius:2px;transition:width .2s;"></div>' +
+          '</div>' +
+        '</div>';
+    } else {
+      btn.textContent = msg;
+    }
+  }
   for(let i=0;i<mediaFiles.length;i++){
     const f = mediaFiles[i];
     const t = mediaTypes[i];
     try{
-      setStatus(`[${i+1}/${mediaFiles.length}] preparando...`);
-      const publicUrl = await uploadWithPipeline(f, t, (m)=>setStatus(`[${i+1}/${mediaFiles.length}] ${m}`));
+      setStatus('PROGRESS:0:Carregando post');
+      const publicUrl = await uploadWithPipeline(f, t, (m)=>setStatus(m));
       urls.push(publicUrl);
       mTypes.push(t);
     }catch(e){
       console.error('Pipeline upload falhou:', e);
       const msg = e.userMessage || ('Falha ao enviar mídia: '+(e.message||'erro desconhecido'));
       showToast(msg, 'error');
-      btn.textContent='POSTAR ▶'; btn.disabled=false;
+      btn.innerHTML=''; btn.textContent='POSTAR ▶'; btn.disabled=false;
       btn.style.opacity=''; btn.style.cursor='';
       return;
     }
   }
-  setStatus('⏳ Publicando...');
+  btn.innerHTML = ''; btn.textContent = '⏳ Publicando...';
   // Monta payload — colunas garantidas pelo SQL de migração
   const payload={
     user_id: CU.id,
