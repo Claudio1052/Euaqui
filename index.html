@@ -4765,7 +4765,7 @@ async function handleRegister(){
   btn.textContent='✦ CRIAR CONTA';btn.disabled=false;
   if(error){const m={'User already registered':'Email já cadastrado'};return showAErr(m[error.message]||error.message);}
   if(data.user){
-    await db.from('profiles').upsert({id:data.user.id,username:uname,full_name:name,email,avatar_url:`https://api.dicebear.com/7.x/pixel-art/svg?seed=${uname}`,status_message:'✨ Novo por aqui!',created_at:new Date().toISOString()});
+    await db.from('profiles').upsert({id:data.user.id,username:uname,full_name:name,email,avatar_url:dicebearUrl(uname),status_message:'✨ Novo por aqui!',created_at:new Date().toISOString()});
     if(data.session)showToast('Bem-vindo ao EuAqui! 🎉','success');
     else{const el=document.getElementById('aerr');el.textContent='📧 Verifique seu email para confirmar a conta!';el.style.color='var(--neon-cyan)';el.style.borderColor='rgba(0,255,204,.3)';el.classList.add('show');}
   }
@@ -4831,7 +4831,7 @@ async function loadProfile(){
   let base=(meta.username||meta.user_name||meta.name||CU.email?.split('@')[0]||'user').toLowerCase().replace(/[^a-z0-9_]/g,'_').substring(0,18);
   let uname=base,s=1;
   while(true){const{data:e}=await db.from('profiles').select('id').eq('username',uname).maybeSingle();if(!e)break;uname=base+s++;}
-  const np={id:CU.id,username:uname,full_name:meta.full_name||meta.name||uname,email:CU.email,avatar_url:meta.avatar_url||meta.picture||`https://api.dicebear.com/7.x/pixel-art/svg?seed=${uname}`,status_message:'✨ Novo por aqui!',created_at:new Date().toISOString()};
+  const np={id:CU.id,username:uname,full_name:meta.full_name||meta.name||uname,email:CU.email,avatar_url:meta.avatar_url||meta.picture||dicebearUrl(uname),status_message:'✨ Novo por aqui!',created_at:new Date().toISOString()};
   try{
     const{error:upErr}=await db.from('profiles').upsert(np);
     if(upErr)console.warn('Profile create warning:',upErr.message);
@@ -4863,17 +4863,29 @@ function refreshUI(){
   if(CP.status_message)document.getElementById('msn-in').value=CP.status_message;
   loadUserStats();updateLevel();
 }
+// Retorna URL de avatar passando Dicebear pelo Worker (cache de 7 dias)
+function dicebearUrl(seed){
+  const s=encodeURIComponent(seed||'user');
+  // Se AVATAR_WORKER_URL for o próprio Worker de mídia, usa endpoint /avatar/dicebear
+  // Caso contrário usa Dicebear direto (fallback seguro)
+  try{
+    const base=new URL(AVATAR_WORKER_URL);
+    return base.origin+'/avatar/dicebear?seed='+s;
+  }catch(e){
+    return'https://api.dicebear.com/7.x/pixel-art/svg?seed='+s;
+  }
+}
 function getAvatar(profile){
-  if(!profile)return'https://api.dicebear.com/7.x/pixel-art/svg?seed=default';
+  if(!profile)return dicebearUrl('default');
   if(profile.avatar_type==='retro_icon'&&profile.retro_icon)return profile.retro_icon;
   if(profile.avatar_url&&profile.avatar_url.startsWith('http'))return profile.avatar_url;
   if(profile.avatar_url&&!profile.avatar_url.startsWith('http'))return profile.avatar_url;
-  return`https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(profile.username||'user')}`;
+  return dicebearUrl(profile.username||'user');
 }
 function renderAvatar(profile,size=42,classes=''){
   const av=getAvatar(profile);
   const seed=encodeURIComponent(profile?.username||'user');
-  const fallback=`https://api.dicebear.com/7.x/pixel-art/svg?seed=${seed}`;
+  const fallback=dicebearUrl(seed);
   // Emoji / retro icon
   if(av&&av.length<=4&&!av.startsWith('http')){
     return`<div class="${classes}" style="width:${size}px;height:${size}px;border-radius:50%;background:rgba(255,255,255,.06);border:2px solid rgba(0,255,204,.3);display:flex;align-items:center;justify-content:center;font-size:${Math.floor(size*.55)}px;flex-shrink:0;">${av}</div>`;
@@ -6284,6 +6296,9 @@ function showModerationError(categories){
         (este endpoint é quem chama Sightengine e decide apagar do R2)
    ========================================================================= */
 const R2_BACKEND_URL = (window.R2_BACKEND_URL || 'https://euaqui-media.claudioalbertomaiasilva6.workers.dev');
+// Avatar proxy: Cloudflare Worker que cacheia Dicebear por 7 dias e serve avatares R2
+// Troque pela URL do seu Worker após criá-lo (ver comentário no final do script)
+const AVATAR_WORKER_URL = (window.AVATAR_WORKER_URL || R2_BACKEND_URL);
 const R2_MAX_IMAGE_DIM = 1920;         // reduz lado maior da foto
 const R2_IMAGE_QUALITY = 0.82;         // 0..1 JPEG/WEBP
 const R2_VIDEO_CRF = 28;               // qualidade FFmpeg (maior = menor arquivo)
@@ -6998,28 +7013,27 @@ async function saveSettings(){
     window._generatedAvatarUrl = null;
   } else if(retroIconSelected){avatarType='retro_icon';retroIcon=retroIconSelected;avatarUrl=retroIconSelected;}
   else if(avatarFile){
+    // Upload de avatar direto para Cloudflare R2 (mesmo pipeline das mídias dos posts)
+    // Sem passar pelo Supabase Storage — elimina egress de avatar
     try{
-      const ext=avatarFile.name.split('.').pop()||'jpg';
-      const path=CU.id+'/av-'+Date.now()+'.'+ext;
-      // Try upload to avatars bucket
-      const{data:upData,error:upErr}=await db.storage.from('avatars').upload(path,avatarFile,{upsert:true,cacheControl:'3600',contentType:avatarFile.type});
-      if(upData){
-        const{data:urlData}=db.storage.from('avatars').getPublicUrl(path);
-        avatarUrl=urlData.publicUrl;
-      } else if(upErr){
-        console.warn('avatars bucket error:',upErr.message);
-        // Fallback: try media bucket
-        const path2=CU.id+'/av-'+Date.now()+'.'+ext;
-        const{data:upData2,error:upErr2}=await db.storage.from('media').upload(path2,avatarFile,{upsert:true,cacheControl:'3600',contentType:avatarFile.type});
-        if(upData2){
-          const{data:urlData2}=db.storage.from('media').getPublicUrl(path2);
-          avatarUrl=urlData2.publicUrl;
-          showToast('Foto salva no bucket media (adicione policy ao bucket avatars)','success');
+      showToast('☁️ Enviando avatar ao Cloudflare...','success');
+      const publicUrl = await uploadWithPipeline(avatarFile,'image',(m)=>console.log('[avatar]',m));
+      avatarUrl = publicUrl;
+    }catch(e){
+      console.warn('[avatar R2] falhou, tentando Supabase Storage como fallback:',e.message);
+      // Fallback: Supabase Storage caso o Worker não esteja disponível
+      try{
+        const ext=avatarFile.name.split('.').pop()||'jpg';
+        const path=CU.id+'/av-'+Date.now()+'.'+ext;
+        const{data:upData,error:upErr}=await db.storage.from('avatars').upload(path,avatarFile,{upsert:true,cacheControl:'3600',contentType:avatarFile.type});
+        if(upData){
+          const{data:urlData}=db.storage.from('avatars').getPublicUrl(path);
+          avatarUrl=urlData.publicUrl;
         } else {
-          showToast('Erro upload: '+upErr.message,'error');
+          showToast('Erro no upload do avatar: '+(upErr?.message||e.message),'error');
         }
-      }
-    }catch(e){ showToast('Erro inesperado no upload: '+e.message,'error'); }
+      }catch(e2){ showToast('Erro inesperado no upload: '+e2.message,'error'); }
+    }
   }
   // Monta updates com campos básicos sempre presentes
   // Após a migração, todas as colunas existem
@@ -17624,5 +17638,166 @@ async function checkCanCreateComm(){
 }
 
 </script>
+
+<script>
+// Redireciona todas as imagens Dicebear para o Worker de cache assim que o DOM carrega.
+// Isso cobre os src estáticos no HTML e os onerror handlers dinâmicos.
+(function patchDicebearSrcs(){
+  function _patch(){
+    document.querySelectorAll('img[src*="api.dicebear.com"]').forEach(img=>{
+      try{
+        const u=new URL(img.src);
+        const seed=u.searchParams.get('seed')||'user';
+        img.src=dicebearUrl(seed);
+      }catch(e){}
+    });
+    // Corrige atributos data-fb (fallback do onerror em posts)
+    document.querySelectorAll('img[data-fb*="api.dicebear.com"]').forEach(img=>{
+      try{
+        const u=new URL(img.dataset.fb);
+        const seed=u.searchParams.get('seed')||'user';
+        img.dataset.fb=dicebearUrl(seed);
+      }catch(e){}
+    });
+  }
+  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',_patch);}
+  else{_patch();}
+  // Observa novos elementos inseridos dinamicamente (posts, comentários, etc.)
+  new MutationObserver((muts)=>{
+    for(const m of muts){
+      m.addedNodes.forEach(n=>{
+        if(n.nodeType!==1)return;
+        const imgs=n.matches?.('img')?[n]:[...n.querySelectorAll?.('img[src*="api.dicebear.com"],img[data-fb*="api.dicebear.com"]')||[]];
+        imgs.forEach(img=>{
+          try{
+            if(img.src?.includes('api.dicebear.com')){
+              const u=new URL(img.src);img.src=dicebearUrl(u.searchParams.get('seed')||'user');
+            }
+            if(img.dataset?.fb?.includes('api.dicebear.com')){
+              const u=new URL(img.dataset.fb);img.dataset.fb=dicebearUrl(u.searchParams.get('seed')||'user');
+            }
+          }catch(e){}
+        });
+      });
+    }
+  }).observe(document.body||document.documentElement,{childList:true,subtree:true});
+})();
+
+/*
+==========================================================================
+ CLOUDFLARE WORKER — euaqui-media (adicione este código no seu Worker)
+==========================================================================
+ Este Worker já cuida do upload de mídias (R2 presign/finalize).
+ Adicione as rotas abaixo para:
+   1. Cache de avatares do Dicebear (7 dias)
+   2. Servir avatares do R2 com cache longo
+
+ No painel Cloudflare Workers, edite o worker "euaqui-media" e adicione:
+
+// ── ROTA: /avatar/dicebear?seed=X ─────────────────────────────────────
+// Faz proxy do Dicebear com cache de 7 dias na borda Cloudflare.
+// O browser nunca bate no Dicebear diretamente — sempre serve do cache.
+
+async function handleDicebearAvatar(request) {
+  const url = new URL(request.url);
+  const seed = url.searchParams.get('seed') || 'user';
+  const dicebearUrl = `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(seed)}`;
+
+  // Tenta servir do cache Cloudflare primeiro
+  const cache = caches.default;
+  const cacheKey = new Request(dicebearUrl, request);
+  let response = await cache.match(cacheKey);
+
+  if (!response) {
+    // Cache miss — busca no Dicebear e armazena
+    response = await fetch(dicebearUrl, {
+      headers: { 'User-Agent': 'EuAqui-Bot/1.0' }
+    });
+
+    if (response.ok) {
+      // Clona e armazena com TTL de 7 dias
+      const toCache = new Response(response.clone().body, {
+        status: response.status,
+        headers: {
+          'Content-Type': 'image/svg+xml',
+          'Cache-Control': 'public, max-age=604800, s-maxage=604800', // 7 dias
+          'Access-Control-Allow-Origin': '*',
+          'X-Cache': 'MISS',
+        }
+      });
+      await cache.put(cacheKey, toCache);
+    }
+  }
+
+  return new Response(response.body, {
+    status: response.status,
+    headers: {
+      'Content-Type': 'image/svg+xml',
+      'Cache-Control': 'public, max-age=604800',
+      'Access-Control-Allow-Origin': '*',
+      'X-Cache': response.headers.get('X-Cache') || 'HIT',
+    }
+  });
+}
+
+// ── ROTA: /avatar/r2/:path* ────────────────────────────────────────────
+// Serve avatares salvos no R2 com cache de 30 dias.
+// Use esta URL quando salvar avatares no R2 em vez do Supabase Storage.
+
+async function handleR2Avatar(request, env) {
+  const url = new URL(request.url);
+  const key = url.pathname.replace('/avatar/r2/', '');
+
+  const cache = caches.default;
+  let response = await cache.match(request);
+  if (response) return response;
+
+  const object = await env.EUAQUI_BUCKET.get(key); // seu binding R2
+  if (!object) return new Response('Not found', { status: 404 });
+
+  const headers = new Headers();
+  headers.set('Content-Type', object.httpMetadata?.contentType || 'image/jpeg');
+  headers.set('Cache-Control', 'public, max-age=2592000, s-maxage=2592000'); // 30 dias
+  headers.set('Access-Control-Allow-Origin', '*');
+
+  response = new Response(object.body, { headers });
+  await cache.put(request, response.clone());
+  return response;
+}
+
+// ── No export default fetch, adicione antes do roteamento existente: ──
+
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+
+    // CORS preflight
+    if (request.method === 'OPTIONS') {
+      return new Response(null, {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
+          'Access-Control-Allow-Headers': '*',
+        }
+      });
+    }
+
+    // Rotas de avatar
+    if (url.pathname === '/avatar/dicebear') return handleDicebearAvatar(request);
+    if (url.pathname.startsWith('/avatar/r2/'))  return handleR2Avatar(request, env);
+
+    // ... resto do seu Worker existente (presign, finalize, etc.) ...
+  }
+};
+
+==========================================================================
+ Após adicionar o código acima ao Worker, defina no HTML:
+   window.AVATAR_WORKER_URL = 'https://euaqui-media.claudioalbertomaiasilva6.workers.dev';
+ (já é o valor padrão — não precisa mudar se usar o mesmo Worker)
+==========================================================================
+*/
+
+</script>
+
 </body>
 </html>
