@@ -6415,9 +6415,12 @@ async function loadNsfwModel(){
   if(_nsfwModel) return _nsfwModel;
   if(_nsfwLoading) return _nsfwLoading;
   _nsfwLoading = (async()=>{
-    await _loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js');
+    // TF 3.x + nsfwjs 2.4.2 — versões testadas e compatíveis
+    await _loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js');
     await _loadScript('https://cdn.jsdelivr.net/npm/nsfwjs@2.4.2/dist/nsfwjs.min.js');
-    _nsfwModel = await nsfwjs.load(); // modelo padrão MobileNetV2
+    // Modelo InceptionV3 hospedado publicamente — mais preciso que MobileNet
+    _nsfwModel = await nsfwjs.load('https://cdn.jsdelivr.net/npm/nsfwjs@2.4.2/dist/InceptionV3/');
+    console.log('[NSFW] modelo carregado com sucesso');
     return _nsfwModel;
   })();
   return _nsfwLoading;
@@ -6426,40 +6429,55 @@ async function loadNsfwModel(){
 // --- NSFW check (retorna {safe, scores}) ---
 async function nsfwCheckImage(file){
   const model = await loadNsfwModel();
+  const objUrl = URL.createObjectURL(file);
   const img = await new Promise((res,rej)=>{
-    const i=new Image(); i.onload=()=>res(i); i.onerror=rej;
-    i.src=URL.createObjectURL(file);
+    const i=new Image();
+    i.crossOrigin='anonymous';
+    i.onload=()=>res(i);
+    i.onerror=(e)=>rej(new Error('Falha ao carregar imagem para análise: '+e));
+    i.src=objUrl;
   });
   const preds = await model.classify(img);
-  URL.revokeObjectURL(img.src);
+  URL.revokeObjectURL(objUrl);
   const s = {}; preds.forEach(p=>s[p.className]=p.probability);
   const bad = (s.Porn||0) + (s.Hentai||0) + (s.Sexy||0);
-  return { safe: bad < NSFW_THRESHOLD, scores: s };
+  console.log('[NSFW img] scores:', JSON.stringify(s), '| bad total:', bad.toFixed(3), '| threshold:', NSFW_THRESHOLD);
+  return { safe: bad < NSFW_THRESHOLD, scores: s, bad };
 }
 async function nsfwCheckVideo(file){
-  // Extrai 3 frames (início/meio/fim) e roda NSFWJS em cada um
+  // Extrai 3 frames (5%, 50%, 95%) e roda NSFWJS em cada um
   const model = await loadNsfwModel();
-  const url = URL.createObjectURL(file);
+  const objUrl = URL.createObjectURL(file);
   const v = document.createElement('video');
-  v.src=url; v.muted=true; v.playsInline=true; v.crossOrigin='anonymous';
-  await new Promise((res,rej)=>{ v.onloadedmetadata=res; v.onerror=rej; });
+  v.src=objUrl; v.muted=true; v.playsInline=true; v.preload='metadata';
+  await new Promise((res,rej)=>{
+    const t=setTimeout(()=>rej(new Error('timeout ao carregar metadados do vídeo')),10000);
+    v.onloadedmetadata=()=>{ clearTimeout(t); res(); };
+    v.onerror=()=>{ clearTimeout(t); rej(new Error('erro ao carregar vídeo')); };
+  });
   const dur = v.duration||1;
   const points = [0.05*dur, 0.5*dur, 0.95*dur];
   const canvas = document.createElement('canvas');
   canvas.width=Math.min(v.videoWidth||320,640);
   canvas.height=Math.min(v.videoHeight||240,480);
-  const ctx = canvas.getContext('2d');
+  const ctx2d = canvas.getContext('2d');
   let worst=0, allScores=[];
   for(const t of points){
-    await new Promise(res=>{ v.currentTime=t; v.onseeked=()=>res(); });
-    ctx.drawImage(v,0,0,canvas.width,canvas.height);
+    await new Promise((res)=>{
+      const to=setTimeout(res,3000); // timeout por frame
+      v.onseeked=()=>{ clearTimeout(to); res(); };
+      v.currentTime=t;
+    });
+    ctx2d.drawImage(v,0,0,canvas.width,canvas.height);
     const preds = await model.classify(canvas);
     const s={}; preds.forEach(p=>s[p.className]=p.probability);
     const bad=(s.Porn||0)+(s.Hentai||0)+(s.Sexy||0);
+    console.log('[NSFW vid] frame @'+t.toFixed(1)+'s:', JSON.stringify(s), '| bad:', bad.toFixed(3));
     if(bad>worst) worst=bad;
     allScores.push(s);
   }
-  URL.revokeObjectURL(url);
+  URL.revokeObjectURL(objUrl);
+  console.log('[NSFW vid] pior frame:', worst.toFixed(3), '| threshold:', NSFW_THRESHOLD, '| safe:', worst < NSFW_THRESHOLD);
   return { safe: worst < NSFW_THRESHOLD, scores: allScores, worst };
 }
 
@@ -6650,21 +6668,27 @@ async function uploadWithPipeline(file, type, setStatus){
     S('PROGRESS:' + _progVal + ':' + (label||'Carregando post'));
   }
 
-  // 1) Filtro NSFW local — 3 frames (5%, 50%, 95%) — cancela ANTES de subir qualquer byte
+  // 1) Filtro NSFW local — cancela ANTES de subir qualquer byte
+  progress(2, 'Verificando conteúdo');
+  let _nsfwPassed = false;
   try{
-    progress(2, 'Verificando conteúdo');
     const check = (type==='video')
       ? await nsfwCheckVideo(file)
       : await nsfwCheckImage(file);
     if(!check.safe){
       const err = new Error('NSFW_BLOCKED');
-      err.userMessage = '🚫 Conteúdo bloqueado por violar as diretrizes da comunidade.';
+      err.userMessage = '🚫 Conteúdo bloqueado: imagem/vídeo contém nudez ou conteúdo explícito (score: '+(check.bad||check.worst||0).toFixed(2)+').';
       throw err;
     }
+    _nsfwPassed = true;
+    console.log('[NSFW] conteúdo aprovado ✓');
   }catch(e){
     if(e.message==='NSFW_BLOCKED') throw e;
-    // Se NSFWJS falhar (rede, modelo), segue sem bloquear — log apenas
-    console.warn('[NSFW] falha no filtro, seguindo sem verificar:', e.message);
+    // Modelo não carregou (sem internet, CSP, etc.) → BLOQUEIA por segurança
+    console.error('[NSFW] falha ao verificar:', e.message);
+    const err = new Error('NSFW_LOAD_FAILED');
+    err.userMessage = '⚠️ Não foi possível verificar o conteúdo da mídia. Verifique sua conexão e tente novamente.';
+    throw err;
   }
 
   // 2) Compressão
