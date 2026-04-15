@@ -1910,23 +1910,93 @@ body.day-mode .bnav-btn.active .bni{
 }
 .emoji-picker.open{display:flex;}
 
-/* ===== YOUTUBE EMBED ===== */
+/* ===== YOUTUBE EMBED (player customizado) ===== */
 .yt-embed-wrap{
   position:relative;
   width:100%;
-  padding-bottom:56.25%; /* 16:9 */
-  height:0;
   border-radius:12px;
   overflow:hidden;
   margin:10px 0 4px;
   background:#000;
+  aspect-ratio:16/9;
+  user-select:none;
 }
 .yt-embed{
   position:absolute;
   top:0; left:0;
   width:100%; height:100%;
   border:none;
-  border-radius:12px;
+  pointer-events:none;
+}
+/* Camada clicável sobre o iframe (evita cliques no player nativo) */
+.yt-click-layer{
+  position:absolute;
+  inset:0;
+  z-index:2;
+  cursor:pointer;
+}
+/* Botão play central */
+.yt-play-big{
+  position:absolute;
+  top:50%; left:50%;
+  transform:translate(-50%,-50%);
+  width:60px; height:60px;
+  border-radius:50%;
+  background:rgba(0,0,0,.65);
+  border:2px solid rgba(255,255,255,.25);
+  display:flex; align-items:center; justify-content:center;
+  font-size:22px;
+  color:#fff;
+  transition:background .2s, transform .15s;
+  pointer-events:none;
+  z-index:3;
+}
+.yt-embed-wrap.playing .yt-play-big{ opacity:0; }
+.yt-embed-wrap:hover .yt-play-big{ opacity:1 !important; background:rgba(0,0,0,.8); transform:translate(-50%,-50%) scale(1.08); }
+/* Barra de controles inferior */
+.yt-controls{
+  position:absolute;
+  bottom:0; left:0; right:0;
+  padding:6px 10px 8px;
+  background:linear-gradient(transparent,rgba(0,0,0,.82));
+  display:flex;
+  align-items:center;
+  gap:8px;
+  z-index:4;
+  opacity:0;
+  transition:opacity .25s;
+}
+.yt-embed-wrap:hover .yt-controls,
+.yt-embed-wrap.paused .yt-controls{ opacity:1; }
+.yt-ctrl-btn{
+  background:none; border:none; color:#fff;
+  font-size:16px; cursor:pointer; padding:2px 4px;
+  display:flex; align-items:center; flex-shrink:0;
+  opacity:.9; transition:opacity .15s;
+}
+.yt-ctrl-btn:hover{ opacity:1; }
+/* Barra de progresso */
+.yt-progress-wrap{
+  flex:1;
+  height:3px;
+  background:rgba(255,255,255,.25);
+  border-radius:2px;
+  overflow:hidden;
+  cursor:pointer;
+  position:relative;
+}
+.yt-progress-bar{
+  height:100%;
+  background:#ff3333;
+  border-radius:2px;
+  width:0%;
+  transition:width .5s linear;
+  pointer-events:none;
+}
+/* Tempo */
+.yt-time{
+  font-size:10px; color:rgba(255,255,255,.85);
+  font-family:monospace; white-space:nowrap; flex-shrink:0;
 }
 .yt-link{
   font-size:10px;
@@ -10528,15 +10598,25 @@ function linkify(t){
   // 1. Detect YouTube links and replace with embed player
   const ytRegex = /https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})[^\s]*/g;
   result = result.replace(ytRegex, (match, videoId)=>{
-    return `<div class="yt-embed-wrap yt-feed-wrap" data-ytid="${videoId}">
-      <iframe class="yt-embed yt-feed-iframe"
-        src="https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1&enablejsapi=1&mute=1&playsinline=1&autoplay=0"
+    const uid = 'yt-'+videoId+'-'+Math.random().toString(36).slice(2,6);
+    return `<div class="yt-embed-wrap yt-feed-wrap paused" data-ytid="${videoId}" data-uid="${uid}" id="${uid}">
+      <iframe class="yt-embed yt-feed-iframe" id="${uid}-iframe"
+        src="https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1&enablejsapi=1&controls=0&mute=1&playsinline=1&autoplay=0&disablekb=1"
         frameborder="0"
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-        allowfullscreen
         loading="lazy"
         title="YouTube video">
       </iframe>
+      <div class="yt-click-layer" onclick="ytTogglePlay('${uid}')"></div>
+      <div class="yt-play-big" id="${uid}-playbig">&#9654;</div>
+      <div class="yt-controls">
+        <button class="yt-ctrl-btn" onclick="ytTogglePlay('${uid}')" id="${uid}-playbtn" title="Play/Pause">&#9654;</button>
+        <button class="yt-ctrl-btn" onclick="ytToggleMute('${uid}')" id="${uid}-mutebtn" title="Mute/Unmute">&#128263;</button>
+        <div class="yt-progress-wrap" onclick="ytSeek(event,'${uid}')">
+          <div class="yt-progress-bar" id="${uid}-bar"></div>
+        </div>
+        <span class="yt-time" id="${uid}-time">0:00</span>
+      </div>
     </div>`;
   });
   // 2. Detect remaining generic URLs (not already inside href or iframe)
@@ -17685,6 +17765,132 @@ async function checkCanCreateComm(){
   return true;
 }
 
+</script>
+
+<script>
+// ===== YOUTUBE CUSTOM PLAYER =====
+// Controla iframes do YouTube via postMessage (IFrame API)
+// Mostra apenas: barra de progresso, play/pause, mute
+
+window._ytPlayers = {}; // uid -> { muted, playing, duration, current }
+
+// Carrega a API do YouTube uma única vez
+(function(){
+  if(window.YT) return;
+  const tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(tag);
+})();
+
+// Callback da API quando carregada
+window.onYouTubeIframeAPIReady = function(){
+  // Inicializa players já presentes no DOM
+  document.querySelectorAll('.yt-feed-iframe').forEach(iframe => _ytInitPlayer(iframe));
+};
+
+function _ytInitPlayer(iframe){
+  const wrap = iframe.closest('.yt-embed-wrap');
+  if(!wrap) return;
+  const uid = wrap.dataset.uid;
+  if(!uid || window._ytPlayers[uid]) return;
+
+  window._ytPlayers[uid] = { muted: true, playing: false, duration: 0, current: 0, player: null };
+
+  // Cria instância YT.Player
+  try{
+    const p = new YT.Player(iframe, {
+      events:{
+        onReady: (e)=>{
+          e.target.mute();
+          window._ytPlayers[uid].player = e.target;
+          window._ytPlayers[uid].duration = e.target.getDuration() || 0;
+          _ytStartTick(uid);
+        },
+        onStateChange: (e)=>{
+          const st = e.data;
+          const playing = st === YT.PlayerState.PLAYING;
+          window._ytPlayers[uid].playing = playing;
+          wrap.classList.toggle('playing', playing);
+          wrap.classList.toggle('paused', !playing);
+          const btn = document.getElementById(uid+'-playbtn');
+          const big = document.getElementById(uid+'-playbig');
+          if(btn) btn.innerHTML = playing ? '&#10074;&#10074;' : '&#9654;';
+          if(big) big.innerHTML = playing ? '&#10074;&#10074;' : '&#9654;';
+        }
+      }
+    });
+  }catch(e){ console.warn('[YT]', e); }
+}
+
+function _ytStartTick(uid){
+  if(window._ytPlayers[uid]?._tick) return;
+  window._ytPlayers[uid]._tick = setInterval(()=>{
+    const pd = window._ytPlayers[uid];
+    if(!pd?.player) return;
+    try{
+      const cur = pd.player.getCurrentTime() || 0;
+      const dur = pd.player.getDuration() || pd.duration || 1;
+      pd.current = cur; pd.duration = dur;
+      const pct = Math.min(100, (cur/dur)*100);
+      const bar  = document.getElementById(uid+'-bar');
+      const time = document.getElementById(uid+'-time');
+      if(bar)  bar.style.width = pct+'%';
+      if(time) time.textContent = _ytFmt(cur)+' / '+_ytFmt(dur);
+    }catch(_){}
+  }, 500);
+}
+
+function _ytFmt(s){
+  s = Math.floor(s||0);
+  const m = Math.floor(s/60), sec = s%60;
+  return m+':'+(sec<10?'0':'')+sec;
+}
+
+function ytTogglePlay(uid){
+  const pd = window._ytPlayers[uid];
+  if(!pd?.player) return;
+  try{
+    if(pd.playing){ pd.player.pauseVideo(); }
+    else           { pd.player.playVideo();  }
+  }catch(_){}
+}
+
+function ytToggleMute(uid){
+  const pd = window._ytPlayers[uid];
+  if(!pd?.player) return;
+  try{
+    pd.muted = !pd.muted;
+    pd.muted ? pd.player.mute() : pd.player.unMute();
+    const btn = document.getElementById(uid+'-mutebtn');
+    if(btn) btn.innerHTML = pd.muted ? '&#128263;' : '&#128266;';
+  }catch(_){}
+}
+
+function ytSeek(event, uid){
+  const pd = window._ytPlayers[uid];
+  if(!pd?.player) return;
+  try{
+    const bar = event.currentTarget;
+    const pct = event.offsetX / bar.offsetWidth;
+    pd.player.seekTo(pct * (pd.duration||0), true);
+  }catch(_){}
+}
+
+// Inicializa players inseridos dinamicamente (posts carregados via feed)
+if(!window._ytMutObs){
+  window._ytMutObs = new MutationObserver(muts=>{
+    if(!window.YT?.Player) return;
+    muts.forEach(m=>{
+      m.addedNodes.forEach(n=>{
+        if(n.nodeType!==1) return;
+        const iframes = n.classList?.contains('yt-feed-iframe') ? [n]
+          : [...(n.querySelectorAll?.('.yt-feed-iframe')||[])];
+        iframes.forEach(_ytInitPlayer);
+      });
+    });
+  });
+  window._ytMutObs.observe(document.body||document.documentElement, {childList:true, subtree:true});
+}
 </script>
 
 <script>
