@@ -4535,6 +4535,81 @@ window.addEventListener('load', ()=>{
 
 // ===== CONFIG =====
 const SB_URL='https://gpustnmwxlolgyevjjtf.supabase.co';
+
+/*
+==========================================================================
+ SUPABASE — SQL MANUTENÇÃO AUTOMÁTICA (pg_cron)
+ Execute no SQL Editor do Supabase para ativar as rotinas de limpeza.
+==========================================================================
+
+-- 1) Habilitar extensões necessárias
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+CREATE EXTENSION IF NOT EXISTS pg_net;
+
+-- 2) VACUUM automático todos os dias às 03:00 (limpa tuplas mortas)
+SELECT cron.schedule(
+  'vacuum-diario',
+  '0 3 * * *',
+  $$
+    VACUUM ANALYZE posts;
+    VACUUM ANALYZE comments;
+    VACUUM ANALYZE notifications;
+    VACUUM ANALYZE likes;
+    VACUUM ANALYZE messages;
+    VACUUM ANALYZE community_xp;
+    VACUUM ANALYZE community_chat;
+  $$
+);
+
+-- 3) Deletar notificações com mais de 30 dias (todo dia às 03:05)
+SELECT cron.schedule(
+  'limpar-notificacoes-antigas',
+  '5 3 * * *',
+  $$
+    DELETE FROM notifications
+    WHERE created_at < now() - INTERVAL '30 days';
+  $$
+);
+
+-- 4) Deletar mensagens lidas com mais de 90 dias (todo dia às 03:10)
+SELECT cron.schedule(
+  'limpar-mensagens-antigas',
+  '10 3 * * *',
+  $$
+    DELETE FROM messages
+    WHERE read = true
+      AND created_at < now() - INTERVAL '90 days';
+  $$
+);
+
+-- 5) Deletar community_chat com mais de 60 dias (todo dia às 03:15)
+SELECT cron.schedule(
+  'limpar-chat-comunidade',
+  '15 3 * * *',
+  $$
+    DELETE FROM community_chat
+    WHERE created_at < now() - INTERVAL '60 days';
+  $$
+);
+
+-- 6) Deletar comment_votes órfãos (comentários já deletados) (semanal, domingo 03:30)
+SELECT cron.schedule(
+  'limpar-votes-orfaos',
+  '30 3 * * 0',
+  $$
+    DELETE FROM comment_votes
+    WHERE comment_id NOT IN (SELECT id FROM comments);
+  $$
+);
+
+-- Para ver os jobs agendados:
+-- SELECT * FROM cron.job;
+
+-- Para remover um job:
+-- SELECT cron.unschedule('nome-do-job');
+==========================================================================
+*/
+
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdwdXN0bm13eGxvbGd5ZXZqanRmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NDMyMDksImV4cCI6MjA5MDMxOTIwOX0.0-8H5lQkbyholETlTyvfhmUnOOQKY7678hLCCLtjaNA';
 
 // ===== STATE =====
@@ -6077,13 +6152,12 @@ async function submitCmt(postId, btnEl){
 }
 async function deleteCmt(cmtId,postId){
   if(!await _euConfirm('Deseja excluir este comentário?','💬')) return;
-  const{error}=await db.from('comments').update({deleted:true}).eq('id',cmtId).eq('user_id',CU.id);
-  if(error){
-    // Migração não rodada — hard delete
-    await db.from('comments').delete().eq('id',cmtId).eq('user_id',CU.id);
-  }
+  // Hard delete do comentário + votes associados
+  await Promise.allSettled([
+    db.from('comments').delete().eq('id',cmtId).eq('user_id',CU.id),
+    db.from('comment_votes').delete().eq('comment_id',cmtId),
+  ]);
   document.getElementById('cmt-'+cmtId)?.remove();
-  // Decrementa contador visual
   const cntEl=document.getElementById('cmtcnt-'+postId);
   if(cntEl)cntEl.textContent=Math.max(0,(parseInt(cntEl.textContent)||1)-1);
   showToast('Comentário excluído','success');
@@ -6753,7 +6827,15 @@ function _euConfirm(msg, icon){
 
 async function deletePost(postId){
   if(!await _euConfirm('Deseja excluir este post?<br>Esta ação não pode ser desfeita.','🗑️')) return;
-  await db.from('posts').delete().eq('id',postId).eq('user_id',CU.id);
+  // Exclui post + todos os registros filhos do banco em paralelo
+  await Promise.allSettled([
+    db.from('posts').delete().eq('id',postId).eq('user_id',CU.id),
+    db.from('likes').delete().eq('post_id',postId),
+    db.from('comments').delete().eq('post_id',postId),
+    db.from('community_posts').delete().eq('post_id',postId),
+    db.from('saved_posts').delete().eq('post_id',postId),
+    db.from('notifications').delete().eq('post_id',postId),
+  ]);
   document.getElementById('post-'+postId)?.remove();
   cachedPostIds.delete(postId);cachedPosts={};
   showToast('Post excluído','success');
@@ -7068,19 +7150,8 @@ async function saveSettings(){
       const publicUrl = await uploadWithPipeline(avatarFile,'image',(m)=>console.log('[avatar]',m));
       avatarUrl = publicUrl;
     }catch(e){
-      console.warn('[avatar R2] falhou, tentando Supabase Storage como fallback:',e.message);
-      // Fallback: Supabase Storage caso o Worker não esteja disponível
-      try{
-        const ext=avatarFile.name.split('.').pop()||'jpg';
-        const path=CU.id+'/av-'+Date.now()+'.'+ext;
-        const{data:upData,error:upErr}=await db.storage.from('avatars').upload(path,avatarFile,{upsert:true,cacheControl:'3600',contentType:avatarFile.type});
-        if(upData){
-          const{data:urlData}=db.storage.from('avatars').getPublicUrl(path);
-          avatarUrl=urlData.publicUrl;
-        } else {
-          showToast('Erro no upload do avatar: '+(upErr?.message||e.message),'error');
-        }
-      }catch(e2){ showToast('Erro inesperado no upload: '+e2.message,'error'); }
+      const msg=e.userMessage||('Erro no upload do avatar: '+(e.message||'erro desconhecido'));
+      showToast(msg,'error');
     }
   }
   // Monta updates com campos básicos sempre presentes
@@ -7417,24 +7488,16 @@ async function createCommunity(){
   if((exComms?.length||0)>=3)return showToast(`Limite de 3 comunidades atingido. Exclua uma antes de criar outra.`,'error');
   // Upload de imagem se houver
   if(window._commImgFile){
-    try{
-      const ext=window._commImgFile.name.split('.').pop();
-      const path=`comm/${CU.id}-${Date.now()}.${ext}`;
-      const{data:ud}=await db.storage.from('media').upload(path,window._commImgFile,{upsert:true,contentType:window._commImgFile.type});
-      if(ud){const{data:u}=db.storage.from('media').getPublicUrl(path);icon=u.publicUrl;}
-    }catch(e){console.warn('comm img:',e);}
-    window._commImgFile=null;
+    const r2Icon = await uploadImageToR2(window._commImgFile, 'comm-avatar');
+    if(r2Icon) icon = r2Icon;
+    window._commImgFile = null;
   }
-  // Upload banner
+  // Upload banner via R2
   let bannerUrl = '';
   const bannerFile = window._commBannerFiles?.['cm-banner-prev'];
   if(bannerFile){
-    try{
-      const ext2=bannerFile.name.split('.').pop();
-      const path2=`comm/${CU.id}-banner-${Date.now()}.${ext2}`;
-      const{data:ud2}=await db.storage.from('media').upload(path2,bannerFile,{upsert:true,contentType:bannerFile.type});
-      if(ud2){const{data:u2}=db.storage.from('media').getPublicUrl(path2);bannerUrl=u2.publicUrl;}
-    }catch(e){console.warn('banner upload:',e);}
+    const r2Banner = await uploadImageToR2(bannerFile, 'comm-banner');
+    if(r2Banner) bannerUrl = r2Banner;
     delete window._commBannerFiles['cm-banner-prev'];
   }
   const{error:insErr}=await db.from('communities').insert({owner_id:CU.id,name,slug,description:desc,avatar_url:icon,visibility:vis,banner_url:bannerUrl||null});
@@ -9343,10 +9406,8 @@ async function sendHomeMsg(){
   if(msgAttachFiles.length){
     const f=msgAttachFiles[0];
     try{
-      const path=CU.id+'/msg-'+Date.now()+'-'+f.name.replace(/[^a-zA-Z0-9._-]/g,'_');
-      const{data:ud,error:ue}=await db.storage.from('media').upload(path,f,{upsert:true,contentType:f.type});
-      if(ud){const{data:u}=db.storage.from('media').getPublicUrl(path);mediaUrl=u.publicUrl;mediaType=f.type;}
-      else if(ue) showToast('Erro upload: '+ue.message,'error');
+      const r2MsgUrl = await uploadImageToR2(f,'msg-attach');
+      if(r2MsgUrl){ mediaUrl=r2MsgUrl; mediaType=f.type; }
     }catch(e){}
     msgAttachFiles=[];renderMsgAttachPrev();
   }
@@ -12767,16 +12828,24 @@ function previewBizImage(input, previewId, hiddenId){
   reader.readAsDataURL(file);
 }
 
-// ── Upload de imagem para businesses bucket ──────────────────────
+// ── Helper: upload de qualquer imagem para R2 (comprime + envia via pipeline) ──
+async function uploadImageToR2(file, context){
+  if(!file) return null;
+  try{
+    const url = await uploadWithPipeline(file, 'image', (m)=>console.log('['+context+']', m));
+    return url;
+  }catch(e){
+    const msg = e.userMessage || ('Erro upload '+context+': '+(e.message||'erro'));
+    showToast(msg, 'error');
+    return null;
+  }
+}
+
+// ── Upload de imagem de loja via R2 ──────────────────────────────
 async function uploadBizImage(fieldId, folder){
   const file = window._bizImgFiles?.[fieldId];
   if(!file) return document.getElementById(fieldId)?.value || null;
-  const ext = file.name.split('.').pop().toLowerCase();
-  const path = `${folder}/${CU.id}_${Date.now()}.${ext}`;
-  const {error, data} = await db.storage.from('businesses').upload(path, file, {upsert:true, contentType:file.type});
-  if(error){ showToast('Erro upload imagem: '+error.message,'error'); return null; }
-  const {data:{publicUrl}} = db.storage.from('businesses').getPublicUrl(path);
-  return publicUrl;
+  return await uploadImageToR2(file, 'biz-'+folder);
 }
 
 // ── Patch saveBusiness to upload images ─────────────────────────
@@ -13279,10 +13348,9 @@ async function _sendAudioMsg(){
   try{
     const user=_audioContext==='ht'?homeChatUser:currentChatUser;
     if(!user){showToast('Nenhum chat aberto','error');return;}
-    const path=CU.id+'/audio-'+Date.now()+'.webm';
-    const{data:ud,error:ue}=await db.storage.from('media').upload(path,blob,{upsert:true,contentType:'audio/webm'});
-    if(ue){showToast('Erro upload áudio: '+ue.message,'error');return;}
-    const{data:{publicUrl}}=db.storage.from('media').getPublicUrl(path);
+    const audioFile=new File([blob],'audio-'+Date.now()+'.webm',{type:'audio/webm'});
+    const publicUrl=await uploadImageToR2(audioFile,'audio-msg');
+    if(!publicUrl){showToast('Erro upload áudio','error');return;}
     await db.from('messages').insert({sender_id:CU.id,receiver_id:user.id,content:'🎙 Áudio',media_url:publicUrl,media_type:'audio/webm',read:false});
     showToast('✅ Áudio enviado!','success');
     if(_audioContext==='ht')loadHomeMsgs(user.id);else loadMsgs(user.id);
@@ -15037,12 +15105,31 @@ async function postInCommV2(commId){
   try {
     if(txt){ const mod=await moderateContent(txt); if(!mod.allowed){showModerationError(mod.categories);return;} }
     let urls=[],mTypes=[];
-    for(const f of mediaFiles){
+    // Pipeline R2 (igual ao feed principal): compressão + NSFW + upload
+    for(let mi=0;mi<mediaFiles.length;mi++){
+      const f=mediaFiles[mi];
+      const t=f.type.startsWith('video')?'video':'image';
       try{
-        const path=`${CU.id}/${Date.now()}-${f.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
-        const{data:ud}=await db.storage.from('media').upload(path,f,{upsert:true,contentType:f.type});
-        if(ud){const{data:u}=db.storage.from('media').getPublicUrl(path);urls.push(u.publicUrl);mTypes.push(f.type.startsWith('video')?'video':'image');}
-      }catch(e){}
+        const publicUrl=await uploadWithPipeline(f,t,(m)=>{
+        // Replica barra de progresso no botão de submit da comunidade
+        const sb=document.querySelector('#comm-post-submit,#comm-submit-btn,[onclick*="submitCommPost"],[onclick*="postToComm"]');
+        if(sb){
+          if(m.startsWith('PROGRESS:')){
+            const parts=m.split(':');const pct=parseInt(parts[1])||0;
+            sb.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;gap:2px;width:100%;padding:0 4px;">'+
+              '<span style="font-size:9px;letter-spacing:1px;">CARREGANDO '+pct+'%</span>'+
+              '<div style="width:100%;height:3px;background:rgba(255,255,255,.15);border-radius:2px;overflow:hidden;">'+
+              '<div style="height:100%;width:'+pct+'%;background:linear-gradient(90deg,var(--neon-cyan),var(--neon-purple));border-radius:2px;transition:width .2s;"></div></div></div>';
+          } else { sb.textContent=m; }
+        }
+      });
+        urls.push(publicUrl);
+        mTypes.push(t);
+      }catch(e){
+        const msg=e.userMessage||('Erro ao enviar mídia: '+(e.message||'erro desconhecido'));
+        showToast(msg,'error');
+        return;
+      }
     }
     const{data:commData}=await db.from('communities').select('id,name,avatar_url,icon,owner_id').eq('id',commId).maybeSingle();
     if(commData) _commCache[commId]={id:commData.id,name:commData.name,avatar_url:commData.avatar_url||commData.icon||''};
@@ -17080,8 +17167,8 @@ async function saveEditComm(commId,btn){
     try{
       const ext=window._editCommImgFile.name.split('.').pop();
       const path=`comm/${commId}/avatar-${Date.now()}.${ext}`;
-      const{data:ud}=await db.storage.from('media').upload(path,window._editCommImgFile,{upsert:true,contentType:window._editCommImgFile.type});
-      if(ud){const{data:u}=db.storage.from('media').getPublicUrl(path);avatarUrl=u.publicUrl;}
+      const r2Av = await uploadImageToR2(window._editCommImgFile,'comm-edit-avatar');
+      if(r2Av) avatarUrl=r2Av;
     }catch(e){}
     window._editCommImgFile=null;
   }
@@ -17092,8 +17179,8 @@ async function saveEditComm(commId,btn){
     try{
       const ext3=bannerFileEdit.name.split('.').pop();
       const path3=`comm/${commId}/banner-${Date.now()}.${ext3}`;
-      const{data:ud3}=await db.storage.from('media').upload(path3,bannerFileEdit,{upsert:true,contentType:bannerFileEdit.type});
-      if(ud3){const{data:u3}=db.storage.from('media').getPublicUrl(path3);bannerUrl2=u3.publicUrl;}
+      const r2Bn = await uploadImageToR2(bannerFileEdit,'comm-edit-banner');
+      if(r2Bn) bannerUrl2=r2Bn;
     }catch(e){}
     delete window._commBannerFiles['edit-comm-banner-prev'];
   }
@@ -17190,43 +17277,59 @@ function _incXpDailyCount(commId,userId,action){
   return n;
 }
 
+// ── Buffer de XP: acumula em memória e faz flush a cada 2min ou beforeunload ──
+const _xpBuffer = {}; // 'commId:uid' -> xp acumulado pendente
+let _xpFlushTimer = null;
+
+async function _flushXpBuffer(){
+  const keys = Object.keys(_xpBuffer);
+  if(!keys.length) return;
+  for(const key of keys){
+    const [commId, uid] = key.split(':');
+    const xp = _xpBuffer[key];
+    if(!xp) continue;
+    delete _xpBuffer[key];
+    try{
+      const{data:ex}=await db.from('community_xp')
+        .select('id,xp').eq('community_id',commId).eq('user_id',uid).maybeSingle();
+      if(ex){ await db.from('community_xp').update({xp:(ex.xp||0)+xp}).eq('id',ex.id); }
+      else   { await db.from('community_xp').insert({community_id:commId,user_id:uid,xp}); }
+    }catch(e){ _xpBuffer[key] = (_xpBuffer[key]||0)+xp; /* devolve ao buffer se falhar */ }
+  }
+}
+// Flush periódico (2 minutos) e ao fechar a aba
+if(!window._xpFlushBooted){
+  window._xpFlushBooted = true;
+  setInterval(_flushXpBuffer, 120000);
+  window.addEventListener('beforeunload', ()=>{ _flushXpBuffer(); });
+  window.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') _flushXpBuffer(); });
+}
+
 async function addCommXP(commId,userId,action,xpOverride){
   const uid=userId||CU?.id;
   if(!uid||!commId||commId==='undefined'||commId==='null') return;
-  // ── Verificar membership: XP só conta para membros ativos da comunidade ──
+  // Verificar membership
   try{
     const{data:mem}=await db.from('community_members')
       .select('id,banned_until').eq('community_id',commId).eq('user_id',uid).maybeSingle();
-    if(!mem) return; // não é membro, não ganha XP
-    if(mem.banned_until && new Date(mem.banned_until)>new Date()) return; // banido
-  }catch(e){ /* se a checagem falhar, seguimos */ }
-  // ── Limite diário: 3× por tipo de ação por dia por comunidade ──
+    if(!mem) return;
+    if(mem.banned_until && new Date(mem.banned_until)>new Date()) return;
+  }catch(e){}
+  // Limite diário
   const dailyActions=['like','comment','chat','invite'];
   if(dailyActions.includes(action)){
     const used=_getXpDailyCount(commId,uid,action);
-    if(used>=COMM_XP_DAILY_LIMIT){
-      // Meta já batida hoje — não concede mais XP desta ação
-      return;
-    }
+    if(used>=COMM_XP_DAILY_LIMIT) return;
     _incXpDailyCount(commId,uid,action);
   }
   const xp=xpOverride||COMM_XP_TABLE[action]||1;
-  // Cache local imediato
+  // Só acumula no buffer — zero queries ao banco por ação
+  const key=`${commId}:${uid}`;
+  _xpBuffer[key]=(_xpBuffer[key]||0)+xp;
+  // Atualiza localStorage para UI otimista
   const lsKey=`cxp_${commId}_${uid}`;
-  const localXp=(parseInt(localStorage.getItem(lsKey))||0)+xp;
-  localStorage.setItem(lsKey, localXp);
-  // Tentar salvar no Supabase
-  try{
-    const{data:ex}=await db.from('community_xp')
-      .select('id,xp').eq('community_id',commId).eq('user_id',uid).maybeSingle();
-    if(ex){
-      await db.from('community_xp').update({xp:(ex.xp||0)+xp}).eq('id',ex.id);
-    } else {
-      await db.from('community_xp').insert({community_id:commId,user_id:uid,xp});
-    }
-  }catch(e){
-    console.log('[XP local]',action,'+'+xp,'total:',localXp);
-  }
+  localStorage.setItem(lsKey, (parseInt(localStorage.getItem(lsKey))||0)+xp);
+  console.log('[XP buffer]',action,'+'+xp,'| pendente:',_xpBuffer[key]);
 }
 
 // ── Conquistas da comunidade ─────────────────────────────────
