@@ -714,33 +714,35 @@ body{
   .mi img{width:100%;height:280px;object-fit:cover;display:block;}
   .media-carousel-slide img{height:280px;}
 
-  /* Todos os vídeos: altura automática, cover, sem barras pretas */
-  .mi video{
+  /* Horizontal: proporcional ao vídeo real, cover cobre as laterais */
+  .mi video.vid-horizontal{
     width:100%;
-    height:280px;
-    display:block;
-    object-fit:cover;
-    background:#000;
-  }
-  .media-carousel-slide video{
-    width:100%;
-    height:280px;
+    height:auto;
+    aspect-ratio:16/9;
     display:block;
     object-fit:cover;
     background:#000;
   }
 
-  /* Vídeo vertical: maior altura, cover preenche sem barras */
-  .post-card.has-solo-video .mi{
-    overflow:hidden;
-    background:#000;
-  }
-  .post-card.has-solo-video .mi video{
+  /* Vertical: ocupa 60vh, cover preenche sem barras laterais */
+  .mi video.vid-vertical{
     width:100%;
     height:60vh;
+    display:block;
     object-fit:cover;
     background:#000;
   }
+
+  /* Fallback sem classe ainda definida */
+  .mi video:not(.vid-horizontal):not(.vid-vertical){
+    width:100%;height:280px;display:block;object-fit:cover;background:#000;
+  }
+
+  .media-carousel-slide video{
+    width:100%;height:280px;display:block;object-fit:cover;background:#000;
+  }
+
+  .post-card.has-solo-video .mi{overflow:hidden;background:#000;}
 
   .mc-btn{display:none !important;}
   .pmedia{margin-bottom:10px;border-radius:0;}
@@ -18206,6 +18208,19 @@ function _toggleGlobalMute(e){
   _syncAllMuteBtns();
 }
 
+// Classifica vídeo como horizontal ou vertical após carregar metadados
+function _classifyVideo(vid){
+  const apply = ()=>{
+    if(vid.videoWidth && vid.videoHeight){
+      const isVert = vid.videoHeight > vid.videoWidth;
+      vid.classList.remove('vid-horizontal','vid-vertical');
+      vid.classList.add(isVert ? 'vid-vertical' : 'vid-horizontal');
+    }
+  };
+  if(vid.readyState >= 1) apply();
+  else vid.addEventListener('loadedmetadata', apply, {once:true});
+}
+
 function initFeedAutoplay(){
   // Autoplay só em mobile, mas view count para todos
   const isMobile = window.innerWidth <= 768;
@@ -18224,7 +18239,8 @@ function initFeedAutoplay(){
           // Isso evita que o browser baixe todos os vídeos do feed de uma vez
           if(el.dataset.src && !el.src){
             el.src = el.dataset.src;
-            el.load(); // dispara o fetch — agora com moov atom no início via CF
+            el.load();
+            _classifyVideo(el); // detecta horizontal/vertical e aplica classe CSS
           }
           // Autoplay: só mobile
           if(isMobile){
