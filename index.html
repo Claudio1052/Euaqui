@@ -5151,7 +5151,7 @@ function toggleDrawer(){
 //             4° Interesses/Preferências  5° Tendências
 // Limite por página: 20  |  Scroll infinito via IntersectionObserver
 // ═══════════════════════════════════════════════════════════════════════════
-const FEED_PAGE_SIZE = 20;
+const FEED_PAGE_SIZE = 10; // Reduzido de 20→10 para economizar PostgREST egress
 let feedPage = 0;
 let feedHasMore = true;
 let feedLoading = false;
@@ -5258,7 +5258,7 @@ async function loadFeed(force=false){
   const ctx = _feedCtx;
 
   // Select seguro — sem colunas que podem não existir
-  const SEL='id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url,status_message)';
+  const SEL='id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url)';
 
   // Mostra indicador de "carregando mais" se não for primeira página
   if(feedPage>0 && feedEnd){
@@ -5267,6 +5267,15 @@ async function loadFeed(force=false){
   }
 
   // Query de busca — mantém comportamento das abas, mas com paginação real
+  // Cache local: se os posts desta página já foram carregados, não refaz a query
+  const _cacheKey = feedTab+'_p'+feedPage;
+  if(window._feedPageCache && window._feedPageCache[_cacheKey] && !reset){
+    // Usa cache — zero egress
+    const cached = window._feedPageCache[_cacheKey];
+    renderFeedPosts(cached, feed, feedPage===0);
+    feedPage++; feedLoading=false;
+    return;
+  }
   const from = feedPage * FEED_PAGE_SIZE;
   const to   = from + FEED_PAGE_SIZE - 1;
   let q;
@@ -5294,6 +5303,10 @@ async function loadFeed(force=false){
     feedLoading=false;
     return;
   }
+
+  // Salva no cache local (evita refetch na mesma sessão)
+  if(!window._feedPageCache) window._feedPageCache = {};
+  if(posts && posts.length) window._feedPageCache[feedTab+'_p'+feedPage] = posts;
 
   // Detecta fim do feed
   if(!posts || posts.length < FEED_PAGE_SIZE){
@@ -5558,8 +5571,8 @@ function renderPost(post,rxCounts={},myRx='',_origPostMap){
   const commAvatarFallback = (cachedComm && cachedComm.avatar_url) || (commMeta && commMeta.icon) || ('https://api.dicebear.com/7.x/shapes/svg?seed=comm-'+(commMeta?.id||'x')+'&backgroundColor=00ffcc');
   const commNameFallback = (cachedComm && cachedComm.name) || (commMeta && commMeta.name) || 'Comunidade';
   const avUrl = commMeta ? commAvatarFallback
-              : (bizMeta && bizMeta.logo) ? bizMeta.logo
-              : (prof.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'user'));
+              : (bizMeta && bizMeta.logo) ? _toWorkerUrl(bizMeta.logo)
+              : _toWorkerUrl(prof.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'user'));
   const displayName = commMeta ? commNameFallback
               : (bizMeta && bizMeta.name) ? bizMeta.name
               : (prof.full_name||prof.username||'Usuário');
@@ -5893,7 +5906,8 @@ async function _hydrateRepostCard(repostPostId, originalPostId, originalAuthorId
 
 function renderMedia(urls,types){
   if(!Array.isArray(urls)||!urls.length)return'';
-  const safeUrls=urls.filter(u=>u&&typeof u==='string').slice(0,7);
+  // Redireciona URLs do Supabase Storage para o Worker CF (economiza egress)
+  const safeUrls=urls.filter(u=>u&&typeof u==='string').slice(0,7).map(_toWorkerUrl);
   if(!safeUrls.length)return'';
 
   // 1 midia: layout simples
@@ -6553,6 +6567,25 @@ function showModerationError(categories){
         (este endpoint é quem chama Sightengine e decide apagar do R2)
    ========================================================================= */
 const R2_BACKEND_URL = (window.R2_BACKEND_URL || 'https://media.euaqui.store');
+
+// ── Interceptor de URL de mídia ─────────────────────────────────────
+// Qualquer URL do Supabase Storage é redirecionada para o Worker CF.
+// Isso elimina o Storage/Egress do Supabase para mídias já enviadas.
+// URLs já no Worker ou externas passam sem mudança.
+function _toWorkerUrl(url){
+  if(!url || typeof url !== 'string') return url;
+  // Já é URL do worker ou externa — não mexe
+  if(url.startsWith('https://media.euaqui.store') || !url.includes('supabase.co')) return url;
+  // Supabase Storage → Worker
+  // Ex: https://xyz.supabase.co/storage/v1/object/public/posts/user/file.jpg
+  //  → https://media.euaqui.store/media/posts%2Fuser%2Ffile.jpg
+  try{
+    const u = new URL(url);
+    const pathAfterPublic = u.pathname.replace(/^\/storage\/v1\/object\/public\//, '');
+    return 'https://media.euaqui.store/media/' + encodeURIComponent(pathAfterPublic);
+  }catch(e){ return url; }
+}
+
 // Avatar proxy: Cloudflare Worker que cacheia Dicebear por 7 dias e serve avatares R2
 // Troque pela URL do seu Worker após criá-lo (ver comentário no final do script)
 const AVATAR_WORKER_URL = (window.AVATAR_WORKER_URL || 'https://media.euaqui.store');
@@ -7178,6 +7211,7 @@ function switchTab(t,btn){
   feedLoading=false;
   _feedCtx=null;
   if(feedScrollObserver){ try{ feedScrollObserver.disconnect(); }catch(e){} feedScrollObserver=null; }
+  window._feedPageCache = {}; // limpa cache ao recarregar feed
   const feed=document.getElementById('feed');
   if(feed) feed.innerHTML=skeletons(3);
   const fe=document.getElementById('feed-end'); if(fe) fe.style.display='none';
@@ -8504,7 +8538,7 @@ async function loadProfilePage(userId){
     }
 
     // Avatar
-    const av = profile.avatar_url || 'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(profile.username||'u');
+    const av = _toWorkerUrl(profile.avatar_url) || 'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(profile.username||'u');
     const isEmoji = av.length <= 4 && !av.startsWith('http');
     const fallbackSeed = 'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(profile.username||'u');
     const days = Math.floor((Date.now()-new Date(profile.created_at))/(864e5));
@@ -9627,7 +9661,7 @@ function setupRealtime(){
 
   // Polling fallback every 60s — Realtime já cobre msgs e notifs em tempo real
   clearInterval(_msgPollInterval);
-  _msgPollInterval = setInterval(()=>{ pollNewMessages(); loadUnreadMsgCount(); loadNotifCount(); pollTickUpdates(); }, 60000);
+  _msgPollInterval = setInterval(()=>{ pollNewMessages(); loadUnreadMsgCount(); loadNotifCount(); pollTickUpdates(); }, 120000); // 120s (era 60s) — economiza PostgREST egress
 }
 
 // ═══════════════════════════════════════════════════════════
