@@ -6594,13 +6594,16 @@ function _toWorkerUrl(url){
 // Avatar proxy: Cloudflare Worker que cacheia Dicebear por 7 dias e serve avatares R2
 // Troque pela URL do seu Worker após criá-lo (ver comentário no final do script)
 const AVATAR_WORKER_URL = (window.AVATAR_WORKER_URL || 'https://media.euaqui.store');
-const R2_MAX_IMAGE_DIM = 1920;         // reduz lado maior da foto
-const R2_IMAGE_QUALITY = 0.82;         // 0..1 JPEG/WEBP
-const R2_VIDEO_CRF = 28;               // qualidade FFmpeg (maior = menor arquivo)
-const R2_VIDEO_MAX_HEIGHT = 720;       // downscale vertical
-const R2_MAX_VIDEO_INPUT_MB = 500;     // tamanho MÁX do vídeo ANTES de comprimir
-const R2_MAX_IMAGE_INPUT_MB = 50;      // tamanho MÁX da imagem ANTES de comprimir
-const R2_MAX_UPLOAD_MB = 50;           // tamanho MÁX DEPOIS de comprimir (o que vai pro R2)
+// ── Limites de mídia (ajuste conforme seu plano) ──
+const R2_MAX_IMAGE_DIM    = 1280;   // feed: máx 1280px no lado maior (era 1920 — economiza ~56% de espaço)
+const R2_THUMB_DIM        = 320;    // miniatura: 320px (para grid de perfil e preview)
+const R2_IMAGE_QUALITY    = 0.80;   // qualidade JPEG feed (0..1)
+const R2_THUMB_QUALITY    = 0.72;   // qualidade JPEG miniatura (menor = mais leve)
+const R2_VIDEO_MAX_HEIGHT = 720;    // downscale vertical do vídeo
+const R2_MAX_VIDEO_INPUT_MB = 100;  // tamanho MÁX do vídeo de entrada (era 500MB — muito alto)
+const R2_MAX_VIDEO_DURATION_S = 180;// duração MÁX: 3 minutos
+const R2_MAX_IMAGE_INPUT_MB = 30;   // tamanho MÁX da imagem de entrada (era 50MB)
+const R2_MAX_UPLOAD_MB    = 30;     // tamanho MÁX após compressão
 
 // =====================================================================
 //  SIGHTENGINE — moderação de mídia via API (nude, hentai, porn, etc.)
@@ -6689,22 +6692,42 @@ function _loadScript(src){
 }
 
 // --- Compressão de imagem via Canvas (sem lib externa) ---
-async function compressImage(file){
-  if(file.type==='image/gif') return file; // preserva GIF animado
-  const img = await new Promise((res,rej)=>{
-    const i=new Image(); i.onload=()=>res(i); i.onerror=rej;
-    i.src=URL.createObjectURL(file);
-  });
-  let {width:w, height:h} = img;
-  const max = R2_MAX_IMAGE_DIM;
-  if(w>max||h>max){ const r=Math.min(max/w,max/h); w=Math.round(w*r); h=Math.round(h*r); }
+// Gera canvas redimensionado para um tamanho máximo
+function _imgToCanvas(img, maxDim, quality){
+  let {naturalWidth:w, naturalHeight:h} = img;
+  if(w>maxDim||h>maxDim){ const r=Math.min(maxDim/w,maxDim/h); w=Math.round(w*r); h=Math.round(h*r); }
   const c=document.createElement('canvas'); c.width=w; c.height=h;
   c.getContext('2d').drawImage(img,0,0,w,h);
-  URL.revokeObjectURL(img.src);
-  const out = await new Promise(res=>c.toBlob(res, 'image/jpeg', R2_IMAGE_QUALITY));
-  if(!out || out.size>=file.size) return file; // se não comprimiu, mantém original
-  const name = file.name.replace(/\.[^.]+$/,'')+'.jpg';
-  return new File([out], name, {type:'image/jpeg'});
+  return new Promise(res=>c.toBlob(res,'image/jpeg',quality));
+}
+
+// Comprime imagem em 2 versões: feed (1280px) e miniatura (320px)
+// Retorna { feed: File, thumb: File }
+// Ambas são salvas no R2 — o feed usa a versão feed, o grid de perfil usa thumb
+async function compressImage(file){
+  if(file.type==='image/gif') return { feed: file, thumb: file }; // GIF preservado
+
+  const objUrl = URL.createObjectURL(file);
+  const img = await new Promise((res,rej)=>{
+    const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=objUrl;
+  });
+
+  // Versão FEED — máx 1280px, qualidade 0.80
+  const feedBlob = await _imgToCanvas(img, R2_MAX_IMAGE_DIM, R2_IMAGE_QUALITY);
+  const feedFile = (feedBlob && feedBlob.size < file.size)
+    ? new File([feedBlob], file.name.replace(/\.[^.]+$/,'')+'.jpg', {type:'image/jpeg'})
+    : file;
+
+  // Versão MINIATURA — máx 320px, qualidade 0.72 (para grid de perfil e preview)
+  const thumbBlob = await _imgToCanvas(img, R2_THUMB_DIM, R2_THUMB_QUALITY);
+  const thumbFile = thumbBlob
+    ? new File([thumbBlob], file.name.replace(/\.[^.]+$/,'')+'_thumb.jpg', {type:'image/jpeg'})
+    : feedFile;
+
+  URL.revokeObjectURL(objUrl);
+
+  console.log(`[img] original=${(file.size/1024).toFixed(0)}KB feed=${(feedFile.size/1024).toFixed(0)}KB thumb=${(thumbFile.size/1024).toFixed(0)}KB`);
+  return { feed: feedFile, thumb: thumbFile };
 }
 
 // --- MP4 Faststart puro JS: move o moov atom para o início do arquivo ---
@@ -7004,16 +7027,35 @@ async function uploadWithPipeline(file, type, setStatus){
     console.warn('[Sightengine] erro inesperado, permitindo upload:', e.message);
   }
 
-  // 2) Compressão
-  progress(5, 'Carregando post');
+  // 2) Compressão + geração de tamanhos
+  progress(5, 'Comprimindo');
   console.log('[pipeline] compressão — entrada:', file.name, (file.size/1024/1024).toFixed(2)+'MB');
-  let compressed;
+  let compressed, thumbFile = null;
   try{
-    compressed = (type==='video')
-      ? await compressVideo(file, p=>progress(5 + Math.round(p*75), 'Carregando post'))
-      : await compressImage(file);
+    if(type==='video'){
+      // Vídeo: verificar duração antes de comprimir
+      const _dur = await new Promise(res=>{
+        const _v=document.createElement('video');
+        _v.preload='metadata'; _v.src=URL.createObjectURL(file);
+        _v.onloadedmetadata=()=>{ URL.revokeObjectURL(_v.src); res(_v.duration||0); };
+        _v.onerror=()=>res(0);
+        setTimeout(()=>res(0),5000);
+      });
+      if(_dur > R2_MAX_VIDEO_DURATION_S){
+        const err=new Error('VIDEO_TOO_LONG');
+        err.userMessage=`🚫 Vídeo muito longo (${Math.round(_dur)}s). Máximo permitido: ${R2_MAX_VIDEO_DURATION_S}s (${Math.round(R2_MAX_VIDEO_DURATION_S/60)} min).`;
+        throw err;
+      }
+      compressed = await compressVideo(file, p=>progress(5+Math.round(p*75),'Comprimindo vídeo'));
+    } else {
+      // Imagem: gera feed + miniatura
+      const imgs = await compressImage(file);
+      compressed = imgs.feed;
+      thumbFile  = imgs.thumb;
+    }
     if(type!=='video') progress(80, 'Carregando post');
   }catch(e){
+    if(e.message==='VIDEO_TOO_LONG') throw e;
     console.error('[pipeline] erro na compressão:', e);
     compressed = file;
   }
@@ -7038,15 +7080,26 @@ async function uploadWithPipeline(file, type, setStatus){
     }
   }
 
-  // 3) Presign
-  progress(82, 'Carregando post');
+  // 3) Presign + upload feed
+  progress(82, 'Enviando');
   const pres = await r2GetPresign(compressed);
 
-  // 4) Upload para R2
-  progress(88, 'Carregando post');
+  // 4) Upload versão feed para R2
+  progress(88, 'Enviando');
   await r2UploadToPresigned(pres.uploadUrl, compressed, pres.headers);
 
-  progress(100, 'Carregando post');
+  // 4.1) Upload miniatura (se for imagem) — silencioso, não bloqueia
+  if(thumbFile){
+    try{
+      const presThumb = await r2GetPresign(thumbFile);
+      await r2UploadToPresigned(presThumb.uploadUrl, thumbFile, presThumb.headers);
+      console.log('[pipeline] miniatura enviada:', presThumb.publicUrl);
+    }catch(e){
+      console.warn('[pipeline] falha ao enviar miniatura:', e.message);
+    }
+  }
+
+  progress(100, 'Pronto!');
   return pres.publicUrl;
 }
 
@@ -7082,9 +7135,13 @@ async function createPost(){
     const isVid = f.type.startsWith('video/');
     const limitMB = isVid ? R2_MAX_VIDEO_INPUT_MB : R2_MAX_IMAGE_INPUT_MB;
     if(f.size > limitMB*1024*1024){
-      showToast(`🚫 ${isVid?'Vídeo':'Imagem'} muito grande (máx. ${limitMB}MB): `+f.name,'error');
+      showToast(`🚫 ${isVid?'Vídeo':'Foto'} muito grande: ${(f.size/1024/1024).toFixed(1)}MB (máx. ${limitMB}MB).`,'error');
       btn.textContent='POSTAR ▶';btn.disabled=false;
       return;
+    }
+    // Limite adicional de tempo para vídeo (verificado também no pipeline)
+    if(isVid){
+      showToast('⏳ Verificando duração do vídeo...','success');
     }
   }
 
