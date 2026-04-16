@@ -714,7 +714,7 @@ body{
   .mi img{width:100%;height:280px;object-fit:cover;display:block;}
   .media-carousel-slide img{height:280px;}
 
-  /* Horizontal: proporcional ao vídeo real, cover cobre as laterais */
+  /* Horizontal: 16/9, cover, borda a borda */
   .mi video.vid-horizontal{
     width:100%;
     height:auto;
@@ -724,7 +724,7 @@ body{
     background:#000;
   }
 
-  /* Vertical: ocupa 60vh, cover preenche sem barras laterais */
+  /* Vertical: 60vh, cover, borda a borda */
   .mi video.vid-vertical{
     width:100%;
     height:60vh;
@@ -733,7 +733,7 @@ body{
     background:#000;
   }
 
-  /* Fallback sem classe ainda definida */
+  /* Fallback */
   .mi video:not(.vid-horizontal):not(.vid-vertical){
     width:100%;height:280px;display:block;object-fit:cover;background:#000;
   }
@@ -743,6 +743,14 @@ body{
   }
 
   .post-card.has-solo-video .mi{overflow:hidden;background:#000;}
+
+  /* Borda a borda — remove padding lateral do card para todos os vídeos */
+  .post-card .pmedia{
+    margin-left:-12px;
+    margin-right:-12px;
+    width:calc(100% + 24px);
+    border-radius:0;
+  }
 
   .mc-btn{display:none !important;}
   .pmedia{margin-bottom:10px;border-radius:0;}
