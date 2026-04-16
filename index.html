@@ -6050,9 +6050,14 @@ function bnav_home(){
     }
     // Limpa cache e recarrega feed
     cachedPostIds.clear(); cachedPosts = {}; lastFeedLoad = 0;
+    window._feedPageCache = {};
     loadFeed(true);
   } else {
+    // Vindo de outra página: navega para home E atualiza o feed
     nav('home');
+    cachedPostIds.clear(); cachedPosts = {}; lastFeedLoad = 0;
+    window._feedPageCache = {};
+    setTimeout(()=>loadFeed(true), 150);
     // Ao chegar na home vindo de outra página, também vai ao topo
     setTimeout(()=>{
       window.scrollTo({top:0, behavior:'smooth'});
@@ -7147,9 +7152,12 @@ async function createPost(){
   document.getElementById('post-txt').value='';document.getElementById('c-char').textContent='0 / 500';
   mediaFiles=[];mediaTypes=[];
   const mp=document.getElementById('media-prev');mp.style.display='none';mp.innerHTML='';
-  cachedPostIds.clear();cachedPosts={};
+  cachedPostIds.clear(); cachedPosts = {}; window._feedPageCache = {};
   showToast('Post publicado! ✨','success');
-  await loadFeed(true);updateLevel();
+  // Rola ao topo para o usuário ver o post novo
+  window.scrollTo({top:0, behavior:'smooth'});
+  document.documentElement.scrollTo({top:0, behavior:'smooth'});
+  await loadFeed(true); updateLevel();
   } finally {
     // PATCH 5: sempre restaura botão, mesmo em caso de erro inesperado
     btn.textContent='POSTAR ▶';
