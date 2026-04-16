@@ -7369,13 +7369,9 @@ function applyRetroAvatar(){
   retroIconSelected = null;
   // Salva a URL gerada para ser usada no saveSettings
   window._generatedAvatarUrl = _retro_av_url;
-  // Atualiza o preview "Avatar atual" na aba editar
+  // Atualiza APENAS o preview "Avatar atual" — navbar/perfil só mudam após SALVAR
   const prev = document.getElementById('av-current-preview');
   if(prev) prev.innerHTML = `<img src="${_retro_av_url}" data-dicebear-direct="1" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.parentElement.textContent='🎮'">`;
-  // Atualiza também o avatar na navbar e sidebar para feedback imediato
-  document.querySelectorAll('.nav-av, .uma').forEach(el=>{
-    if(el.tagName==='IMG'){ el.src=_retro_av_url; }
-  });
   showToast('✅ Avatar selecionado! Clique em SALVAR ALTERAÇÕES para confirmar.','success');
 }
 
@@ -7483,11 +7479,13 @@ function getUserPreferences(){
 }
 function previewAvatar(inp){
   if(!inp.files[0])return;
-  avatarFile=inp.files[0];retroIconSelected=null;
+  avatarFile=inp.files[0]; retroIconSelected=null; window._generatedAvatarUrl=null;
   const url=URL.createObjectURL(avatarFile);
+  // Atualiza APENAS o preview "Avatar atual" — navbar/perfil só mudam após SALVAR
   const prev=document.getElementById('av-current-preview');
-  prev.innerHTML=`<img src="${url}" style="width:100%;height:100%;object-fit:cover;">`;
-  document.getElementById('av-file-preview').innerHTML=`<div style="font-size:10px;color:var(--neon-cyan);">✓ Foto selecionada</div>`;
+  if(prev) prev.innerHTML=`<img src="${url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+  const fp=document.getElementById('av-file-preview');
+  if(fp) fp.innerHTML=`<div style="font-size:10px;color:var(--neon-cyan);">✓ Foto selecionada — clique em SALVAR para confirmar</div>`;
 }
 function switchAvTab(t,btn){
   document.querySelectorAll('#pp-edit .ftab').forEach(b=>b.classList.remove('active'));
@@ -7947,7 +7945,7 @@ async function saveSettings(){
     }, {onConflict:'user_id'});
   }catch(e){ console.warn('prefs save:', e?.message); }
   Object.assign(CP,updates,{avatar_type:avatarType,retro_icon:retroIcon});
-  // Atualiza todos os avatares visíveis na UI com o novo
+  // Só após salvar com sucesso: atualiza navbar e perfil
   if(avatarUrl){
     document.querySelectorAll('.nav-av, .uma').forEach(el=>{
       if(el.tagName==='IMG') el.src = avatarUrl;
@@ -7957,12 +7955,9 @@ async function saveSettings(){
   if(document.getElementById('m-settings')?.classList.contains('open')) closeM('m-settings');
   showProfileSavedPopup();
   avatarFile=null; retroIconSelected=null; window._generatedAvatarUrl=null;
-  // Refresh profile view se estiver aberta
+  // Recarrega o perfil para mostrar avatar correto em todos os lugares
   if(document.getElementById('page-profile')?.classList.contains('active')){
-    updateAvPreview();
-    loadEditForm();
-    // Recarrega o perfil para mostrar avatar atualizado no cover
-    loadProfilePage(CU.id);
+    await loadProfilePage(CU.id);
   }
 }
 
@@ -11391,7 +11386,19 @@ function timeAgo(d){if(!d)return'';const s=Math.floor((Date.now()-new Date(d))/1
 function skeletons(n,h=''){return Array.from({length:n},()=>`<div class="post-card"><div style="display:flex;gap:10px;margin-bottom:12px;"><div class="sk" style="width:42px;height:${h||'42px'};border-radius:50%;flex-shrink:0;"></div><div style="flex:1;"><div class="sk" style="height:11px;width:130px;margin-bottom:6px;"></div><div class="sk" style="height:9px;width:70px;"></div></div></div><div class="sk" style="height:12px;margin-bottom:6px;"></div><div class="sk" style="height:12px;width:70%;"></div></div>`).join('');}
 function openLightbox(url){document.getElementById('lb-img').src=url;openM('m-lightbox');}
 function openM(id){document.getElementById(id).classList.add('open');}
-function closeM(id){document.getElementById(id).classList.remove('open');}
+function closeM(id){
+  // Se for o lightbox, para o vídeo antes de fechar
+  if(id==='m-lightbox'){
+    const vid=document.getElementById('lb-vid-player');
+    if(vid){ vid.pause(); vid.src=''; vid.style.display='none'; }
+    const lbImg=document.getElementById('lb-img');
+    if(lbImg) lbImg.style.display='block';
+    // Remove botões de navegação do carrossel
+    const lb=document.getElementById('m-lightbox');
+    if(lb) ['lb-prev-btn','lb-next-btn','lb-carousel-ctr'].forEach(bid=>lb.querySelector('#'+bid)?.remove());
+  }
+  document.getElementById(id).classList.remove('open');
+}
 function showToast(msg,type='success'){const w=document.getElementById('tst-wrap');const t=document.createElement('div');t.className=`tst ${type}`;t.innerHTML=`<span>${type==='success'?'✓':'⚠'}</span> ${msg}`;w.appendChild(t);setTimeout(()=>t.remove(),3200);}
 
 // ===== PAGE TAB SYSTEM =====
