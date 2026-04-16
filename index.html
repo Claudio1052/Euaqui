@@ -718,9 +718,9 @@ body{
     width:100%;height:320px;display:block;
     object-fit:cover;background:#000;
   }
-  /* Força o .pmedia e .mi a ignorar o padding do card no horizontal */
+  /* Horizontal: pmedia quebra o padding do card (-12px = padding lateral do card) */
   .post-card:not(.has-solo-video) .pmedia{
-    margin-left:-16px;margin-right:-16px;border-radius:0;
+    margin-left:-12px;margin-right:-12px;border-radius:0;width:calc(100% + 24px);
   }
   .media-carousel-slide img{height:320px;}
   .media-carousel-slide video{
@@ -728,14 +728,14 @@ body{
     object-fit:cover;background:#000;
   }
 
-  /* Mobile: vídeo VERTICAL (post único) → contain até 65vh */
+  /* Mobile: vídeo VERTICAL → cover (sem barras pretas), altura 65vh fixa */
   .post-card.has-solo-video .mi video{
-    width:100%;height:auto;max-height:65vh;
-    object-fit:contain;background:#000;
+    width:100%;height:65vh;
+    object-fit:cover;background:#000;
   }
   /* Vertical: pmedia também borda a borda */
   .post-card.has-solo-video .pmedia{
-    margin-left:-16px;margin-right:-16px;border-radius:0;
+    margin-left:-12px;margin-right:-12px;border-radius:0;width:calc(100% + 24px);
   }
 
   .mc-btn{display:none !important;}
