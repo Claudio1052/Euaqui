@@ -711,8 +711,23 @@ body{
   .pun{font-size:12px;font-weight:700;}
   .pt{font-size:11px;}
   .pcontent{font-size:14px;line-height:1.6;margin-bottom:10px;padding:0 2px;word-break:break-word;word-wrap:break-word;overflow-wrap:break-word;}
-  .mi img{width:100%;height:280px;object-fit:cover;display:block;}
-  .media-carousel-slide img{height:280px;}
+  /* Horizontal: 4/3, cover, borda a borda */
+  .mi img.img-horizontal{
+    width:100%;height:auto;aspect-ratio:4/3;
+    display:block;object-fit:cover;
+  }
+  /* Vertical: 60vh, cover, borda a borda */
+  .mi img.img-vertical{
+    width:100%;height:60vh;
+    display:block;object-fit:cover;
+  }
+  /* Fallback sem classe ainda */
+  .mi img:not(.img-horizontal):not(.img-vertical){
+    width:100%;height:280px;display:block;object-fit:cover;
+  }
+  .media-carousel-slide img.img-horizontal{width:100%;height:auto;aspect-ratio:4/3;display:block;object-fit:cover;}
+  .media-carousel-slide img.img-vertical{width:100%;height:60vh;display:block;object-fit:cover;}
+  .media-carousel-slide img:not(.img-horizontal):not(.img-vertical){width:100%;height:280px;display:block;object-fit:cover;}
 
   /* Horizontal: 16/9, cover, borda a borda */
   .mi video.vid-horizontal{
@@ -5892,7 +5907,7 @@ function renderMedia(urls,types){
       </div></div>`;
     }
     return`<div class="pmedia"><div class="media-grid g1" style="border-radius:10px;overflow:hidden;">
-      <div class="mi" onclick="openLightbox('${safeUrl}')"><img src="${safeUrl}" alt="foto" loading="lazy" class="img-safe" style="width:100%;height:340px;object-fit:cover;display:block;"></div>
+      <div class="mi" onclick="openLightbox('${safeUrl}')"><img src="${safeUrl}" alt="foto" loading="lazy" class="img-safe" style="display:block;" onload="_classifyImage(this)"></div>
     </div></div>`;
   }
 
@@ -5907,7 +5922,7 @@ function renderMedia(urls,types){
       </div>`;
     }
     return`<div class="media-carousel-slide" onclick="openLightbox('${safeUrl}')" style="cursor:pointer;">
-      <img src="${safeUrl}" alt="foto ${i+1}" loading="lazy" class="img-safe" style="width:100%;height:340px;object-fit:cover;display:block;">
+      <img src="${safeUrl}" alt="foto ${i+1}" loading="lazy" class="img-safe" style="display:block;" onload="_classifyImage(this)">
     </div>`;
   }).join('');
   const dots=safeUrls.map((_,i)=>`<span class="mc-dot${i===0?' active':''}" onclick="mcGoto('${cid}',${i})"></span>`).join('');
@@ -18159,6 +18174,10 @@ function _startDomWatcher(){
           _feedObserver.observe(node);
         }
         // Verifica filhos
+        // Classificar imagens do feed que ainda não têm classe
+        node.querySelectorAll?.('.mi img:not(.img-horizontal):not(.img-vertical)').forEach(img=>{
+          _classifyImage(img);
+        });
         node.querySelectorAll?.('.yt-feed-iframe:not([data-observed]),.feed-video:not([data-observed]),.lazy-video:not([data-observed])').forEach(el=>{
           el.dataset.observed = '1';
           _feedObserver.observe(el);
@@ -18227,6 +18246,19 @@ function _classifyVideo(vid){
   };
   if(vid.readyState >= 1) apply();
   else vid.addEventListener('loadedmetadata', apply, {once:true});
+}
+
+// Classifica imagem como horizontal ou vertical após carregar
+function _classifyImage(img){
+  const apply = ()=>{
+    if(img.naturalWidth && img.naturalHeight){
+      const isVert = img.naturalHeight > img.naturalWidth;
+      img.classList.remove('img-horizontal','img-vertical');
+      img.classList.add(isVert ? 'img-vertical' : 'img-horizontal');
+    }
+  };
+  if(img.complete && img.naturalWidth) apply();
+  else img.addEventListener('load', apply, {once:true});
 }
 
 function initFeedAutoplay(){
