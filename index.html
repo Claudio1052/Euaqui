@@ -713,7 +713,7 @@ body{
   .pcontent{font-size:14px;line-height:1.6;margin-bottom:10px;padding:0 2px;word-break:break-word;word-wrap:break-word;overflow-wrap:break-word;}
   .mi img{width:100%;height:340px;object-fit:cover;display:block;}
 
-  /* Mobile: vídeo horizontal → cover (sem bordas pretas laterais), altura fixa */
+  /* Mobile: todos os vídeos → cover, largura total, sem bordas pretas laterais */
   .mi video{
     width:100%;height:320px;display:block;
     object-fit:cover;background:#000;
@@ -724,13 +724,13 @@ body{
     object-fit:cover;background:#000;
   }
 
-  /* Mobile: vídeo VERTICAL (post único) → contain para não cortar, altura menor
-     para o nome do perfil ficar visível acima e as ações abaixo */
+  /* Mobile: vídeo VERTICAL (post único) → altura até 60vh, contain para não cortar */
   .post-card.has-solo-video .mi video{
-    height: auto;
-    max-height: 42vh;
-    object-fit: contain;
-    background: #000;
+    width:100%;
+    height:auto;
+    max-height:60vh;
+    object-fit:contain;
+    background:#000;
   }
 
   .mc-btn{display:none !important;}
