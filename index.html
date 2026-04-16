@@ -507,9 +507,12 @@ body.day-mode .repost-embed-card:hover{
 .pp-media-item img,.pp-media-item video{width:100%;height:100%;object-fit:cover;display:block;transition:opacity .2s;}
 .pp-media-item:hover img,.pp-media-item:hover video{opacity:.8;}
 .pp-media-badge{position:absolute;bottom:4px;left:4px;background:rgba(0,0,0,.65);color:#fff;font-size:9px;font-family:'Space Mono',monospace;padding:2px 6px;border-radius:8px;display:flex;align-items:center;gap:3px;backdrop-filter:blur(3px);}
-.pp-media-vid-icon{position:absolute;top:6px;right:6px;font-size:14px;filter:drop-shadow(0 1px 3px #000);}
+.pp-media-vid-icon{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:26px;filter:drop-shadow(0 2px 6px #000);pointer-events:none;}
+.pp-media-stack-badge{position:absolute;top:5px;right:5px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;font-family:'Space Mono',monospace;padding:2px 7px;border-radius:8px;backdrop-filter:blur(3px);}
 .pp-media-count{text-align:center;padding:10px 0 4px;font-family:'VT323',monospace;font-size:16px;color:var(--text-muted);letter-spacing:1px;}
 .pp-empty{text-align:center;padding:48px 20px;color:var(--text-muted);font-size:12px;font-family:'Space Mono',monospace;}
+/* Contador de views no feed */
+.feed-vid-views{display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--text-muted);font-family:'Space Mono',monospace;}
 .profile-tab-panel{display:none;}
 .profile-tab-panel.active{display:block;}
 .edit-section{background:var(--glass);border:1px solid var(--border-glow);border-radius:12px;padding:20px;margin-bottom:16px;}
@@ -5612,6 +5615,15 @@ function renderPost(post,rxCounts={},myRx='',_origPostMap){
     ${repostCardHtml}
     ${mediaHtml}
     <div class="preactions">${rxHtml}</div>
+    ${(()=>{
+      // Mostra contador de views se o post tem vídeo
+      const hasVid = mediaTyps.some(t=>t==='video') || mediaUrls.some(u=>u&&u.match(/\.mp4$|\.webm$|\.mov$|\.ogg$/i));
+      if(!hasVid) return '';
+      // Soma views de todos os vídeos do post (localStorage, zero Egress)
+      let totalViews=0;
+      mediaUrls.forEach((_,i2)=>{ totalViews+=_getVideoViews(post.id+'_'+i2); });
+      return `<div style="padding:6px 2px 0;font-size:10px;color:var(--text-muted);font-family:'Space Mono',monospace;display:flex;align-items:center;gap:4px;">👁 <span id="feed-views-${post.id}">${_fmtViews(totalViews)}</span> visualizações</div>`;
+    })()}
     <div class="pactions">
       <button class="abtn" onclick="toggleCmts('${post.id}',this)">💬 <span id="cmtcnt-${post.id}">${cmtCnt}</span></button>
       <button class="abtn" onclick="openShareModal('${post.id}','${xss(prof.full_name||prof.username||'')}','${xss((post.content||'').slice(0,80)).replace(/'/g,'').replace(/\n/g,' ')}')">🔗 Compartilhar</button>
@@ -7267,7 +7279,7 @@ function switchProfileTab(btn){
 
 // ── Carregar aba FOTOS do perfil ──────────────────────────────────
 // Busca apenas media_urls + media_types + id dos posts com imagens.
-// Conta visualizações localmente a partir do array — zero Cached Egress extra.
+// Fotos do perfil — posts com múltiplas fotos abrem carrossel; single abre lightbox.
 async function loadProfileFotos(userId){
   const panel = document.getElementById('profile-fotos');
   if(!panel) return;
@@ -7284,33 +7296,42 @@ async function loadProfileFotos(userId){
     const {data:posts, error} = await q;
     if(error) throw error;
 
-    // Filtrar só posts que têm pelo menos 1 IMAGEM
-    const fotos = [];
+    // Posts que têm ao menos 1 imagem — guarda todas as urls do post
+    const fotoPosts = [];
     (posts||[]).forEach(p=>{
       const urls = Array.isArray(p.media_urls)?p.media_urls.filter(Boolean):[];
       const types = Array.isArray(p.media_types)?p.media_types:[];
-      urls.forEach((url,i)=>{
-        const t = types[i]||'image';
-        if(t !== 'video' && !url.match(/\.mp4$|\.webm$|\.mov$|\.ogg$/i)){
-          fotos.push({url, postId:p.id, likes:p.likes_count||0, comments:p.comments_count||0});
-        }
+      const imgs = urls.filter((u,i)=>{
+        const t=types[i]||'image';
+        return t!=='video' && !u.match(/\.mp4$|\.webm$|\.mov$|\.ogg$/i);
       });
+      if(imgs.length) fotoPosts.push({imgs, postId:p.id, likes:p.likes_count||0});
     });
 
-    if(!fotos.length){
+    if(!fotoPosts.length){
       panel.innerHTML = '<div class="pp-empty">📷 Nenhuma foto ainda</div>';
       return;
     }
 
+    const totalFotos = fotoPosts.reduce((a,p)=>a+p.imgs.length,0);
     panel.innerHTML =
-      '<div class="pp-media-count">📷 '+fotos.length+' foto'+(fotos.length!==1?'s':'')+'</div>'+
+      '<div class="pp-media-count">📷 '+totalFotos+' foto'+(totalFotos!==1?'s':'')+
+        (fotoPosts.length!==totalFotos?' em '+fotoPosts.length+' post'+(fotoPosts.length!==1?'s':''):'')+
+      '</div>'+
       '<div class="pp-media-grid">'+
-        fotos.map(f=>`
-          <div class="pp-media-item" onclick="openLightbox('${xss(f.url)}')">
-            <img src="${xss(f.url)}" loading="lazy" class="img-safe" alt="foto">
-            <div class="pp-media-badge">❤ ${f.likes}</div>
-          </div>`
-        ).join('')+
+        fotoPosts.map(p=>{
+          const first = xss(p.imgs[0]);
+          const extra = p.imgs.length > 1 ? p.imgs.length : 0;
+          // Abre carrossel se tiver múltiplas fotos, senão lightbox direto
+          const onclick = p.imgs.length > 1
+            ? `ppOpenFotoCarousel(${JSON.stringify(p.imgs)},0)`
+            : `openLightbox('${first}')`;
+          return`<div class="pp-media-item" onclick="${onclick}">
+            <img src="${first}" loading="lazy" class="img-safe" alt="foto">
+            ${extra?`<span class="pp-media-stack-badge">⧉ ${extra}</span>`:''}
+            <div class="pp-media-badge">❤ ${p.likes}</div>
+          </div>`;
+        }).join('')+
       '</div>';
   }catch(e){
     panel.innerHTML = '<div class="pp-empty">⚠ Erro ao carregar fotos</div>';
@@ -7318,9 +7339,51 @@ async function loadProfileFotos(userId){
   }
 }
 
+// Abre lightbox em modo carrossel para múltiplas fotos de um post
+function ppOpenFotoCarousel(urls, startIdx){
+  const lb = document.getElementById('m-lightbox');
+  const lbImg = document.getElementById('lb-img');
+  if(!lb||!lbImg) return;
+  // Esconder player de vídeo se aberto
+  const vid = document.getElementById('lb-vid-player');
+  if(vid){ vid.pause(); vid.src=''; vid.style.display='none'; }
+  lbImg.style.display='block';
+  let cur = startIdx||0;
+  function show(i){
+    cur = Math.max(0,Math.min(i,urls.length-1));
+    lbImg.src = urls[cur];
+    // atualiza contador
+    let ctr = lb.querySelector('#lb-carousel-ctr');
+    if(!ctr){ ctr=document.createElement('div'); ctr.id='lb-carousel-ctr';
+      ctr.style.cssText='position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);color:#fff;font-size:12px;font-family:Space Mono,monospace;padding:3px 12px;border-radius:10px;z-index:10002;';
+      lb.appendChild(ctr); }
+    ctr.textContent=(cur+1)+' / '+urls.length;
+    ctr.style.display=urls.length>1?'block':'none';
+    // botões nav
+    ['lb-prev-btn','lb-next-btn'].forEach(id=>{ const b=lb.querySelector('#'+id); if(b) b.remove(); });
+    if(urls.length>1){
+      const bp=document.createElement('button'); bp.id='lb-prev-btn';
+      bp.style.cssText='position:fixed;left:12px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.6);border:none;color:#fff;width:40px;height:40px;border-radius:50%;font-size:22px;cursor:pointer;z-index:10002;display:flex;align-items:center;justify-content:center;';
+      bp.innerHTML='&#8249;'; bp.disabled=cur===0; bp.style.opacity=cur===0?'.3':'1';
+      bp.onclick=(e)=>{e.stopPropagation();show(cur-1);}; lb.appendChild(bp);
+      const bn=document.createElement('button'); bn.id='lb-next-btn';
+      bn.style.cssText='position:fixed;right:12px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.6);border:none;color:#fff;width:40px;height:40px;border-radius:50%;font-size:22px;cursor:pointer;z-index:10002;display:flex;align-items:center;justify-content:center;';
+      bn.innerHTML='&#8250;'; bn.disabled=cur===urls.length-1; bn.style.opacity=cur===urls.length-1?'.3':'1';
+      bn.onclick=(e)=>{e.stopPropagation();show(cur+1);}; lb.appendChild(bn);
+    }
+  }
+  show(cur);
+  lb.onclick=(e)=>{
+    if(e.target===lb){
+      ['lb-prev-btn','lb-next-btn','lb-carousel-ctr'].forEach(id=>{lb.querySelector('#'+id)?.remove();});
+      closeM('m-lightbox');
+    }
+  };
+  openM('m-lightbox');
+}
+
 // ── Carregar aba VÍDEOS do perfil ─────────────────────────────────
-// Mesmo princípio: busca posts, filtra vídeos no client, conta localmente.
-// Visualizações = likes_count + comments_count (proxy barato sem tabela extra).
+// Thumbnail via canvas (sem request extra). Visualizações via localStorage — zero Egress.
 async function loadProfileVideos(userId){
   const panel = document.getElementById('profile-videos');
   if(!panel) return;
@@ -7337,15 +7400,15 @@ async function loadProfileVideos(userId){
     const {data:posts, error} = await q;
     if(error) throw error;
 
-    // Filtrar só posts que têm pelo menos 1 VÍDEO
     const videos = [];
     (posts||[]).forEach(p=>{
       const urls = Array.isArray(p.media_urls)?p.media_urls.filter(Boolean):[];
       const types = Array.isArray(p.media_types)?p.media_types:[];
       urls.forEach((url,i)=>{
         const t = types[i]||'image';
-        if(t === 'video' || url.match(/\.mp4$|\.webm$|\.mov$|\.ogg$/i)){
-          videos.push({url, postId:p.id, likes:p.likes_count||0, comments:p.comments_count||0});
+        if(t==='video'||url.match(/\.mp4$|\.webm$|\.mov$|\.ogg$/i)){
+          const views = _getVideoViews(p.id+'_'+i);
+          videos.push({url, postId:p.id, idx:i, likes:p.likes_count||0, views});
         }
       });
     });
@@ -7357,39 +7420,82 @@ async function loadProfileVideos(userId){
 
     panel.innerHTML =
       '<div class="pp-media-count">🎬 '+videos.length+' vídeo'+(videos.length!==1?'s':'')+'</div>'+
-      '<div class="pp-media-grid">'+
-        videos.map(v=>`
-          <div class="pp-media-item" onclick="ppPlayVideo('${xss(v.url)}')">
-            <video src="${xss(v.url)}" preload="none" muted playsinline class="img-safe"
-              style="width:100%;height:100%;object-fit:cover;pointer-events:none;"></video>
+      '<div class="pp-media-grid" id="pp-vid-grid">'+
+        videos.map((v,gi)=>`
+          <div class="pp-media-item" id="ppv-${gi}" onclick="ppPlayVideo('${xss(v.url)}','${v.postId}_${v.idx}',${gi})">
+            <canvas id="ppv-canvas-${gi}" style="width:100%;height:100%;object-fit:cover;display:block;background:#111;"></canvas>
             <span class="pp-media-vid-icon">▶</span>
-            <div class="pp-media-badge">❤ ${v.likes} · 💬 ${v.comments}</div>
+            <div class="pp-media-badge">👁 ${_fmtViews(v.views)} · ❤ ${v.likes}</div>
           </div>`
         ).join('')+
       '</div>';
+
+    // Gerar thumbnails via canvas (lazy, um de cada vez, sem baixar vídeo inteiro)
+    videos.forEach((v,gi)=>{ _renderVideoThumb(v.url, 'ppv-canvas-'+gi); });
+
   }catch(e){
     panel.innerHTML = '<div class="pp-empty">⚠ Erro ao carregar vídeos</div>';
     console.warn('[pp-videos]',e.message);
   }
 }
 
-// Abre vídeo no lightbox (reutiliza modal existente adaptado)
-function ppPlayVideo(url){
+// ── Gera thumbnail do vídeo sem carregar o arquivo inteiro ──────────
+// Usa preload="metadata" + seek para o frame 0 e captura no canvas.
+function _renderVideoThumb(src, canvasId){
+  const canvas = document.getElementById(canvasId);
+  if(!canvas) return;
+  const vid = document.createElement('video');
+  vid.src = src; vid.muted = true; vid.playsInline = true; vid.preload = 'metadata';
+  vid.crossOrigin = 'anonymous';
+  vid.onloadedmetadata = ()=>{
+    vid.currentTime = Math.min(0.5, vid.duration * 0.1); // seek para 10% ou 0.5s
+  };
+  vid.onseeked = ()=>{
+    const ctx = canvas.getContext('2d');
+    canvas.width = vid.videoWidth || 320;
+    canvas.height = vid.videoHeight || 240;
+    ctx.drawImage(vid, 0, 0, canvas.width, canvas.height);
+    vid.src = ''; // libera memória
+  };
+  vid.onerror = ()=>{ vid.src=''; }; // falha silenciosa
+}
+
+// ── View count via localStorage (zero Cached Egress) ───────────────
+// Chave: "vv_<postId>_<idx>" — guarda contagem local no device do viewer.
+// Para views "reais" entre usuários, use Supabase RPC com debounce (opcional).
+function _getVideoViews(key){ try{ return parseInt(localStorage.getItem('vv_'+key)||'0')||0; }catch(e){ return 0; } }
+function _incVideoViews(key){ try{ const v=_getVideoViews(key)+1; localStorage.setItem('vv_'+key,v); return v; }catch(e){ return 0; } }
+function _fmtViews(n){ if(n>=1000000) return (n/1000000).toFixed(1)+'M'; if(n>=1000) return (n/1000).toFixed(1)+'k'; return String(n); }
+
+// Abre vídeo no lightbox e incrementa view count
+function ppPlayVideo(url, viewKey, gridIdx){
   const lb = document.getElementById('m-lightbox');
   const lbImg = document.getElementById('lb-img');
-  if(!lb || !lbImg) return;
-  // Substituir img por video temporariamente
+  if(!lb||!lbImg) return;
+  // Incrementa view + atualiza badge no grid
+  if(viewKey){
+    const newViews = _incVideoViews(viewKey);
+    const badge = document.querySelector('#ppv-'+gridIdx+' .pp-media-badge');
+    if(badge){ const parts=badge.textContent.split('·'); if(parts.length>=2) badge.textContent='👁 '+_fmtViews(newViews)+' ·'+parts.slice(1).join('·'); }
+  }
+  // Esconder img, mostrar vídeo
   lbImg.style.display='none';
-  let vid = lb.querySelector('#lb-vid-player');
+  ['lb-prev-btn','lb-next-btn','lb-carousel-ctr'].forEach(id=>{ lb.querySelector('#'+id)?.remove(); });
+  let vid = document.getElementById('lb-vid-player');
   if(!vid){
     vid = document.createElement('video');
     vid.id='lb-vid-player';
     vid.controls=true; vid.autoplay=true; vid.playsinline=true;
-    vid.style.cssText='max-width:100%;max-height:90vh;border-radius:8px;display:block;';
+    vid.style.cssText='max-width:96vw;max-height:90vh;border-radius:8px;display:block;outline:none;';
     lbImg.parentNode.insertBefore(vid, lbImg);
   }
   vid.src=url; vid.style.display='block';
-  lb.onclick = ()=>{ vid.pause(); vid.src=''; vid.style.display='none'; lbImg.style.display='block'; closeM('m-lightbox'); };
+  lb.onclick=(e)=>{
+    if(e.target===lb||e.target.id==='m-lightbox'){
+      vid.pause(); vid.src=''; vid.style.display='none'; lbImg.style.display='block';
+      closeM('m-lightbox');
+    }
+  };
   openM('m-lightbox');
 }
 
@@ -17865,9 +17971,28 @@ function initFeedAutoplay(){
       // ── Vídeos nativos HTML5 ──
       if(el.tagName === 'VIDEO'){
         if(entry.isIntersecting && entry.intersectionRatio >= 0.6){
-          el.muted = _globalMuted;   // respeita estado global
+          el.muted = _globalMuted;
           el.play().catch(()=>{});
           _showMuteIndicator(el);
+          // Incrementa view count uma única vez por sessão por vídeo
+          if(!el.dataset.viewCounted){
+            el.dataset.viewCounted='1';
+            // Descobre postId e index a partir do card pai
+            const card = el.closest('.post-card');
+            if(card){
+              const postId = card.id?.replace('post-','');
+              if(postId){
+                // Encontra o índice deste vídeo nos media_urls do post
+                const allVids = Array.from(card.querySelectorAll('video'));
+                const vidIdx = allVids.indexOf(el);
+                const key = postId+'_'+(vidIdx>=0?vidIdx:0);
+                const newViews = _incVideoViews(key);
+                // Atualiza o contador no feed (se existir)
+                const span = document.getElementById('feed-views-'+postId);
+                if(span) span.textContent = _fmtViews(newViews);
+              }
+            }
+          }
         } else {
           el.pause();
         }
