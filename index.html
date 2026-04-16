@@ -6600,9 +6600,9 @@ const R2_THUMB_DIM        = 320;    // miniatura: 320px (para grid de perfil e p
 const R2_IMAGE_QUALITY    = 0.80;   // qualidade JPEG feed (0..1)
 const R2_THUMB_QUALITY    = 0.72;   // qualidade JPEG miniatura (menor = mais leve)
 const R2_VIDEO_MAX_HEIGHT = 720;    // downscale vertical do vídeo
-const R2_MAX_VIDEO_INPUT_MB = 100;  // tamanho MÁX do vídeo de entrada (era 500MB — muito alto)
-const R2_MAX_VIDEO_DURATION_S = 180;// duração MÁX: 3 minutos
-const R2_MAX_IMAGE_INPUT_MB = 30;   // tamanho MÁX da imagem de entrada (era 50MB)
+const R2_MAX_VIDEO_INPUT_MB = 200;  // tamanho MÁX do vídeo de entrada
+const R2_MAX_VIDEO_DURATION_S = 420;// duração MÁX: 7 minutos
+const R2_MAX_IMAGE_INPUT_MB = 70;   // tamanho MÁX da imagem de entrada
 const R2_MAX_UPLOAD_MB    = 30;     // tamanho MÁX após compressão
 
 // =====================================================================
@@ -7367,12 +7367,16 @@ function applyRetroAvatar(){
   if(!_retro_av_url){ showToast('Gere um avatar primeiro!','error'); return; }
   avatarFile = null;
   retroIconSelected = null;
-  // Usar a URL do avatar gerado como avatar_url diretamente
+  // Salva a URL gerada para ser usada no saveSettings
   window._generatedAvatarUrl = _retro_av_url;
-  // Atualizar preview atual
+  // Atualiza o preview "Avatar atual" na aba editar
   const prev = document.getElementById('av-current-preview');
-  if(prev) prev.innerHTML = `<img src="${_retro_av_url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
-  showToast('✅ Avatar selecionado! Salve para confirmar.','success');
+  if(prev) prev.innerHTML = `<img src="${_retro_av_url}" data-dicebear-direct="1" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.parentElement.textContent='🎮'">`;
+  // Atualiza também o avatar na navbar e sidebar para feedback imediato
+  document.querySelectorAll('.nav-av, .uma').forEach(el=>{
+    if(el.tagName==='IMG'){ el.src=_retro_av_url; }
+  });
+  showToast('✅ Avatar selecionado! Clique em SALVAR ALTERAÇÕES para confirmar.','success');
 }
 
 // ── Constrói grids de interesses/preferências via JS ────────────
@@ -7568,7 +7572,7 @@ async function loadProfileFotos(userId){
   try{
     const isOwn = CU?.id === userId;
     let q = db.from('posts')
-      .select('id,media_urls,media_types,likes_count,comments_count,video_views,created_at')
+      .select('id,content,media_urls,media_types,likes_count,video_views,created_at')
       .eq('user_id', userId)
       .not('media_urls', 'is', null)
       .order('created_at', {ascending:false})
@@ -7577,9 +7581,13 @@ async function loadProfileFotos(userId){
     const {data:posts, error} = await q;
     if(error) throw error;
 
-    // Posts que têm ao menos 1 imagem — guarda todas as urls do post
+    // Posts que têm ao menos 1 imagem — filtra comunidades e lojas
     const fotoPosts = [];
     (posts||[]).forEach(p=>{
+      // Ignorar posts de comunidade ([COMM_POST:...]) e loja ([BIZ_PROMO:...])
+      const raw = p.content||'';
+      if(raw.startsWith('[COMM_POST:') || raw.startsWith('[BIZ_PROMO:')) return;
+
       const urls = Array.isArray(p.media_urls)?p.media_urls.filter(Boolean):[];
       const types = Array.isArray(p.media_types)?p.media_types:[];
       const imgs = urls.filter((u,i)=>{
@@ -7939,15 +7947,22 @@ async function saveSettings(){
     }, {onConflict:'user_id'});
   }catch(e){ console.warn('prefs save:', e?.message); }
   Object.assign(CP,updates,{avatar_type:avatarType,retro_icon:retroIcon});
+  // Atualiza todos os avatares visíveis na UI com o novo
+  if(avatarUrl){
+    document.querySelectorAll('.nav-av, .uma').forEach(el=>{
+      if(el.tagName==='IMG') el.src = avatarUrl;
+    });
+  }
   refreshUI();
-  // Close modal if open, otherwise stay on edit tab
   if(document.getElementById('m-settings')?.classList.contains('open')) closeM('m-settings');
   showProfileSavedPopup();
-  avatarFile=null;retroIconSelected=null;
-  // Refresh profile view if open
+  avatarFile=null; retroIconSelected=null; window._generatedAvatarUrl=null;
+  // Refresh profile view se estiver aberta
   if(document.getElementById('page-profile')?.classList.contains('active')){
     updateAvPreview();
     loadEditForm();
+    // Recarrega o perfil para mostrar avatar atualizado no cover
+    loadProfilePage(CU.id);
   }
 }
 
