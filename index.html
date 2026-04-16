@@ -130,16 +130,31 @@ nav{position:fixed;top:0;left:0;right:0;background:#0a0a2a;border-bottom:1px sol
 .pcontent .htag{color:var(--neon-yellow);cursor:pointer;}
 
 /* MEDIA */
-.pmedia{border-radius:10px;overflow:hidden;margin-bottom:12px;}
+.pmedia{border-radius:10px;overflow:hidden;margin-bottom:12px;position:relative;}
+
+/* CARROSSEL (2+ midias) */
+.media-carousel{position:relative;width:100%;overflow:hidden;border-radius:10px;background:#000;touch-action:pan-y;}
+.media-carousel-track{display:flex;transition:transform .32s cubic-bezier(.4,0,.2,1);will-change:transform;}
+.media-carousel-slide{flex:0 0 100%;width:100%;position:relative;display:flex;align-items:center;justify-content:center;background:#000;}
+.media-carousel-slide img{width:100%;height:340px;object-fit:cover;display:block;user-select:none;-webkit-user-drag:none;}
+.media-carousel-slide video{width:100%;max-height:340px;display:block;background:#000;}
+.mc-btn{position:absolute;top:50%;transform:translateY(-50%);z-index:10;background:rgba(0,0,0,.55);border:none;color:#fff;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:background .2s;backdrop-filter:blur(4px);}
+.mc-btn:hover{background:rgba(0,255,204,.7);color:#0a0a2a;}
+.mc-btn.prev{left:8px;}
+.mc-btn.next{right:8px;}
+.mc-btn:disabled{opacity:.25;pointer-events:none;}
+.mc-dots{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);display:flex;gap:5px;z-index:10;}
+.mc-dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.45);transition:all .2s;cursor:pointer;}
+.mc-dot.active{background:#fff;width:18px;border-radius:3px;}
+.mc-counter{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;font-family:'Space Mono',monospace;padding:2px 8px;border-radius:10px;z-index:10;}
+
+/* SINGLE (1 midia) */
 .media-grid{display:grid;gap:3px;}
 .media-grid.g1{grid-template-columns:1fr;}
-.media-grid.g2{grid-template-columns:1fr 1fr;}
-.media-grid.g3{grid-template-columns:2fr 1fr;grid-template-rows:1fr 1fr;}
-.media-grid.g3 .mi:first-child{grid-row:span 2;}
 .mi{position:relative;overflow:hidden;background:#000;cursor:pointer;}
-.mi img{width:100%;height:200px;object-fit:cover;display:block;transition:opacity .2s;}
+.mi img{width:100%;height:340px;object-fit:cover;display:block;transition:opacity .2s;}
 .mi:hover img{opacity:.85;}
-.mi video{width:100%;max-height:320px;display:block;border-radius:0;}
+.mi video{width:100%;max-height:340px;display:block;border-radius:0;}
 .video-thumb{position:relative;}
 .play-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.4);}
 .play-btn-lrg{width:56px;height:56px;border-radius:50%;background:rgba(0,255,204,.9);display:flex;align-items:center;justify-content:center;font-size:20px;color:#0a0a2a;font-weight:bold;}
@@ -683,9 +698,10 @@ body{
   .pun{font-size:12px;font-weight:700;}
   .pt{font-size:11px;}
   .pcontent{font-size:14px;line-height:1.6;margin-bottom:10px;padding:0 2px;word-break:break-word;word-wrap:break-word;overflow-wrap:break-word;}
-  .mi img{height:auto;min-height:280px;max-height:500px;aspect-ratio:4/5;object-fit:cover;}
-  .media-grid.g1 .mi img{min-height:350px;max-height:560px;aspect-ratio:4/5;}
-  .mi video{max-height:500px;min-height:280px;}
+  .mi img{width:100%;height:340px;object-fit:cover;display:block;}
+  .mi video{width:100%;max-height:340px;display:block;}
+  .media-carousel-slide img{height:320px;}
+  .media-carousel-slide video{max-height:320px;}
   .pmedia{border-radius:0;margin-left:0;margin-right:0;margin-bottom:10px;width:100%;max-width:100%;}
   .preactions{gap:6px;margin-bottom:8px;padding:0 2px;}
   .rxbtn{padding:5px 10px;font-size:13px;border-radius:20px;}
@@ -3682,7 +3698,7 @@ body.day-mode::before{
             <div class="vis-opt"    data-v="friends"  onclick="setVis('friends',this)">👥 Amigos</div>
             <div class="vis-opt"    data-v="private"  onclick="setVis('private',this)">🔒 Privado</div>
           </div>
-          <div id="media-prev" style="display:none;margin-top:10px;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:4px;"></div>
+          <div id="media-prev" style="display:none;margin-top:10px;grid-template-columns:repeat(4,1fr);gap:4px;max-height:180px;overflow:hidden;"></div>
           <div class="ctools">
             <button class="tbtn" onclick="trigUpload('image/*')">📷 Foto</button>
             <button class="tbtn" onclick="trigUpload('video/*')">🎬 Vídeo</button>
@@ -4512,9 +4528,12 @@ body.day-mode::before{
 
 
 <!-- LIGHTBOX -->
-<div class="movl" id="m-lightbox" onclick="closeM('m-lightbox')"><div style="max-width:90vw;max-height:90vh;display:flex;align-items:center;justify-content:center;">
-  <img id="lb-img" src="" style="max-width:100%;max-height:85vh;border-radius:8px;object-fit:contain;" onclick="event.stopPropagation()">
-</div></div>
+<div class="movl" id="m-lightbox" onclick="closeM('m-lightbox')">
+  <div style="max-width:96vw;max-height:96vh;display:flex;align-items:center;justify-content:center;position:relative;" onclick="event.stopPropagation()">
+    <img id="lb-img" src="" style="max-width:100%;max-height:90vh;border-radius:8px;object-fit:contain;display:block;">
+  </div>
+  <button onclick="closeM('m-lightbox')" style="position:fixed;top:16px;right:16px;background:rgba(0,0,0,.7);border:none;color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:20px;z-index:10001;display:flex;align-items:center;justify-content:center;">×</button>
+</div>
 
 <!-- TOAST -->
 <div class="tst-wrap" id="tst-wrap"></div>
@@ -5793,24 +5812,87 @@ async function _hydrateRepostCard(repostPostId, originalPostId, originalAuthorId
 
 function renderMedia(urls,types){
   if(!Array.isArray(urls)||!urls.length)return'';
-  const safeUrls=urls.filter(u=>u&&typeof u==='string');
+  const safeUrls=urls.filter(u=>u&&typeof u==='string').slice(0,7);
   if(!safeUrls.length)return'';
-  const items=safeUrls.slice(0,4).map((url,i)=>{
+
+  // 1 midia: layout simples
+  if(safeUrls.length===1){
+    const url=safeUrls[0], t=(Array.isArray(types)&&types[0])||'image';
+    const safeUrl=xss(url);
+    if(t==='video'||url.match(/\.mp4$|\.webm$|\.mov$|\.ogg$/i)){
+      return`<div class="pmedia"><div class="media-grid g1" style="border-radius:10px;overflow:hidden;">
+        <div class="mi"><video src="${safeUrl}" preload="metadata" controls playsinline muted loop class="img-safe feed-video" style="width:100%;max-height:340px;display:block;background:#000;"></video></div>
+      </div></div>`;
+    }
+    return`<div class="pmedia"><div class="media-grid g1" style="border-radius:10px;overflow:hidden;">
+      <div class="mi" onclick="openLightbox('${safeUrl}')"><img src="${safeUrl}" alt="foto" loading="lazy" class="img-safe" style="width:100%;height:340px;object-fit:cover;display:block;"></div>
+    </div></div>`;
+  }
+
+  // 2-7 midias: CARROSSEL estilo Instagram
+  const cid='mc'+Math.random().toString(36).slice(2,8);
+  const slides=safeUrls.map((url,i)=>{
     const t=(Array.isArray(types)&&types[i])||'image';
     const safeUrl=xss(url);
     if(t==='video'||url.match(/\.mp4$|\.webm$|\.mov$|\.ogg$/i)){
-      return`<div class="mi" style="background:#000;border-radius:6px;overflow:hidden;">
-        <video src="${safeUrl}" preload="metadata" controls playsinline muted loop
-          style="width:100%;max-height:320px;display:block;background:#000;"
-          class="img-safe feed-video"></video>
+      return`<div class="media-carousel-slide">
+        <video src="${safeUrl}" preload="metadata" controls playsinline muted loop class="img-safe feed-video" style="width:100%;max-height:340px;display:block;"></video>
       </div>`;
     }
-    return`<div class="mi" style="border-radius:6px;overflow:hidden;cursor:pointer;" onclick="openLightbox('${safeUrl}')">
-      <img src="${safeUrl}" alt="imagem do post" loading="lazy" style="width:100%;height:220px;object-fit:cover;display:block;" class="img-safe">
+    return`<div class="media-carousel-slide" onclick="openLightbox('${safeUrl}')" style="cursor:pointer;">
+      <img src="${safeUrl}" alt="foto ${i+1}" loading="lazy" class="img-safe" style="width:100%;height:340px;object-fit:cover;display:block;">
     </div>`;
   }).join('');
-  const gClass=['','g1','g2','g3','g3'][Math.min(safeUrls.length,4)]||'g1';
-  return`<div class="pmedia"><div class="media-grid ${gClass}" style="border-radius:10px;overflow:hidden;">${items}</div></div>`;
+  const dots=safeUrls.map((_,i)=>`<span class="mc-dot${i===0?' active':''}" onclick="mcGoto('${cid}',${i})"></span>`).join('');
+  return`<div class="pmedia">
+    <div class="media-carousel" id="${cid}" data-idx="0" data-total="${safeUrls.length}"
+      data-startx="" onmousedown="mcDragStart(event,'${cid}')" ontouchstart="mcDragStart(event,'${cid}')"
+      onmousemove="mcDragMove(event,'${cid}')" ontouchmove="mcDragMove(event,'${cid}')"
+      onmouseup="mcDragEnd(event,'${cid}')" ontouchend="mcDragEnd(event,'${cid}')"
+      onmouseleave="mcDragEnd(event,'${cid}')">
+      <div class="media-carousel-track" id="${cid}-track">${slides}</div>
+      <button class="mc-btn prev" id="${cid}-prev" onclick="mcNav('${cid}',-1)" disabled>&#8249;</button>
+      <button class="mc-btn next" id="${cid}-next" onclick="mcNav('${cid}',1)">&#8250;</button>
+      <div class="mc-dots" id="${cid}-dots">${dots}</div>
+      <span class="mc-counter" id="${cid}-counter">1 / ${safeUrls.length}</span>
+    </div>
+  </div>`;
+}
+
+// ── Carrossel: navegação ──
+function mcGoto(cid, idx){
+  const el=document.getElementById(cid); if(!el) return;
+  const total=parseInt(el.dataset.total)||1;
+  idx=Math.max(0,Math.min(idx,total-1));
+  el.dataset.idx=idx;
+  const track=document.getElementById(cid+'-track'); if(track) track.style.transform=`translateX(-${idx*100}%)`;
+  const counter=document.getElementById(cid+'-counter'); if(counter) counter.textContent=`${idx+1} / ${total}`;
+  const prevBtn=document.getElementById(cid+'-prev'); if(prevBtn) prevBtn.disabled=(idx===0);
+  const nextBtn=document.getElementById(cid+'-next'); if(nextBtn) nextBtn.disabled=(idx===total-1);
+  const dotsEl=document.getElementById(cid+'-dots');
+  if(dotsEl){ dotsEl.querySelectorAll('.mc-dot').forEach((d,i)=>d.classList.toggle('active',i===idx)); }
+}
+function mcNav(cid, dir){
+  const el=document.getElementById(cid); if(!el) return;
+  mcGoto(cid, (parseInt(el.dataset.idx)||0)+dir);
+}
+// Swipe / drag
+function mcDragStart(e,cid){
+  const el=document.getElementById(cid); if(!el) return;
+  const x=e.touches?e.touches[0].clientX:e.clientX;
+  el.dataset.startx=x; el.dataset.dragging='1';
+}
+function mcDragMove(e,cid){
+  const el=document.getElementById(cid); if(!el||el.dataset.dragging!=='1') return;
+  if(e.cancelable&&e.touches) e.preventDefault();
+}
+function mcDragEnd(e,cid){
+  const el=document.getElementById(cid); if(!el||el.dataset.dragging!=='1') return;
+  el.dataset.dragging='0';
+  const startX=parseFloat(el.dataset.startx||0);
+  const endX=e.changedTouches?e.changedTouches[0].clientX:(e.clientX||startX);
+  const diff=startX-endX;
+  if(Math.abs(diff)>40) mcNav(cid, diff>0?1:-1);
 }
 
 // ===== REACTIONS =====
@@ -6896,21 +6978,34 @@ function switchTab(t,btn){
 function updateChar(){const v=document.getElementById('post-txt').value.length;const el=document.getElementById('c-char');el.textContent=v+' / 500';el.className='cchar'+(v>450?' danger':v>350?' warn':'');}
 function trigUpload(accept){const inp=document.getElementById('media-input');inp.accept=accept;inp.click();}
 function handleMedia(inp){
-  const files=Array.from(inp.files).slice(0,4-mediaFiles.length);
+  const MAX_MEDIA=7;
+  const files=Array.from(inp.files||[]).slice(0,MAX_MEDIA-mediaFiles.length);
   files.forEach(f=>{mediaFiles.push(f);mediaTypes.push(f.type.startsWith('video')?'video':'image');});
   const prev=document.getElementById('media-prev');
   if(!mediaFiles.length){prev.style.display='none';prev.innerHTML='';return;}
   prev.style.display='grid';
+  // Mostra thumbs em grid 4 colunas (compacto)
   prev.innerHTML=mediaFiles.map((f,i)=>{
     const url=URL.createObjectURL(f);
     const isVid=mediaTypes[i]==='video';
-    return`<div style="position:relative;border-radius:6px;overflow:hidden;background:#000;">
-      ${isVid?`<video src="${url}" style="width:100%;height:80px;object-fit:cover;" muted></video><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;"><span style="font-size:20px;">▶</span></div>`:`<img src="${url}" style="width:100%;height:80px;object-fit:cover;">`}
-      <button onclick="removeMedia(${i})" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.7);border:none;color:#fff;width:18px;height:18px;border-radius:50%;cursor:pointer;font-size:10px;line-height:1;display:flex;align-items:center;justify-content:center;">×</button>
+    return`<div style="position:relative;border-radius:6px;overflow:hidden;background:#000;aspect-ratio:1;">
+      ${isVid
+        ?`<video src="${url}" style="width:100%;height:100%;object-fit:cover;" muted playsinline></video><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;"><span style="font-size:18px;filter:drop-shadow(0 1px 3px #000);">▶</span></div>`
+        :`<img src="${url}" style="width:100%;height:100%;object-fit:cover;">`}
+      <button onclick="removeMedia(${i})" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.75);border:none;color:#fff;width:20px;height:20px;border-radius:50%;cursor:pointer;font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:2;">×</button>
+      ${i===0?`<span style="position:absolute;bottom:2px;left:4px;font-size:8px;color:rgba(255,255,255,.8);font-family:'Space Mono',monospace;">CAPA</span>`:''}
     </div>`;
   }).join('');
+  // Avisa quantas ainda cabem
+  const restantes=MAX_MEDIA-mediaFiles.length;
+  if(restantes>0){
+    prev.innerHTML+=`<div style="display:flex;align-items:center;justify-content:center;border:1px dashed rgba(0,255,204,.3);border-radius:6px;aspect-ratio:1;color:var(--text-muted);font-size:11px;font-family:'Space Mono',monospace;flex-direction:column;gap:3px;cursor:pointer;" onclick="trigUpload('image/*,video/*')">
+      <span style="font-size:20px;color:var(--neon-cyan);">+</span>
+      <span style="font-size:9px;">${restantes} livre${restantes>1?'s':''}</span>
+    </div>`;
+  }
 }
-function removeMedia(i){mediaFiles.splice(i,1);mediaTypes.splice(i,1);handleMedia({files:mediaFiles});}
+function removeMedia(i){mediaFiles.splice(i,1);mediaTypes.splice(i,1);handleMedia({files:[]});}
 function savePost(id){if(!CU)return;db.from('saved_posts').upsert({user_id:CU.id,post_id:id}).then(()=>showToast('Salvo! 🔖','success'));}
 function reportPost(id){showToast('Post reportado para análise.','success');}
 
