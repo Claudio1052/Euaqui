@@ -556,7 +556,7 @@ body.day-mode .ni-dismiss:hover{color:#e11d48;background:rgba(225,29,72,.08);}
 
 /* Profile page layout */
 #page-profile{padding:0;overflow-y:visible;}
-#page-profile .profile-tab-panel{padding:16px 20px;}
+#page-profile .profile-tab-panel{padding:0;}
 
 
 /* ===== PAGE SYSTEM ===== */
@@ -568,10 +568,12 @@ body.day-mode .ni-dismiss:hover{color:#e11d48;background:rgba(225,29,72,.08);}
 
 /* ===== PROFILE PAGE ===== */
 #page-profile{padding:0;}
-#page-profile .profile-tab-panel{padding:16px 20px;}
+#page-profile .profile-tab-panel{padding:0;}
+#profile-posts,#profile-fotos,#profile-videos{padding:0;}
+#pp-about{padding:16px;}
 .profile-tab-panel{display:none;}
 .profile-tab-panel.active{display:block;}
-#pp-edit{padding-bottom:60px;}
+#pp-edit{padding:16px 20px 60px;}
 
 /* ===== TAB PANELS ===== */
 .tab-panel{display:none;}
@@ -769,6 +771,12 @@ body{
 
   .mc-btn{display:none !important;}
   .pmedia{margin-bottom:10px;border-radius:0;}
+  /* YouTube — borda a borda igual ao vídeo horizontal */
+  .yt-embed-wrap{
+    border-radius:0 !important;
+    margin:0 -12px 4px !important;
+    width:calc(100% + 24px) !important;
+  }
   .preactions{gap:6px;margin-bottom:8px;padding:0 2px;}
   .rxbtn{padding:5px 10px;font-size:13px;border-radius:20px;}
   .rxcnt{font-size:14px;}
