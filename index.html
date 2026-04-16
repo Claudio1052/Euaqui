@@ -501,6 +501,15 @@ body.day-mode .repost-embed-card:hover{
 .profile-page-tabs::-webkit-scrollbar{display:none;}
 .pptab{padding:10px 16px;font-family:'Silkscreen',monospace;font-size:9px;letter-spacing:1px;color:var(--text-muted);cursor:pointer;border:none;background:transparent;border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap;flex-shrink:0;}
 .pptab.active{color:var(--neon-cyan);border-bottom-color:var(--neon-cyan);}
+/* Grid de fotos/vídeos no perfil */
+.pp-media-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;padding:2px;}
+.pp-media-item{position:relative;aspect-ratio:1;overflow:hidden;background:#000;cursor:pointer;}
+.pp-media-item img,.pp-media-item video{width:100%;height:100%;object-fit:cover;display:block;transition:opacity .2s;}
+.pp-media-item:hover img,.pp-media-item:hover video{opacity:.8;}
+.pp-media-badge{position:absolute;bottom:4px;left:4px;background:rgba(0,0,0,.65);color:#fff;font-size:9px;font-family:'Space Mono',monospace;padding:2px 6px;border-radius:8px;display:flex;align-items:center;gap:3px;backdrop-filter:blur(3px);}
+.pp-media-vid-icon{position:absolute;top:6px;right:6px;font-size:14px;filter:drop-shadow(0 1px 3px #000);}
+.pp-media-count{text-align:center;padding:10px 0 4px;font-family:'VT323',monospace;font-size:16px;color:var(--text-muted);letter-spacing:1px;}
+.pp-empty{text-align:center;padding:48px 20px;color:var(--text-muted);font-size:12px;font-family:'Space Mono',monospace;}
 .profile-tab-panel{display:none;}
 .profile-tab-panel.active{display:block;}
 .edit-section{background:var(--glass);border:1px solid var(--border-glow);border-radius:12px;padding:20px;margin-bottom:16px;}
@@ -4273,10 +4282,14 @@ body.day-mode::before{
       <div id="profile-cover-bar"></div>
       <div class="profile-page-tabs" id="profile-page-tabs" style="display:none;">
         <button class="pptab active" data-tab="pp-posts" onclick="switchProfileTab(this)">📝 Posts</button>
+        <button class="pptab" data-tab="pp-fotos" onclick="switchProfileTab(this)">🖼 Fotos</button>
+        <button class="pptab" data-tab="pp-videos" onclick="switchProfileTab(this)">🎬 Vídeos</button>
         <button class="pptab" data-tab="pp-about" onclick="switchProfileTab(this)">👤 Sobre</button>
         <button class="pptab" data-tab="pp-edit" onclick="switchProfileTab(this)" id="pp-edit-tab" style="display:none;">✏ Editar</button>
       </div>
       <div class="profile-tab-panel active" id="pp-posts"><div id="profile-posts"></div></div>
+      <div class="profile-tab-panel" id="pp-fotos"><div id="profile-fotos"><div class="pp-empty">⏳ Carregando fotos...</div></div></div>
+      <div class="profile-tab-panel" id="pp-videos"><div id="profile-videos"><div class="pp-empty">⏳ Carregando vídeos...</div></div></div>
       <div class="profile-tab-panel" id="pp-about"><div id="profile-about"></div></div>
       <div class="profile-tab-panel" id="pp-edit">
         <div style="max-width:560px;">
@@ -7230,22 +7243,154 @@ function switchProfileTab(btn){
     if(CP) loadEditForm();
     else if(CU) loadProfilePage(CU.id).then(()=>loadEditForm());
   }
-  // Ao abrir aba Sobre: recarregar comunidades/lojas se necessário
   if(tabId === 'pp-about'){
     const commEl = document.getElementById('about-communities-section');
     const bizEl  = document.getElementById('about-businesses-section');
     const uid = document.querySelector('[data-profile-uid]')?.dataset?.profileUid || CU?.id;
     if(uid){
-      // Recarregar comunidades se vazio ou ainda carregando
-      if(commEl && (commEl.innerHTML.includes('Carregando') || commEl.innerHTML.trim()==='')) {
-        loadAboutCommunities(uid);
-      }
-      // Recarregar lojas se vazio
-      if(bizEl && bizEl.innerHTML.trim()==='') {
-        loadAboutBusinesses(uid);
-      }
+      if(commEl && (commEl.innerHTML.includes('Carregando') || commEl.innerHTML.trim()==='')) loadAboutCommunities(uid);
+      if(bizEl && bizEl.innerHTML.trim()==='') loadAboutBusinesses(uid);
     }
   }
+  // Abas de fotos e vídeos — lazy load
+  if(tabId === 'pp-fotos' || tabId === 'pp-videos'){
+    const uid = document.querySelector('[data-profile-uid]')?.dataset?.profileUid || CU?.id;
+    if(!uid) return;
+    const panel2 = document.getElementById(tabId === 'pp-fotos' ? 'profile-fotos' : 'profile-videos');
+    // Só carrega se ainda não foi carregado (evita re-requests)
+    if(panel2 && panel2.querySelector('.pp-empty, .pp-media-count')) {
+      if(tabId === 'pp-fotos') loadProfileFotos(uid);
+      else loadProfileVideos(uid);
+    }
+  }
+}
+
+// ── Carregar aba FOTOS do perfil ──────────────────────────────────
+// Busca apenas media_urls + media_types + id dos posts com imagens.
+// Conta visualizações localmente a partir do array — zero Cached Egress extra.
+async function loadProfileFotos(userId){
+  const panel = document.getElementById('profile-fotos');
+  if(!panel) return;
+  panel.innerHTML = '<div class="pp-empty">⏳ Carregando fotos...</div>';
+  try{
+    const isOwn = CU?.id === userId;
+    let q = db.from('posts')
+      .select('id,media_urls,media_types,likes_count,comments_count,created_at')
+      .eq('user_id', userId)
+      .not('media_urls', 'is', null)
+      .order('created_at', {ascending:false})
+      .limit(150);
+    if(!isOwn) q = q.neq('visibility','private');
+    const {data:posts, error} = await q;
+    if(error) throw error;
+
+    // Filtrar só posts que têm pelo menos 1 IMAGEM
+    const fotos = [];
+    (posts||[]).forEach(p=>{
+      const urls = Array.isArray(p.media_urls)?p.media_urls.filter(Boolean):[];
+      const types = Array.isArray(p.media_types)?p.media_types:[];
+      urls.forEach((url,i)=>{
+        const t = types[i]||'image';
+        if(t !== 'video' && !url.match(/\.mp4$|\.webm$|\.mov$|\.ogg$/i)){
+          fotos.push({url, postId:p.id, likes:p.likes_count||0, comments:p.comments_count||0});
+        }
+      });
+    });
+
+    if(!fotos.length){
+      panel.innerHTML = '<div class="pp-empty">📷 Nenhuma foto ainda</div>';
+      return;
+    }
+
+    panel.innerHTML =
+      '<div class="pp-media-count">📷 '+fotos.length+' foto'+(fotos.length!==1?'s':'')+'</div>'+
+      '<div class="pp-media-grid">'+
+        fotos.map(f=>`
+          <div class="pp-media-item" onclick="openLightbox('${xss(f.url)}')">
+            <img src="${xss(f.url)}" loading="lazy" class="img-safe" alt="foto">
+            <div class="pp-media-badge">❤ ${f.likes}</div>
+          </div>`
+        ).join('')+
+      '</div>';
+  }catch(e){
+    panel.innerHTML = '<div class="pp-empty">⚠ Erro ao carregar fotos</div>';
+    console.warn('[pp-fotos]',e.message);
+  }
+}
+
+// ── Carregar aba VÍDEOS do perfil ─────────────────────────────────
+// Mesmo princípio: busca posts, filtra vídeos no client, conta localmente.
+// Visualizações = likes_count + comments_count (proxy barato sem tabela extra).
+async function loadProfileVideos(userId){
+  const panel = document.getElementById('profile-videos');
+  if(!panel) return;
+  panel.innerHTML = '<div class="pp-empty">⏳ Carregando vídeos...</div>';
+  try{
+    const isOwn = CU?.id === userId;
+    let q = db.from('posts')
+      .select('id,media_urls,media_types,likes_count,comments_count,created_at')
+      .eq('user_id', userId)
+      .not('media_urls', 'is', null)
+      .order('created_at', {ascending:false})
+      .limit(150);
+    if(!isOwn) q = q.neq('visibility','private');
+    const {data:posts, error} = await q;
+    if(error) throw error;
+
+    // Filtrar só posts que têm pelo menos 1 VÍDEO
+    const videos = [];
+    (posts||[]).forEach(p=>{
+      const urls = Array.isArray(p.media_urls)?p.media_urls.filter(Boolean):[];
+      const types = Array.isArray(p.media_types)?p.media_types:[];
+      urls.forEach((url,i)=>{
+        const t = types[i]||'image';
+        if(t === 'video' || url.match(/\.mp4$|\.webm$|\.mov$|\.ogg$/i)){
+          videos.push({url, postId:p.id, likes:p.likes_count||0, comments:p.comments_count||0});
+        }
+      });
+    });
+
+    if(!videos.length){
+      panel.innerHTML = '<div class="pp-empty">🎬 Nenhum vídeo ainda</div>';
+      return;
+    }
+
+    panel.innerHTML =
+      '<div class="pp-media-count">🎬 '+videos.length+' vídeo'+(videos.length!==1?'s':'')+'</div>'+
+      '<div class="pp-media-grid">'+
+        videos.map(v=>`
+          <div class="pp-media-item" onclick="ppPlayVideo('${xss(v.url)}')">
+            <video src="${xss(v.url)}" preload="none" muted playsinline class="img-safe"
+              style="width:100%;height:100%;object-fit:cover;pointer-events:none;"></video>
+            <span class="pp-media-vid-icon">▶</span>
+            <div class="pp-media-badge">❤ ${v.likes} · 💬 ${v.comments}</div>
+          </div>`
+        ).join('')+
+      '</div>';
+  }catch(e){
+    panel.innerHTML = '<div class="pp-empty">⚠ Erro ao carregar vídeos</div>';
+    console.warn('[pp-videos]',e.message);
+  }
+}
+
+// Abre vídeo no lightbox (reutiliza modal existente adaptado)
+function ppPlayVideo(url){
+  const lb = document.getElementById('m-lightbox');
+  const lbImg = document.getElementById('lb-img');
+  if(!lb || !lbImg) return;
+  // Substituir img por video temporariamente
+  lbImg.style.display='none';
+  let vid = lb.querySelector('#lb-vid-player');
+  if(!vid){
+    vid = document.createElement('video');
+    vid.id='lb-vid-player';
+    vid.controls=true; vid.autoplay=true; vid.playsinline=true;
+    vid.style.cssText='max-width:100%;max-height:90vh;border-radius:8px;display:block;';
+    lbImg.parentNode.insertBefore(vid, lbImg);
+  }
+  vid.src=url; vid.style.display='block';
+  lb.onclick = ()=>{ vid.pause(); vid.src=''; vid.style.display='none'; lbImg.style.display='block'; closeM('m-lightbox'); };
+  openM('m-lightbox');
 }
 
 async function saveSettings(){
@@ -8258,6 +8403,13 @@ async function loadProfilePage(userId){
       loadAboutCommunities(userId);
       loadAboutBusinesses(userId);
     }
+
+    // 6. Pré-carregar fotos e vídeos (lazy — só se aba visível)
+    // Reseta os painéis para "não carregado" aguardando clique na aba
+    const fotosPanel = document.getElementById('profile-fotos');
+    const videosPanel = document.getElementById('profile-videos');
+    if(fotosPanel) fotosPanel.innerHTML = '<div class="pp-empty">📷 Clique na aba para ver as fotos</div>';
+    if(videosPanel) videosPanel.innerHTML = '<div class="pp-empty">🎬 Clique na aba para ver os vídeos</div>';
 
     // Update CP if own profile
     if(isOwn) Object.assign(CP||{}, profile);
