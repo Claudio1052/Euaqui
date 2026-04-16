@@ -715,20 +715,17 @@ body{
   .mi video{width:100%;max-height:55vh;height:auto;display:block;object-fit:contain;background:#000;}
   .media-carousel-slide img{height:320px;}
   .media-carousel-slide video{width:100%;max-height:55vh;height:auto;object-fit:contain;background:#000;}
-  /* Vídeo vertical: header do post sobreposto no topo do vídeo */
-  .post-card.has-solo-video{padding:0;overflow:hidden;}
-  .post-card.has-solo-video>.ph{
-    position:relative;z-index:2;margin:0;padding:10px 14px;
-    background:linear-gradient(to bottom,rgba(0,0,0,.65) 0%,rgba(0,0,0,0) 100%);
+  /* Vídeo vertical: limita altura para não esconder o header do post.
+     A navbar tem ~98px (com tabs). O post-card tem padding ~16px top.
+     Deixamos max-height=50vh para o vídeo vertical — caberá na tela
+     com o header acima e as ações abaixo visíveis.
+     Vídeo horizontal não é afetado (object-fit:contain com width menor). */
+  .post-card.has-solo-video .mi video{
+    max-height: 50vh;
+    width: 100%;
+    object-fit: contain;
+    background: #000;
   }
-  .post-card.has-solo-video>.ph .pun{color:#fff;}
-  .post-card.has-solo-video>.ph .pt{color:rgba(255,255,255,.8);}
-  .post-card.has-solo-video>.ph .vis-badge{background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3);}
-  .post-card.has-solo-video>.pmedia{margin-top:-1px;}
-  .post-card.has-solo-video>.preactions{padding:10px 14px 0;}
-  .post-card.has-solo-video>[style*="feed-views"]{padding:4px 14px 0;}
-  .post-card.has-solo-video>.pactions{padding:6px 14px 12px;border-top:none;}
-  .post-card.has-solo-video>.comments-sec{padding:0 14px;}
 
   .mc-btn{display:none !important;}
   .pmedia{border-radius:0;margin-left:0;margin-right:0;margin-bottom:10px;width:100%;max-width:100%;}
