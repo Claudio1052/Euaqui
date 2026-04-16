@@ -5358,7 +5358,7 @@ async function loadFeed(force=false){
   if(commIdsInFeed.length) _hydrateCommAvatars(commIdsInFeed);
 
   // Autoplay mudo no mobile (mantido)
-  if(window.innerWidth <= 768){ initFeedAutoplay(); _startDomWatcher(); }
+  initFeedAutoplay(); _startDomWatcher(); // view count em todos, autoplay só mobile
 
   // Atualiza indicador de fim
   if(feedEnd){
@@ -7334,7 +7334,7 @@ async function loadProfileFotos(userId){
           return`<div class="pp-media-item" ${clickAttr}>
             <img src="${first}" loading="lazy" class="img-safe" alt="foto" style="pointer-events:none;">
             ${extra?`<span class="pp-media-stack-badge">⧉ ${extra}</span>`:''}
-            <div class="pp-media-badge">❤ ${p.likes}</div>
+            <div class="pp-media-badge">👍 ${p.likes}</div>
           </div>`;
         }).join('')+
       '</div>';
@@ -7455,7 +7455,7 @@ async function loadProfileVideos(userId){
           <div class="pp-media-item" id="ppv-${gi}" onclick="ppPlayVideo('${xss(v.url)}','${v.postId}_${v.idx}',${gi})">
             <canvas id="ppv-canvas-${gi}" style="width:100%;height:100%;object-fit:cover;display:block;background:#111;"></canvas>
             <span class="pp-media-vid-icon">▶</span>
-            <div class="pp-media-badge">👁 ${_fmtViews(v.views)} · ❤ ${v.likes}</div>
+            <div class="pp-media-badge">👁 ${_fmtViews(v.views)} · 👍 ${v.likes}</div>
           </div>`
         ).join('')+
       '</div>';
@@ -11641,7 +11641,7 @@ async function loadCommPosts(commId){
   const myRxMap={};(myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
   el.innerHTML = posts.map(p=>renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||'')).join('') || '<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhum post ainda. Seja o primeiro!</div>';
   _hydrateAllReposts(el);
-  if(window.innerWidth <= 768) setTimeout(initFeedAutoplay, 100);
+  setTimeout(initFeedAutoplay, 100); // roda em todos (autoplay só mobile)
 }
 
 async function loadCommMembers(commId){
@@ -15634,7 +15634,7 @@ async function loadCommPostsV2(commId,isMember,isMod){
   }).join('');
   _hydrateAllReposts(el);
   updateCommentCounts(postIds);
-  if(window.innerWidth <= 768) setTimeout(initFeedAutoplay, 100);
+  setTimeout(initFeedAutoplay, 100); // roda em todos (autoplay só mobile)
 }
 
 async function delCommPost(commId,postId){
@@ -17918,7 +17918,7 @@ let _feedObserver = null;
 let _domWatcher = null; // MutationObserver global para iframes YT adicionados dinamicamente
 
 function _startDomWatcher(){
-  if(_domWatcher || window.innerWidth > 768) return;
+  if(_domWatcher) return; // permite rodar em desktop também (para view count)
   _domWatcher = new MutationObserver(mutations => {
     if(!_feedObserver) return;
     for(const mut of mutations){
@@ -17988,8 +17988,8 @@ function _toggleGlobalMute(e){
 }
 
 function initFeedAutoplay(){
-  // Só roda em mobile
-  if(window.innerWidth > 768) return;
+  // Autoplay só em mobile, mas view count para todos
+  const isMobile = window.innerWidth <= 768;
 
   // Desconecta observer anterior para evitar duplicatas
   if(_feedObserver) _feedObserver.disconnect();
@@ -18001,30 +18001,31 @@ function initFeedAutoplay(){
       // ── Vídeos nativos HTML5 ──
       if(el.tagName === 'VIDEO'){
         if(entry.isIntersecting && entry.intersectionRatio >= 0.6){
-          el.muted = _globalMuted;
-          el.play().catch(()=>{});
-          _showMuteIndicator(el);
-          // Incrementa view count uma única vez por sessão por vídeo
+          // Autoplay: só mobile
+          if(isMobile){
+            el.muted = _globalMuted;
+            el.play().catch(()=>{});
+            _showMuteIndicator(el);
+          }
+          // View count: todos os dispositivos — conta 1x por sessão por vídeo
           if(!el.dataset.viewCounted){
             el.dataset.viewCounted='1';
-            // Descobre postId e index a partir do card pai
             const card = el.closest('.post-card');
             if(card){
               const postId = card.id?.replace('post-','');
               if(postId){
-                // Encontra o índice deste vídeo nos media_urls do post
                 const allVids = Array.from(card.querySelectorAll('video'));
                 const vidIdx = allVids.indexOf(el);
                 const key = postId+'_'+(vidIdx>=0?vidIdx:0);
                 const newViews = _incVideoViews(key);
-                // Atualiza o contador no feed (se existir)
                 const span = document.getElementById('feed-views-'+postId);
                 if(span) span.textContent = _fmtViews(newViews);
               }
             }
           }
         } else {
-          el.pause();
+          // Pausa só no mobile
+          if(isMobile) el.pause();
         }
         return;
       }
