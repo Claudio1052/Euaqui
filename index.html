@@ -713,10 +713,14 @@ body{
   .pcontent{font-size:14px;line-height:1.6;margin-bottom:10px;padding:0 2px;word-break:break-word;word-wrap:break-word;overflow-wrap:break-word;}
   .mi img{width:100%;height:340px;object-fit:cover;display:block;}
 
-  /* Mobile: todos os vídeos → cover, largura total, sem bordas pretas laterais */
+  /* Mobile: vídeo horizontal → cover borda a borda (sem laterais) */
   .mi video{
     width:100%;height:320px;display:block;
     object-fit:cover;background:#000;
+  }
+  /* Força o .pmedia e .mi a ignorar o padding do card no horizontal */
+  .post-card:not(.has-solo-video) .pmedia{
+    margin-left:-16px;margin-right:-16px;border-radius:0;
   }
   .media-carousel-slide img{height:320px;}
   .media-carousel-slide video{
@@ -724,13 +728,14 @@ body{
     object-fit:cover;background:#000;
   }
 
-  /* Mobile: vídeo VERTICAL (post único) → altura até 60vh, contain para não cortar */
+  /* Mobile: vídeo VERTICAL (post único) → contain até 65vh */
   .post-card.has-solo-video .mi video{
-    width:100%;
-    height:auto;
-    max-height:60vh;
-    object-fit:contain;
-    background:#000;
+    width:100%;height:auto;max-height:65vh;
+    object-fit:contain;background:#000;
+  }
+  /* Vertical: pmedia também borda a borda */
+  .post-card.has-solo-video .pmedia{
+    margin-left:-16px;margin-right:-16px;border-radius:0;
   }
 
   .mc-btn{display:none !important;}
