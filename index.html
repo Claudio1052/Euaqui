@@ -5846,8 +5846,9 @@ function renderMedia(urls,types){
     const url=safeUrls[0], t=(Array.isArray(types)&&types[0])||'image';
     const safeUrl=xss(url);
     if(t==='video'||url.match(/\.mp4$|\.webm$|\.mov$|\.ogg$/i)){
+      // data-src: o src real só é injetado quando o card entra na viewport (lazy)
       return`<div class="pmedia"><div class="media-grid g1" style="border-radius:10px;overflow:hidden;">
-        <div class="mi"><video src="${safeUrl}" preload="metadata" controls playsinline muted loop class="img-safe feed-video" style="width:100%;max-height:340px;display:block;background:#000;"></video></div>
+        <div class="mi"><video data-src="${safeUrl}" preload="none" controls playsinline muted loop class="img-safe feed-video lazy-video" style="width:100%;max-height:340px;display:block;background:#111;"></video></div>
       </div></div>`;
     }
     return`<div class="pmedia"><div class="media-grid g1" style="border-radius:10px;overflow:hidden;">
@@ -5862,7 +5863,7 @@ function renderMedia(urls,types){
     const safeUrl=xss(url);
     if(t==='video'||url.match(/\.mp4$|\.webm$|\.mov$|\.ogg$/i)){
       return`<div class="media-carousel-slide">
-        <video src="${safeUrl}" preload="metadata" controls playsinline muted loop class="img-safe feed-video" style="width:100%;max-height:340px;display:block;"></video>
+        <video data-src="${safeUrl}" preload="none" controls playsinline muted loop class="img-safe feed-video lazy-video" style="width:100%;max-height:340px;display:block;background:#111;"></video>
       </div>`;
     }
     return`<div class="media-carousel-slide" onclick="openLightbox('${safeUrl}')" style="cursor:pointer;">
@@ -6613,6 +6614,119 @@ async function compressImage(file){
   return new File([out], name, {type:'image/jpeg'});
 }
 
+// --- MP4 Faststart puro JS: move o moov atom para o início do arquivo ---
+// Isso resolve o "demora para carregar" sem servidor e sem libs externas.
+// O browser consegue começar a tocar o vídeo sem baixar o arquivo inteiro.
+// Retorna um novo File com moov no início, ou o original se falhar/não for MP4.
+async function mp4Faststart(file){
+  if(!file.type.includes('mp4') && !file.name.match(/\.mp4$/i)) return file;
+  try{
+    const buf = await file.arrayBuffer();
+    const view = new DataView(buf);
+    const total = buf.byteLength;
+
+    // ── Parseia os átomos de nível raiz ──
+    const atoms = [];
+    let pos = 0;
+    while(pos + 8 <= total){
+      const size = view.getUint32(pos);           // tamanho do átomo
+      const type = String.fromCharCode(
+        view.getUint8(pos+4), view.getUint8(pos+5),
+        view.getUint8(pos+6), view.getUint8(pos+7)
+      );
+      if(size < 8) break; // átomo inválido
+      atoms.push({ type, start:pos, size });
+      pos += size;
+    }
+
+    const moovIdx = atoms.findIndex(a=>a.type==='moov');
+    const mdatIdx = atoms.findIndex(a=>a.type==='mdat');
+    if(moovIdx === -1) return file; // não é MP4 válido
+
+    // Se moov já está antes do mdat → já tem faststart, retorna original
+    if(moovIdx < mdatIdx || mdatIdx === -1) {
+      console.log('[faststart] moov já está no início ✓');
+      return file;
+    }
+
+    console.log('[faststart] movendo moov atom para o início...');
+
+    // ── Calcula o offset que o moov vai ter depois de ser movido ──
+    // O moov ficará depois de ftyp (se existir) e antes de tudo mais.
+    const ftypAtom = atoms.find(a=>a.type==='ftyp');
+    const moovAtom = atoms[moovIdx];
+    const offsetBefore = ftypAtom ? ftypAtom.size : 0; // posição onde o moov vai ficar
+
+    // O moov contém offsets absolutos para os dados de mídia (stco/co64).
+    // Eles precisam ser ajustados porque o moov vai "empurrar" os dados pra frente.
+    // Delta = tamanho do moov (ele vai para antes do mdat, que se move para trás).
+    const delta = moovAtom.size;
+    const moovBuf = buf.slice(moovAtom.start, moovAtom.start + moovAtom.size);
+    patchStco(new DataView(moovBuf.slice(0)), delta); // patch in-place
+
+    // ── Monta o novo arquivo: ftyp? + moov(patched) + resto sem moov ──
+    const parts = [];
+    if(ftypAtom) parts.push(buf.slice(ftypAtom.start, ftypAtom.start + ftypAtom.size));
+    parts.push(moovBuf);
+    for(const a of atoms){
+      if(a.type === 'moov') continue;
+      if(ftypAtom && a.type === 'ftyp') continue;
+      parts.push(buf.slice(a.start, a.start + a.size));
+    }
+
+    const newBlob = new Blob(parts, {type: file.type});
+    console.log(`[faststart] ✓ moov movido (${(moovAtom.size/1024).toFixed(0)}KB). Arquivo pronto para streaming.`);
+    return new File([newBlob], file.name, {type: file.type, lastModified: file.lastModified});
+  }catch(e){
+    console.warn('[faststart] falhou, usando original:', e.message);
+    return file; // fallback silencioso
+  }
+}
+
+// Percorre o moov e ajusta todos os stco/co64 somando delta aos offsets
+function patchStco(view, delta){
+  const size = view.byteLength;
+  let i = 0;
+  while(i + 8 <= size){
+    const boxSize = view.getUint32(i);
+    const boxType = String.fromCharCode(
+      view.getUint8(i+4), view.getUint8(i+5),
+      view.getUint8(i+6), view.getUint8(i+7)
+    );
+    if(boxSize < 8 || boxSize > size - i) break;
+
+    if(boxType === 'stco'){
+      // stco: 4 bytes version/flags, 4 bytes entry_count, depois os offsets (uint32)
+      const count = view.getUint32(i + 12);
+      for(let e = 0; e < count; e++){
+        const off = i + 16 + e * 4;
+        view.setUint32(off, view.getUint32(off) + delta);
+      }
+    } else if(boxType === 'co64'){
+      // co64: offsets de 64 bits (low 32 bits são suficientes para <4GB)
+      const count = view.getUint32(i + 12);
+      for(let e = 0; e < count; e++){
+        const off = i + 16 + e * 8;
+        const hi = view.getUint32(off);
+        const lo = view.getUint32(off + 4);
+        // Soma delta ao valor de 64 bits
+        const newLo = (lo + delta) >>> 0;
+        const carry = (lo + delta > 0xFFFFFFFF) ? 1 : 0;
+        view.setUint32(off, hi + carry);
+        view.setUint32(off + 4, newLo);
+      }
+    }
+    // Recursão em containers (moov, trak, mdia, minf, stbl, etc.)
+    const containers = ['moov','trak','mdia','minf','stbl','udta','edts'];
+    if(containers.includes(boxType)){
+      // Chama recursivamente no conteúdo do container (skip 8 bytes do header)
+      const sub = new DataView(view.buffer, view.byteOffset + i + 8, boxSize - 8);
+      patchStco(sub, delta);
+    }
+    i += boxSize;
+  }
+}
+
 // --- Compressão de vídeo via MediaRecorder (API NATIVA, sem CDN/WASM) ---
 // Funciona em qualquer hospedagem, sem headers especiais.
 // Re-codifica num <canvas> + MediaStream -> MediaRecorder.
@@ -6816,6 +6930,19 @@ async function uploadWithPipeline(file, type, setStatus){
     const err = new Error('TOO_LARGE_AFTER_COMPRESS');
     err.userMessage = `🚫 Mesmo após compressão ficou ${(compressed.size/1024/1024).toFixed(1)}MB (máx. ${R2_MAX_UPLOAD_MB}MB).`;
     throw err;
+  }
+
+  // 2.6) MP4 Faststart — move moov atom para o início do arquivo
+  // Isso permite que o browser comece a tocar o vídeo SEM baixar o arquivo todo.
+  // Feito 100% no browser, sem servidor, sem libs externas.
+  if(type === 'video'){
+    progress(81, 'Otimizando vídeo');
+    try{
+      compressed = await mp4Faststart(compressed);
+      console.log('[pipeline] faststart aplicado ✓');
+    }catch(e){
+      console.warn('[pipeline] faststart falhou, continuando:', e.message);
+    }
   }
 
   // 3) Presign
@@ -17930,7 +18057,7 @@ function _startDomWatcher(){
           _feedObserver.observe(node);
         }
         // Verifica filhos
-        node.querySelectorAll?.('.yt-feed-iframe:not([data-observed]),.feed-video:not([data-observed])').forEach(el=>{
+        node.querySelectorAll?.('.yt-feed-iframe:not([data-observed]),.feed-video:not([data-observed]),.lazy-video:not([data-observed])').forEach(el=>{
           el.dataset.observed = '1';
           _feedObserver.observe(el);
         });
@@ -18000,12 +18127,20 @@ function initFeedAutoplay(){
 
       // ── Vídeos nativos HTML5 ──
       if(el.tagName === 'VIDEO'){
-        if(entry.isIntersecting && entry.intersectionRatio >= 0.6){
+        if(entry.isIntersecting && entry.intersectionRatio >= 0.3){
+          // Lazy load: injeta src real apenas quando entra na viewport
+          // Isso evita que o browser baixe todos os vídeos do feed de uma vez
+          if(el.dataset.src && !el.src){
+            el.src = el.dataset.src;
+            el.load(); // dispara o fetch — agora com moov atom no início via CF
+          }
           // Autoplay: só mobile
           if(isMobile){
             el.muted = _globalMuted;
-            el.play().catch(()=>{});
-            _showMuteIndicator(el);
+            // Toca só depois que o src foi carregado
+            const tryPlay = ()=>{ el.play().catch(()=>{}); _showMuteIndicator(el); };
+            if(el.readyState >= 1) tryPlay();
+            else el.addEventListener('loadedmetadata', tryPlay, {once:true});
           }
           // View count: todos os dispositivos — conta 1x por sessão por vídeo
           if(!el.dataset.viewCounted){
