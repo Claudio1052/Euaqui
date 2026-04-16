@@ -7314,20 +7314,25 @@ async function loadProfileFotos(userId){
     }
 
     const totalFotos = fotoPosts.reduce((a,p)=>a+p.imgs.length,0);
+    // Registra os arrays de imagens num mapa global para acesso por index
+    if(!window._ppFotoGroups) window._ppFotoGroups = {};
+    const groupKey = 'ppg_'+userId+'_'+Date.now();
+    window._ppFotoGroups[groupKey] = fotoPosts.map(p=>p.imgs);
+
     panel.innerHTML =
       '<div class="pp-media-count">📷 '+totalFotos+' foto'+(totalFotos!==1?'s':'')+
         (fotoPosts.length!==totalFotos?' em '+fotoPosts.length+' post'+(fotoPosts.length!==1?'s':''):'')+
       '</div>'+
       '<div class="pp-media-grid">'+
-        fotoPosts.map(p=>{
+        fotoPosts.map((p,gi)=>{
           const first = xss(p.imgs[0]);
           const extra = p.imgs.length > 1 ? p.imgs.length : 0;
-          // Abre carrossel se tiver múltiplas fotos, senão lightbox direto
-          const onclick = p.imgs.length > 1
-            ? `ppOpenFotoCarousel(${JSON.stringify(p.imgs)},0)`
-            : `openLightbox('${first}')`;
-          return`<div class="pp-media-item" onclick="${onclick}">
-            <img src="${first}" loading="lazy" class="img-safe" alt="foto">
+          // Usa data-gkey e data-gi para passar referência sem quebrar HTML
+          const clickAttr = p.imgs.length > 1
+            ? `data-gkey="${groupKey}" data-gi="${gi}" onclick="ppOpenFotoCarousel(window._ppFotoGroups[this.dataset.gkey][this.dataset.gi],0)"`
+            : `onclick="openLightbox('${first}')"`;
+          return`<div class="pp-media-item" ${clickAttr}>
+            <img src="${first}" loading="lazy" class="img-safe" alt="foto" style="pointer-events:none;">
             ${extra?`<span class="pp-media-stack-badge">⧉ ${extra}</span>`:''}
             <div class="pp-media-badge">❤ ${p.likes}</div>
           </div>`;
@@ -7341,44 +7346,69 @@ async function loadProfileFotos(userId){
 
 // Abre lightbox em modo carrossel para múltiplas fotos de um post
 function ppOpenFotoCarousel(urls, startIdx){
+  if(!Array.isArray(urls)||!urls.length) return;
   const lb = document.getElementById('m-lightbox');
   const lbImg = document.getElementById('lb-img');
   if(!lb||!lbImg) return;
+
   // Esconder player de vídeo se aberto
   const vid = document.getElementById('lb-vid-player');
   if(vid){ vid.pause(); vid.src=''; vid.style.display='none'; }
   lbImg.style.display='block';
-  let cur = startIdx||0;
+
+  let cur = Math.max(0, Math.min(startIdx||0, urls.length-1));
+
+  function _cleanup(){
+    ['lb-prev-btn','lb-next-btn','lb-carousel-ctr'].forEach(id=>{ lb.querySelector('#'+id)?.remove(); });
+  }
+
   function show(i){
-    cur = Math.max(0,Math.min(i,urls.length-1));
+    cur = Math.max(0, Math.min(i, urls.length-1));
     lbImg.src = urls[cur];
-    // atualiza contador
+
+    // Contador
     let ctr = lb.querySelector('#lb-carousel-ctr');
-    if(!ctr){ ctr=document.createElement('div'); ctr.id='lb-carousel-ctr';
-      ctr.style.cssText='position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);color:#fff;font-size:12px;font-family:Space Mono,monospace;padding:3px 12px;border-radius:10px;z-index:10002;';
-      lb.appendChild(ctr); }
+    if(!ctr){
+      ctr = document.createElement('div'); ctr.id='lb-carousel-ctr';
+      ctr.style.cssText='position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);color:#fff;font-size:12px;font-family:"Space Mono",monospace;padding:4px 14px;border-radius:20px;z-index:10002;pointer-events:none;';
+      lb.appendChild(ctr);
+    }
     ctr.textContent=(cur+1)+' / '+urls.length;
-    ctr.style.display=urls.length>1?'block':'none';
-    // botões nav
-    ['lb-prev-btn','lb-next-btn'].forEach(id=>{ const b=lb.querySelector('#'+id); if(b) b.remove(); });
+
+    // Botões ‹ ›
+    ['lb-prev-btn','lb-next-btn'].forEach(id=>{ lb.querySelector('#'+id)?.remove(); });
     if(urls.length>1){
       const bp=document.createElement('button'); bp.id='lb-prev-btn';
-      bp.style.cssText='position:fixed;left:12px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.6);border:none;color:#fff;width:40px;height:40px;border-radius:50%;font-size:22px;cursor:pointer;z-index:10002;display:flex;align-items:center;justify-content:center;';
-      bp.innerHTML='&#8249;'; bp.disabled=cur===0; bp.style.opacity=cur===0?'.3':'1';
-      bp.onclick=(e)=>{e.stopPropagation();show(cur-1);}; lb.appendChild(bp);
+      bp.style.cssText='position:fixed;left:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.65);border:none;color:#fff;width:44px;height:44px;border-radius:50%;font-size:26px;cursor:pointer;z-index:10002;display:flex;align-items:center;justify-content:center;opacity:'+(cur===0?'.3':'1')+';';
+      bp.innerHTML='&#8249;';
+      bp.onclick=(e)=>{ e.stopPropagation(); if(cur>0) show(cur-1); };
+      lb.appendChild(bp);
+
       const bn=document.createElement('button'); bn.id='lb-next-btn';
-      bn.style.cssText='position:fixed;right:12px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.6);border:none;color:#fff;width:40px;height:40px;border-radius:50%;font-size:22px;cursor:pointer;z-index:10002;display:flex;align-items:center;justify-content:center;';
-      bn.innerHTML='&#8250;'; bn.disabled=cur===urls.length-1; bn.style.opacity=cur===urls.length-1?'.3':'1';
-      bn.onclick=(e)=>{e.stopPropagation();show(cur+1);}; lb.appendChild(bn);
+      bn.style.cssText='position:fixed;right:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.65);border:none;color:#fff;width:44px;height:44px;border-radius:50%;font-size:26px;cursor:pointer;z-index:10002;display:flex;align-items:center;justify-content:center;opacity:'+(cur===urls.length-1?'.3':'1')+';';
+      bn.innerHTML='&#8250;';
+      bn.onclick=(e)=>{ e.stopPropagation(); if(cur<urls.length-1) show(cur+1); };
+      lb.appendChild(bn);
     }
   }
+
   show(cur);
+
+  // Fechar ao clicar no fundo
   lb.onclick=(e)=>{
-    if(e.target===lb){
-      ['lb-prev-btn','lb-next-btn','lb-carousel-ctr'].forEach(id=>{lb.querySelector('#'+id)?.remove();});
-      closeM('m-lightbox');
-    }
+    if(e.target===lb||e.target===lbImg){ _cleanup(); closeM('m-lightbox'); }
   };
+
+  // Swipe horizontal (mobile)
+  let _sx=null;
+  lb.ontouchstart=(e)=>{ _sx=e.touches[0].clientX; };
+  lb.ontouchend=(e)=>{
+    if(_sx===null) return;
+    const dx=_sx - e.changedTouches[0].clientX;
+    if(Math.abs(dx)>50){ if(dx>0&&cur<urls.length-1) show(cur+1); else if(dx<0&&cur>0) show(cur-1); }
+    _sx=null;
+  };
+
   openM('m-lightbox');
 }
 
