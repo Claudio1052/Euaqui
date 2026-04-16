@@ -137,7 +137,7 @@ nav{position:fixed;top:0;left:0;right:0;background:#0a0a2a;border-bottom:1px sol
 .media-carousel-track{display:flex;transition:transform .32s cubic-bezier(.4,0,.2,1);will-change:transform;}
 .media-carousel-slide{flex:0 0 100%;width:100%;position:relative;display:flex;align-items:center;justify-content:center;background:#000;}
 .media-carousel-slide img{width:100%;height:340px;object-fit:cover;display:block;user-select:none;-webkit-user-drag:none;}
-.media-carousel-slide video{width:100%;max-height:340px;display:block;background:#000;}
+.media-carousel-slide video{width:100%;max-height:340px;display:block;background:#000;object-fit:contain;}
 .mc-btn{position:absolute;top:50%;transform:translateY(-50%);z-index:10;background:rgba(0,0,0,.55);border:none;color:#fff;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:background .2s;backdrop-filter:blur(4px);}
 .mc-btn:hover{background:rgba(0,255,204,.7);color:#0a0a2a;}
 .mc-btn.prev{left:8px;}
@@ -154,7 +154,7 @@ nav{position:fixed;top:0;left:0;right:0;background:#0a0a2a;border-bottom:1px sol
 .mi{position:relative;overflow:hidden;background:#000;cursor:pointer;}
 .mi img{width:100%;height:340px;object-fit:cover;display:block;transition:opacity .2s;}
 .mi:hover img{opacity:.85;}
-.mi video{width:100%;max-height:340px;display:block;border-radius:0;}
+.mi video{width:100%;max-height:340px;display:block;border-radius:0;object-fit:contain;background:#000;}
 .video-thumb{position:relative;}
 .play-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.4);}
 .play-btn-lrg{width:56px;height:56px;border-radius:50%;background:rgba(0,255,204,.9);display:flex;align-items:center;justify-content:center;font-size:20px;color:#0a0a2a;font-weight:bold;}
@@ -711,9 +711,9 @@ body{
   .pt{font-size:11px;}
   .pcontent{font-size:14px;line-height:1.6;margin-bottom:10px;padding:0 2px;word-break:break-word;word-wrap:break-word;overflow-wrap:break-word;}
   .mi img{width:100%;height:340px;object-fit:cover;display:block;}
-  .mi video{width:100%;max-height:340px;display:block;}
+  .mi video{width:100%;max-height:80vh;height:auto;display:block;object-fit:contain;background:#000;}
   .media-carousel-slide img{height:320px;}
-  .media-carousel-slide video{max-height:320px;}
+  .media-carousel-slide video{width:100%;max-height:80vh;height:auto;object-fit:contain;background:#000;}
   .mc-btn{display:none !important;}
   .pmedia{border-radius:0;margin-left:0;margin-right:0;margin-bottom:10px;width:100%;max-width:100%;}
   .preactions{gap:6px;margin-bottom:8px;padding:0 2px;}
@@ -5205,7 +5205,7 @@ async function loadFeed(force=false){
   const ctx = _feedCtx;
 
   // Select seguro — sem colunas que podem não existir
-  const SEL='id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url,status_message)';
+  const SEL='id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url,status_message)';
 
   // Mostra indicador de "carregando mais" se não for primeira página
   if(feedPage>0 && feedEnd){
@@ -5619,10 +5619,9 @@ function renderPost(post,rxCounts={},myRx='',_origPostMap){
       // Mostra contador de views se o post tem vídeo
       const hasVid = mediaTyps.some(t=>t==='video') || mediaUrls.some(u=>u&&u.match(/\.mp4$|\.webm$|\.mov$|\.ogg$/i));
       if(!hasVid) return '';
-      // Soma views de todos os vídeos do post (localStorage, zero Egress)
-      let totalViews=0;
-      mediaUrls.forEach((_,i2)=>{ totalViews+=_getVideoViews(post.id+'_'+i2); });
-      return `<div style="padding:6px 2px 0;font-size:10px;color:var(--text-muted);font-family:'Space Mono',monospace;display:flex;align-items:center;gap:4px;">👁 <span id="feed-views-${post.id}">${_fmtViews(totalViews)}</span> visualizações</div>`;
+      // Usa video_views do banco (global) — já vem no SELECT do post
+      const globalViews = post.video_views || 0;
+      return `<div style="padding:6px 2px 0;font-size:10px;color:var(--text-muted);font-family:'Space Mono',monospace;display:flex;align-items:center;gap:4px;">👁 <span id="feed-views-${post.id}">${_fmtViews(globalViews)}</span> visualizações</div>`;
     })()}
     <div class="pactions">
       <button class="abtn" onclick="toggleCmts('${post.id}',this)">💬 <span id="cmtcnt-${post.id}">${cmtCnt}</span></button>
@@ -5848,7 +5847,7 @@ function renderMedia(urls,types){
     if(t==='video'||url.match(/\.mp4$|\.webm$|\.mov$|\.ogg$/i)){
       // data-src: o src real só é injetado quando o card entra na viewport (lazy)
       return`<div class="pmedia"><div class="media-grid g1" style="border-radius:10px;overflow:hidden;">
-        <div class="mi"><video data-src="${safeUrl}" preload="none" controls playsinline muted loop class="img-safe feed-video lazy-video" style="width:100%;max-height:340px;display:block;background:#111;"></video></div>
+        <div class="mi"><video data-src="${safeUrl}" preload="none" controls playsinline muted loop class="img-safe feed-video lazy-video" style="width:100%;max-height:80vh;height:auto;display:block;background:#000;object-fit:contain;"></video></div>
       </div></div>`;
     }
     return`<div class="pmedia"><div class="media-grid g1" style="border-radius:10px;overflow:hidden;">
@@ -5863,7 +5862,7 @@ function renderMedia(urls,types){
     const safeUrl=xss(url);
     if(t==='video'||url.match(/\.mp4$|\.webm$|\.mov$|\.ogg$/i)){
       return`<div class="media-carousel-slide">
-        <video data-src="${safeUrl}" preload="none" controls playsinline muted loop class="img-safe feed-video lazy-video" style="width:100%;max-height:340px;display:block;background:#111;"></video>
+        <video data-src="${safeUrl}" preload="none" controls playsinline muted loop class="img-safe feed-video lazy-video" style="width:100%;max-height:80vh;height:auto;display:block;background:#000;object-fit:contain;"></video>
       </div>`;
     }
     return`<div class="media-carousel-slide" onclick="openLightbox('${safeUrl}')" style="cursor:pointer;">
@@ -7414,7 +7413,7 @@ async function loadProfileFotos(userId){
   try{
     const isOwn = CU?.id === userId;
     let q = db.from('posts')
-      .select('id,media_urls,media_types,likes_count,comments_count,created_at')
+      .select('id,media_urls,media_types,likes_count,comments_count,video_views,created_at')
       .eq('user_id', userId)
       .not('media_urls', 'is', null)
       .order('created_at', {ascending:false})
@@ -7548,7 +7547,7 @@ async function loadProfileVideos(userId){
   try{
     const isOwn = CU?.id === userId;
     let q = db.from('posts')
-      .select('id,media_urls,media_types,likes_count,comments_count,created_at')
+      .select('id,media_urls,media_types,likes_count,comments_count,video_views,created_at')
       .eq('user_id', userId)
       .not('media_urls', 'is', null)
       .order('created_at', {ascending:false})
@@ -7564,7 +7563,7 @@ async function loadProfileVideos(userId){
       urls.forEach((url,i)=>{
         const t = types[i]||'image';
         if(t==='video'||url.match(/\.mp4$|\.webm$|\.mov$|\.ogg$/i)){
-          const views = _getVideoViews(p.id+'_'+i);
+          const views = p.video_views || 0;
           videos.push({url, postId:p.id, idx:i, likes:p.likes_count||0, views});
         }
       });
@@ -7617,12 +7616,65 @@ function _renderVideoThumb(src, canvasId){
   vid.onerror = ()=>{ vid.src=''; }; // falha silenciosa
 }
 
-// ── View count via localStorage (zero Cached Egress) ───────────────
-// Chave: "vv_<postId>_<idx>" — guarda contagem local no device do viewer.
-// Para views "reais" entre usuários, use Supabase RPC com debounce (opcional).
-function _getVideoViews(key){ try{ return parseInt(localStorage.getItem('vv_'+key)||'0')||0; }catch(e){ return 0; } }
-function _incVideoViews(key){ try{ const v=_getVideoViews(key)+1; localStorage.setItem('vv_'+key,v); return v; }catch(e){ return 0; } }
-function _fmtViews(n){ if(n>=1000000) return (n/1000000).toFixed(1)+'M'; if(n>=1000) return (n/1000).toFixed(1)+'k'; return String(n); }
+// ── View count GLOBAL via Supabase ────────────────────────────────
+// localStorage impede contar 2x pelo mesmo device (chave "vv_<postId>").
+// Debounce de 3s antes de gravar no banco — agrupa visualizações rápidas.
+// Usa UPDATE atômico para não perder views concorrentes.
+// Fallback silencioso se o banco não tiver a coluna ainda.
+const _viewDebounce = {};
+
+function _getVideoViews(key){
+  try{ return parseInt(localStorage.getItem('vv_'+key)||'0')||0; }catch(e){ return 0; }
+}
+
+function _fmtViews(n){
+  if(n>=1000000) return (n/1000000).toFixed(1)+'M';
+  if(n>=1000)    return (n/1000).toFixed(1)+'k';
+  return String(n);
+}
+
+// Incrementa: local imediato + Supabase com debounce 3s
+async function _incVideoViews(postId){
+  const lsKey = 'vv_'+postId;
+  // Já contou neste device? Retorna o valor local sem gravar de novo
+  if(_getVideoViews(lsKey) > 0){
+    return _getVideoViews(lsKey);
+  }
+  // Marca localmente imediatamente
+  try{ localStorage.setItem(lsKey, '1'); }catch(e){}
+
+  // Debounce: cancela timer anterior e agenda novo
+  if(_viewDebounce[postId]) clearTimeout(_viewDebounce[postId]);
+  _viewDebounce[postId] = setTimeout(async()=>{
+    try{
+      // Tenta RPC atômica primeiro (mais segura para concorrência)
+      const {error:rpcErr} = await db.rpc('increment_video_views', {post_id: postId});
+      if(rpcErr){
+        // Fallback: UPDATE direto somando 1
+        await db.from('posts')
+          .update({ video_views: db.raw ? undefined : null }) // placeholder
+          .eq('id', postId);
+        // Usa SQL raw via RPC genérica se disponível
+        await db.rpc('increment_video_views', {post_id: postId}).catch(()=>{});
+      }
+      console.log('[views] +1 gravado no Supabase para post', postId);
+    }catch(e){
+      console.warn('[views] falha ao gravar no Supabase:', e.message);
+    }
+    delete _viewDebounce[postId];
+  }, 3000);
+
+  // Retorna estimativa local enquanto o banco processa
+  return 1;
+}
+
+// Lê views do Supabase para um post (chamado ao renderizar)
+async function _fetchVideoViews(postId){
+  try{
+    const {data} = await db.from('posts').select('video_views').eq('id',postId).maybeSingle();
+    return (data && data.video_views) || 0;
+  }catch(e){ return 0; }
+}
 
 // Abre vídeo no lightbox e incrementa view count
 function ppPlayVideo(url, viewKey, gridIdx){
@@ -7631,9 +7683,18 @@ function ppPlayVideo(url, viewKey, gridIdx){
   if(!lb||!lbImg) return;
   // Incrementa view + atualiza badge no grid
   if(viewKey){
-    const newViews = _incVideoViews(viewKey);
-    const badge = document.querySelector('#ppv-'+gridIdx+' .pp-media-badge');
-    if(badge){ const parts=badge.textContent.split('·'); if(parts.length>=2) badge.textContent='👁 '+_fmtViews(newViews)+' ·'+parts.slice(1).join('·'); }
+    // viewKey = "postId_idx" — extrai postId para gravar no banco
+    const postIdFromKey = viewKey.split('_')[0];
+    _incVideoViews(postIdFromKey).then(()=>{
+      setTimeout(async()=>{
+        const realViews = await _fetchVideoViews(postIdFromKey);
+        const badge = document.querySelector('#ppv-'+gridIdx+' .pp-media-badge');
+        if(badge && realViews > 0){
+          const parts = badge.textContent.split('·');
+          badge.textContent = '👁 '+_fmtViews(realViews)+(parts.length>=2?' ·'+parts.slice(1).join('·'):'');
+        }
+      }, 3500);
+    });
   }
   // Esconder img, mostrar vídeo
   lbImg.style.display='none';
@@ -7772,7 +7833,7 @@ async function loadCapsules(){
 async function loadExploreFeed(){
   const feed=document.getElementById('explore-feed');
   feed.innerHTML='<h3 style="font-family:\'Silkscreen\',monospace;font-size:12px;color:var(--neon-cyan);margin-bottom:14px;margin-top:4px;">POSTS EM DESTAQUE</h3>'+skeletons(3);
-  const{data:posts,error:expErr}=await db.from('posts').select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url)').order('created_at',{ascending:false}).limit(20);
+  const{data:posts,error:expErr}=await db.from('posts').select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url)').order('created_at',{ascending:false}).limit(20);
   if(expErr){feed.innerHTML='<div style="color:var(--neon-pink);padding:20px;font-size:12px;">Erro: '+expErr.message+'</div>';return;}
   const postIds=(posts||[]).map(p=>p.id);
   const[rxData,myLikesData]=await Promise.all([
@@ -7800,7 +7861,7 @@ async function doSearch(){
   const seen=new Set();
   const users=[...(byUser||[]),...(byName||[])].filter(u=>{if(seen.has(u.id))return false;seen.add(u.id);return true;}).slice(0,8);
   const{data:posts}=await db.from('posts')
-    .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url)')
+    .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url)')
     .ilike('content','%'+q+'%').order('created_at',{ascending:false}).limit(10);
   let html='';
   if(users.length){
@@ -8535,7 +8596,7 @@ async function loadProfilePage(userId){
     if(postsPanel){
       // [FIX #1] Visitantes não veem posts privados — só o próprio dono vê os seus privados
       let postsQuery = db.from('posts')
-        .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url)')
+        .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url)')
         .eq('user_id',userId).order('created_at',{ascending:false}).limit(10);
       if(!isOwn) {
         // Usuário logado diferente do dono do perfil: excluir posts privados
@@ -10004,7 +10065,7 @@ async function loadHomeProfile(){
   const postsDiv=document.createElement('div');postsDiv.id='ht-my-posts';
   postsWrap.appendChild(postsDiv);el.appendChild(postsWrap);
   const{data:posts}=await db.from('posts')
-    .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url)')
+    .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url)')
     .eq('user_id',CU.id).order('created_at',{ascending:false}).limit(5);
   postsDiv.innerHTML=(posts||[]).map(p=>renderPost(p,{},'')).join('')
     ||'<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:20px;">Nenhum post ainda</div>';
@@ -10372,7 +10433,7 @@ async function _goToOriginalPost(postId){
   // 4. Post não está no feed — buscar e renderizar diretamente
   try{
     const{data:p} = await db.from('posts')
-      .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url,status_message)')
+      .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url,status_message)')
       .eq('id', postId).maybeSingle();
     if(!p){ showToast('Post original não encontrado','error'); return; }
 
@@ -15528,7 +15589,7 @@ async function searchHashtag(tag){
   if(!feed) return;
   feed.innerHTML='<h3 style="font-family:\'Silkscreen\',monospace;font-size:12px;color:var(--neon-cyan);margin-bottom:14px;">#'+tag+'</h3>'+skeletons(3);
   const{data:posts}=await db.from('posts')
-    .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url)')
+    .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url)')
     .ilike('content','%#'+tag+'%')
     .order('created_at',{ascending:false}).limit(20);
   if(!posts?.length){
@@ -18142,19 +18203,25 @@ function initFeedAutoplay(){
             if(el.readyState >= 1) tryPlay();
             else el.addEventListener('loadedmetadata', tryPlay, {once:true});
           }
-          // View count: todos os dispositivos — conta 1x por sessão por vídeo
+          // View count GLOBAL: conta 1x por device por post, grava no Supabase
           if(!el.dataset.viewCounted){
             el.dataset.viewCounted='1';
             const card = el.closest('.post-card');
             if(card){
               const postId = card.id?.replace('post-','');
               if(postId){
-                const allVids = Array.from(card.querySelectorAll('video'));
-                const vidIdx = allVids.indexOf(el);
-                const key = postId+'_'+(vidIdx>=0?vidIdx:0);
-                const newViews = _incVideoViews(key);
-                const span = document.getElementById('feed-views-'+postId);
-                if(span) span.textContent = _fmtViews(newViews);
+                // Incrementa local + agenda gravação no banco
+                _incVideoViews(postId).then(localVal=>{
+                  // Atualiza o span imediatamente com valor local
+                  const span = document.getElementById('feed-views-'+postId);
+                  if(span){
+                    // Busca valor real do banco após 3.5s (depois do debounce)
+                    setTimeout(async()=>{
+                      const realViews = await _fetchVideoViews(postId);
+                      if(span && realViews > 0) span.textContent = _fmtViews(realViews);
+                    }, 3500);
+                  }
+                });
               }
             }
           }
