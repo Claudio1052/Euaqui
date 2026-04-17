@@ -4723,21 +4723,21 @@ body.day-mode::before{
 
 
 <!-- LIGHTBOX — full screen, zoom + drag + swipe -->
-<div id="m-lightbox" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.96);touch-action:none;overflow:hidden;">
+<div id="m-lightbox" style="display:none;position:fixed;inset:0;z-index:1000000;background:rgba(0,0,0,.96);touch-action:none;overflow:hidden;">
   <!-- Área de imagem com zoom/drag -->
-  <div id="lb-viewport" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;">
+  <div id="lb-viewport" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;-webkit-transform:translateZ(0);transform:translateZ(0);">
     <img id="lb-img" src="" style="max-width:100%;max-height:100%;object-fit:contain;display:block;transform-origin:center;transition:transform .15s ease;user-select:none;-webkit-user-drag:none;" draggable="false">
   </div>
   <!-- Barra superior: contador + fechar -->
-  <div style="position:fixed;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:linear-gradient(to bottom,rgba(0,0,0,.7),transparent);z-index:10003;pointer-events:none;">
+  <div style="position:fixed;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:linear-gradient(to bottom,rgba(0,0,0,.7),transparent);z-index:1000003;pointer-events:none;">
     <div id="lb-carousel-ctr" style="font-family:'Space Mono',monospace;font-size:12px;color:#fff;background:rgba(0,0,0,.5);padding:4px 12px;border-radius:20px;pointer-events:none;"></div>
     <button onclick="closeProdLightbox()" style="pointer-events:all;background:rgba(0,0,0,.65);border:1px solid rgba(255,255,255,.2);color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;">×</button>
   </div>
   <!-- Botões ‹ › -->
-  <button id="lb-prev-btn" onclick="lbNav(-1)" style="display:none;position:fixed;left:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.2);color:#fff;width:44px;height:44px;border-radius:50%;font-size:26px;cursor:pointer;z-index:10003;align-items:center;justify-content:center;">‹</button>
-  <button id="lb-next-btn" onclick="lbNav(1)"  style="display:none;position:fixed;right:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.2);color:#fff;width:44px;height:44px;border-radius:50%;font-size:26px;cursor:pointer;z-index:10003;align-items:center;justify-content:center;">›</button>
+  <button id="lb-prev-btn" onclick="lbNav(-1)" style="display:none;position:fixed;left:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.2);color:#fff;width:44px;height:44px;border-radius:50%;font-size:26px;cursor:pointer;z-index:1000003;align-items:center;justify-content:center;">‹</button>
+  <button id="lb-next-btn" onclick="lbNav(1)"  style="display:none;position:fixed;right:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.2);color:#fff;width:44px;height:44px;border-radius:50%;font-size:26px;cursor:pointer;z-index:1000003;align-items:center;justify-content:center;">›</button>
   <!-- Dots -->
-  <div id="lb-dots" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);display:flex;gap:6px;z-index:10003;"></div>
+  <div id="lb-dots" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);display:flex;gap:6px;z-index:1000003;"></div>
   <!-- Dica de zoom (some após 2s) -->
   <div id="lb-hint" style="position:fixed;bottom:60px;left:50%;transform:translateX(-50%);font-size:11px;color:rgba(255,255,255,.6);font-family:'Space Mono',monospace;pointer-events:none;transition:opacity .5s;">Pinça para zoom · Arraste para mover</div>
 </div>
@@ -8465,7 +8465,10 @@ function ppOpenFotoCarousel(urls, startIdx){
   _lb.cur  = Math.max(0, Math.min(startIdx||0, urls.length-1));
   _lb.scale=1; _lb.tx=0; _lb.ty=0;
 
+  // Move lightbox para o topo do body para garantir que fique acima de qualquer modal
+  if(lb.parentNode !== document.body) document.body.appendChild(lb);
   lb.style.display='block';
+  lb.style.zIndex='1000000';
   document.body.style.overflow='hidden';
 
   _lbShowCur();
