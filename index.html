@@ -6190,38 +6190,85 @@ function _insertCmtEmoji(postId, emoji){
 
 // ── Edição de produto ─────────────────────────────────────────
 function editProduct(prodId, name, price, priceLabel, desc, imageUrl){
-  // Reutiliza o modal de novo produto preenchendo os campos
   const bizId = myBusiness?.id;
   if(!bizId){ showToast('Loja não encontrada','error'); return; }
 
-  // Abre o formulário de produto
-  const formEl = document.getElementById('new-prod-form-'+bizId);
-  if(!formEl){ showToast('Abra o painel da sua loja primeiro','error'); return; }
-  formEl.style.display='block';
+  // Remove overlay existente se houver
+  document.querySelector('[data-edit-prod-overlay]')?.remove();
 
-  // Preenche os campos
-  const setVal = (id, val)=>{ const el=document.getElementById(id+'-'+bizId); if(el) el.value=val||''; };
-  setVal('prod-name', name);
-  setVal('prod-price', price||'');
-  setVal('prod-price-label', priceLabel||'');
-  setVal('prod-desc', desc||'');
-  setVal('prod-img-url', imageUrl||'');
+  // Cria o modal de edição igual ao de adicionar
+  const overlay = document.createElement('div');
+  overlay.setAttribute('data-edit-prod-overlay','1');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);z-index:3500;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.innerHTML=`
+    <div class="modal" style="max-width:400px;width:100%;">
+      <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-yellow);margin-bottom:16px;">✏️ Editar Produto / Serviço</div>
+      <div class="igrp"><label class="ilbl">Foto do produto</label>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+          <div id="edit-prod-img-preview" style="width:60px;height:60px;border-radius:8px;border:2px dashed var(--border-glow);display:flex;align-items:center;justify-content:center;font-size:24px;cursor:pointer;background:var(--glass);flex-shrink:0;overflow:hidden;" onclick="document.getElementById('edit-prod-img-file').click()">
+            ${imageUrl?`<img src="${xss(imageUrl)}" style="width:100%;height:100%;object-fit:cover;">`:'📦'}
+          </div>
+          <button type="button" class="tbtn" style="font-size:9px;" onclick="document.getElementById('edit-prod-img-file').click()">📷 Trocar foto</button>
+          <input type="file" id="edit-prod-img-file" accept="image/*" style="display:none" onchange="previewBizImage(this,'edit-prod-img-preview','edit-prod-img-url')">
+          <input type="hidden" id="edit-prod-img-url" value="${xss(imageUrl||'')}">
+        </div>
+      </div>
+      <div class="igrp"><label class="ilbl">Nome *</label>
+        <input class="ainput" id="edit-prod-name" value="${xss(name||'')}" placeholder="Nome do produto"></div>
+      <div class="igrp"><label class="ilbl">Preço (R$)</label>
+        <input class="ainput" id="edit-prod-price" type="number" step="0.01" value="${price||''}" placeholder="Deixe vazio para 'Sob consulta'"></div>
+      <div class="igrp"><label class="ilbl">Label de preço (alternativo)</label>
+        <input class="ainput" id="edit-prod-price-label" value="${xss(priceLabel||'')}" placeholder="Ex: A partir de R$ 50"></div>
+      <div class="igrp"><label class="ilbl">Descrição</label>
+        <input class="ainput" id="edit-prod-desc" value="${xss(desc||'')}" placeholder="Opcional..."></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px;">
+        <button class="tbtn" onclick="document.querySelector('[data-edit-prod-overlay]')?.remove()">Cancelar</button>
+        <button class="post-btn" id="edit-prod-save-btn" style="font-size:10px;background:linear-gradient(135deg,var(--neon-yellow),var(--neon-pink));">✏️ Salvar edição</button>
+      </div>
+    </div>`;
 
-  // Guarda o ID do produto a ser editado
-  const saveBtn = document.querySelector(`[onclick="saveNewProduct('${bizId}', this)"]`);
-  if(saveBtn){
-    saveBtn.dataset.editProdId = prodId;
-    saveBtn.textContent = '✏️ Salvar edição';
-    saveBtn.onclick = function(){ updateProduct(prodId, bizId, this); };
-  }
+  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+  document.body.appendChild(overlay);
 
-  // Preview da imagem atual
-  if(imageUrl){
-    const prev = document.getElementById('prod-img-preview-'+bizId);
-    if(prev) prev.innerHTML = `<img src="${xss(imageUrl)}" style="width:60px;height:60px;object-fit:cover;border-radius:8px;">`;
-  }
+  // Botão salvar
+  document.getElementById('edit-prod-save-btn').onclick = async function(){
+    const btn = this;
+    btn.disabled=true; btn.textContent='⏳ Salvando...';
+    try{
+      let finalImg = document.getElementById('edit-prod-img-url')?.value||imageUrl||null;
+      // Upload nova foto se selecionada
+      if(window._editProdFile){
+        const url = await uploadImageToR2(window._editProdFile,'prod-img');
+        if(url){ finalImg=url; window._editProdFile=null; }
+      }
+      const newName  = document.getElementById('edit-prod-name')?.value.trim();
+      const newPrice = parseFloat(document.getElementById('edit-prod-price')?.value||'')||null;
+      const newLabel = document.getElementById('edit-prod-price-label')?.value.trim()||null;
+      const newDesc  = document.getElementById('edit-prod-desc')?.value.trim()||null;
+      if(!newName){ showToast('Nome obrigatório','error'); btn.disabled=false; btn.textContent='✏️ Salvar edição'; return; }
+      const{error}=await db.from('business_products').update({
+        name:newName, price:newPrice, price_label:newLabel,
+        description:newDesc, image_url:finalImg,
+        updated_at:new Date().toISOString()
+      }).eq('id',prodId).eq('business_id',bizId);
+      if(error) throw error;
+      showToast('✅ Produto atualizado!','success');
+      overlay.remove();
+      loadBizDashboard();
+    }catch(e){
+      showToast('Erro: '+e.message,'error');
+      btn.disabled=false; btn.textContent='✏️ Salvar edição';
+    }
+  };
 
-  formEl.scrollIntoView({behavior:'smooth', block:'start'});
+  // Captura arquivo selecionado para upload
+  document.getElementById('edit-prod-img-file').onchange = function(){
+    window._editProdFile = this.files[0];
+    if(this.files[0]){
+      const prev=document.getElementById('edit-prod-img-preview');
+      if(prev) prev.innerHTML=`<img src="${URL.createObjectURL(this.files[0])}" style="width:100%;height:100%;object-fit:cover;">`;
+    }
+  };
 }
 
 async function updateProduct(prodId, bizId, btn){
@@ -13632,14 +13679,8 @@ async function openBizDetail(biz){
       </div>` : '';
 
     revEl.innerHTML=`
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);">💬 Avaliações</div>
-        <button class="tbtn" style="font-size:9px;" id="toggle-rev-btn-${biz.id}"
-          onclick="const d=document.getElementById('rev-list-${biz.id}');const show=d.style.display==='none';d.style.display=show?'block':'none';document.getElementById('toggle-rev-btn-${biz.id}').textContent=show?'▲ Ocultar':'👁 Ver comentários';">
-          👁 Ver comentários
-        </button>
-      </div>
-      <div id="rev-list-${biz.id}" style="display:none;">${reviewsHtml}</div>
+      <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);margin-bottom:8px;">💬 Avaliações ${reviews?.length?`(${reviews.length})`:''}</div>
+      <div id="rev-list-${biz.id}">${reviewsHtml}</div>
       ${myReviewHtml}`;
   }
 
