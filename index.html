@@ -12856,7 +12856,7 @@ function buildBizCard(biz, isFollowing){
     ? `<img src="${xss(biz.logo_url)}" style="width:100%;height:100%;object-fit:cover;">`
     : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">${biz.category==='loja'?'🛍️':'🔧'}</div>`;
   // Rating stars
-  const rating = biz.rating ? Number(biz.rating).toFixed(1) : null;
+  const rating = (biz.rating_count > 0 && biz.rating != null) ? Number(biz.rating).toFixed(1) : null;
   const starsDisp = rating
     ? `<span style="font-size:13px;">${'⭐'.repeat(Math.round(Number(rating)))}</span><span style="font-size:10px;color:var(--text-muted);"> ${rating}</span>`
     : `<span style="font-size:10px;color:var(--text-muted);">Sem avaliações</span>`;
@@ -13511,7 +13511,7 @@ async function openBizDetail(biz){
   const modal=document.createElement('div');
   modal.className='modal';
   modal.style.cssText='max-width:500px;width:100%;margin:auto;';
-  const rating = biz.rating ? Number(biz.rating).toFixed(1) : null;
+  const rating = (biz.rating_count > 0 && biz.rating != null) ? Number(biz.rating).toFixed(1) : null;
   const starsLine = rating
     ? '⭐'.repeat(Math.round(Number(rating)))+` <span style="font-size:11px;color:var(--text-muted);">(${rating} · ${biz.rating_count||0} avaliações)</span>`
     : '<span style="font-size:11px;color:var(--text-muted);">Sem avaliações ainda</span>';
@@ -13585,7 +13585,7 @@ async function openBizDetail(biz){
   // Atualiza linha de rating no modal com dados frescos do banco
   try{
     if(freshBizRes.data){
-      const freshRating = freshBizRes.data.rating ? Number(freshBizRes.data.rating).toFixed(1) : null;
+      const freshRating = (freshBizRes.data.rating_count > 0 && freshBizRes.data.rating != null) ? Number(freshBizRes.data.rating).toFixed(1) : null;
       const freshStarsLine = freshRating
         ? '⭐'.repeat(Math.round(Number(freshRating)))+` <span style="font-size:11px;color:var(--text-muted);">(${freshRating} · ${freshBizRes.data.rating_count||0} avaliações)</span>`
         : '<span style="font-size:11px;color:var(--text-muted);">Sem avaliações ainda</span>';
