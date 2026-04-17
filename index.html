@@ -4722,12 +4722,24 @@ body.day-mode::before{
 <!-- FIND FRIENDS -->
 
 
-<!-- LIGHTBOX -->
-<div class="movl" id="m-lightbox" onclick="closeM('m-lightbox')">
-  <div style="max-width:96vw;max-height:96vh;display:flex;align-items:center;justify-content:center;position:relative;" onclick="event.stopPropagation()">
-    <img id="lb-img" src="" style="max-width:100%;max-height:90vh;border-radius:8px;object-fit:contain;display:block;">
+<!-- LIGHTBOX — full screen, zoom + drag + swipe -->
+<div id="m-lightbox" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.96);touch-action:none;overflow:hidden;">
+  <!-- Área de imagem com zoom/drag -->
+  <div id="lb-viewport" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;">
+    <img id="lb-img" src="" style="max-width:100%;max-height:100%;object-fit:contain;display:block;transform-origin:center;transition:transform .15s ease;user-select:none;-webkit-user-drag:none;" draggable="false">
   </div>
-  <button onclick="closeM('m-lightbox')" style="position:fixed;top:16px;right:16px;background:rgba(0,0,0,.7);border:none;color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:20px;z-index:10001;display:flex;align-items:center;justify-content:center;">×</button>
+  <!-- Barra superior: contador + fechar -->
+  <div style="position:fixed;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:linear-gradient(to bottom,rgba(0,0,0,.7),transparent);z-index:10003;pointer-events:none;">
+    <div id="lb-carousel-ctr" style="font-family:'Space Mono',monospace;font-size:12px;color:#fff;background:rgba(0,0,0,.5);padding:4px 12px;border-radius:20px;pointer-events:none;"></div>
+    <button onclick="closeProdLightbox()" style="pointer-events:all;background:rgba(0,0,0,.65);border:1px solid rgba(255,255,255,.2);color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;">×</button>
+  </div>
+  <!-- Botões ‹ › -->
+  <button id="lb-prev-btn" onclick="lbNav(-1)" style="display:none;position:fixed;left:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.2);color:#fff;width:44px;height:44px;border-radius:50%;font-size:26px;cursor:pointer;z-index:10003;align-items:center;justify-content:center;">‹</button>
+  <button id="lb-next-btn" onclick="lbNav(1)"  style="display:none;position:fixed;right:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.2);color:#fff;width:44px;height:44px;border-radius:50%;font-size:26px;cursor:pointer;z-index:10003;align-items:center;justify-content:center;">›</button>
+  <!-- Dots -->
+  <div id="lb-dots" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);display:flex;gap:6px;z-index:10003;"></div>
+  <!-- Dica de zoom (some após 2s) -->
+  <div id="lb-hint" style="position:fixed;bottom:60px;left:50%;transform:translateX(-50%);font-size:11px;color:rgba(255,255,255,.6);font-family:'Space Mono',monospace;pointer-events:none;transition:opacity .5s;">Pinça para zoom · Arraste para mover</div>
 </div>
 
 <!-- TOAST -->
@@ -8386,73 +8398,168 @@ async function loadProfileFotos(userId){
   }
 }
 
-// Abre lightbox em modo carrossel para múltiplas fotos de um post
+// ══════════════════════════════════════════════════════════════
+// Lightbox engine — zoom pinça, drag, swipe, carousel
+// ══════════════════════════════════════════════════════════════
+let _lb = { urls:[], cur:0, scale:1, tx:0, ty:0,
+            dragging:false, lastDx:0, lastDy:0,
+            pinching:false, lastDist:0,
+            touchStartX:0, touchStartY:0 };
+
+function closeProdLightbox(){
+  const lb = document.getElementById('m-lightbox');
+  if(lb){ lb.style.display='none'; document.body.style.overflow=''; }
+  _lbReset();
+}
+
+function _lbReset(){
+  _lb.scale=1; _lb.tx=0; _lb.ty=0;
+  _lb.dragging=false; _lb.pinching=false;
+  const img = document.getElementById('lb-img');
+  if(img){ img.style.transition='transform .15s ease'; img.style.transform='scale(1) translate(0px,0px)'; }
+}
+
+function _lbApplyTransform(animate){
+  const img = document.getElementById('lb-img');
+  if(!img) return;
+  img.style.transition = animate ? 'transform .15s ease' : 'none';
+  img.style.transform = `scale(${_lb.scale}) translate(${_lb.tx/_lb.scale}px,${_lb.ty/_lb.scale}px)`;
+}
+
+function lbNav(dir){
+  _lbReset();
+  _lb.cur = Math.max(0, Math.min(_lb.cur + dir, _lb.urls.length-1));
+  _lbShowCur();
+}
+
+function _lbShowCur(){
+  const img = document.getElementById('lb-img');
+  const ctr = document.getElementById('lb-carousel-ctr');
+  const dots = document.getElementById('lb-dots');
+  const prev = document.getElementById('lb-prev-btn');
+  const next = document.getElementById('lb-next-btn');
+  if(img) img.src = _lb.urls[_lb.cur];
+  if(ctr) ctr.textContent = _lb.urls.length > 1 ? (_lb.cur+1)+' / '+_lb.urls.length : '';
+  if(prev){ prev.style.display = (_lb.urls.length>1&&_lb.cur>0)?'flex':'none'; }
+  if(next){ next.style.display = (_lb.urls.length>1&&_lb.cur<_lb.urls.length-1)?'flex':'none'; }
+  if(dots){
+    dots.innerHTML = _lb.urls.length>1
+      ? _lb.urls.map((_,i)=>`<div style="width:7px;height:7px;border-radius:50%;background:${i===_lb.cur?'var(--neon-cyan)':'rgba(255,255,255,.4)'};transition:background .2s;"></div>`).join('')
+      : '';
+  }
+}
+
 function ppOpenFotoCarousel(urls, startIdx){
   if(!Array.isArray(urls)||!urls.length) return;
-  const lb = document.getElementById('m-lightbox');
-  const lbImg = document.getElementById('lb-img');
-  if(!lb||!lbImg) return;
+  // Single string support
+  if(typeof urls === 'string') urls=[urls];
 
-  // Esconder player de vídeo se aberto
+  const lb = document.getElementById('m-lightbox');
+  if(!lb) return;
+
+  // Pausa vídeos
   const vid = document.getElementById('lb-vid-player');
   if(vid){ vid.pause(); vid.src=''; vid.style.display='none'; }
-  lbImg.style.display='block';
 
-  let cur = Math.max(0, Math.min(startIdx||0, urls.length-1));
+  _lb.urls = urls;
+  _lb.cur  = Math.max(0, Math.min(startIdx||0, urls.length-1));
+  _lb.scale=1; _lb.tx=0; _lb.ty=0;
 
-  function _cleanup(){
-    ['lb-prev-btn','lb-next-btn','lb-carousel-ctr'].forEach(id=>{ lb.querySelector('#'+id)?.remove(); });
-  }
+  lb.style.display='block';
+  document.body.style.overflow='hidden';
 
-  function show(i){
-    cur = Math.max(0, Math.min(i, urls.length-1));
-    lbImg.src = urls[cur];
+  _lbShowCur();
+  _lbApplyTransform(false);
 
-    // Contador
-    let ctr = lb.querySelector('#lb-carousel-ctr');
-    if(!ctr){
-      ctr = document.createElement('div'); ctr.id='lb-carousel-ctr';
-      ctr.style.cssText='position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);color:#fff;font-size:12px;font-family:"Space Mono",monospace;padding:4px 14px;border-radius:20px;z-index:10002;pointer-events:none;';
-      lb.appendChild(ctr);
+  // Dica some após 2.5s
+  const hint = document.getElementById('lb-hint');
+  if(hint){ hint.style.opacity='1'; setTimeout(()=>{ hint.style.opacity='0'; },2500); }
+
+  // ── Touch events (zoom pinça + drag + swipe) ──
+  const vp = document.getElementById('lb-viewport');
+
+  function _dist(t){ return Math.hypot(t[0].clientX-t[1].clientX, t[0].clientY-t[1].clientY); }
+  function _mid(t){ return { x:(t[0].clientX+t[1].clientX)/2, y:(t[0].clientY+t[1].clientY)/2 }; }
+
+  lb._onTouchStart = (e)=>{
+    if(e.touches.length===2){
+      _lb.pinching=true; _lb.dragging=false;
+      _lb.lastDist=_dist(e.touches);
+    } else if(e.touches.length===1){
+      _lb.pinching=false;
+      _lb.dragging=true;
+      _lb.touchStartX=e.touches[0].clientX;
+      _lb.touchStartY=e.touches[0].clientY;
+      _lb.lastDx=_lb.tx; _lb.lastDy=_lb.ty;
     }
-    ctr.textContent=(cur+1)+' / '+urls.length;
-
-    // Botões ‹ ›
-    ['lb-prev-btn','lb-next-btn'].forEach(id=>{ lb.querySelector('#'+id)?.remove(); });
-    if(urls.length>1){
-      const bp=document.createElement('button'); bp.id='lb-prev-btn';
-      bp.style.cssText='position:fixed;left:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.65);border:none;color:#fff;width:44px;height:44px;border-radius:50%;font-size:26px;cursor:pointer;z-index:10002;display:flex;align-items:center;justify-content:center;opacity:'+(cur===0?'.3':'1')+';';
-      bp.innerHTML='&#8249;';
-      bp.onclick=(e)=>{ e.stopPropagation(); if(cur>0) show(cur-1); };
-      lb.appendChild(bp);
-
-      const bn=document.createElement('button'); bn.id='lb-next-btn';
-      bn.style.cssText='position:fixed;right:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.65);border:none;color:#fff;width:44px;height:44px;border-radius:50%;font-size:26px;cursor:pointer;z-index:10002;display:flex;align-items:center;justify-content:center;opacity:'+(cur===urls.length-1?'.3':'1')+';';
-      bn.innerHTML='&#8250;';
-      bn.onclick=(e)=>{ e.stopPropagation(); if(cur<urls.length-1) show(cur+1); };
-      lb.appendChild(bn);
+  };
+  lb._onTouchMove = (e)=>{
+    e.preventDefault();
+    if(_lb.pinching && e.touches.length===2){
+      const d=_dist(e.touches);
+      const ratio=d/_lb.lastDist;
+      _lb.scale=Math.max(1, Math.min(5, _lb.scale*ratio));
+      _lb.lastDist=d;
+      _lbApplyTransform(false);
+    } else if(_lb.dragging && e.touches.length===1 && _lb.scale>1){
+      _lb.tx = _lb.lastDx + (e.touches[0].clientX - _lb.touchStartX);
+      _lb.ty = _lb.lastDy + (e.touches[0].clientY - _lb.touchStartY);
+      _lbApplyTransform(false);
     }
-  }
-
-  show(cur);
-
-  // Fechar ao clicar no fundo
-  lb.onclick=(e)=>{
-    if(e.target===lb||e.target===lbImg){ _cleanup(); closeM('m-lightbox'); }
+  };
+  lb._onTouchEnd = (e)=>{
+    if(_lb.pinching){ _lb.pinching=false; return; }
+    if(_lb.scale<=1){
+      // Swipe para navegar (só quando não está com zoom)
+      const dx = e.changedTouches[0].clientX - _lb.touchStartX;
+      const dy = e.changedTouches[0].clientY - _lb.touchStartY;
+      if(Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)){
+        lbNav(dx<0?1:-1);
+        return;
+      }
+      // Tap simples: fecha se não foi swipe
+      if(Math.abs(dx)<8 && Math.abs(dy)<8){
+        closeProdLightbox(); return;
+      }
+    } else {
+      // Double tap: reset zoom
+      const now=Date.now();
+      if(now - (lb._lastTap||0) < 280){ _lbReset(); }
+      lb._lastTap=now;
+      _lb.dragging=false;
+    }
   };
 
-  // Swipe horizontal (mobile)
-  let _sx=null;
-  lb.ontouchstart=(e)=>{ _sx=e.touches[0].clientX; };
-  lb.ontouchend=(e)=>{
-    if(_sx===null) return;
-    const dx=_sx - e.changedTouches[0].clientX;
-    if(Math.abs(dx)>50){ if(dx>0&&cur<urls.length-1) show(cur+1); else if(dx<0&&cur>0) show(cur-1); }
-    _sx=null;
-  };
+  // Remove listeners antigos e adiciona novos
+  lb.removeEventListener('touchstart', lb._onTouchStart);
+  lb.removeEventListener('touchmove',  lb._onTouchMove);
+  lb.removeEventListener('touchend',   lb._onTouchEnd);
+  lb.addEventListener('touchstart', lb._onTouchStart, {passive:false});
+  lb.addEventListener('touchmove',  lb._onTouchMove,  {passive:false});
+  lb.addEventListener('touchend',   lb._onTouchEnd,   {passive:false});
 
-  openM('m-lightbox');
+  // Mouse drag (desktop)
+  let _mdown=false, _mx=0, _my=0, _origTx=0, _origTy=0;
+  const img = document.getElementById('lb-img');
+  if(img){
+    img.onmousedown=(e)=>{ e.preventDefault(); _mdown=true; _mx=e.clientX; _my=e.clientY; _origTx=_lb.tx; _origTy=_lb.ty; img.style.cursor='grabbing'; };
+    img.onmousemove=(e)=>{ if(!_mdown||_lb.scale<=1) return; _lb.tx=_origTx+(e.clientX-_mx); _lb.ty=_origTy+(e.clientY-_my); _lbApplyTransform(false); };
+    img.onmouseup=()=>{ _mdown=false; img.style.cursor=_lb.scale>1?'grab':'zoom-in'; };
+    img.onmouseleave=()=>{ _mdown=false; };
+    // Wheel zoom (desktop)
+    img.onwheel=(e)=>{ e.preventDefault(); const d=e.deltaY>0?0.85:1.18; _lb.scale=Math.max(1,Math.min(5,_lb.scale*d)); if(_lb.scale===1){_lb.tx=0;_lb.ty=0;} _lbApplyTransform(true); };
+    img.ondblclick=()=>{ if(_lb.scale>1)_lbReset(); else{ _lb.scale=2.5; _lbApplyTransform(true); } };
+    img.style.cursor='zoom-in';
+  }
+
+  // ESC fecha
+  lb._onKeyDown=(e)=>{ if(e.key==='Escape') closeProdLightbox(); else if(e.key==='ArrowLeft') lbNav(-1); else if(e.key==='ArrowRight') lbNav(1); };
+  document.removeEventListener('keydown', lb._onKeyDown);
+  document.addEventListener('keydown', lb._onKeyDown);
 }
+
+// Compatibilidade: openLightbox simples continua funcionando
+function openLightbox(url){ ppOpenFotoCarousel([url], 0); }
 
 // ── Carregar aba VÍDEOS do perfil ─────────────────────────────────
 // Thumbnail via canvas (sem request extra). Visualizações via localStorage — zero Egress.
@@ -12230,6 +12337,7 @@ function skeletons(n,h=''){return Array.from({length:n},()=>`<div class="post-ca
 function openLightbox(url){document.getElementById('lb-img').src=url;openM('m-lightbox');}
 function openM(id){document.getElementById(id).classList.add('open');}
 function closeM(id){
+  if(id==='m-lightbox'){ closeProdLightbox(); return; }
   // Se for o lightbox, para o vídeo antes de fechar
   if(id==='m-lightbox'){
     const vid=document.getElementById('lb-vid-player');
