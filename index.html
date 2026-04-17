@@ -12855,11 +12855,14 @@ function buildBizCard(biz, isFollowing){
   const logo = biz.logo_url
     ? `<img src="${xss(biz.logo_url)}" style="width:100%;height:100%;object-fit:cover;">`
     : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">${biz.category==='loja'?'🛍️':'🔧'}</div>`;
-  // Rating stars
-  const rating = (biz.rating_count > 0 && biz.rating != null) ? Number(biz.rating).toFixed(1) : null;
-  const starsDisp = rating
-    ? `<span style="font-size:13px;">${'⭐'.repeat(Math.round(Number(rating)))}</span><span style="font-size:10px;color:var(--text-muted);"> ${rating}</span>`
-    : `<span style="font-size:10px;color:var(--text-muted);">Sem avaliações</span>`;
+  // Rating stars helper
+  function renderStarsDisp(ratingVal, countVal){
+    const r = (countVal > 0 && ratingVal != null) ? Number(ratingVal).toFixed(1) : null;
+    return r
+      ? `<span style="font-size:13px;">${'⭐'.repeat(Math.round(Number(r)))}</span><span style="font-size:10px;color:var(--text-muted);"> ${r} (${countVal})</span>`
+      : `<span style="font-size:10px;color:var(--text-muted);">Sem avaliações</span>`;
+  }
+  const starsDisp = renderStarsDisp(biz.rating, biz.rating_count);
   // Stats (only for loja)
   const statsHtml = biz.category === 'loja'
     ? `<div class="biz-stats">
@@ -12879,7 +12882,7 @@ function buildBizCard(biz, isFollowing){
     <div class="biz-body">
       <div class="biz-name"><strong style="font-weight:800;color:var(--neon-cyan);text-shadow:0 0 8px rgba(0,255,204,.35);">${xss(biz.name)}</strong></div>
       <div class="biz-segment">${xss(biz.segment)} · ${biz.category==='loja'?'🛍️ Loja':'🔧 Serviço'}</div>
-      <div style="margin-bottom:6px;">${starsDisp}</div>
+      <div id="biz-card-rating-${biz.id}" style="margin-bottom:6px;">${starsDisp}</div>
       ${biz.description?`<div class="biz-desc">${xss(biz.description)}</div>`:''}
       <div class="biz-city">📍 ${xss(biz.city||'—')}${biz.state?', '+xss(biz.state):''}</div>
       ${statsHtml}
@@ -12893,6 +12896,20 @@ function buildBizCard(biz, isFollowing){
   div.querySelector('.biz-body').addEventListener('click', e=>{
     if(!e.target.closest('button')) openBizDetail(biz);
   });
+  // Busca rating direto das reviews para garantir valor sempre atualizado
+  db.from('business_reviews').select('rating').eq('business_id', biz.id).then(({data:revs})=>{
+    const el = document.getElementById('biz-card-rating-'+biz.id);
+    if(!el) return;
+    if(revs && revs.length > 0){
+      const avg = revs.reduce((s,r)=>s+(r.rating||0),0)/revs.length;
+      if(!biz.rating_count || biz.rating_count !== revs.length){
+        db.from('businesses').update({rating:avg, rating_count:revs.length}).eq('id',biz.id).then(()=>{});
+      }
+      el.innerHTML = renderStarsDisp(avg, revs.length);
+    } else {
+      el.innerHTML = renderStarsDisp(null, 0);
+    }
+  }).catch(()=>{});
   return div;
 }
 
