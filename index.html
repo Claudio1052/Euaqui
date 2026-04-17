@@ -1056,6 +1056,71 @@ body{
     }
   #ht-msgs-area{max-height:calc(100vh - 320px);min-height:200px;}
 
+  /* ── Biz Chat mobile fix: input bar fixo no bottom ── */
+  #biz-chats {
+    position: fixed !important;
+    inset: 0 !important;
+    top: calc(var(--nav-h) + 48px) !important;
+    bottom: 68px !important;
+    height: auto !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+  }
+  #biz-chat-wrap {
+    flex: 1 !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    position: relative !important;
+    overflow: hidden !important;
+  }
+  #biz-chat-sidebar {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 10 !important;
+    transform: translateX(0) !important;
+    transition: transform .28s cubic-bezier(.4,0,.2,1) !important;
+    background: var(--bg-mid) !important;
+  }
+  #biz-chat-sidebar.chat-hidden {
+    transform: translateX(-100%) !important;
+    pointer-events: none !important;
+  }
+  #biz-chat-window {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 11 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    transform: translateX(100%) !important;
+    transition: transform .28s cubic-bezier(.4,0,.2,1) !important;
+    overflow: hidden !important;
+  }
+  #biz-chat-window.chat-open {
+    transform: translateX(0) !important;
+  }
+  #biz-msgs-area {
+    flex: 1 !important;
+    overflow-y: auto !important;
+    min-height: 0 !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  #biz-msg-in-area {
+    flex-shrink: 0 !important;
+    position: sticky !important;
+    bottom: 0 !important;
+    z-index: 20 !important;
+    background: rgba(10,10,42,.98) !important;
+    padding: 8px 12px !important;
+    border-top: 1px solid var(--border-glow) !important;
+  }
+
   .nav-tab{
       padding:9px 12px;
       font-size:9px;
@@ -3567,6 +3632,9 @@ body.day-mode::before{
   pointer-events:none;
 }
 
+
+/* biz-chats deve usar flex mesmo quando activo */
+#biz-chats.active{ display:flex !important; flex-direction:column !important; }
 </style>
 </head>
 <body>
@@ -4155,8 +4223,8 @@ body.day-mode::before{
       </div>
 
       <!-- TAB: ATENDIMENTO (chat) -->
-      <div class="tab-panel" id="biz-chats" style="padding:0;margin:0;overflow:hidden;">
-        <div class="chat-page-wrap" id="biz-chat-wrap" style="height:calc(100vh - var(--nav-h) - 48px);">
+      <div class="tab-panel" id="biz-chats" style="padding:0;margin:0;overflow:hidden;height:calc(100vh - var(--nav-h) - 48px);display:flex;flex-direction:column;">
+        <div class="chat-page-wrap" id="biz-chat-wrap" style="flex:1;min-height:0;height:100%;">
           <div class="chat-sidebar" id="biz-chat-sidebar">
             <div class="chat-sb-hdr">
               <span class="chat-sb-title">💬 Atendimentos</span>
@@ -4165,7 +4233,8 @@ body.day-mode::before{
           </div>
           <div class="chat-window" id="biz-chat-window">
             <div class="chat-win-hdr" id="biz-chat-win-hdr">
-              <div style="color:var(--text-muted);font-size:12px;margin:auto;">Selecione um atendimento</div>
+              <button id="biz-chat-back-btn" onclick="closeBizChatMobile()" style="display:none;background:none;border:1px solid var(--border-glow);color:var(--neon-cyan);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-family:'Space Mono',monospace;flex-shrink:0;">← Voltar</button>
+              <div style="color:var(--text-muted);font-size:12px;margin:auto;" id="biz-chat-win-title">Selecione um atendimento</div>
             </div>
             <div class="msgs-area" id="biz-msgs-area"></div>
             <div class="msg-in-bar" id="biz-msg-in-area" style="display:none;flex-direction:column;gap:6px;">
@@ -13642,6 +13711,12 @@ async function openBizChat(chatId, label){
   if(window.innerWidth<=768){
     document.getElementById('biz-chat-sidebar')?.classList.add('chat-hidden');
     document.getElementById('biz-chat-window')?.classList.add('chat-open');
+  document.getElementById('biz-chat-sidebar')?.classList.add('chat-hidden');
+  // Mostra botão voltar no mobile
+  if(window.innerWidth <= 768){
+    const backBtn = document.getElementById('biz-chat-back-btn');
+    if(backBtn) backBtn.style.display='flex';
+  }
   }
   // Header
   const hdr = document.getElementById('biz-chat-win-hdr');
@@ -13662,10 +13737,22 @@ function closeBizChat(){
   currentBizChat=null;
   document.getElementById('biz-chat-sidebar')?.classList.remove('chat-hidden');
   document.getElementById('biz-chat-window')?.classList.remove('chat-open');
+  document.getElementById('biz-chat-sidebar')?.classList.remove('chat-hidden');
+  const backBtn = document.getElementById('biz-chat-back-btn');
+  if(backBtn) backBtn.style.display='none';
   const area=document.getElementById('biz-msgs-area');
   if(area) area.innerHTML='';
   const hdr=document.getElementById('biz-chat-win-hdr');
   if(hdr) hdr.innerHTML='<div style="color:var(--text-muted);font-size:12px;margin:auto;">Selecione um atendimento</div>';
+  document.getElementById('biz-msg-in-area').style.display='none';
+}
+
+function closeBizChatMobile(){
+  document.getElementById('biz-chat-window')?.classList.remove('chat-open');
+  document.getElementById('biz-chat-sidebar')?.classList.remove('chat-hidden');
+  const backBtn = document.getElementById('biz-chat-back-btn');
+  if(backBtn) backBtn.style.display='none';
+  currentBizChat=null;
   document.getElementById('biz-msg-in-area').style.display='none';
 }
 
@@ -13699,6 +13786,8 @@ async function loadBizMsgs(chatId){
     area.appendChild(div);
   });
   area.scrollTop=area.scrollHeight;
+  // Garante scroll em iOS
+  setTimeout(()=>{ area.scrollTop=area.scrollHeight; }, 80);
 }
 
 async function sendBizMsg(){
