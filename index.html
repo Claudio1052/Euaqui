@@ -6591,13 +6591,15 @@ const R2_BACKEND_URL = (window.R2_BACKEND_URL || 'https://media.euaqui.store');
 // URLs já no Worker ou externas passam sem mudança.
 function _toWorkerUrl(url){
   if(!url || typeof url !== 'string') return url;
-  // Já é URL do worker ou externa — não mexe
-  if(url.startsWith('https://media.euaqui.store') || !url.includes('supabase.co')) return url;
-  // Supabase Storage → Worker
+  // Já é URL do worker, Dicebear, ou não é Supabase → não mexe
+  if(!url.includes('supabase.co')) return url;
+  if(url.startsWith('https://media.euaqui.store')) return url;
+  // Apenas Supabase Storage → Worker
   // Ex: https://xyz.supabase.co/storage/v1/object/public/posts/user/file.jpg
   //  → https://media.euaqui.store/media/posts%2Fuser%2Ffile.jpg
   try{
     const u = new URL(url);
+    if(!u.pathname.includes('/storage/v1/object/public/')) return url;
     const pathAfterPublic = u.pathname.replace(/^\/storage\/v1\/object\/public\//, '');
     return 'https://media.euaqui.store/media/' + encodeURIComponent(pathAfterPublic);
   }catch(e){ return url; }
@@ -8699,8 +8701,9 @@ async function loadProfilePage(userId){
       isFollowing = !!fol.data; isFriend = !!fri?.data;
     }
 
-    // Avatar
-    const av = _toWorkerUrl(profile.avatar_url) || 'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(profile.username||'u');
+    // Avatar — usa getAvatar para tratar corretamente todos os tipos
+    // (upload, generated/Dicebear, retro_icon, emoji)
+    const av = getAvatar(profile);
     const isEmoji = av.length <= 4 && !av.startsWith('http');
     const fallbackSeed = 'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(profile.username||'u');
     const days = Math.floor((Date.now()-new Date(profile.created_at))/(864e5));
