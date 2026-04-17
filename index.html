@@ -3642,6 +3642,23 @@ body.day-mode::before{
 }
 
 
+
+/* ── Produto carousel (até 3 fotos) ── */
+.prod-carousel{position:relative;width:100%;overflow:hidden;border-radius:8px;background:#000;margin-bottom:8px;}
+.prod-carousel-track{display:flex;transition:transform .3s cubic-bezier(.4,0,.2,1);}
+.prod-carousel-slide{flex:0 0 100%;width:100%;}
+.prod-carousel-slide img{width:100%;height:130px;object-fit:cover;display:block;}
+.prod-carousel-slide .prod-no-img{width:100%;height:100px;display:flex;align-items:center;justify-content:center;font-size:36px;background:var(--bg-mid);}
+.prod-carousel-dots{display:flex;justify-content:center;gap:5px;position:absolute;bottom:5px;left:50%;transform:translateX(-50%);}
+.prod-carousel-dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.4);transition:background .2s;}
+.prod-carousel-dot.active{background:var(--neon-cyan);}
+.prod-carousel-prev,.prod-carousel-next{position:absolute;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.5);border:none;color:#fff;width:24px;height:24px;border-radius:50%;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;z-index:5;backdrop-filter:blur(4px);}
+.prod-carousel-prev{left:4px;}.prod-carousel-next{right:4px;}
+/* Grid de preview de fotos no formulário */
+.prod-photos-grid{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
+.prod-photo-slot{width:70px;height:70px;border-radius:8px;border:2px dashed var(--border-glow);display:flex;align-items:center;justify-content:center;font-size:22px;cursor:pointer;background:var(--glass);overflow:hidden;position:relative;flex-shrink:0;}
+.prod-photo-slot img{width:100%;height:100%;object-fit:cover;}
+.prod-photo-remove{position:absolute;top:2px;right:2px;background:rgba(255,51,102,.85);border:none;color:#fff;width:18px;height:18px;border-radius:50%;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;}
 </style>
 </head>
 <body>
@@ -6354,29 +6371,159 @@ function _insertCmtEmoji(postId, emoji){
 }
 
 // ── Edição de produto ─────────────────────────────────────────
-function editProduct(prodId, name, price, priceLabel, desc, imageUrl){
+
+// ── Carousel de fotos de produto ──────────────────────────────────
+function renderProdCarousel(images, height){
+  // images: array de URLs (até 3). height: altura das fotos em px
+  const h = height || 130;
+  if(!images || !images.length){
+    return `<div class="prod-no-img" style="height:${h}px;display:flex;align-items:center;justify-content:center;font-size:36px;background:var(--bg-mid);border-radius:8px;margin-bottom:8px;">📦</div>`;
+  }
+  if(images.length === 1){
+    return `<div class="prod-carousel" style="margin-bottom:8px;"><img src="${xss(images[0])}" style="width:100%;height:${h}px;object-fit:cover;border-radius:8px;display:block;"></div>`;
+  }
+  const slides = images.map(url=>`<div class="prod-carousel-slide"><img src="${xss(url)}" style="height:${h}px;"></div>`).join('');
+  const dots = images.map((_,i)=>`<div class="prod-carousel-dot${i===0?' active':''}" data-i="${i}"></div>`).join('');
+  const uid = 'pc-'+Math.random().toString(36).slice(2,7);
+  return `<div class="prod-carousel" id="${uid}" data-cur="0" style="margin-bottom:8px;">
+    <div class="prod-carousel-track" id="${uid}-track">${slides}</div>
+    ${images.length>1?`<button class="prod-carousel-prev" onclick="moveProdCarousel('${uid}',-1)">‹</button><button class="prod-carousel-next" onclick="moveProdCarousel('${uid}',1)">›</button>`:''}
+    <div class="prod-carousel-dots">${dots}</div>
+  </div>`;
+}
+
+function moveProdCarousel(uid, dir){
+  const el = document.getElementById(uid);
+  if(!el) return;
+  const track = document.getElementById(uid+'-track');
+  const slides = track?.children.length || 1;
+  let cur = parseInt(el.dataset.cur||'0');
+  cur = (cur + dir + slides) % slides;
+  el.dataset.cur = cur;
+  if(track) track.style.transform = `translateX(-${cur*100}%)`;
+  el.querySelectorAll('.prod-carousel-dot').forEach((d,i)=>d.classList.toggle('active',i===cur));
+}
+
+// Swipe touch support para carousel de produto
+function initProdCarouselSwipe(uid){
+  const el = document.getElementById(uid);
+  if(!el) return;
+  let startX=0;
+  el.addEventListener('touchstart', e=>{ startX=e.touches[0].clientX; }, {passive:true});
+  el.addEventListener('touchend', e=>{
+    const dx = e.changedTouches[0].clientX - startX;
+    if(Math.abs(dx)>40) moveProdCarousel(uid, dx<0?1:-1);
+  }, {passive:true});
+}
+
+// ── Upload de até 3 fotos de produto via R2 ───────────────────────
+// Usa o mesmo pipeline do feed (r2GetPresign + r2UploadToPresigned)
+async function uploadProdPhotos(files){
+  const urls = [];
+  for(const f of files){
+    if(!f) continue;
+    try{
+      // Comprime a imagem antes de enviar (igual ao feed)
+      let toUpload = f;
+      try{
+        const imgs = await compressImage(f);
+        toUpload = imgs.feed || imgs || f;
+        if(!(toUpload instanceof File || toUpload instanceof Blob)) toUpload = f;
+      }catch(_){ toUpload = f; }
+      const pres = await r2GetPresign(toUpload);
+      await r2UploadToPresigned(pres.uploadUrl, toUpload, pres.headers);
+      urls.push(pres.publicUrl);
+    }catch(e){
+      console.error('[uploadProdPhotos]', e.message);
+      showToast('Erro ao enviar foto: '+e.message,'error');
+    }
+  }
+  return urls;
+}
+
+// Renderiza grid de seleção de fotos (formulário adicionar/editar)
+function renderProdPhotosInput(containerId, existingUrls){
+  const urls = existingUrls ? [...existingUrls] : [];
+  // Garante máximo 3
+  while(urls.length < 3) urls.push(null);
+  const slots = urls.slice(0,3).map((url,i)=>`
+    <div class="prod-photo-slot" id="prod-slot-${containerId}-${i}" onclick="document.getElementById('prod-file-${containerId}-${i}').click()">
+      ${url?`<img src="${xss(url)}" id="prod-slot-img-${containerId}-${i}"><button class="prod-photo-remove" onclick="event.stopPropagation();removeProdPhoto('${containerId}',${i})">✕</button>`:`<span id="prod-slot-lbl-${containerId}-${i}" style="font-size:22px;">➕</span>`}
+    </div>
+    <input type="file" id="prod-file-${containerId}-${i}" accept="image/*" style="display:none" data-slot="${i}" onchange="onProdPhotoChange('${containerId}',${i},this)">`
+  ).join('');
+  return `<div class="prod-photos-grid">${slots}</div>
+    <div style="font-size:9px;color:var(--text-muted);margin-top:4px;">Até 3 fotos. Toque em ➕ para adicionar.</div>`;
+}
+
+// Estado temporário das fotos por container
+window._prodPhotoFiles = window._prodPhotoFiles || {};
+window._prodPhotoUrls  = window._prodPhotoUrls  || {};
+
+function onProdPhotoChange(cid, idx, input){
+  const file = input.files[0]; if(!file) return;
+  if(!window._prodPhotoFiles[cid]) window._prodPhotoFiles[cid] = [null,null,null];
+  window._prodPhotoFiles[cid][idx] = file;
+  // Preview local
+  const slot = document.getElementById('prod-slot-'+cid+'-'+idx);
+  const objUrl = URL.createObjectURL(file);
+  if(slot) slot.innerHTML = `<img src="${objUrl}" id="prod-slot-img-${cid}-${idx}"><button class="prod-photo-remove" onclick="event.stopPropagation();removeProdPhoto('${cid}',${idx})">✕</button>`;
+  // Remove URL existente para esse slot (será re-uploaded)
+  if(window._prodPhotoUrls[cid]) window._prodPhotoUrls[cid][idx] = null;
+}
+
+function removeProdPhoto(cid, idx){
+  if(window._prodPhotoFiles[cid]) window._prodPhotoFiles[cid][idx] = null;
+  if(window._prodPhotoUrls[cid])  window._prodPhotoUrls[cid][idx]  = null;
+  const slot = document.getElementById('prod-slot-'+cid+'-'+idx);
+  if(slot) slot.innerHTML = `<span id="prod-slot-lbl-${cid}-${idx}" style="font-size:22px;">➕</span>`;
+  document.getElementById('prod-file-'+cid+'-'+idx).value='';
+}
+
+async function collectProdPhotos(cid, existingUrls){
+  // Começa com URLs existentes
+  const result = existingUrls ? [...existingUrls] : [];
+  while(result.length < 3) result.push(null);
+  // Faz upload dos arquivos novos
+  const files = window._prodPhotoFiles[cid] || [null,null,null];
+  for(let i=0;i<3;i++){
+    if(files[i]){
+      try{
+        const [url] = await uploadProdPhotos([files[i]]);
+        if(url) result[i] = url;
+      }catch(e){}
+    }
+    // Se o slot foi removido (null no files e null nas urls)
+    if(window._prodPhotoUrls[cid] && window._prodPhotoUrls[cid][i] === null && !files[i]){
+      result[i] = null;
+    }
+  }
+  // Limpa nulos do meio e retorna somente as não-nulas
+  return result.filter(Boolean);
+}
+
+function editProduct(prodId, name, price, priceLabel, desc, imageUrl, imageUrls){
   const bizId = myBusiness?.id;
   if(!bizId){ showToast('Loja não encontrada','error'); return; }
-
-  // Remove overlay existente se houver
   document.querySelector('[data-edit-prod-overlay]')?.remove();
 
-  // Cria o modal de edição igual ao de adicionar
+  // Monta lista de fotos existentes (suporta tanto image_url quanto image_urls[])
+  const cid = 'editprod';
+  let existingUrls = [];
+  try{ existingUrls = imageUrls ? JSON.parse(imageUrls) : []; }catch(_){ existingUrls=[]; }
+  if(!existingUrls.length && imageUrl) existingUrls = [imageUrl];
+  window._prodPhotoFiles[cid] = [null,null,null];
+  window._prodPhotoUrls[cid]  = [...existingUrls, null, null, null].slice(0,3);
+
   const overlay = document.createElement('div');
   overlay.setAttribute('data-edit-prod-overlay','1');
-  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);z-index:3500;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);z-index:3500;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;';
   overlay.innerHTML=`
-    <div class="modal" style="max-width:400px;width:100%;">
+    <div class="modal" style="max-width:420px;width:100%;margin:auto;">
       <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-yellow);margin-bottom:16px;">✏️ Editar Produto / Serviço</div>
-      <div class="igrp"><label class="ilbl">Foto do produto</label>
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
-          <div id="edit-prod-img-preview" style="width:60px;height:60px;border-radius:8px;border:2px dashed var(--border-glow);display:flex;align-items:center;justify-content:center;font-size:24px;cursor:pointer;background:var(--glass);flex-shrink:0;overflow:hidden;" onclick="document.getElementById('edit-prod-img-file').click()">
-            ${imageUrl?`<img src="${xss(imageUrl)}" style="width:100%;height:100%;object-fit:cover;">`:'📦'}
-          </div>
-          <button type="button" class="tbtn" style="font-size:9px;" onclick="document.getElementById('edit-prod-img-file').click()">📷 Trocar foto</button>
-          <input type="file" id="edit-prod-img-file" accept="image/*" style="display:none" onchange="previewBizImage(this,'edit-prod-img-preview','edit-prod-img-url')">
-          <input type="hidden" id="edit-prod-img-url" value="${xss(imageUrl||'')}">
-        </div>
+      <div class="igrp">
+        <label class="ilbl">Fotos do produto (até 3)</label>
+        ${renderProdPhotosInput(cid, existingUrls)}
       </div>
       <div class="igrp"><label class="ilbl">Nome *</label>
         <input class="ainput" id="edit-prod-name" value="${xss(name||'')}" placeholder="Nome do produto"></div>
@@ -6395,43 +6542,32 @@ function editProduct(prodId, name, price, priceLabel, desc, imageUrl){
   overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
   document.body.appendChild(overlay);
 
-  // Botão salvar
   document.getElementById('edit-prod-save-btn').onclick = async function(){
-    const btn = this;
-    btn.disabled=true; btn.textContent='⏳ Salvando...';
+    const btn=this; btn.disabled=true; btn.textContent='⏳ Enviando fotos...';
     try{
-      let finalImg = document.getElementById('edit-prod-img-url')?.value||imageUrl||null;
-      // Upload nova foto se selecionada
-      if(window._editProdFile){
-        const url = await uploadImageToR2(window._editProdFile,'prod-img');
-        if(url){ finalImg=url; window._editProdFile=null; }
-      }
-      const newName  = document.getElementById('edit-prod-name')?.value.trim();
-      const newPrice = parseFloat(document.getElementById('edit-prod-price')?.value||'')||null;
-      const newLabel = document.getElementById('edit-prod-price-label')?.value.trim()||null;
-      const newDesc  = document.getElementById('edit-prod-desc')?.value.trim()||null;
+      // Coleta e faz upload das fotos usando o mesmo pipeline do feed
+      const finalUrls = await collectProdPhotos(cid, existingUrls);
+      const newName   = document.getElementById('edit-prod-name')?.value.trim();
+      const newPrice  = parseFloat(document.getElementById('edit-prod-price')?.value||'')||null;
+      const newLabel  = document.getElementById('edit-prod-price-label')?.value.trim()||null;
+      const newDesc   = document.getElementById('edit-prod-desc')?.value.trim()||null;
       if(!newName){ showToast('Nome obrigatório','error'); btn.disabled=false; btn.textContent='✏️ Salvar edição'; return; }
+      btn.textContent='⏳ Salvando...';
       const{error}=await db.from('business_products').update({
         name:newName, price:newPrice, price_label:newLabel,
-        description:newDesc, image_url:finalImg,
-        updated_at:new Date().toISOString()
+        description:newDesc,
+        image_url: finalUrls[0]||null,
+        image_urls: finalUrls.length ? JSON.stringify(finalUrls) : null
       }).eq('id',prodId).eq('business_id',bizId);
       if(error) throw error;
+      // Limpa estado temporário
+      delete window._prodPhotoFiles[cid]; delete window._prodPhotoUrls[cid];
       showToast('✅ Produto atualizado!','success');
       overlay.remove();
       loadBizDashboard();
     }catch(e){
       showToast('Erro: '+e.message,'error');
       btn.disabled=false; btn.textContent='✏️ Salvar edição';
-    }
-  };
-
-  // Captura arquivo selecionado para upload
-  document.getElementById('edit-prod-img-file').onchange = function(){
-    window._editProdFile = this.files[0];
-    if(this.files[0]){
-      const prev=document.getElementById('edit-prod-img-preview');
-      if(prev) prev.innerHTML=`<img src="${URL.createObjectURL(this.files[0])}" style="width:100%;height:100%;object-fit:cover;">`;
     }
   };
 }
@@ -6461,8 +6597,7 @@ async function updateProduct(prodId, bizId, btn){
     const updates = {
       name,
       description: desc||null,
-      image_url:   finalImg||null,
-      updated_at:  new Date().toISOString()
+      image_url:   finalImg||null
     };
     if(priceRaw) updates.price = parseFloat(priceRaw)||null;
     if(priceLabel) updates.price_label = priceLabel;
@@ -13332,16 +13467,25 @@ async function loadMyBusiness(){
   } else {
     prods.forEach(p=>{
       const pc = document.createElement('div'); pc.className='prod-card';
+      // Monta lista de imagens (suporte a image_urls[] ou image_url)
+      let _pImgs = [];
+      try{ _pImgs = p.image_urls ? JSON.parse(p.image_urls) : []; }catch(_){ _pImgs=[]; }
+      if(!_pImgs.length && p.image_url) _pImgs=[p.image_url];
+      const _pCarousel = renderProdCarousel(_pImgs, 100);
+      const _pUrls = JSON.stringify(_pImgs).replace(/"/g,'&quot;');
       pc.innerHTML = `
-        ${p.image_url?`<img class="prod-img" src="${xss(p.image_url)}">`:'<div class="prod-img" style="display:flex;align-items:center;justify-content:center;font-size:30px;">📦</div>'}
+        ${_pCarousel}
         <div class="prod-name">${xss(p.name)}</div>
         <div class="prod-price">${p.price?'R$ '+Number(p.price).toFixed(2):xss(p.price_label||'Sob consulta')}</div>
         <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">
           <button class="tbtn" style="flex:1;font-size:9px;color:var(--neon-cyan);padding:5px;" onclick="divulgarProduto('${data.id}','${xss(p.name)}',${p.price||0},'${xss(p.image_url||'')}','${xss(p.price_label||'')}')">📢 Divulgar</button>
-          <button class="tbtn" style="font-size:9px;color:var(--neon-yellow);padding:5px;" onclick="editProduct('${p.id}','${xss(p.name)}',${p.price||0},'${xss(p.price_label||'')}','${xss(p.description||'')}','${xss(p.image_url||'')}')">✏️</button>
+          <button class="tbtn" style="font-size:9px;color:var(--neon-yellow);padding:5px;" onclick="editProduct('${p.id}','${xss(p.name)}',${p.price||0},'${xss(p.price_label||'')}','${xss(p.description||'')}','${xss(p.image_url||'')}','${_pUrls}')">✏️</button>
           <button class="tbtn" style="font-size:9px;padding:5px;" onclick="deleteProduct('${p.id}')">🗑</button>
         </div>`;
       pg.appendChild(pc);
+      // Ativa swipe no carousel
+      const _cEl = pc.querySelector('.prod-carousel');
+      if(_cEl && _cEl.id) initProdCarouselSwipe(_cEl.id);
     });
   }
 }
@@ -13589,17 +13733,16 @@ async function openAddProduct(bizId){
   // Professional modal instead of prompt
   const overlay = document.createElement('div');
   overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);z-index:3500;display:flex;align-items:center;justify-content:center;padding:16px;';
+  const _addCid = 'newprod';
+  window._prodPhotoFiles[_addCid] = [null,null,null];
+  window._prodPhotoUrls[_addCid]  = [null,null,null];
   overlay.innerHTML=`
-    <div class="modal" style="max-width:400px;width:100%;">
+    <div class="modal" style="max-width:420px;width:100%;margin:auto;">
       <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);margin-bottom:16px;">📦 Adicionar Produto / Serviço</div>
       <div style="font-size:10px;color:var(--text-muted);margin-bottom:12px;">Você tem ${count||0}/10 produtos cadastrados</div>
-      <div class="igrp"><label class="ilbl">Foto do produto/serviço</label>
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
-          <div id="prod-img-preview" style="width:60px;height:60px;border-radius:8px;border:2px dashed var(--border-glow);display:flex;align-items:center;justify-content:center;font-size:24px;cursor:pointer;background:var(--glass);flex-shrink:0;" onclick="document.getElementById('prod-img-file').click()">📦</div>
-          <button type="button" class="tbtn" style="font-size:9px;" onclick="document.getElementById('prod-img-file').click()">📷 Escolher foto</button>
-          <input type="file" id="prod-img-file" accept="image/*" style="display:none" onchange="previewBizImage(this,'prod-img-preview','prod-img-url')">
-          <input type="hidden" id="prod-img-url">
-        </div>
+      <div class="igrp">
+        <label class="ilbl">Fotos do produto (até 3)</label>
+        ${renderProdPhotosInput(_addCid, [])}
       </div>
       <div class="igrp"><label class="ilbl">Nome *</label>
         <input class="ainput" id="prod-name-input" placeholder="Ex: Corte de cabelo, Notebook..."></div>
@@ -13625,17 +13768,23 @@ async function saveNewProduct(bizId, btn){
   const price = parseFloat(document.getElementById('prod-price-input')?.value||'')||null;
   const category = document.getElementById('prod-cat-input')?.value.trim()||'';
   const desc = document.getElementById('prod-desc-input')?.value.trim()||'';
-  btn.disabled=true; btn.textContent='⏳...';
-  // Moderation
+  btn.disabled=true; btn.textContent='⏳ Verificando...';
   if(name){ const mod=await moderateContent(name+' '+desc); if(!mod.allowed){showModerationError(mod.categories);btn.disabled=false;btn.textContent='✅ Adicionar';return;} }
+  // Upload fotos pelo mesmo pipeline do feed
+  btn.textContent='⏳ Enviando fotos...';
+  const cid = 'newprod';
+  const finalUrls = await collectProdPhotos(cid, []);
+  btn.textContent='⏳ Salvando...';
   const {error} = await db.from('business_products').insert({
-    business_id:bizId,
+    business_id: bizId,
     name, price, category,
     description: desc||null,
     price_label: price?null:'Sob consulta',
-    image_url: document.getElementById('prod-img-url')?.value||null
+    image_url:  finalUrls[0]||null,
+    image_urls: finalUrls.length ? JSON.stringify(finalUrls) : null
   });
   if(error){ btn.disabled=false; btn.textContent='✅ Adicionar'; return showToast('Erro: '+error.message,'error'); }
+  delete window._prodPhotoFiles[cid]; delete window._prodPhotoUrls[cid];
   showToast('✅ Produto adicionado!','success');
   btn.closest('[style*=fixed]').remove();
   loadMyBusiness();
@@ -14130,16 +14279,18 @@ async function openBizDetail(biz){
               data-bizname="${xss(biz.name).replace(/"/g,'&quot;')}"
               data-prodname="${xss(p.name).replace(/"/g,'&quot;')}"
               data-price="${p.price||0}"
-              data-pricelabel="${(p.price_label||'').replace(/"/g,'&quot;')}"
+-             data-pricelabel="${(p.price_label||'').replace(/"/g,'&quot;')}"
               data-category="${biz.category}"
               onclick="selectBizProductEl(this)"
-              style="background:var(--bg-mid);border:2px solid var(--border-glow);border-radius:10px;padding:10px;text-align:center;cursor:pointer;transition:all .2s;"
+              style="background:var(--bg-mid);border:2px solid var(--border-glow);border-radius:10px;padding:0 0 10px;text-align:center;cursor:pointer;transition:all .2s;overflow:hidden;"
               onmouseover="this.style.borderColor='var(--neon-cyan)'" onmouseout="this.style.borderColor='var(--border-glow)'"
               title="Clique para selecionar">
-              <div style="font-size:28px;margin-bottom:6px;">${p.image_url?`<img src="${xss(p.image_url)}" style="width:100%;height:70px;object-fit:cover;border-radius:7px;">`:`${biz.category==='loja'?'📦':'🔧'}`}</div>
+              ${(()=>{ let _imgs=[]; try{_imgs=p.image_urls?JSON.parse(p.image_urls):[];}catch(_){_imgs=[];} if(!_imgs.length&&p.image_url)_imgs=[p.image_url]; return renderProdCarousel(_imgs,90); })()}
+              <div style="padding:0 6px;">
               <div style="font-size:11px;color:var(--text-light);margin-bottom:4px;font-weight:600;">${xss(p.name)}</div>
               <div style="font-family:VT323,monospace;font-size:18px;color:var(--neon-cyan);">${p.price?'R$ '+Number(p.price).toFixed(2).replace('.',','):xss(p.price_label||'Sob consulta')}</div>
               <div style="margin-top:6px;font-size:9px;color:var(--neon-pink);font-family:Silkscreen,monospace;">SELECIONAR →</div>
+              </div>
             </div>`).join('')}
         </div>`;
     }
@@ -14486,17 +14637,7 @@ saveBusiness = async function(){
   await _origSaveBusiness();
 };
 
-// ── Patch saveNewProduct to upload image ─────────────────────────
-const _origSaveNewProduct = saveNewProduct;
-saveNewProduct = async function(bizId, btn){
-  if(window._bizImgFiles?.['prod-img-url']){
-    btn.textContent='⏳ Enviando foto...'; btn.disabled=true;
-    const url = await uploadBizImage('prod-img-url','products');
-    if(url) document.getElementById('prod-img-url').value = url;
-    btn.textContent='✅ Adicionar'; btn.disabled=false;
-  }
-  await _origSaveNewProduct(bizId, btn);
-};
+// saveNewProduct upload now handled internally via collectProdPhotos
 
 // ── Patch saveBusiness payload to include logo/banner ────────────
 // Override the actual insert/update inside saveBusiness by monkey-patching
