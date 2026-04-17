@@ -6145,15 +6145,130 @@ async function loadCmts(postId, sec){
 
   sec.innerHTML=cmtHtml+`
     <div style="position:relative;" id="cmt-wrap-${postId}">
-      ${canComment?`<div class="cmt-input-wrap">
-        <input class="cmt-input" id="cin-${postId}" type="text" placeholder="Comentar... use @ para mencionar alguém"
-          oninput="_cmtMentionCheck(this,'${postId}')"
-          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();submitCmt('${postId}',this);}"
-          onblur="setTimeout(()=>_closeMentionDropdown('${postId}'),200)">
-        <button class="cmt-sub" onclick="submitCmt('${postId}',this)">➤</button>
+      ${canComment?`<div style="position:relative;">
+        <div class="cmt-input-wrap">
+          <button type="button" onclick="_toggleCmtEmoji('${postId}')" style="background:none;border:none;font-size:18px;cursor:pointer;padding:0 4px;flex-shrink:0;color:var(--text-muted);transition:color .2s;" title="Emojis">😊</button>
+          <input class="cmt-input" id="cin-${postId}" type="text" placeholder="Comentar..."
+            oninput="_cmtMentionCheck(this,'${postId}')"
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();submitCmt('${postId}',this);}"
+            onblur="setTimeout(()=>_closeMentionDropdown('${postId}'),200)">
+          <button class="cmt-sub" onclick="submitCmt('${postId}',this)">➤</button>
+        </div>
+        <div id="cmt-emoji-drop-${postId}" style="display:none;position:absolute;bottom:50px;left:0;right:0;background:var(--bg-card);border:1px solid var(--border-glow);border-radius:12px;padding:8px;z-index:300;max-height:160px;overflow-y:auto;box-shadow:0 -4px 20px rgba(0,0,0,.5);">
+          <div style="display:flex;flex-wrap:wrap;gap:2px;">
+            ${['😀','😂','😍','😎','🥳','😭','😅','🤔','😴','🤩','❤️','🔥','👍','👏','🎉','💯','✨','🙏','😡','🤯','💪','🥰','😏','🤑','😱','👀','💀','🫶','🤝','🙌'].map(e=>`<span onclick="_insertCmtEmoji('${postId}','`+e+`')" style="font-size:20px;cursor:pointer;padding:3px;border-radius:6px;transition:background .15s;" onmouseover="this.style.background='rgba(0,255,204,.15)'" onmouseout="this.style.background=''">` + e + `</span>`).join('')}
+          </div>
+        </div>
       </div>`:`<div style="margin-top:8px;padding:9px 12px;font-size:11px;color:var(--text-muted);font-family:'Space Mono',monospace;border:1px solid var(--border-glow);border-radius:8px;text-align:center;background:rgba(255,255,255,.02);">🔒 Entre na comunidade para comentar</div>`}
       <div id="cmt-mention-drop-${postId}" style="display:none;position:absolute;bottom:48px;left:0;right:0;background:var(--bg-card);border:1px solid var(--border-glow);border-radius:10px;max-height:180px;overflow-y:auto;z-index:200;box-shadow:0 -4px 20px rgba(0,0,0,.4);"></div>
     </div>`;
+}
+
+// ── Emoji nos comentários ──────────────────────────────────────
+function _toggleCmtEmoji(postId){
+  const drop = document.getElementById('cmt-emoji-drop-'+postId);
+  if(!drop) return;
+  drop.style.display = drop.style.display==='none' ? 'block' : 'none';
+  // Fecha ao clicar fora
+  if(drop.style.display==='block'){
+    setTimeout(()=>{
+      const close = (e)=>{ if(!drop.contains(e.target)){ drop.style.display='none'; document.removeEventListener('click',close); } };
+      document.addEventListener('click', close);
+    }, 100);
+  }
+}
+function _insertCmtEmoji(postId, emoji){
+  const inp = document.getElementById('cin-'+postId);
+  if(!inp) return;
+  const s=inp.selectionStart||inp.value.length, e2=inp.selectionEnd||inp.value.length;
+  inp.value = inp.value.slice(0,s)+emoji+inp.value.slice(e2);
+  inp.selectionStart = inp.selectionEnd = s+emoji.length;
+  inp.focus();
+  const drop = document.getElementById('cmt-emoji-drop-'+postId);
+  if(drop) drop.style.display='none';
+}
+
+// ── Edição de produto ─────────────────────────────────────────
+function editProduct(prodId, name, price, priceLabel, desc, imageUrl){
+  // Reutiliza o modal de novo produto preenchendo os campos
+  const bizId = myBusiness?.id;
+  if(!bizId){ showToast('Loja não encontrada','error'); return; }
+
+  // Abre o formulário de produto
+  const formEl = document.getElementById('new-prod-form-'+bizId);
+  if(!formEl){ showToast('Abra o painel da sua loja primeiro','error'); return; }
+  formEl.style.display='block';
+
+  // Preenche os campos
+  const setVal = (id, val)=>{ const el=document.getElementById(id+'-'+bizId); if(el) el.value=val||''; };
+  setVal('prod-name', name);
+  setVal('prod-price', price||'');
+  setVal('prod-price-label', priceLabel||'');
+  setVal('prod-desc', desc||'');
+  setVal('prod-img-url', imageUrl||'');
+
+  // Guarda o ID do produto a ser editado
+  const saveBtn = document.querySelector(`[onclick="saveNewProduct('${bizId}', this)"]`);
+  if(saveBtn){
+    saveBtn.dataset.editProdId = prodId;
+    saveBtn.textContent = '✏️ Salvar edição';
+    saveBtn.onclick = function(){ updateProduct(prodId, bizId, this); };
+  }
+
+  // Preview da imagem atual
+  if(imageUrl){
+    const prev = document.getElementById('prod-img-preview-'+bizId);
+    if(prev) prev.innerHTML = `<img src="${xss(imageUrl)}" style="width:60px;height:60px;object-fit:cover;border-radius:8px;">`;
+  }
+
+  formEl.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+async function updateProduct(prodId, bizId, btn){
+  if(!CU||!prodId) return;
+  const getName  = id=>document.getElementById(id+'-'+bizId)?.value.trim()||'';
+  const name     = getName('prod-name');
+  const priceRaw = getName('prod-price');
+  const priceLabel= getName('prod-price-label');
+  const desc     = getName('prod-desc');
+  const imageUrl = document.getElementById('prod-img-url-'+bizId)?.value.trim()||'';
+
+  if(!name){ showToast('Nome do produto é obrigatório','error'); return; }
+
+  const origText = btn.textContent;
+  btn.textContent='⏳ Salvando...'; btn.disabled=true;
+
+  try{
+    // Upload de nova imagem se tiver arquivo selecionado
+    let finalImg = imageUrl;
+    if(window._bizImgFiles?.['prod-img-'+bizId]){
+      const url = await uploadImageToR2(window._bizImgFiles['prod-img-'+bizId],'prod-img');
+      if(url) finalImg = url;
+    }
+
+    const updates = {
+      name,
+      description: desc||null,
+      image_url:   finalImg||null,
+      updated_at:  new Date().toISOString()
+    };
+    if(priceRaw) updates.price = parseFloat(priceRaw)||null;
+    if(priceLabel) updates.price_label = priceLabel;
+
+    const{error}=await db.from('business_products').update(updates).eq('id',prodId).eq('business_id',bizId);
+    if(error) throw error;
+
+    showToast('✅ Produto atualizado!','success');
+    // Restaura botão e recarrega produtos
+    btn.textContent='✅ Adicionar'; btn.disabled=false;
+    btn.onclick = function(){ saveNewProduct(bizId, this); };
+    document.getElementById('new-prod-form-'+bizId).style.display='none';
+    loadBizProducts(bizId);
+    if(window._bizImgFiles) delete window._bizImgFiles['prod-img-'+bizId];
+  }catch(e){
+    showToast('Erro: '+e.message,'error');
+    btn.textContent=origText; btn.disabled=false;
+  }
 }
 
 // ── Mention dropdown no campo de comentário ──
@@ -6617,7 +6732,7 @@ const R2_IMAGE_QUALITY    = 0.80;   // qualidade JPEG feed (0..1)
 const R2_THUMB_QUALITY    = 0.72;   // qualidade JPEG miniatura (menor = mais leve)
 const R2_VIDEO_MAX_HEIGHT = 720;    // downscale vertical do vídeo
 const R2_MAX_VIDEO_INPUT_MB = 200;  // tamanho MÁX do vídeo de entrada
-const R2_MAX_VIDEO_DURATION_S = 420;// duração MÁX: 7 minutos
+const R2_MAX_VIDEO_DURATION_S = 600;// duração MÁX: 10 minutos
 const R2_MAX_IMAGE_INPUT_MB = 70;   // tamanho MÁX da imagem de entrada
 const R2_MAX_UPLOAD_MB    = 30;     // tamanho MÁX após compressão
 
@@ -12820,8 +12935,9 @@ async function loadMyBusiness(){
         ${p.image_url?`<img class="prod-img" src="${xss(p.image_url)}">`:'<div class="prod-img" style="display:flex;align-items:center;justify-content:center;font-size:30px;">📦</div>'}
         <div class="prod-name">${xss(p.name)}</div>
         <div class="prod-price">${p.price?'R$ '+Number(p.price).toFixed(2):xss(p.price_label||'Sob consulta')}</div>
-        <div style="display:flex;gap:4px;margin-top:6px;">
+        <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">
           <button class="tbtn" style="flex:1;font-size:9px;color:var(--neon-cyan);padding:5px;" onclick="divulgarProduto('${data.id}','${xss(p.name)}',${p.price||0},'${xss(p.image_url||'')}','${xss(p.price_label||'')}')">📢 Divulgar</button>
+          <button class="tbtn" style="font-size:9px;color:var(--neon-yellow);padding:5px;" onclick="editProduct('${p.id}','${xss(p.name)}',${p.price||0},'${xss(p.price_label||'')}','${xss(p.description||'')}','${xss(p.image_url||'')}')">✏️</button>
           <button class="tbtn" style="font-size:9px;padding:5px;" onclick="deleteProduct('${p.id}')">🗑</button>
         </div>`;
       pg.appendChild(pc);
@@ -13352,6 +13468,7 @@ async function openBizDetail(biz){
   const starsLine = rating
     ? '⭐'.repeat(Math.round(Number(rating)))+` <span style="font-size:11px;color:var(--text-muted);">(${rating} · ${biz.rating_count||0} avaliações)</span>`
     : '<span style="font-size:11px;color:var(--text-muted);">Sem avaliações ainda</span>';
+  // starsLine é colocado num elemento com id para atualização dinâmica
   // Stats section
   const statsSection = biz.category==='loja'
     ? `<div style="display:flex;gap:14px;margin-bottom:14px;">
@@ -13388,7 +13505,7 @@ async function openBizDetail(biz){
       <button style="background:none;border:1px solid var(--border-glow);color:var(--text-muted);width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;" onclick="this.closest('[data-biz-overlay]').remove()">✕</button>
     </div>
     <div style="font-size:11px;color:var(--neon-yellow);margin-bottom:6px;">${xss(biz.segment)} · ${biz.category==='loja'?'🛍️ Loja':'🔧 Serviço'}</div>
-    <div style="margin-bottom:10px;">${starsLine}</div>
+    <div style="margin-bottom:10px;" id="biz-rating-line-${biz.id}">${starsLine}</div>
     ${biz.description?`<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.6;">${xss(biz.description)}</div>`:''}
     <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">📍 ${xss(biz.city||'—')}${biz.state?', '+xss(biz.state):''}${biz.street?` · ${xss(biz.street)}`:''}${biz.complement?' '+xss(biz.complement):''}${biz.neighborhood?' — '+xss(biz.neighborhood):''}${biz.cep?' · CEP '+xss(biz.cep):''}
       ${(biz.street||biz.city)?`<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([biz.street,biz.complement,biz.neighborhood,biz.city,biz.state,biz.cep,'Brasil'].filter(Boolean).join(', '))}" target="_blank" style="display:inline-flex;align-items:center;gap:3px;margin-left:6px;background:rgba(0,255,204,.12);color:var(--neon-cyan);border:1px solid var(--border-glow);border-radius:6px;padding:2px 8px;font-size:9px;text-decoration:none;font-family:'Space Mono',monospace;vertical-align:middle;">📌 Ver no mapa</a>`:''}
@@ -13418,6 +13535,17 @@ async function openBizDetail(biz){
   ]);
   // Use fresh data if available
   try{ if(freshBizRes.data) biz = {...biz, ...freshBizRes.data}; }catch(e){ console.warn('biz merge err',e); }
+  // Atualiza linha de rating no modal com dados frescos do banco
+  try{
+    if(freshBizRes.data){
+      const freshRating = freshBizRes.data.rating ? Number(freshBizRes.data.rating).toFixed(1) : null;
+      const freshStarsLine = freshRating
+        ? '⭐'.repeat(Math.round(Number(freshRating)))+` <span style="font-size:11px;color:var(--text-muted);">(${freshRating} · ${freshBizRes.data.rating_count||0} avaliações)</span>`
+        : '<span style="font-size:11px;color:var(--text-muted);">Sem avaliações ainda</span>';
+      const ratingEl = document.getElementById('biz-rating-line-'+biz.id);
+      if(ratingEl) ratingEl.innerHTML = freshStarsLine;
+    }
+  }catch(e){}
   // Update stats in modal with fresh data
   const statsEl = document.getElementById('biz-stats-'+biz.id);
   if(statsEl && freshBizRes.data){
