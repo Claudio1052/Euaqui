@@ -7386,16 +7386,54 @@ function generateRetroAvatar(){
     preview.innerHTML = `<img src="${url}" data-dicebear-direct="1" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='<span style=font-size:30px>🎮</span>'">`;
   }
 }
-function applyRetroAvatar(){
+async function applyRetroAvatar(){
   if(!_retro_av_url){ showToast('Gere um avatar primeiro!','error'); return; }
+  if(!CU){ showToast('Faça login primeiro','error'); return; }
+
   avatarFile = null;
   retroIconSelected = null;
-  // Salva a URL gerada para ser usada no saveSettings
   window._generatedAvatarUrl = _retro_av_url;
-  // Atualiza APENAS o preview "Avatar atual" — navbar/perfil só mudam após SALVAR
-  const prev = document.getElementById('av-current-preview');
-  if(prev) prev.innerHTML = `<img src="${_retro_av_url}" data-dicebear-direct="1" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.parentElement.textContent='🎮'">`;
-  showToast('✅ Avatar selecionado! Clique em SALVAR ALTERAÇÕES para confirmar.','success');
+
+  // Salva IMEDIATAMENTE no banco — sem precisar clicar em SALVAR
+  const btn = document.querySelector('[onclick="applyRetroAvatar()"]');
+  if(btn){ btn.textContent='⏳ Salvando...'; btn.disabled=true; }
+
+  try{
+    await db.from('profiles').update({
+      avatar_url:  _retro_av_url,
+      avatar_type: 'generated',
+      retro_icon:  null,
+      updated_at:  new Date().toISOString()
+    }).eq('id', CU.id);
+
+    // Atualiza CP local
+    if(CP){ CP.avatar_url = _retro_av_url; CP.avatar_type = 'generated'; CP.retro_icon = null; }
+
+    // Atualiza TODOS os avatares na UI imediatamente
+    const ts = '?t='+Date.now();
+    ['nav-av','sl-av','c-av','dr-av'].forEach(id=>{
+      const el=document.getElementById(id);
+      if(el){ el.setAttribute('data-dicebear-direct','1'); el.src=_retro_av_url+ts; }
+    });
+    document.querySelectorAll('.nav-av,.uma').forEach(el=>{
+      if(el.tagName==='IMG'){ el.setAttribute('data-dicebear-direct','1'); el.src=_retro_av_url+ts; }
+    });
+
+    // Atualiza preview "Avatar atual"
+    const prev = document.getElementById('av-current-preview');
+    if(prev) prev.innerHTML = `<img src="${_retro_av_url}" data-dicebear-direct="1" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+
+    // Recarrega o perfil para mostrar o avatar correto
+    if(document.getElementById('page-profile')?.classList.contains('active')){
+      loadProfilePage(CU.id);
+    }
+
+    showToast('✅ Avatar atualizado!','success');
+  }catch(e){
+    showToast('Erro ao salvar avatar: '+(e.message||'tente novamente'),'error');
+  }finally{
+    if(btn){ btn.textContent='✓ Usar este'; btn.disabled=false; }
+  }
 }
 
 // ── Constrói grids de interesses/preferências via JS ────────────
