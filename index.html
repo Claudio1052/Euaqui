@@ -7390,47 +7390,89 @@ async function applyRetroAvatar(){
   if(!_retro_av_url){ showToast('Gere um avatar primeiro!','error'); return; }
   if(!CU){ showToast('Faça login primeiro','error'); return; }
 
-  avatarFile = null;
-  retroIconSelected = null;
-  window._generatedAvatarUrl = _retro_av_url;
-
-  // Salva IMEDIATAMENTE no banco — sem precisar clicar em SALVAR
   const btn = document.querySelector('[onclick="applyRetroAvatar()"]');
   if(btn){ btn.textContent='⏳ Salvando...'; btn.disabled=true; }
 
   try{
-    await db.from('profiles').update({
-      avatar_url:  _retro_av_url,
-      avatar_type: 'generated',
+    // Baixa o SVG do Dicebear e faz upload como PNG real no R2
+    // Isso evita qualquer problema com MutationObserver ou URLs do Dicebear
+    showToast('⏳ Processando avatar...','success');
+
+    // Renderiza o SVG no canvas e converte para PNG
+    const svgResp = await fetch(_retro_av_url);
+    const svgBlob = await svgResp.blob();
+    
+    // Cria uma imagem a partir do SVG
+    const svgUrl = URL.createObjectURL(svgBlob);
+    const img = await new Promise((res,rej)=>{
+      const i = new Image();
+      i.onload = ()=>res(i);
+      i.onerror = ()=>rej(new Error('SVG load failed'));
+      i.src = svgUrl;
+    });
+
+    // Renderiza no canvas 256x256
+    const canvas = document.createElement('canvas');
+    canvas.width = 256; canvas.height = 256;
+    canvas.getContext('2d').drawImage(img, 0, 0, 256, 256);
+    URL.revokeObjectURL(svgUrl);
+
+    // Converte para PNG Blob
+    const pngBlob = await new Promise(res=>canvas.toBlob(res,'image/png',1));
+    const pngFile = new File([pngBlob], 'avatar_'+CU.id+'.png', {type:'image/png'});
+
+    // Faz upload para R2 (mesmo pipeline das fotos)
+    const r2Url = await uploadWithPipeline(pngFile, 'image', (m)=>console.log('[avatar-retro]',m));
+
+    // Salva no banco a URL do R2 (URL permanente, sem depender do Dicebear)
+    const {error} = await db.from('profiles').update({
+      avatar_url:  r2Url,
+      avatar_type: 'upload',
       retro_icon:  null,
       updated_at:  new Date().toISOString()
     }).eq('id', CU.id);
 
-    // Atualiza CP local
-    if(CP){ CP.avatar_url = _retro_av_url; CP.avatar_type = 'generated'; CP.retro_icon = null; }
+    if(error) throw error;
 
-    // Atualiza TODOS os avatares na UI imediatamente
-    const ts = '?t='+Date.now();
+    // Atualiza CP local
+    if(CP){ CP.avatar_url=r2Url; CP.avatar_type='upload'; CP.retro_icon=null; }
+
+    // Atualiza TODOS os avatares na UI com a URL do R2
     ['nav-av','sl-av','c-av','dr-av'].forEach(id=>{
       const el=document.getElementById(id);
-      if(el){ el.setAttribute('data-dicebear-direct','1'); el.src=_retro_av_url+ts; }
+      if(el && el.tagName==='IMG'){ el.setAttribute('data-dicebear-direct','1'); el.src=r2Url; }
     });
     document.querySelectorAll('.nav-av,.uma').forEach(el=>{
-      if(el.tagName==='IMG'){ el.setAttribute('data-dicebear-direct','1'); el.src=_retro_av_url+ts; }
+      if(el.tagName==='IMG'){ el.setAttribute('data-dicebear-direct','1'); el.src=r2Url; }
     });
+    const prev=document.getElementById('av-current-preview');
+    if(prev) prev.innerHTML=`<img src="${r2Url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
 
-    // Atualiza preview "Avatar atual"
-    const prev = document.getElementById('av-current-preview');
-    if(prev) prev.innerHTML = `<img src="${_retro_av_url}" data-dicebear-direct="1" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+    window._generatedAvatarUrl = null;
+    avatarFile = null;
 
-    // Recarrega o perfil para mostrar o avatar correto
+    showToast('✅ Avatar salvo!','success');
+
+    // Recarrega perfil
     if(document.getElementById('page-profile')?.classList.contains('active')){
-      loadProfilePage(CU.id);
+      await loadProfilePage(CU.id);
     }
-
-    showToast('✅ Avatar atualizado!','success');
   }catch(e){
-    showToast('Erro ao salvar avatar: '+(e.message||'tente novamente'),'error');
+    console.error('[applyRetroAvatar]', e);
+    // Fallback: salva URL do Dicebear direto se R2 falhar
+    try{
+      await db.from('profiles').update({
+        avatar_url: _retro_av_url, avatar_type:'generated',
+        retro_icon: null, updated_at: new Date().toISOString()
+      }).eq('id', CU.id);
+      if(CP){ CP.avatar_url=_retro_av_url; CP.avatar_type='generated'; }
+      ['nav-av','sl-av','c-av','dr-av'].forEach(id=>{
+        const el=document.getElementById(id);
+        if(el && el.tagName==='IMG'){ el.setAttribute('data-dicebear-direct','1'); el.src=_retro_av_url; }
+      });
+      if(document.getElementById('page-profile')?.classList.contains('active')) loadProfilePage(CU.id);
+      showToast('✅ Avatar atualizado!','success');
+    }catch(e2){ showToast('Erro: '+e2.message,'error'); }
   }finally{
     if(btn){ btn.textContent='✓ Usar este'; btn.disabled=false; }
   }
