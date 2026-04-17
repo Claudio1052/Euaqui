@@ -3654,6 +3654,23 @@ body.day-mode::before{
 .prod-carousel-dot.active{background:var(--neon-cyan);}
 .prod-carousel-prev,.prod-carousel-next{position:absolute;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.5);border:none;color:#fff;width:24px;height:24px;border-radius:50%;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;z-index:5;backdrop-filter:blur(4px);}
 .prod-carousel-prev{left:4px;}.prod-carousel-next{right:4px;}
+/* Botão SELECIONAR destacado */
+.prod-select-btn{
+  display:block;width:calc(100% - 12px);margin:8px 6px 2px;
+  padding:9px 12px;
+  background:linear-gradient(135deg,var(--neon-pink),var(--neon-purple));
+  border:none;border-radius:8px;
+  color:#fff;font-family:'Silkscreen',monospace;font-size:10px;letter-spacing:1px;
+  cursor:pointer;text-align:center;
+  box-shadow:0 4px 14px rgba(255,51,102,.45);
+  transition:all .18s;
+}
+.prod-select-btn:hover,.prod-select-btn:active{
+  transform:translateY(-2px);
+  box-shadow:0 8px 22px rgba(255,51,102,.65);
+}
+/* Carousel imagem clicável */
+.prod-carousel-slide img{ cursor:zoom-in; }
 /* Grid de preview de fotos no formulário */
 .prod-photos-grid{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
 .prod-photo-slot{width:70px;height:70px;border-radius:8px;border:2px dashed var(--border-glow);display:flex;align-items:center;justify-content:center;font-size:22px;cursor:pointer;background:var(--glass);overflow:hidden;position:relative;flex-shrink:0;}
@@ -6373,21 +6390,32 @@ function _insertCmtEmoji(postId, emoji){
 // ── Edição de produto ─────────────────────────────────────────
 
 // ── Carousel de fotos de produto ──────────────────────────────────
-function renderProdCarousel(images, height){
+function renderProdCarousel(images, height, forLightbox){
   // images: array de URLs (até 3). height: altura das fotos em px
+  // forLightbox: se true, clique na imagem abre lightbox
   const h = height || 130;
   if(!images || !images.length){
     return `<div class="prod-no-img" style="height:${h}px;display:flex;align-items:center;justify-content:center;font-size:36px;background:var(--bg-mid);border-radius:8px;margin-bottom:8px;">📦</div>`;
   }
+  const imgStyle = `width:100%;height:${h}px;object-fit:cover;display:block;`;
+  const urlsJson = JSON.stringify(images).replace(/"/g,"'");
   if(images.length === 1){
-    return `<div class="prod-carousel" style="margin-bottom:8px;"><img src="${xss(images[0])}" style="width:100%;height:${h}px;object-fit:cover;border-radius:8px;display:block;"></div>`;
+    const clickAttr = forLightbox
+      ? `onclick="event.stopPropagation();ppOpenFotoCarousel(${urlsJson},0)" style="${imgStyle}cursor:zoom-in;border-radius:8px;"`
+      : `style="${imgStyle}border-radius:8px;"`;
+    return `<div class="prod-carousel" style="margin-bottom:0;"><img src="${xss(images[0])}" ${clickAttr}></div>`;
   }
-  const slides = images.map(url=>`<div class="prod-carousel-slide"><img src="${xss(url)}" style="height:${h}px;"></div>`).join('');
+  const slides = images.map((url,si)=>{
+    const clickAttr = forLightbox
+      ? `onclick="event.stopPropagation();ppOpenFotoCarousel(${urlsJson},${si})" style="height:${h}px;cursor:zoom-in;"`
+      : `style="height:${h}px;"`;
+    return `<div class="prod-carousel-slide"><img src="${xss(url)}" ${clickAttr}></div>`;
+  }).join('');
   const dots = images.map((_,i)=>`<div class="prod-carousel-dot${i===0?' active':''}" data-i="${i}"></div>`).join('');
   const uid = 'pc-'+Math.random().toString(36).slice(2,7);
-  return `<div class="prod-carousel" id="${uid}" data-cur="0" style="margin-bottom:8px;">
+  return `<div class="prod-carousel" id="${uid}" data-cur="0" style="margin-bottom:0;">
     <div class="prod-carousel-track" id="${uid}-track">${slides}</div>
-    ${images.length>1?`<button class="prod-carousel-prev" onclick="moveProdCarousel('${uid}',-1)">‹</button><button class="prod-carousel-next" onclick="moveProdCarousel('${uid}',1)">›</button>`:''}
+    ${images.length>1?`<button class="prod-carousel-prev" onclick="event.stopPropagation();moveProdCarousel('${uid}',-1)">‹</button><button class="prod-carousel-next" onclick="event.stopPropagation();moveProdCarousel('${uid}',1)">›</button>`:''}
     <div class="prod-carousel-dots">${dots}</div>
   </div>`;
 }
@@ -6408,11 +6436,12 @@ function moveProdCarousel(uid, dir){
 function initProdCarouselSwipe(uid){
   const el = document.getElementById(uid);
   if(!el) return;
-  let startX=0;
-  el.addEventListener('touchstart', e=>{ startX=e.touches[0].clientX; }, {passive:true});
+  let startX=0, startY=0;
+  el.addEventListener('touchstart', e=>{ startX=e.touches[0].clientX; startY=e.touches[0].clientY; }, {passive:true});
   el.addEventListener('touchend', e=>{
     const dx = e.changedTouches[0].clientX - startX;
-    if(Math.abs(dx)>40) moveProdCarousel(uid, dx<0?1:-1);
+    const dy = e.changedTouches[0].clientY - startY;
+    if(Math.abs(dx)>40 && Math.abs(dx)>Math.abs(dy)) moveProdCarousel(uid, dx<0?1:-1);
   }, {passive:true});
 }
 
@@ -14275,24 +14304,27 @@ async function openBizDetail(biz){
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:16px;">
           ${prods.map(p=>`
             <div 
-              data-bizid="${biz.id}"
-              data-bizname="${xss(biz.name).replace(/"/g,'&quot;')}"
-              data-prodname="${xss(p.name).replace(/"/g,'&quot;')}"
-              data-price="${p.price||0}"
--             data-pricelabel="${(p.price_label||'').replace(/"/g,'&quot;')}"
-              data-category="${biz.category}"
-              onclick="selectBizProductEl(this)"
-              style="background:var(--bg-mid);border:2px solid var(--border-glow);border-radius:10px;padding:0 0 10px;text-align:center;cursor:pointer;transition:all .2s;overflow:hidden;"
-              onmouseover="this.style.borderColor='var(--neon-cyan)'" onmouseout="this.style.borderColor='var(--border-glow)'"
-              title="Clique para selecionar">
-              ${(()=>{ let _imgs=[]; try{_imgs=p.image_urls?JSON.parse(p.image_urls):[];}catch(_){_imgs=[];} if(!_imgs.length&&p.image_url)_imgs=[p.image_url]; return renderProdCarousel(_imgs,90); })()}
-              <div style="padding:0 6px;">
-              <div style="font-size:11px;color:var(--text-light);margin-bottom:4px;font-weight:600;">${xss(p.name)}</div>
-              <div style="font-family:VT323,monospace;font-size:18px;color:var(--neon-cyan);">${p.price?'R$ '+Number(p.price).toFixed(2).replace('.',','):xss(p.price_label||'Sob consulta')}</div>
-              <div style="margin-top:6px;font-size:9px;color:var(--neon-pink);font-family:Silkscreen,monospace;">SELECIONAR →</div>
+              style="background:var(--bg-mid);border:2px solid var(--border-glow);border-radius:10px;padding:0 0 8px;text-align:center;transition:border-color .2s;overflow:hidden;"
+              onmouseover="this.style.borderColor='var(--neon-cyan)'" onmouseout="this.style.borderColor='var(--border-glow)'">
+              ${(()=>{ let _imgs=[]; try{_imgs=p.image_urls?JSON.parse(p.image_urls):[];}catch(_){_imgs=[];} if(!_imgs.length&&p.image_url)_imgs=[p.image_url]; return renderProdCarousel(_imgs,110,true); })()}
+              <div style="padding:6px 8px 0;">
+                <div style="font-size:11px;color:var(--text-light);margin-bottom:3px;font-weight:600;line-height:1.3;">${xss(p.name)}</div>
+                <div style="font-family:VT323,monospace;font-size:20px;color:var(--neon-cyan);line-height:1.1;">${p.price?'R$ '+Number(p.price).toFixed(2).replace('.',','):xss(p.price_label||'Sob consulta')}</div>
               </div>
+              <button class="prod-select-btn"
+                data-bizid="${biz.id}"
+                data-bizname="${xss(biz.name).replace(/"/g,'&quot;')}"
+                data-prodname="${xss(p.name).replace(/"/g,'&quot;')}"
+                data-price="${p.price||0}"
+                data-pricelabel="${(p.price_label||'').replace(/"/g,'&quot;')}"
+                data-category="${biz.category}"
+                onclick="selectBizProductEl(this)">🛒 SELECIONAR</button>
             </div>`).join('')}
         </div>`;
+      setTimeout(()=>{
+        const _pEl = document.getElementById('biz-prods-section-'+biz.id);
+        if(_pEl) _pEl.querySelectorAll('.prod-carousel').forEach(el=>{ if(el.id) initProdCarouselSwipe(el.id); });
+      }, 80);
     }
   }
 
