@@ -5068,9 +5068,10 @@ function getAvatar(profile){
   if(profile.avatar_type==='generated'&&profile.avatar_url) return profile.avatar_url;
   // Ícone retro emoji
   if(profile.avatar_type==='retro_icon'&&profile.retro_icon) return profile.retro_icon;
-  // Upload normal ou URL
+  // Qualquer URL válida (upload R2 ou Dicebear customizado já salvo como avatar_url)
   if(profile.avatar_url&&profile.avatar_url.startsWith('http')) return profile.avatar_url;
   if(profile.avatar_url) return profile.avatar_url;
+  // Fallback: gera Dicebear padrão com seed do username
   return dicebearUrl(profile.username||'user');
 }
 function renderAvatar(profile,size=42,classes=''){
@@ -8683,7 +8684,7 @@ async function loadProfilePage(userId){
   try {
     // 1. Fetch profile — safe columns only
     const{data:profile, error:profErr} = await db.from('profiles')
-      .select('id,username,full_name,avatar_url,bio,status_message,instagram,twitter,github,created_at')
+      .select('id,username,full_name,avatar_url,avatar_type,retro_icon,bio,status_message,instagram,twitter,github,created_at')
       .eq('id', userId).maybeSingle();
 
     if(profErr) throw new Error('Perfil: '+profErr.message);
