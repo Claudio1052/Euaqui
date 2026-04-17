@@ -8749,10 +8749,12 @@ async function loadProfilePage(userId){
   const tabsBar = document.getElementById('profile-page-tabs');
   if(editTab) editTab.style.display = isOwn ? 'inline-block' : 'none';
   if(tabsBar) tabsBar.style.display = 'flex';
+  // Preserva a aba ativa se já estiver no perfil, senão vai para Posts
+  const _activeTab = document.querySelector('.pptab.active')?.dataset?.tab || 'pp-posts';
   document.querySelectorAll('.pptab').forEach(t=>t.classList.remove('active'));
-  document.querySelector('.pptab[data-tab="pp-posts"]')?.classList.add('active');
+  document.querySelector('.pptab[data-tab="'+_activeTab+'"]')?.classList.add('active');
   document.querySelectorAll('.profile-tab-panel').forEach(p=>p.classList.remove('active'));
-  document.getElementById('pp-posts')?.classList.add('active');
+  document.getElementById(_activeTab)?.classList.add('active');
 
   // Skeleton
   const coverBar = document.getElementById('profile-cover-bar');
