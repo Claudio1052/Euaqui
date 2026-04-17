@@ -4731,11 +4731,11 @@ body.day-mode::before{
   <!-- Barra superior: contador + fechar -->
   <div style="position:fixed;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:linear-gradient(to bottom,rgba(0,0,0,.7),transparent);z-index:1000003;pointer-events:none;">
     <div id="lb-carousel-ctr" style="font-family:'Space Mono',monospace;font-size:12px;color:#fff;background:rgba(0,0,0,.5);padding:4px 12px;border-radius:20px;pointer-events:none;"></div>
-    <button onclick="closeProdLightbox()" style="pointer-events:all;background:rgba(0,0,0,.65);border:1px solid rgba(255,255,255,.2);color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;">×</button>
+    <button onclick="event.stopPropagation();closeProdLightbox()" style="pointer-events:all;background:rgba(0,0,0,.75);border:2px solid rgba(255,255,255,.3);color:#fff;width:40px;height:40px;border-radius:50%;cursor:pointer;font-size:20px;display:flex;align-items:center;justify-content:center;">×</button>
   </div>
   <!-- Botões ‹ › -->
-  <button id="lb-prev-btn" onclick="lbNav(-1)" style="display:none;position:fixed;left:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.2);color:#fff;width:44px;height:44px;border-radius:50%;font-size:26px;cursor:pointer;z-index:1000003;align-items:center;justify-content:center;">‹</button>
-  <button id="lb-next-btn" onclick="lbNav(1)"  style="display:none;position:fixed;right:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.2);color:#fff;width:44px;height:44px;border-radius:50%;font-size:26px;cursor:pointer;z-index:1000003;align-items:center;justify-content:center;">›</button>
+  <button id="lb-prev-btn" onclick="event.stopPropagation();lbNav(-1)" style="display:none;position:fixed;left:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.75);border:2px solid rgba(255,255,255,.3);color:#fff;width:52px;height:52px;border-radius:50%;font-size:28px;cursor:pointer;z-index:1000003;align-items:center;justify-content:center;pointer-events:all;">‹</button>
+  <button id="lb-next-btn" onclick="event.stopPropagation();lbNav(1)"  style="display:none;position:fixed;right:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.75);border:2px solid rgba(255,255,255,.3);color:#fff;width:52px;height:52px;border-radius:50%;font-size:28px;cursor:pointer;z-index:1000003;align-items:center;justify-content:center;pointer-events:all;">›</button>
   <!-- Dots -->
   <div id="lb-dots" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);display:flex;gap:6px;z-index:1000003;"></div>
   <!-- Dica de zoom (some após 2s) -->
@@ -8401,167 +8401,212 @@ async function loadProfileFotos(userId){
 // ══════════════════════════════════════════════════════════════
 // Lightbox engine — zoom pinça, drag, swipe, carousel
 // ══════════════════════════════════════════════════════════════
-let _lb = { urls:[], cur:0, scale:1, tx:0, ty:0,
-            dragging:false, lastDx:0, lastDy:0,
-            pinching:false, lastDist:0,
-            touchStartX:0, touchStartY:0 };
+// ══════════════════════════════════════════════════════════════
+// LIGHTBOX ENGINE v2 — zoom pinça, drag, swipe 1-por-1, sem fechar acidentalmente
+// ══════════════════════════════════════════════════════════════
+const _lb = {
+  urls:[], cur:0,
+  scale:1, tx:0, ty:0,
+  // touch state
+  t0x:0, t0y:0,           // posição inicial do toque
+  tLastX:0, tLastY:0,     // posição anterior (para drag)
+  dragging:false,
+  pinching:false,
+  pinchDist0:0,            // distância inicial do pinch
+  scale0:1,                // escala no início do pinch
+  moved:false,             // se o toque se moveu (para distinguir tap de swipe)
+  // timestamp do último tap (double-tap)
+  lastTap:0,
+  // se está animando troca de imagem (bloqueia swipe duplo)
+  transitioning:false
+};
+
+function _lbDist(t){ return Math.hypot(t[0].clientX-t[1].clientX, t[0].clientY-t[1].clientY); }
 
 function closeProdLightbox(){
   const lb = document.getElementById('m-lightbox');
-  if(lb){ lb.style.display='none'; document.body.style.overflow=''; }
-  _lbReset();
-}
-
-function _lbReset(){
-  _lb.scale=1; _lb.tx=0; _lb.ty=0;
-  _lb.dragging=false; _lb.pinching=false;
+  if(!lb) return;
+  // Apenas esconde — NÃO remove, NÃO navega, NÃO faz nada além de esconder
+  lb.style.display = 'none';
+  document.body.style.overflow = '';
+  _lb.scale=1; _lb.tx=0; _lb.ty=0; _lb.dragging=false; _lb.pinching=false; _lb.transitioning=false;
   const img = document.getElementById('lb-img');
-  if(img){ img.style.transition='transform .15s ease'; img.style.transform='scale(1) translate(0px,0px)'; }
+  if(img) img.style.transform = 'scale(1) translate(0px,0px)';
 }
 
-function _lbApplyTransform(animate){
+function _lbApply(animate){
   const img = document.getElementById('lb-img');
   if(!img) return;
-  img.style.transition = animate ? 'transform .15s ease' : 'none';
+  img.style.transition = animate ? 'transform .18s ease' : 'none';
   img.style.transform = `scale(${_lb.scale}) translate(${_lb.tx/_lb.scale}px,${_lb.ty/_lb.scale}px)`;
 }
 
 function lbNav(dir){
-  _lbReset();
-  _lb.cur = Math.max(0, Math.min(_lb.cur + dir, _lb.urls.length-1));
-  _lbShowCur();
+  // Bloqueia se já está animando ou se não há para onde ir
+  if(_lb.transitioning) return;
+  const next = _lb.cur + dir;
+  if(next < 0 || next >= _lb.urls.length) return;
+  _lb.transitioning = true;
+  _lb.cur = next;
+  _lb.scale=1; _lb.tx=0; _lb.ty=0;
+  const img = document.getElementById('lb-img');
+  if(img){
+    img.style.transition = 'none';
+    img.style.transform = 'scale(1) translate(0,0)';
+    img.src = _lb.urls[_lb.cur];
+  }
+  _lbUpdateUI();
+  // Libera lock após animação
+  setTimeout(()=>{ _lb.transitioning=false; }, 350);
 }
 
-function _lbShowCur(){
-  const img = document.getElementById('lb-img');
-  const ctr = document.getElementById('lb-carousel-ctr');
+function _lbUpdateUI(){
+  const ctr  = document.getElementById('lb-carousel-ctr');
   const dots = document.getElementById('lb-dots');
   const prev = document.getElementById('lb-prev-btn');
   const next = document.getElementById('lb-next-btn');
-  if(img) img.src = _lb.urls[_lb.cur];
-  if(ctr) ctr.textContent = _lb.urls.length > 1 ? (_lb.cur+1)+' / '+_lb.urls.length : '';
-  if(prev){ prev.style.display = (_lb.urls.length>1&&_lb.cur>0)?'flex':'none'; }
-  if(next){ next.style.display = (_lb.urls.length>1&&_lb.cur<_lb.urls.length-1)?'flex':'none'; }
-  if(dots){
-    dots.innerHTML = _lb.urls.length>1
-      ? _lb.urls.map((_,i)=>`<div style="width:7px;height:7px;border-radius:50%;background:${i===_lb.cur?'var(--neon-cyan)':'rgba(255,255,255,.4)'};transition:background .2s;"></div>`).join('')
-      : '';
-  }
+  const n = _lb.urls.length;
+  if(ctr) ctr.textContent = n>1 ? (_lb.cur+1)+' / '+n : '';
+  if(prev) prev.style.display = (n>1 && _lb.cur>0)   ? 'flex' : 'none';
+  if(next) next.style.display = (n>1 && _lb.cur<n-1) ? 'flex' : 'none';
+  if(dots) dots.innerHTML = n>1
+    ? _lb.urls.map((_,i)=>`<div style="width:7px;height:7px;border-radius:50%;background:${i===_lb.cur?'var(--neon-cyan)':'rgba(255,255,255,.4)'};transition:background .2s;"></div>`).join('')
+    : '';
 }
 
 function ppOpenFotoCarousel(urls, startIdx){
-  if(!Array.isArray(urls)||!urls.length) return;
-  // Single string support
-  if(typeof urls === 'string') urls=[urls];
+  if(!urls) return;
+  if(typeof urls === 'string') urls = [urls];
+  if(!Array.isArray(urls) || !urls.length) return;
 
   const lb = document.getElementById('m-lightbox');
   if(!lb) return;
 
   // Pausa vídeos
-  const vid = document.getElementById('lb-vid-player');
-  if(vid){ vid.pause(); vid.src=''; vid.style.display='none'; }
+  try{ const v=document.getElementById('lb-vid-player'); if(v){v.pause();v.src='';v.style.display='none';} }catch(_){}
 
   _lb.urls = urls;
   _lb.cur  = Math.max(0, Math.min(startIdx||0, urls.length-1));
-  _lb.scale=1; _lb.tx=0; _lb.ty=0;
+  _lb.scale=1; _lb.tx=0; _lb.ty=0; _lb.dragging=false; _lb.pinching=false; _lb.transitioning=false;
 
-  // Move lightbox para o topo do body para garantir que fique acima de qualquer modal
+  // Garante que está no topo do body (acima de todos os modais)
   if(lb.parentNode !== document.body) document.body.appendChild(lb);
-  lb.style.display='block';
-  lb.style.zIndex='1000000';
-  document.body.style.overflow='hidden';
+  lb.style.cssText = (lb.style.cssText||'') + ';display:block!important;z-index:1000000!important;';
+  document.body.style.overflow = 'hidden';
 
-  _lbShowCur();
-  _lbApplyTransform(false);
+  // Atualiza imagem
+  const img = document.getElementById('lb-img');
+  if(img){ img.src = _lb.urls[_lb.cur]; img.style.transform='scale(1) translate(0,0)'; img.style.cursor='zoom-in'; }
+
+  _lbUpdateUI();
 
   // Dica some após 2.5s
   const hint = document.getElementById('lb-hint');
   if(hint){ hint.style.opacity='1'; setTimeout(()=>{ hint.style.opacity='0'; },2500); }
 
-  // ── Touch events (zoom pinça + drag + swipe) ──
-  const vp = document.getElementById('lb-viewport');
+  // ── Touch: registra listeners uma única vez ──
+  if(!lb._lbInited){
+    lb._lbInited = true;
 
-  function _dist(t){ return Math.hypot(t[0].clientX-t[1].clientX, t[0].clientY-t[1].clientY); }
-  function _mid(t){ return { x:(t[0].clientX+t[1].clientX)/2, y:(t[0].clientY+t[1].clientY)/2 }; }
-
-  lb._onTouchStart = (e)=>{
-    if(e.touches.length===2){
-      _lb.pinching=true; _lb.dragging=false;
-      _lb.lastDist=_dist(e.touches);
-    } else if(e.touches.length===1){
-      _lb.pinching=false;
-      _lb.dragging=true;
-      _lb.touchStartX=e.touches[0].clientX;
-      _lb.touchStartY=e.touches[0].clientY;
-      _lb.lastDx=_lb.tx; _lb.lastDy=_lb.ty;
-    }
-  };
-  lb._onTouchMove = (e)=>{
-    e.preventDefault();
-    if(_lb.pinching && e.touches.length===2){
-      const d=_dist(e.touches);
-      const ratio=d/_lb.lastDist;
-      _lb.scale=Math.max(1, Math.min(5, _lb.scale*ratio));
-      _lb.lastDist=d;
-      _lbApplyTransform(false);
-    } else if(_lb.dragging && e.touches.length===1 && _lb.scale>1){
-      _lb.tx = _lb.lastDx + (e.touches[0].clientX - _lb.touchStartX);
-      _lb.ty = _lb.lastDy + (e.touches[0].clientY - _lb.touchStartY);
-      _lbApplyTransform(false);
-    }
-  };
-  lb._onTouchEnd = (e)=>{
-    if(_lb.pinching){ _lb.pinching=false; return; }
-    if(_lb.scale<=1){
-      // Swipe para navegar (só quando não está com zoom)
-      const dx = e.changedTouches[0].clientX - _lb.touchStartX;
-      const dy = e.changedTouches[0].clientY - _lb.touchStartY;
-      if(Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)){
-        lbNav(dx<0?1:-1);
-        return;
+    lb.addEventListener('touchstart', (e)=>{
+      // Botões internos não disparam o handler do lb
+      if(e.target.closest('button')) return;
+      if(e.touches.length === 2){
+        e.preventDefault();
+        _lb.pinching  = true;
+        _lb.dragging  = false;
+        _lb.pinchDist0 = _lbDist(e.touches);
+        _lb.scale0    = _lb.scale;
+      } else if(e.touches.length === 1){
+        _lb.pinching = false;
+        _lb.dragging = true;
+        _lb.moved    = false;
+        _lb.t0x = _lb.tLastX = e.touches[0].clientX;
+        _lb.t0y = _lb.tLastY = e.touches[0].clientY;
       }
-      // Tap simples: fecha se não foi swipe
-      if(Math.abs(dx)<8 && Math.abs(dy)<8){
-        closeProdLightbox(); return;
+    }, {passive:false});
+
+    lb.addEventListener('touchmove', (e)=>{
+      if(e.target.closest('button')) return;
+      e.preventDefault();
+      if(_lb.pinching && e.touches.length===2){
+        const d = _lbDist(e.touches);
+        _lb.scale = Math.max(1, Math.min(5, _lb.scale0 * (d/_lb.pinchDist0)));
+        _lbApply(false);
+      } else if(_lb.dragging && e.touches.length===1){
+        const cx = e.touches[0].clientX;
+        const cy = e.touches[0].clientY;
+        _lb.moved = true;
+        if(_lb.scale > 1){
+          // Drag para mover imagem com zoom
+          _lb.tx += cx - _lb.tLastX;
+          _lb.ty += cy - _lb.tLastY;
+          _lbApply(false);
+        }
+        _lb.tLastX = cx;
+        _lb.tLastY = cy;
       }
-    } else {
-      // Double tap: reset zoom
-      const now=Date.now();
-      if(now - (lb._lastTap||0) < 280){ _lbReset(); }
-      lb._lastTap=now;
-      _lb.dragging=false;
-    }
-  };
+    }, {passive:false});
 
-  // Remove listeners antigos e adiciona novos
-  lb.removeEventListener('touchstart', lb._onTouchStart);
-  lb.removeEventListener('touchmove',  lb._onTouchMove);
-  lb.removeEventListener('touchend',   lb._onTouchEnd);
-  lb.addEventListener('touchstart', lb._onTouchStart, {passive:false});
-  lb.addEventListener('touchmove',  lb._onTouchMove,  {passive:false});
-  lb.addEventListener('touchend',   lb._onTouchEnd,   {passive:false});
+    lb.addEventListener('touchend', (e)=>{
+      if(e.target.closest('button')) return;
+      const endX = e.changedTouches[0].clientX;
+      const endY = e.changedTouches[0].clientY;
+      const dx = endX - _lb.t0x;
+      const dy = endY - _lb.t0y;
+      const adx = Math.abs(dx);
+      const ady = Math.abs(dy);
 
-  // Mouse drag (desktop)
-  let _mdown=false, _mx=0, _my=0, _origTx=0, _origTy=0;
-  const img = document.getElementById('lb-img');
-  if(img){
-    img.onmousedown=(e)=>{ e.preventDefault(); _mdown=true; _mx=e.clientX; _my=e.clientY; _origTx=_lb.tx; _origTy=_lb.ty; img.style.cursor='grabbing'; };
-    img.onmousemove=(e)=>{ if(!_mdown||_lb.scale<=1) return; _lb.tx=_origTx+(e.clientX-_mx); _lb.ty=_origTy+(e.clientY-_my); _lbApplyTransform(false); };
-    img.onmouseup=()=>{ _mdown=false; img.style.cursor=_lb.scale>1?'grab':'zoom-in'; };
-    img.onmouseleave=()=>{ _mdown=false; };
-    // Wheel zoom (desktop)
-    img.onwheel=(e)=>{ e.preventDefault(); const d=e.deltaY>0?0.85:1.18; _lb.scale=Math.max(1,Math.min(5,_lb.scale*d)); if(_lb.scale===1){_lb.tx=0;_lb.ty=0;} _lbApplyTransform(true); };
-    img.ondblclick=()=>{ if(_lb.scale>1)_lbReset(); else{ _lb.scale=2.5; _lbApplyTransform(true); } };
-    img.style.cursor='zoom-in';
+      if(_lb.pinching){ _lb.pinching=false; _lb.dragging=false; return; }
+
+      if(_lb.scale <= 1){
+        // Swipe horizontal → navega (limiar generoso, estritamente 1 por vez)
+        if(adx > 60 && adx > ady * 1.5 && !_lb.transitioning){
+          lbNav(dx < 0 ? 1 : -1);
+          _lb.dragging=false; _lb.moved=false;
+          return;
+        }
+        // Tap sem movimento → fecha lightbox (volta para a loja)
+        if(!_lb.moved || (adx < 10 && ady < 10)){
+          closeProdLightbox();
+          return;
+        }
+      } else {
+        // Com zoom: double-tap reseta
+        const now = Date.now();
+        if(!_lb.moved && now - _lb.lastTap < 300){
+          _lb.scale=1; _lb.tx=0; _lb.ty=0; _lbApply(true);
+        }
+        _lb.lastTap = now;
+      }
+      _lb.dragging=false; _lb.moved=false;
+    }, {passive:true});
   }
 
-  // ESC fecha
-  lb._onKeyDown=(e)=>{ if(e.key==='Escape') closeProdLightbox(); else if(e.key==='ArrowLeft') lbNav(-1); else if(e.key==='ArrowRight') lbNav(1); };
-  document.removeEventListener('keydown', lb._onKeyDown);
-  document.addEventListener('keydown', lb._onKeyDown);
+  // ── Mouse (desktop) ──
+  if(img){
+    let _md=false, _mx=0, _my=0, _otx=0, _oty=0;
+    img.onmousedown = (e)=>{ e.preventDefault(); _md=true; _mx=e.clientX; _my=e.clientY; _otx=_lb.tx; _oty=_lb.ty; img.style.cursor='grabbing'; };
+    img.onmousemove = (e)=>{ if(!_md||_lb.scale<=1)return; _lb.tx=_otx+(e.clientX-_mx); _lb.ty=_oty+(e.clientY-_my); _lbApply(false); };
+    img.onmouseup   = ()=>{ _md=false; img.style.cursor=_lb.scale>1?'grab':'zoom-in'; };
+    img.onmouseleave= ()=>{ _md=false; };
+    img.onwheel     = (e)=>{ e.preventDefault(); const f=e.deltaY>0?0.85:1.18; _lb.scale=Math.max(1,Math.min(5,_lb.scale*f)); if(_lb.scale===1){_lb.tx=0;_lb.ty=0;} _lbApply(true); };
+    img.ondblclick  = ()=>{ if(_lb.scale>1){_lb.scale=1;_lb.tx=0;_lb.ty=0;_lbApply(true);}else{_lb.scale=2.5;_lbApply(true);} };
+  }
+
+  // ── Teclado ──
+  const _kh = (e)=>{
+    if(lb.style.display==='none') return;
+    if(e.key==='Escape') closeProdLightbox();
+    else if(e.key==='ArrowLeft')  lbNav(-1);
+    else if(e.key==='ArrowRight') lbNav(1);
+  };
+  document.removeEventListener('keydown', lb._kh);
+  lb._kh = _kh;
+  document.addEventListener('keydown', _kh);
 }
 
-// Compatibilidade: openLightbox simples continua funcionando
+// Compatibilidade
 function openLightbox(url){ ppOpenFotoCarousel([url], 0); }
 
 // ── Carregar aba VÍDEOS do perfil ─────────────────────────────────
