@@ -3675,7 +3675,7 @@ body.day-mode::before{
       <button class="theme-toggle" id="trending-nav-btn" onclick="openTrendingModal()" title="Em Alta" style="color:var(--neon-pink);font-weight:700;font-size:15px;">🔥</button>
       <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()" title="Alternar Dia/Noite">🌙</button>
       <button class="theme-toggle" id="header-notif-btn" onclick="nav('notifications')" title="Notificações" style="position:relative;">🔔<span class="nbadge" id="header-notif-badge" style="display:none;position:absolute;top:-4px;right:-4px;">0</span></button>
-      <img class="nav-av" id="nav-av" src="https://api.dicebear.com/7.x/pixel-art/svg?seed=default" onclick="nav('profile')">
+      <img class="nav-av" id="nav-av" src="https://api.dicebear.com/7.x/pixel-art/svg?seed=default" data-dicebear-direct="1" onclick="nav('profile')">
       <button class="hamburger" onclick="toggleDrawer()">☰</button>
     </div>
   </div>
@@ -3695,7 +3695,7 @@ body.day-mode::before{
 <div class="mob-overlay" id="mob-overlay" onclick="toggleDrawer()"></div>
 <div class="mob-drawer" id="mob-drawer">
   <div class="user-mini" style="margin-bottom:16px;">
-    <img class="uma" id="dr-av" src="https://api.dicebear.com/7.x/pixel-art/svg?seed=default" onclick="nav('profile');toggleDrawer()">
+    <img class="uma" id="dr-av" src="https://api.dicebear.com/7.x/pixel-art/svg?seed=default" data-dicebear-direct="1" onclick="nav('profile');toggleDrawer()">
     <div class="umn" id="dr-name">@usuário</div>
     <div class="ums" id="dr-status">...</div>
   </div>
@@ -3722,7 +3722,7 @@ body.day-mode::before{
   <!-- SIDEBAR LEFT -->
   <aside class="sl">
     <div class="user-mini">
-      <img class="uma" id="sl-av" src="https://api.dicebear.com/7.x/pixel-art/svg?seed=default" onclick="nav('profile')" style="cursor:pointer;">
+      <img class="uma" id="sl-av" src="https://api.dicebear.com/7.x/pixel-art/svg?seed=default" data-dicebear-direct="1" onclick="nav('profile')" style="cursor:pointer;">
       <div class="umn" id="sl-name">@usuário</div>
       <div class="ums" id="sl-status">✨ ...</div>
       <div class="umst">
@@ -3762,7 +3762,7 @@ body.day-mode::before{
       <div class="tab-panel active" id="ht-feed" style="padding-top:16px;">
         <div class="composer" id="composer-box">
           <div style="display:flex;gap:10px;margin-bottom:10px;">
-            <img class="cav" id="c-av" src="https://api.dicebear.com/7.x/pixel-art/svg?seed=default">
+            <img class="cav" id="c-av" src="https://api.dicebear.com/7.x/pixel-art/svg?seed=default" data-dicebear-direct="1">
             <span style="font-size:12px;color:var(--text-muted);padding-top:10px;">O que está acontecendo?</span>
           </div>
           <textarea class="ctxt" id="post-txt" placeholder="Compartilhe algo... (máx. 500 chars)" maxlength="500" rows="3" oninput="updateChar()"></textarea>
@@ -5022,6 +5022,7 @@ function refreshUI(){
   ['nav-av','sl-av','c-av','dr-av'].forEach(id=>{
     const el=document.getElementById(id);
     if(!el) return;
+    el.setAttribute('data-dicebear-direct','1'); // impede MutationObserver de sobrescrever
     if(isEmoji){
       el.src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
       el.style.fontSize='18px';
@@ -8018,12 +8019,18 @@ async function saveSettings(){
   // IDs fixos da navbar e sidebar
   ['nav-av','sl-av','c-av','dr-av'].forEach(id=>{
     const el=document.getElementById(id);
-    if(el && el.tagName==='IMG'){ el.src=finalAv+ts; }
+    if(el && el.tagName==='IMG'){
+      el.setAttribute('data-dicebear-direct','1'); // protege contra MutationObserver
+      el.src=finalAv+ts;
+    }
   });
 
   // Qualquer img com classe nav-av ou uma
   document.querySelectorAll('.nav-av, .uma').forEach(el=>{
-    if(el.tagName==='IMG') el.src = finalAv+ts;
+    if(el.tagName==='IMG'){
+      el.setAttribute('data-dicebear-direct','1');
+      el.src = finalAv+ts;
+    }
   });
 
   // Avatar nos posts do feed (img com data-uid do usuário)
