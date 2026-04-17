@@ -5063,9 +5063,13 @@ function dicebearUrl(seed, style, bg){
 }
 function getAvatar(profile){
   if(!profile)return dicebearUrl('default');
-  if(profile.avatar_type==='retro_icon'&&profile.retro_icon)return profile.retro_icon;
-  if(profile.avatar_url&&profile.avatar_url.startsWith('http'))return profile.avatar_url;
-  if(profile.avatar_url&&!profile.avatar_url.startsWith('http'))return profile.avatar_url;
+  // Avatar gerado (Dicebear customizado) — usa avatar_url diretamente
+  if(profile.avatar_type==='generated'&&profile.avatar_url) return profile.avatar_url;
+  // Ícone retro emoji
+  if(profile.avatar_type==='retro_icon'&&profile.retro_icon) return profile.retro_icon;
+  // Upload normal ou URL
+  if(profile.avatar_url&&profile.avatar_url.startsWith('http')) return profile.avatar_url;
+  if(profile.avatar_url) return profile.avatar_url;
   return dicebearUrl(profile.username||'user');
 }
 function renderAvatar(profile,size=42,classes=''){
@@ -8001,29 +8005,33 @@ async function saveSettings(){
   }catch(e){ console.warn('prefs save:', e?.message); }
 
   _setSaveProgress(95, 'Finalizando...');
-  Object.assign(CP,updates,{avatar_type:avatarType,retro_icon:retroIcon});
+
+  // Atualiza CP ANTES de qualquer refresh de UI
+  Object.assign(CP, updates, {avatar_type:avatarType, retro_icon:retroIcon});
 
   // ── Atualiza avatar em TODOS os lugares em tempo real ──
-  if(avatarUrl){
-    // Navbar, sidebar, mini-avatar do composer, avatares nos posts
-    document.querySelectorAll(
-      '.nav-av, .uma, .cav, [data-uid="'+CU.id+'"], img[data-own-avatar]'
-    ).forEach(el=>{
-      if(el.tagName==='IMG') el.src = avatarUrl+'?t='+Date.now();
-    });
-    // Qualquer <img> com src igual ao avatar antigo
-    const oldAv = CP?.avatar_url;
-    if(oldAv && oldAv !== avatarUrl){
-      document.querySelectorAll('img').forEach(img=>{
-        if(img.src && img.src.includes(oldAv.split('/').pop())){
-          img.src = avatarUrl+'?t='+Date.now();
-        }
-      });
-    }
-    // av-current-preview na aba editar
-    const prev = document.getElementById('av-current-preview');
-    if(prev) prev.innerHTML = '<img src="'+avatarUrl+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">';
-  }
+  const finalAv = getAvatar(CP); // usa getAvatar para consistência
+  const ts = '?t='+Date.now(); // cache-bust
+
+  // IDs fixos da navbar e sidebar
+  ['nav-av','sl-av','c-av','dr-av'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el && el.tagName==='IMG'){ el.src=finalAv+ts; }
+  });
+
+  // Qualquer img com classe nav-av ou uma
+  document.querySelectorAll('.nav-av, .uma').forEach(el=>{
+    if(el.tagName==='IMG') el.src = finalAv+ts;
+  });
+
+  // Avatar nos posts do feed (img com data-uid do usuário)
+  document.querySelectorAll('img[data-uid="'+CU.id+'"]').forEach(el=>{
+    el.src = finalAv+ts;
+  });
+
+  // Preview "Avatar atual" na aba editar
+  const prev = document.getElementById('av-current-preview');
+  if(prev) prev.innerHTML = `<img src="${finalAv}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
 
   refreshUI();
   avatarFile=null; retroIconSelected=null; window._generatedAvatarUrl=null;
