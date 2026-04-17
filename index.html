@@ -4138,8 +4138,7 @@ body.day-mode::before{
           </select>
         </div>
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
-          <span style="font-size:10px;color:var(--text-muted);">📍</span>
-          <span id="biz-location-label" style="font-size:11px;color:var(--neon-cyan);">Detectando localização...</span>
+          <span id="biz-location-label" style="font-size:11px;color:var(--neon-cyan);">📍 Detectando localização...</span>
           <button class="tbtn" onclick="changeBizCity()" style="font-size:10px;">Alterar cidade</button>
         </div>
         <div id="biz-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;"></div>
@@ -4169,9 +4168,17 @@ body.day-mode::before{
               <div style="color:var(--text-muted);font-size:12px;margin:auto;">Selecione um atendimento</div>
             </div>
             <div class="msgs-area" id="biz-msgs-area"></div>
-            <div class="msg-in-bar" id="biz-msg-in-area" style="display:none;">
-              <input class="msg-in" id="biz-msg-in" placeholder="Responda o cliente..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendBizMsg()}">
-              <button class="msg-snd" onclick="sendBizMsg()">➤</button>
+            <div class="msg-in-bar" id="biz-msg-in-area" style="display:none;flex-direction:column;gap:6px;">
+              <div id="biz-audio-recorder" style="display:none;align-items:center;gap:6px;flex:1;background:rgba(255,51,102,.08);border:1px solid rgba(255,51,102,.3);border-radius:8px;padding:6px 10px;">
+                <span style="color:var(--neon-pink);font-size:18px;animation:pulse 1s infinite;">🎙</span>
+                <span id="biz-audio-timer" style="font-family:'VT323',monospace;font-size:16px;color:var(--neon-pink);">0:00</span>
+                <button onclick="cancelBizAudio()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:12px;margin-left:auto;">✕ Cancelar</button>
+              </div>
+              <div style="display:flex;gap:6px;align-items:center;width:100%;">
+                <button class="msg-mic-btn" id="biz-mic-btn" onclick="startBizAudioRecord()" title="Gravar áudio" style="background:rgba(0,255,204,.1);border:1px solid rgba(0,255,204,.3);color:var(--neon-cyan);width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;font-size:15px;">🎙</button>
+                <input class="msg-in" id="biz-msg-in" placeholder="Responda o cliente..." style="flex:1;" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendBizMsg()}">
+                <button class="msg-snd" id="biz-send-btn" onclick="sendBizMsg()">➤</button>
+              </div>
             </div>
           </div>
         </div>
@@ -5241,6 +5248,50 @@ function _classifyPostPriority(p, ctx){
   return 5;
 }
 
+// ── Bloqueio de usuários ──────────────────────────────────────────────────────
+let _blockedIdsCache = null;
+let _blockedCacheAt = 0;
+
+async function _getMyBlockedIds(){
+  if(!CU) return new Set();
+  // Cache por 60s
+  if(_blockedIdsCache && (Date.now()-_blockedCacheAt) < 60000) return _blockedIdsCache;
+  try{
+    const {data} = await db.from('user_blocks').select('blocked_id').eq('blocker_id', CU.id);
+    _blockedIdsCache = new Set((data||[]).map(r=>r.blocked_id));
+    _blockedCacheAt = Date.now();
+    return _blockedIdsCache;
+  }catch(e){ return new Set(); }
+}
+
+async function _checkBlocked(userId){
+  if(!CU) return false;
+  const ids = await _getMyBlockedIds();
+  return ids.has(userId);
+}
+
+async function _toggleBlock(userId, username){
+  if(!CU) return false;
+  const already = await _checkBlocked(userId);
+  if(already){
+    if(!confirm('Desbloquear @'+username+'?')) return true;
+    await db.from('user_blocks').delete().eq('blocker_id',CU.id).eq('blocked_id',userId);
+    _blockedIdsCache = null;
+    showToast('🔓 @'+username+' desbloqueado','success');
+    return false;
+  } else {
+    if(!confirm('Bloquear @'+username+'? Ele não verá mais seu perfil nem suas postagens.')) return false;
+    await db.from('user_blocks').insert({blocker_id:CU.id, blocked_id:userId});
+    // Desfaz follow/amizade silenciosamente
+    try{ await db.from('follows').delete().eq('follower_id',userId).eq('following_id',CU.id); }catch(_){}
+    try{ await db.from('friends').delete().or('and(user_id.eq.'+CU.id+',friend_id.eq.'+userId+'),and(user_id.eq.'+userId+',friend_id.eq.'+CU.id+')'); }catch(_){}
+    _blockedIdsCache = null;
+    showToast('🚫 @'+username+' bloqueado','success');
+    nav('home');
+    return true;
+  }
+}
+
 async function loadFeed(force=false){
   const feed=document.getElementById('feed');
   if(!feed)return;
@@ -5344,6 +5395,14 @@ async function loadFeed(force=false){
       return true;
     });
   }catch(e){ console.warn('Visibility filter:', e?.message); }
+
+  // ── Filtro de usuários bloqueados no feed ──────────────────────────────────
+  try{
+    const _myBlocks = await _getMyBlockedIds();
+    if(_myBlocks.size > 0){
+      filteredPosts = filteredPosts.filter(p=> !_myBlocks.has(p.user_id));
+    }
+  }catch(e){ console.warn('Block filter:', e?.message); }
 
   // ── Filtro de posts de comunidade: só membros podem ver no feed principal ──
   try{
@@ -7022,10 +7081,19 @@ function patchStco(view, delta){
 }
 
 // --- Compressão de vídeo via MediaRecorder (API NATIVA, sem CDN/WASM) ---
-// Funciona em qualquer hospedagem, sem headers especiais.
-// Re-codifica num <canvas> + MediaStream -> MediaRecorder.
+// No desktop, a re-codificação via canvas+captureStream congela a imagem pois o
+// browser bloqueia captureStream em vídeos locais (política de segurança).
+// Solução: desktop envia o arquivo original diretamente (sem re-codificação).
+// Mobile usa o fluxo normal pois captura da câmera nativa funciona.
 async function compressVideo(file, onProgress){
   try{
+    // Desktop: skip re-encoding — evita congelamento de imagem
+    const isDesktop = window.innerWidth > 768 && !/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+    if(isDesktop){
+      console.log('[compressVideo] desktop detectado — enviando original sem re-codificar');
+      if(onProgress) onProgress(1);
+      return file;
+    }
     if(typeof MediaRecorder === 'undefined'){
       console.warn('[MediaRecorder] não suportado, enviando original');
       return file;
@@ -7037,6 +7105,7 @@ async function compressVideo(file, onProgress){
     await new Promise((res,rej)=>{
       video.onloadedmetadata = ()=>res();
       video.onerror = ()=>rej(new Error('não consegui ler o vídeo'));
+      setTimeout(()=>res(), 8000);
     });
     // Resolução alvo (adaptativa por tamanho)
     const sizeMB = file.size/1024/1024;
@@ -7113,7 +7182,6 @@ async function compressVideo(file, onProgress){
     return result;
   }catch(e){
     console.error('[MediaRecorder] falhou:', e);
-    showToast('⚠️ Não consegui comprimir, enviando original','error');
     return file;
   }
 }
@@ -7764,32 +7832,131 @@ function switchAvTab(t,btn){
 function toggleAvPicker(){const s=document.getElementById('av-retro-sec')?.parentElement;s.style.display=s.style.display==='none'?'block':'none';}
 
 // ===== SETTINGS =====
-// showSettings — replaced by profile edit tab
+// showSettings — modal completo com abas: Perfil, Idioma, Contas Bloqueadas
 function showSettings(){
-  // Navigate to profile then open edit tab directly
-  _navBase('profile');
-  // Update nav state
-  document.querySelectorAll('.nbtn,.slink,.bnav-btn').forEach(b=>b.classList.remove('active'));
-  document.getElementById('sl-profile')?.classList.add('active');
-  // Load profile if needed then open edit tab
-  const openEditTab = () => {
-    const tabs = document.getElementById('profile-page-tabs');
-    if(tabs) tabs.style.display='flex';
-    document.querySelectorAll('.pptab').forEach(t=>t.classList.remove('active'));
-    document.querySelectorAll('.profile-tab-panel').forEach(p=>p.classList.remove('active'));
-    const editTab = document.querySelector('.pptab[data-tab="pp-edit"]');
-    const editPanel = document.getElementById('pp-edit');
-    if(editTab) editTab.classList.add('active');
-    if(editPanel) editPanel.classList.add('active');
-    loadEditForm();
-    // Scroll to top of page
-    window.scrollTo(0,0);
-  };
-  if(CP){
-    openEditTab();
-  } else {
-    loadProfilePage(CU?.id).then(()=>openEditTab());
+  const over = document.createElement('div');
+  over.id = 'settings-modal-overlay';
+  over.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(8px);z-index:5000;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;';
+
+  const langs = [
+    {code:'pt-BR',label:'🇧🇷 Português (Brasil)'},
+    {code:'en',label:'🇺🇸 English'},
+    {code:'es',label:'🇪🇸 Español'},
+    {code:'fr',label:'🇫🇷 Français'},
+    {code:'de',label:'🇩🇪 Deutsch'},
+    {code:'it',label:'🇮🇹 Italiano'},
+    {code:'ja',label:'🇯🇵 日本語'},
+    {code:'zh',label:'🇨🇳 中文'},
+  ];
+  const curLang = localStorage.getItem('ea_lang') || 'pt-BR';
+
+  over.innerHTML = `
+  <div class="modal" style="max-width:480px;width:100%;margin:auto;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+      <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-cyan);flex:1;">⚙️ Configurações</div>
+      <button class="tbtn" onclick="document.getElementById('settings-modal-overlay').remove()">✕</button>
+    </div>
+
+    <!-- Abas internas -->
+    <div style="display:flex;gap:4px;margin-bottom:16px;background:rgba(255,255,255,.04);border-radius:8px;padding:3px;">
+      <button id="stab-perfil" onclick="switchSettingsTab('perfil')" style="flex:1;padding:7px;border:none;border-radius:6px;font-family:Space Mono,monospace;font-size:10px;cursor:pointer;background:var(--neon-cyan);color:var(--bg-deep);transition:all .2s;">👤 Perfil</button>
+      <button id="stab-idioma" onclick="switchSettingsTab('idioma')" style="flex:1;padding:7px;border:none;border-radius:6px;font-family:Space Mono,monospace;font-size:10px;cursor:pointer;background:transparent;color:var(--text-muted);transition:all .2s;">🌐 Idioma</button>
+      <button id="stab-bloqueados" onclick="switchSettingsTab('bloqueados')" style="flex:1;padding:7px;border:none;border-radius:6px;font-family:Space Mono,monospace;font-size:10px;cursor:pointer;background:transparent;color:var(--text-muted);transition:all .2s;">🚫 Bloqueados</button>
+    </div>
+
+    <!-- Aba Perfil -->
+    <div id="spanel-perfil" style="display:block;">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">Edite seu perfil, bio, avatar e preferências.</div>
+      <button class="post-btn" style="width:100%;" onclick="document.getElementById('settings-modal-overlay').remove();_navBase('profile');document.querySelector('.pptab[data-tab=\'pp-edit\']')?.click();loadEditForm();">✏️ Abrir editor de perfil</button>
+    </div>
+
+    <!-- Aba Idioma -->
+    <div id="spanel-idioma" style="display:none;">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">Escolha o idioma da interface.</div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        ${langs.map(l=>`
+          <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid ${l.code===curLang?'var(--neon-cyan)':'rgba(255,255,255,.08)'};background:${l.code===curLang?'rgba(0,255,204,.07)':'transparent'};cursor:pointer;transition:all .2s;" onclick="setAppLang('${l.code}')">
+            <input type="radio" name="ea-lang" value="${l.code}" ${l.code===curLang?'checked':''} style="accent-color:var(--neon-cyan);">
+            <span style="font-size:12px;color:${l.code===curLang?'var(--neon-cyan)':'var(--text-light)'};">${l.label}</span>
+            ${l.code===curLang?'<span style="margin-left:auto;font-size:10px;color:var(--neon-cyan);">✓ Ativo</span>':''}
+          </label>`).join('')}
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:10px;padding:8px;background:rgba(0,0,0,.3);border-radius:6px;">💡 A tradução completa da interface estará disponível em breve. Por ora, o idioma é registrado para futuras atualizações.</div>
+    </div>
+
+    <!-- Aba Bloqueados -->
+    <div id="spanel-bloqueados" style="display:none;">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">Usuários que você bloqueou não veem seu perfil nem suas postagens.</div>
+      <div id="blocked-list-container" style="display:flex;flex-direction:column;gap:8px;">
+        <div style="color:var(--text-muted);font-size:11px;text-align:center;padding:20px;">⏳ Carregando...</div>
+      </div>
+    </div>
+  </div>`;
+
+  over.onclick = e=>{ if(e.target===over) over.remove(); };
+  document.body.appendChild(over);
+  // Load blocked list when opened
+  _loadBlockedList();
+}
+
+function switchSettingsTab(tab){
+  ['perfil','idioma','bloqueados'].forEach(t=>{
+    const btn = document.getElementById('stab-'+t);
+    const panel = document.getElementById('spanel-'+t);
+    const active = t===tab;
+    if(btn){ btn.style.background = active?'var(--neon-cyan)':'transparent'; btn.style.color = active?'var(--bg-deep)':'var(--text-muted)'; }
+    if(panel) panel.style.display = active?'block':'none';
+  });
+  if(tab==='bloqueados') _loadBlockedList();
+}
+
+function setAppLang(code){
+  localStorage.setItem('ea_lang', code);
+  showToast('🌐 Idioma salvo! Será aplicado nas próximas versões.','success');
+  // Re-render the settings to update radio selection
+  document.getElementById('settings-modal-overlay')?.remove();
+  showSettings();
+  switchSettingsTab('idioma');
+}
+
+async function _loadBlockedList(){
+  if(!CU) return;
+  const cont = document.getElementById('blocked-list-container');
+  if(!cont) return;
+  try{
+    const {data} = await db.from('user_blocks')
+      .select('blocked_id, profiles!user_blocks_blocked_id_fkey(id,username,full_name,avatar_url)')
+      .eq('blocker_id', CU.id);
+    _blockedIdsCache = null; // Refresh cache
+    if(!data||!data.length){
+      cont.innerHTML='<div style="color:var(--text-muted);font-size:11px;text-align:center;padding:20px;">Nenhum usuário bloqueado.</div>';
+      return;
+    }
+    cont.innerHTML = data.map(r=>{
+      const p = r.profiles||{};
+      const av = p.avatar_url ? `<img src="${p.avatar_url}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,51,102,.4);">` : `<div style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;font-size:18px;">👤</div>`;
+      return `<div style="display:flex;align-items:center;gap:10px;padding:10px;background:rgba(255,51,102,.05);border:1px solid rgba(255,51,102,.2);border-radius:10px;">
+        ${av}
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;color:var(--text-light);font-weight:700;">${p.full_name||p.username||'Usuário'}</div>
+          <div style="font-size:10px;color:var(--text-muted);">@${p.username||''}</div>
+        </div>
+        <button class="tbtn" style="font-size:10px;color:var(--neon-cyan);border-color:rgba(0,255,204,.3);" onclick="unblockUser('${r.blocked_id}','${(p.username||'').replace(/'/g,'')}',this)">🔓 Desbloquear</button>
+      </div>`;
+    }).join('');
+  }catch(e){
+    if(cont) cont.innerHTML='<div style="color:var(--neon-pink);font-size:11px;text-align:center;padding:20px;">Erro ao carregar lista.</div>';
   }
+}
+
+async function unblockUser(userId, username, btn){
+  if(!CU) return;
+  if(!confirm('Desbloquear @'+username+'?')) return;
+  btn.disabled=true; btn.textContent='⏳';
+  await db.from('user_blocks').delete().eq('blocker_id',CU.id).eq('blocked_id',userId);
+  _blockedIdsCache = null;
+  showToast('🔓 @'+username+' desbloqueado','success');
+  _loadBlockedList();
 }
 
 function switchProfileTab(btn){
@@ -9092,6 +9259,17 @@ async function loadProfilePage(userId){
         chat.textContent='💬 Chat';
         chat.onclick=()=>{ nav('messages'); setTimeout(()=>openChat(userId,profile.username||'',av),300); };
         btns.appendChild(chat);
+
+        // Botão Bloquear
+        const blkBtn = document.createElement('button'); blkBtn.className='post-btn';
+        blkBtn.style.cssText='background:none;border:1px solid rgba(255,51,102,.4);color:var(--neon-pink);font-size:11px;padding:7px 12px;';
+        const _isBlocked = await _checkBlocked(userId);
+        blkBtn.textContent = _isBlocked ? '🔓 Desbloquear' : '🚫 Bloquear';
+        blkBtn.onclick = async ()=>{
+          const nowBlocked = await _toggleBlock(userId, profile.username||'');
+          blkBtn.textContent = nowBlocked ? '🔓 Desbloquear' : '🚫 Bloquear';
+        };
+        btns.appendChild(blkBtn);
       }
       rightCol.appendChild(btns);
 
@@ -13421,7 +13599,14 @@ async function loadBizMsgs(chatId){
     div.className='mb '+(isMine?'sent':'recv');
     const t=new Date(m.created_at);
     const time=t.getHours().toString().padStart(2,'0')+':'+t.getMinutes().toString().padStart(2,'0');
-    div.innerHTML=`<div class="mb-bubble">${linkify(m.content)}</div><div class="mb-time">${time}</div>`;
+    const isAudio = m.media_type && m.media_type.startsWith('audio');
+    const isVideo = m.media_type && m.media_type.startsWith('video');
+    const isImg   = m.media_type && m.media_type.startsWith('image');
+    let mediaHtml = '';
+    if(isAudio && m.media_url) mediaHtml = renderAudioBubble(m.media_url);
+    else if(isVideo && m.media_url) mediaHtml = '<div class="mb-media"><video src="'+m.media_url+'" controls playsinline style="width:100%;max-height:200px;display:block;border-radius:8px;"></video></div>';
+    else if(isImg && m.media_url) mediaHtml = '<div class="mb-media"><img src="'+m.media_url+'" style="width:100%;border-radius:8px;" class="img-safe"></div>';
+    div.innerHTML=`<div class="mb-bubble">${mediaHtml || linkify(m.content)}</div><div class="mb-time">${time}</div>`;
     area.appendChild(div);
   });
   area.scrollTop=area.scrollHeight;
@@ -13440,6 +13625,80 @@ async function sendBizMsg(){
   // Update chat timestamp
   await db.from('business_chats').update({updated_at:new Date().toISOString()}).eq('id',currentBizChat);
   await loadBizMsgs(currentBizChat);
+}
+
+// ── Áudio no chat de loja ─────────────────────────────────────────────────────
+let _bizMediaRecorder=null, _bizAudioChunks=[], _bizAudioTimer=null, _bizAudioSecs=0;
+
+function startBizAudioRecord(){
+  if(!navigator.mediaDevices?.getUserMedia) return showToast('Dispositivo não suporta gravação','error');
+  navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
+    _bizAudioChunks=[];
+    _bizMediaRecorder = new MediaRecorder(stream);
+    _bizMediaRecorder.ondataavailable = e=>{ if(e.data.size>0) _bizAudioChunks.push(e.data); };
+    _bizMediaRecorder.onstop = ()=>{ stream.getTracks().forEach(t=>t.stop()); _sendBizAudio(); };
+    _bizMediaRecorder.start();
+    // UI
+    const recEl = document.getElementById('biz-audio-recorder');
+    const inputRow = document.querySelector('#biz-msg-in-area > div:last-child');
+    const micBtn = document.getElementById('biz-mic-btn');
+    const sendBtn = document.getElementById('biz-send-btn');
+    if(recEl) recEl.style.display='flex';
+    if(micBtn) micBtn.style.display='none';
+    if(sendBtn){ sendBtn.onclick=()=>stopBizAudioRecord(); sendBtn.innerHTML='⏹'; sendBtn.title='Parar e enviar'; }
+    _bizAudioSecs=0;
+    const timerEl = document.getElementById('biz-audio-timer');
+    _bizAudioTimer = setInterval(()=>{
+      _bizAudioSecs++;
+      if(timerEl){ const m=Math.floor(_bizAudioSecs/60),s=_bizAudioSecs%60; timerEl.textContent=m+':'+(s<10?'0':'')+s; }
+      if(_bizAudioSecs>=120) stopBizAudioRecord();
+    },1000);
+    showToast('🎙 Gravando... Toque ⏹ para enviar','success');
+  }).catch(e=>showToast('Erro ao acessar microfone: '+e.message,'error'));
+}
+
+function stopBizAudioRecord(){
+  if(_bizMediaRecorder && _bizMediaRecorder.state!=='inactive') _bizMediaRecorder.stop();
+  clearInterval(_bizAudioTimer);
+  const recEl = document.getElementById('biz-audio-recorder');
+  const micBtn = document.getElementById('biz-mic-btn');
+  const sendBtn = document.getElementById('biz-send-btn');
+  if(recEl) recEl.style.display='none';
+  if(micBtn) micBtn.style.display='';
+  if(sendBtn){ sendBtn.onclick=()=>sendBizMsg(); sendBtn.innerHTML='➤'; sendBtn.title='Enviar'; }
+}
+
+function cancelBizAudio(){
+  if(_bizMediaRecorder && _bizMediaRecorder.state!=='inactive'){
+    _bizMediaRecorder.ondataavailable=null; _bizMediaRecorder.onstop=null;
+    _bizMediaRecorder.stop(); _bizMediaRecorder.stream?.getTracks().forEach(t=>t.stop());
+  }
+  _bizAudioChunks=[]; clearInterval(_bizAudioTimer);
+  const recEl = document.getElementById('biz-audio-recorder');
+  const micBtn = document.getElementById('biz-mic-btn');
+  const sendBtn = document.getElementById('biz-send-btn');
+  if(recEl) recEl.style.display='none';
+  if(micBtn) micBtn.style.display='';
+  if(sendBtn){ sendBtn.onclick=()=>sendBizMsg(); sendBtn.innerHTML='➤'; sendBtn.title='Enviar'; }
+  showToast('Gravação cancelada','');
+}
+
+async function _sendBizAudio(){
+  if(!_bizAudioChunks.length) return;
+  const blob = new Blob(_bizAudioChunks, {type:'audio/webm'});
+  _bizAudioChunks=[];
+  if(blob.size<1000){ showToast('Áudio muito curto','error'); return; }
+  if(!CU||!currentBizChat) return;
+  showToast('⏳ Enviando áudio...','');
+  try{
+    const audioFile = new File([blob],'biz-audio-'+Date.now()+'.webm',{type:'audio/webm'});
+    const publicUrl = await uploadImageToR2(audioFile,'audio-msg');
+    if(!publicUrl){ showToast('Erro upload áudio','error'); return; }
+    await db.from('business_messages').insert({chat_id:currentBizChat, sender_id:CU.id, content:'🎙 Áudio', media_url:publicUrl, media_type:'audio/webm'});
+    await db.from('business_chats').update({updated_at:new Date().toISOString()}).eq('id',currentBizChat);
+    showToast('✅ Áudio enviado!','success');
+    await loadBizMsgs(currentBizChat);
+  }catch(e){ showToast('Erro: '+e.message,'error'); }
 }
 
 async function closeDeal(chatId){
@@ -18765,6 +19024,15 @@ function initFeedAutoplay(){
 
   // Desconecta observer anterior para evitar duplicatas
   if(_feedObserver) _feedObserver.disconnect();
+
+  // Pause all other videos when one starts playing (fix #1)
+  document.addEventListener('play', function(e){
+    if(e.target.tagName === 'VIDEO'){
+      document.querySelectorAll('video').forEach(v=>{
+        if(v !== e.target && !v.paused) v.pause();
+      });
+    }
+  }, true);
 
   _feedObserver = new IntersectionObserver((entries)=>{
     entries.forEach(entry => {
