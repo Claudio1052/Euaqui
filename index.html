@@ -7895,6 +7895,30 @@ function ppPlayVideo(url, viewKey, gridIdx){
 
 async function saveSettings(){
   if(!CU)return;
+
+  // ── Botão de salvar com barra de progresso ──
+  const saveBtn = document.querySelector('#pp-edit .asubmit');
+  function _setSaveProgress(pct, label){
+    if(!saveBtn) return;
+    saveBtn.disabled = true;
+    saveBtn.style.cursor = 'not-allowed';
+    saveBtn.innerHTML =
+      '<div style="display:flex;flex-direction:column;align-items:center;gap:5px;width:100%;">'+
+        '<span style="font-size:10px;letter-spacing:1px;">'+label.toUpperCase()+'</span>'+
+        '<div style="width:100%;height:4px;background:rgba(255,255,255,.2);border-radius:2px;overflow:hidden;">'+
+          '<div style="height:100%;width:'+pct+'%;background:linear-gradient(90deg,var(--neon-cyan),var(--neon-purple));border-radius:2px;transition:width .3s ease;"></div>'+
+        '</div>'+
+      '</div>';
+  }
+  function _resetSaveBtn(){
+    if(!saveBtn) return;
+    saveBtn.disabled = false;
+    saveBtn.style.cursor = '';
+    saveBtn.innerHTML = '💾 SALVAR ALTERAÇÕES';
+  }
+
+  _setSaveProgress(5, 'Verificando...');
+
   // ── Moderação do bio e status ──
   const bioVal = document.getElementById('set-bio')?.value.trim()||'';
   const statusVal = document.getElementById('set-status')?.value.trim()||'';
@@ -7903,32 +7927,48 @@ async function saveSettings(){
     if(val.length > 3){
       const mod = await moderateContent(val);
       if(!mod.allowed){
+        _resetSaveBtn();
         showToast('🚫 '+field+' bloqueado: '+(mod.categories||[]).join(', '),'error');
         return;
       }
     }
   }
-  let avatarUrl=CP?.avatar_url;let avatarType='upload';let retroIcon=null;
-  // Avatar gerado pelo gerador retro
+
+  let avatarUrl=CP?.avatar_url; let avatarType='upload'; let retroIcon=null;
+
   if(window._generatedAvatarUrl){
+    // Avatar gerado pelo gerador retro — URL do Dicebear, não precisa upload
     avatarUrl = window._generatedAvatarUrl;
     avatarType = 'generated';
-    window._generatedAvatarUrl = null;
-  } else if(retroIconSelected){avatarType='retro_icon';retroIcon=retroIconSelected;avatarUrl=retroIconSelected;}
-  else if(avatarFile){
-    // Upload de avatar direto para Cloudflare R2 (mesmo pipeline das mídias dos posts)
-    // Sem passar pelo Supabase Storage — elimina egress de avatar
+    _setSaveProgress(40, 'Salvando avatar...');
+  } else if(retroIconSelected){
+    avatarType='retro_icon'; retroIcon=retroIconSelected; avatarUrl=retroIconSelected;
+    _setSaveProgress(40, 'Salvando avatar...');
+  } else if(avatarFile){
+    // Upload de foto de perfil para R2 com barra de progresso
+    _setSaveProgress(10, 'Enviando foto...');
     try{
-      showToast('☁️ Enviando avatar ao Cloudflare...','success');
-      const publicUrl = await uploadWithPipeline(avatarFile,'image',(m)=>console.log('[avatar]',m));
+      const publicUrl = await uploadWithPipeline(avatarFile,'image',(msg)=>{
+        if(msg.startsWith('PROGRESS:')){
+          const parts=msg.split(':');
+          const pct=Math.round(parseInt(parts[1]||'0')*0.6)+10; // 10%→70%
+          const lbl=parts.slice(2).join(':')||'Enviando foto';
+          _setSaveProgress(pct, lbl);
+        }
+      });
       avatarUrl = publicUrl;
+      _setSaveProgress(75, 'Foto enviada!');
     }catch(e){
-      const msg=e.userMessage||('Erro no upload do avatar: '+(e.message||'erro desconhecido'));
-      showToast(msg,'error');
+      _resetSaveBtn();
+      showToast(e.userMessage||('Erro no upload: '+(e.message||'erro')),'error');
+      return;
     }
+  } else {
+    _setSaveProgress(40, 'Salvando...');
   }
-  // Monta updates com campos básicos sempre presentes
-  // Após a migração, todas as colunas existem
+
+  _setSaveProgress(80, 'Salvando perfil...');
+
   const updates={
     full_name:   document.getElementById('set-name').value.trim(),
     bio:         document.getElementById('set-bio').value.trim(),
@@ -7940,17 +7980,17 @@ async function saveSettings(){
     retro_icon:  retroIcon,
     updated_at:  new Date().toISOString()
   };
-  // Add status message if field exists
   const statusEl=document.getElementById('set-status');
   if(statusEl&&statusEl.value.trim()) updates.status_message=statusEl.value.trim();
 
   const{error:err}=await db.from('profiles').update(updates).eq('id',CU.id);
-  sessionStorage.removeItem('_cp_cache_at'); // invalida cache do perfil
+  sessionStorage.removeItem('_cp_cache_at');
   if(err){
-    console.error('saveSettings error:',err);
+    _resetSaveBtn();
     return showToast('Erro ao salvar: '+err.message,'error');
   }
-  // Salvar preferências/interesses na tabela user_preferences
+
+  // Salvar preferências
   try{
     const prefs = getUserPreferences();
     await db.from('user_preferences').upsert({
@@ -7959,18 +7999,40 @@ async function saveSettings(){
       updated_at: new Date().toISOString()
     }, {onConflict:'user_id'});
   }catch(e){ console.warn('prefs save:', e?.message); }
+
+  _setSaveProgress(95, 'Finalizando...');
   Object.assign(CP,updates,{avatar_type:avatarType,retro_icon:retroIcon});
-  // Só após salvar com sucesso: atualiza navbar e perfil
+
+  // ── Atualiza avatar em TODOS os lugares em tempo real ──
   if(avatarUrl){
-    document.querySelectorAll('.nav-av, .uma').forEach(el=>{
-      if(el.tagName==='IMG') el.src = avatarUrl;
+    // Navbar, sidebar, mini-avatar do composer, avatares nos posts
+    document.querySelectorAll(
+      '.nav-av, .uma, .cav, [data-uid="'+CU.id+'"], img[data-own-avatar]'
+    ).forEach(el=>{
+      if(el.tagName==='IMG') el.src = avatarUrl+'?t='+Date.now();
     });
+    // Qualquer <img> com src igual ao avatar antigo
+    const oldAv = CP?.avatar_url;
+    if(oldAv && oldAv !== avatarUrl){
+      document.querySelectorAll('img').forEach(img=>{
+        if(img.src && img.src.includes(oldAv.split('/').pop())){
+          img.src = avatarUrl+'?t='+Date.now();
+        }
+      });
+    }
+    // av-current-preview na aba editar
+    const prev = document.getElementById('av-current-preview');
+    if(prev) prev.innerHTML = '<img src="'+avatarUrl+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">';
   }
+
   refreshUI();
-  if(document.getElementById('m-settings')?.classList.contains('open')) closeM('m-settings');
-  showProfileSavedPopup();
   avatarFile=null; retroIconSelected=null; window._generatedAvatarUrl=null;
-  // Recarrega o perfil para mostrar avatar correto em todos os lugares
+  _resetSaveBtn();
+
+  // Popup de sucesso
+  showProfileSavedPopup();
+
+  // Recarrega o perfil completo para garantir consistência
   if(document.getElementById('page-profile')?.classList.contains('active')){
     await loadProfilePage(CU.id);
   }
