@@ -7057,9 +7057,16 @@ async function uploadWithPipeline(file, type, setStatus){
       compressed = await compressVideo(file, p=>progress(5+Math.round(p*75),'Comprimindo vídeo'));
     } else {
       // Imagem: gera feed + miniatura
+      // compressImage retorna {feed: File, thumb: File}
       const imgs = await compressImage(file);
-      compressed = imgs.feed;
-      thumbFile  = imgs.thumb;
+      // Se é contexto de banner/logo/avatar (não post), usa só o feed sem thumb
+      compressed = imgs.feed || imgs;
+      thumbFile  = imgs.thumb || null;
+      // Segurança: garantir que compressed é um File válido
+      if(!(compressed instanceof File || compressed instanceof Blob)){
+        compressed = file;
+        thumbFile = null;
+      }
     }
     if(type!=='video') progress(80, 'Carregando post');
   }catch(e){
@@ -8369,12 +8376,14 @@ async function toggleJoinComm(commId,isMember,btn){
   try{
     if(isMember){
       const{error}=await db.from('community_members').delete().eq('community_id',commId).eq('user_id',CU.id);
+      if(!error) { _feedCtx=null; window._feedPageCache={}; } // força rebuild do contexto
       if(error) throw error;
       btn.textContent='+ Entrar';
       btn.classList.remove('joined');
       showToast('Saiu da comunidade','success');
     } else {
       const{error}=await db.from('community_members').insert({community_id:commId,user_id:CU.id,role:'member'});
+      if(!error) { _feedCtx=null; window._feedPageCache={}; } // força rebuild do contexto
       if(error) throw error;
       btn.textContent='✓ Membro';
       btn.classList.add('joined');
@@ -15112,13 +15121,24 @@ async function loadAboutCommunities(userId){
 
     if(!ids.length){ renderComms([]); return; }
 
-    // Passo 2 — tentar buscar dados das comunidades
+    // Passo 2 — buscar dados das comunidades com fallback
     let comms = [];
-    const{data:fromDb} = await db
+    // Tenta com join direto
+    const{data:fromDb, error:dbErr} = await db
       .from('communities')
       .select('id,name,description,icon,avatar_url,members_count,visibility,slug')
       .in('id', ids);
-    comms = fromDb || [];
+    // Se RLS bloqueou, tenta uma a uma
+    if(dbErr || !fromDb?.length){
+      for(const id of ids){
+        try{
+          const{data:c}=await db.from('communities').select('id,name,description,icon,avatar_url,members_count,visibility,slug').eq('id',id).maybeSingle();
+          if(c) comms.push(c);
+        }catch(e){}
+      }
+    } else {
+      comms = fromDb || [];
+    }
 
     // Passo 3 — fallback: usar _commCache (dados já em memória no app)
     if(!comms.length && typeof _commCache !== 'undefined'){
