@@ -3776,6 +3776,12 @@ body.day-mode::before{
   animation:none;
   opacity:.65;
 }
+.oa-ring.biz{
+  background:linear-gradient(135deg, #f6d365, #fda085, #f093fb);
+  box-shadow:0 0 14px rgba(253,160,133,.5), 0 0 28px rgba(240,147,251,.2);
+  animation:oa-spin 8s linear infinite;
+}
+.oa-ring.biz > img{ animation:oa-spin-reverse 8s linear infinite; }
 .oa-ring.me{
   background:linear-gradient(135deg, var(--neon-cyan), var(--neon-purple));
   animation:none;
@@ -3994,7 +4000,7 @@ body.day-mode::before{
 
 /* CTA do story de negócio (Comprar / Agendar) */
 .oa-v-cta-btn{
-  display:none;
+  display:none; /* JS sobrescreve com 'flex' */
   width:100%;
   padding:12px;
   border-radius:12px;
@@ -4005,10 +4011,13 @@ body.day-mode::before{
   cursor:pointer;
   color:#fff;
   text-align:center;
-  animation:oa-cta-pulse 1.6s ease-in-out infinite;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
   outline:none;
   -webkit-tap-highlight-color:transparent;
-  margin-bottom:2px;
+  margin-bottom:6px;
+  animation:oa-cta-pulse 1.6s ease-in-out infinite;
 }
 .oa-v-cta-btn.buy{
   background:linear-gradient(135deg, #00b894, #00cec9);
@@ -20666,18 +20675,43 @@ async function oaLoadRail(){
     }
   }
 
-    // Agrupa por usuário
   // 3) AGRUPAR e RENDERIZAR
+  // Stories de negócio (metadata.type='business') ganham bolha própria por business_id
+  // Stories pessoais agrupam por user_id como antes
   const byUser = {};
   items.forEach(it=>{
-    if(!byUser[it.user_id]) byUser[it.user_id] = {
-      userId: it.user_id,
-      username: profMap[it.user_id]?.username || 'usuario',
-      fullName: profMap[it.user_id]?.full_name || '',
-      avatar_url: profMap[it.user_id]?.avatar_url || '',
-      items: []
-    };
-    byUser[it.user_id].items.push(it);
+    let meta = {};
+    try{ if(it.metadata) meta = typeof it.metadata==='string' ? JSON.parse(it.metadata) : it.metadata; }catch(e){}
+
+    const isBizStory = meta.type === 'business' && meta.business_id;
+    // Chave única: negócios usam 'biz_<business_id>', pessoais usam user_id
+    const groupKey = isBizStory ? 'biz_' + meta.business_id : it.user_id;
+
+    if(!byUser[groupKey]){
+      if(isBizStory){
+        byUser[groupKey] = {
+          userId:     it.user_id,       // dono real (para permissões)
+          groupKey,
+          isBiz:      true,
+          bizId:      meta.business_id,
+          username:   meta.biz_name || profMap[it.user_id]?.username || 'loja',
+          fullName:   meta.biz_name || '',
+          avatar_url: meta.logo_url  || profMap[it.user_id]?.avatar_url || '',
+          items: []
+        };
+      } else {
+        byUser[groupKey] = {
+          userId:     it.user_id,
+          groupKey,
+          isBiz:      false,
+          username:   profMap[it.user_id]?.username || 'usuario',
+          fullName:   profMap[it.user_id]?.full_name || '',
+          avatar_url: profMap[it.user_id]?.avatar_url || '',
+          items: []
+        };
+      }
+    }
+    byUser[groupKey].items.push(it);
   });
 
   // Ordena itens de cada usuário do mais antigo para o mais novo
@@ -20686,10 +20720,17 @@ async function oaLoadRail(){
     g.seen = g.items.every(it => oaSeenSet.has(it.id));
   });
 
-  // Ordem no rail: MEU PROPRIO primeiro, depois nao-vistos, depois vistos
+  // Ordem: 1) MEU bubble pessoal, 2) stories pessoais não-vistos,
+  //         3) stories de NEGÓCIO (lojas/serviços), 4) vistos
   oaGroups = Object.values(byUser).sort((a,b)=>{
-    if(CU && a.userId===CU.id) return -1;
-    if(CU && b.userId===CU.id) return 1;
+    // Meu próprio bubble pessoal sempre primeiro
+    if(CU && a.userId===CU.id && !a.isBiz) return -1;
+    if(CU && b.userId===CU.id && !b.isBiz) return 1;
+    // Negócios aparecem depois de pessoais não-vistos
+    if(a.isBiz !== b.isBiz){
+      if(!a.isBiz && !a.seen) return -1; // pessoal não-visto antes de biz
+      if(!b.isBiz && !b.seen) return 1;
+    }
     if(a.seen !== b.seen) return a.seen ? 1 : -1;
     const la = a.items[a.items.length-1]?.created_at || '';
     const lb = b.items[b.items.length-1]?.created_at || '';
@@ -20709,7 +20750,7 @@ function renderOaRail(groups){
   // Bolha "+ Seu Olha Aqui" (sempre primeiro se logado)
   let html = '';
   if(CU){
-    const myGroup = groups.find(g=>g.userId===CU.id);
+    const myGroup = groups.find(g=>g.userId===CU.id && !g.isBiz);
     const myAv = (CP?.avatar_url || CU?.avatar_url ||
                  'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(CU?.id||'me'));
     html += `
@@ -20724,17 +20765,25 @@ function renderOaRail(groups){
     // Se o usuário tem stories próprios, também entra no fluxo normal
   }
 
-  // Demais usuários (exclui o próprio, já representado acima pela bolha +)
-  groups.filter(g => !CU || g.userId !== CU.id).forEach((g, i)=>{
+  // Demais usuários/lojas (exclui o próprio bubble pessoal, já representado acima)
+  // Stories de negócio do próprio usuário APARECEM normalmente (não são ocultados)
+  groups.filter(g => {
+    if(!CU) return true;
+    // Oculta apenas o grupo PESSOAL do usuário logado (não os grupos de negócio dele)
+    return !(g.userId === CU.id && !g.isBiz);
+  }).forEach((g, i)=>{
     const realIdx = oaGroups.indexOf(g);
+    const _av = g.avatar_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+g.userId);
+    const _label = g.isBiz ? _oaEscape(g.username) : '@'+_oaEscape(g.username);
+    const _ringClass = g.isBiz ? 'oa-ring biz' : ('oa-ring '+(g.seen?'seen':''));
     html += `
       <div class="oa-bubble" onclick="oaOpenViewer(${realIdx})">
-        <div class="oa-ring ${g.seen?'seen':''}">
-          <img src="${_oaEscape(g.avatar_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+g.userId))}"
+        <div class="${_ringClass}">
+          <img src="${_oaEscape(_av)}"
                alt="${_oaEscape(g.username)}"
                onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${_oaEscape(g.userId)}'">
         </div>
-        <div class="oa-name">@${_oaEscape(g.username)}</div>
+        <div class="oa-name">${_label}</div>
       </div>
     `;
   });
@@ -20854,7 +20903,7 @@ window.oaHandleMyBubbleClick = oaHandleMyBubbleClick;
 function oaHandleMyAvatarClick(e){
   e.stopPropagation();
   if(!CU){ showToast('Faça login para publicar','error'); return; }
-  const mine = oaGroups.find(g=>g.userId===CU.id);
+  const mine = oaGroups.find(g=>g.userId===CU.id && !g.isBiz);
   if(mine){
     // Tem story ativo → abre o viewer dos próprios
     oaOpenViewer(oaGroups.indexOf(mine));
@@ -20887,7 +20936,7 @@ function _oaStartCreate(){
 function oaOpenCreate(){
   if(!CU){ showToast('Faça login para publicar','error'); return; }
   // Se usuário já tem stories, damos escolha: ver os meus ou publicar novo
-  const mine = oaGroups.find(g=>g.userId===CU.id);
+  const mine = oaGroups.find(g=>g.userId===CU.id && !g.isBiz);
   if(mine){
     // Menu rápido
     const choose = confirm('Você já tem um Olha Aqui ativo.\n\nOK = Publicar outro\nCancelar = Ver os meus');
@@ -21110,8 +21159,8 @@ function oaRenderItem(){
     const _showCta = _isBiz && !(CU && g.userId===CU.id);
     if(_showCta){
       const _isLoja = (_itMeta.category||'loja') === 'loja';
-      _ctaBuy.style.display  = _isLoja ? 'block' : 'none';
-      _ctaBook.style.display = _isLoja ? 'none'  : 'block';
+      _ctaBuy.style.display  = _isLoja ? 'flex' : 'none';
+      _ctaBook.style.display = _isLoja ? 'none'  : 'flex';
       // Guarda dados para o clique
       _ctaBuy.dataset.bizUserId  = g.userId;
       _ctaBuy.dataset.itemName   = _itMeta.item_name||'';
