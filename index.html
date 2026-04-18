@@ -3992,6 +3992,44 @@ body.day-mode::before{
 }
 @keyframes oa-pulse{ 0%,100%{opacity:.4}50%{opacity:1} }
 
+/* CTA do story de negócio (Comprar / Agendar) */
+.oa-v-cta-btn{
+  display:none;
+  width:100%;
+  padding:12px;
+  border-radius:12px;
+  border:none;
+  font-family:'Silkscreen',monospace;
+  font-size:13px;
+  letter-spacing:1px;
+  cursor:pointer;
+  color:#fff;
+  text-align:center;
+  animation:oa-cta-pulse 1.6s ease-in-out infinite;
+  outline:none;
+  -webkit-tap-highlight-color:transparent;
+  margin-bottom:2px;
+}
+.oa-v-cta-btn.buy{
+  background:linear-gradient(135deg, #00b894, #00cec9);
+  box-shadow:0 0 16px rgba(0,184,148,.5);
+}
+.oa-v-cta-btn.book{
+  background:linear-gradient(135deg, var(--neon-purple), var(--neon-pink));
+  box-shadow:0 0 16px rgba(191,95,255,.5);
+}
+@keyframes oa-cta-pulse{
+  0%,100%{ transform:scale(1);   box-shadow:0 0 16px rgba(0,184,148,.4); }
+  50%    { transform:scale(1.02);box-shadow:0 0 28px rgba(0,184,148,.7); }
+}
+.oa-v-cta-btn.book{
+  animation:oa-cta-pulse-book 1.6s ease-in-out infinite;
+}
+@keyframes oa-cta-pulse-book{
+  0%,100%{ transform:scale(1);   box-shadow:0 0 16px rgba(191,95,255,.4); }
+  50%    { transform:scale(1.02);box-shadow:0 0 28px rgba(191,95,255,.7); }
+}
+
 /* Camada de reações flutuantes do story viewer */
 #oa-v-float-layer{
   position:absolute;
@@ -5475,6 +5513,9 @@ const db = createClient(SB_URL, SB_KEY, {
    Execute no SQL Editor do Supabase:
 
    -- Tabela de visualizações de stories
+   -- Adicione a coluna metadata à tabela existente (se ainda não tiver):
+   -- ALTER TABLE olha_aqui ADD COLUMN IF NOT EXISTS metadata jsonb;
+
    CREATE TABLE IF NOT EXISTS olha_aqui_views (
      id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
      story_id uuid REFERENCES olha_aqui(id) ON DELETE CASCADE,
@@ -14275,6 +14316,7 @@ async function loadMyBusiness(){
         <div class="prod-price">${p.price?'R$ '+Number(p.price).toFixed(2):xss(p.price_label||'Sob consulta')}</div>
         <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">
           <button class="tbtn" style="flex:1;font-size:9px;color:var(--neon-cyan);padding:5px;" onclick="divulgarProduto('${data.id}','${xss(p.name)}',${p.price||0},'${xss(p.image_url||'')}','${xss(p.price_label||'')}')">📢 Divulgar</button>
+          <button class="tbtn" style="flex:1;font-size:9px;color:var(--neon-pink);padding:5px;border-color:rgba(255,51,102,.4);" onclick="oaDivulgarProduto('${data.id}','${p.id}','${xss(p.name)}','${xss(p.image_url||'')}','${xss(myBusiness?.category||'loja')}','${xss(myBusiness?.logo_url||'')}','${xss(myBusiness?.name||'')}')">🚀 Story</button>
           <button class="tbtn" style="font-size:9px;color:var(--neon-yellow);padding:5px;" onclick="editProduct('${p.id}','${xss(p.name)}',${p.price||0},'${xss(p.price_label||'')}','${xss(p.description||'')}','${xss(p.image_url||'')}','${_pUrls}')">✏️</button>
           <button class="tbtn" style="font-size:9px;padding:5px;" onclick="deleteProduct('${p.id}')">🗑</button>
         </div>`;
@@ -20560,7 +20602,7 @@ async function oaLoadRail(){
     const cutoff = new Date(Date.now() - OA_TTL_HOURS*3600*1000).toISOString();
     const resp = await db
       .from('olha_aqui')
-      .select('id, user_id, media_url, media_type, created_at, expires_at')
+      .select('id, user_id, media_url, media_type, created_at, expires_at, metadata')
       .gte('created_at', cutoff)
       .order('created_at', { ascending:false })
       .limit(200);
@@ -20717,6 +20759,92 @@ let _oaPickedFile = null;
 let _oaPickedType = null; // 'image' | 'video'
 
 // Clique no container da bolha própria (delega para avatar ou plus)
+// =========================================================================
+// DIVULGAR PRODUTO/SERVIÇO NO OLHA AQUI
+// =========================================================================
+let _oaBizContext = null;
+
+function oaDivulgarProduto(bizId, itemId, itemName, itemImgUrl, category, logoUrl, bizName){
+  if(!CU){ showToast('Faça login','error'); return; }
+  _oaBizContext = { bizId, itemId, itemName, category, logoUrl, bizName };
+  const ov = document.createElement('div');
+  ov.id = 'oa-biz-picker';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(8px);z-index:10045;display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.innerHTML = `
+    <div style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:20px;padding:24px;max-width:380px;width:100%;box-shadow:0 0 40px rgba(0,255,204,.15);">
+      <div style="font-family:'Silkscreen',monospace;font-size:13px;color:var(--neon-cyan);margin-bottom:6px;letter-spacing:1px;">🚀 DIVULGAR NO OLHA AQUI</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:20px;font-family:'Space Mono',monospace;">${itemName.substring(0,40)}</div>
+      ${itemImgUrl ? `<button onclick="oaUseBizImage('${itemImgUrl.replace(/'/g,"&apos;")}')" style="width:100%;background:rgba(0,255,204,.08);border:1px solid var(--neon-cyan);border-radius:12px;padding:14px;margin-bottom:10px;cursor:pointer;display:flex;align-items:center;gap:12px;color:var(--text-light);font-family:'Space Mono',monospace;font-size:11px;">
+        <img src="${itemImgUrl}" style="width:48px;height:48px;border-radius:8px;object-fit:cover;flex-shrink:0;">
+        <div style="text-align:left;"><div style="color:var(--neon-cyan);font-family:'Silkscreen',monospace;font-size:10px;margin-bottom:2px;">✅ Usar foto do produto</div><div style="color:var(--text-muted);font-size:9px;">Publicação instantânea</div></div>
+      </button>` : ''}
+      <button onclick="oaPickBizMedia()" style="width:100%;background:rgba(255,51,102,.08);border:1px solid var(--neon-pink);border-radius:12px;padding:14px;margin-bottom:10px;cursor:pointer;color:var(--text-light);font-family:'Space Mono',monospace;font-size:11px;">
+        <div style="color:var(--neon-pink);font-family:'Silkscreen',monospace;font-size:10px;margin-bottom:2px;">📹 Enviar foto/vídeo</div>
+        <div style="color:var(--text-muted);font-size:9px;">Escolha da galeria (imagem ou vídeo até 30s)</div>
+      </button>
+      <button onclick="document.getElementById('oa-biz-picker').remove();window._oaBizContext=null;" style="width:100%;background:transparent;border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:10px;cursor:pointer;color:var(--text-muted);font-family:'Space Mono',monospace;font-size:10px;">Cancelar</button>
+    </div>`;
+  document.body.appendChild(ov);
+  ov.onclick = e=>{ if(e.target===ov){ ov.remove(); _oaBizContext=null; } };
+}
+window.oaDivulgarProduto = oaDivulgarProduto;
+
+async function oaUseBizImage(imgUrl){
+  document.getElementById('oa-biz-picker')?.remove();
+  if(!_oaBizContext){ showToast('Contexto perdido','error'); return; }
+  showToast('⏳ Publicando story...','success');
+  try{
+    const expiresAt = new Date(Date.now() + OA_TTL_HOURS*3600*1000).toISOString();
+    const meta = { type:'business', business_id:_oaBizContext.bizId, item_id:_oaBizContext.itemId,
+      item_name:_oaBizContext.itemName, category:_oaBizContext.category,
+      logo_url:_oaBizContext.logoUrl, biz_name:_oaBizContext.bizName };
+    const { error } = await db.from('olha_aqui').insert({
+      user_id:CU.id, media_url:imgUrl, media_type:'image', expires_at:expiresAt, metadata:meta });
+    if(error) throw error;
+    showToast('✅ Story publicado! Expira em 24h.','success');
+    _oaBizContext = null;
+    await oaLoadRail();
+  }catch(e){ showToast('❌ Erro: '+(e.message||'falha'),'error'); }
+}
+window.oaUseBizImage = oaUseBizImage;
+
+function oaPickBizMedia(){
+  document.getElementById('oa-biz-picker')?.remove();
+  _oaPickedFile = null; _oaPickedType = null;
+  window._oaPublishIsBiz = true;
+  document.getElementById('oa-c-actions').style.display = 'flex';
+  document.getElementById('oa-c-confirm').style.display = 'none';
+  document.getElementById('oa-c-preview-wrap').style.display = 'none';
+  document.getElementById('oa-c-preview-wrap').innerHTML = '';
+  document.getElementById('oa-c-progress').style.display = 'none';
+  document.getElementById('oa-create-modal').classList.add('on');
+}
+window.oaPickBizMedia = oaPickBizMedia;
+
+async function oaCtaAction(type){
+  if(!CU){ showToast('Faça login para continuar','error'); return; }
+  const btn = document.getElementById(type==='buy'?'oa-v-cta-buy':'oa-v-cta-book');
+  const bizUserId = btn?.dataset.bizUserId;
+  const itemName  = btn?.dataset.itemName || 'produto/serviço';
+  if(!bizUserId){ showToast('Informação do vendedor não encontrada','error'); return; }
+  const autoMsg = type==='buy'
+    ? `Olá! Vi seu anúncio no Olha Aqui: ${itemName}. Gostaria de mais informações para comprar.`
+    : `Olá! Vi seu anúncio no Olha Aqui: ${itemName}. Gostaria de agendar um horário.`;
+  try{
+    const { data:prof } = await db.from('profiles').select('id,username,avatar_url').eq('id',bizUserId).maybeSingle();
+    if(!prof){ showToast('Vendedor não encontrado','error'); return; }
+    await db.from('messages').insert({ sender_id:CU.id, receiver_id:bizUserId, content:autoMsg, read:false });
+    oaCloseViewer();
+    showToast('✅ Mensagem enviada! Abrindo chat...','success');
+    setTimeout(()=>{ nav('messages'); setTimeout(()=>{
+      const av = prof.avatar_url||('https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u'));
+      openChat(bizUserId, prof.username||'', av);
+    },400); },600);
+  }catch(e){ showToast('Erro ao enviar mensagem','error'); }
+}
+window.oaCtaAction = oaCtaAction;
+
+// =========================================================================
 function oaHandleMyBubbleClick(e){
   // Ignora cliques em filhos com handlers próprios — eles cuidam de si mesmos
 }
@@ -20869,18 +20997,28 @@ async function oaPublish(){
 
     // 2) Grava metadados no Supabase
     const expiresAt = new Date(Date.now() + OA_TTL_HOURS*3600*1000).toISOString();
-    const { data, error } = await db.from('olha_aqui').insert({
-      user_id: CU.id,
-      media_url: publicUrl,
-      media_type: _oaPickedType,
-      expires_at: expiresAt
-    }).select().single();
+    // Monta payload — inclui metadata de negócio se vier de divulgação
+    const _oaPayload = { user_id: CU.id, media_url: publicUrl, media_type: _oaPickedType, expires_at: expiresAt };
+    if(window._oaPublishIsBiz && window._oaBizContext){
+      _oaPayload.metadata = {
+        type: 'business',
+        business_id: window._oaBizContext.bizId,
+        item_id:     window._oaBizContext.itemId,
+        item_name:   window._oaBizContext.itemName,
+        category:    window._oaBizContext.category,
+        logo_url:    window._oaBizContext.logoUrl,
+        biz_name:    window._oaBizContext.bizName
+      };
+    }
+    const { data, error } = await db.from('olha_aqui').insert(_oaPayload).select().single();
 
     if(error) throw error;
 
     showToast('✅ Olha Aqui publicado! Expira em 24h.','success');
     oaCloseCreate();
-    // Reset e recarrega o rail
+    // Reset flags de negócio
+    window._oaPublishIsBiz = false;
+    window._oaBizContext = null;
     _oaPickedFile = null; _oaPickedType = null;
     await oaLoadRail();
 
@@ -20952,11 +21090,40 @@ function oaRenderItem(){
   oaSeenSet.add(it.id);
   g.seen = g.items.every(x=> oaSeenSet.has(x.id));
 
-  // Header
-  document.getElementById('oa-v-avatar').src = g.avatar_url ||
-    ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+g.userId);
-  document.getElementById('oa-v-name').textContent = '@'+g.username;
+  // Parseia metadata do item (pode ser JSON ou null)
+  let _itMeta = {};
+  try{ if(it.metadata) _itMeta = typeof it.metadata==='string' ? JSON.parse(it.metadata) : it.metadata; }catch(e){}
+  const _isBiz = _itMeta.type === 'business';
+
+  // Header — logo da loja se for story de negócio, avatar normal caso contrário
+  const _logoSrc = _isBiz && _itMeta.logo_url ? _itMeta.logo_url
+    : (g.avatar_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+g.userId));
+  const _displayName = _isBiz && _itMeta.biz_name ? '🏪 '+_itMeta.biz_name : '@'+g.username;
+  document.getElementById('oa-v-avatar').src = _logoSrc;
+  document.getElementById('oa-v-name').textContent = _displayName;
   document.getElementById('oa-v-time').textContent = _oaTimeAgo(it.created_at);
+
+  // CTA buttons — só aparecem em stories de negócio de outros usuários
+  const _ctaBuy  = document.getElementById('oa-v-cta-buy');
+  const _ctaBook = document.getElementById('oa-v-cta-book');
+  if(_ctaBuy && _ctaBook){
+    const _showCta = _isBiz && !(CU && g.userId===CU.id);
+    if(_showCta){
+      const _isLoja = (_itMeta.category||'loja') === 'loja';
+      _ctaBuy.style.display  = _isLoja ? 'block' : 'none';
+      _ctaBook.style.display = _isLoja ? 'none'  : 'block';
+      // Guarda dados para o clique
+      _ctaBuy.dataset.bizUserId  = g.userId;
+      _ctaBuy.dataset.itemName   = _itMeta.item_name||'';
+      _ctaBuy.dataset.bizName    = _itMeta.biz_name||g.username;
+      _ctaBook.dataset.bizUserId = g.userId;
+      _ctaBook.dataset.itemName  = _itMeta.item_name||'';
+      _ctaBook.dataset.bizName   = _itMeta.biz_name||g.username;
+    } else {
+      _ctaBuy.style.display  = 'none';
+      _ctaBook.style.display = 'none';
+    }
+  }
 
   // Rodapé: sempre visível (tem reações e comentário para todos)
   const foot = document.getElementById('oa-v-foot');
@@ -21639,6 +21806,10 @@ export default {
         <div style="flex:1"></div>
         <button class="oa-v-del" id="oa-v-del-btn" onclick="oaDeleteCurrent()" style="display:none;">&#128465; Excluir</button>
       </div>
+      <!-- CTA de negócio (aparece só em stories de loja/serviço) -->
+      <button class="oa-v-cta-btn buy" id="oa-v-cta-buy"  onclick="oaCtaAction('buy')">🛒 COMPRAR AGORA</button>
+      <button class="oa-v-cta-btn book" id="oa-v-cta-book" onclick="oaCtaAction('book')">📅 AGENDE AQUI</button>
+
       <!-- Reações -->
       <div class="oa-v-reactions" id="oa-v-reactions">
         <button class="oa-v-reaction-btn" data-r="❤️"  data-count="0" onclick="oaReact('❤️',this)">❤️</button>
