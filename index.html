@@ -26,6 +26,178 @@ body{font-family:'Space Mono',monospace;background:var(--bg-deep);color:var(--te
 img{max-width:100%;}
 a{text-decoration:none;}
 
+
+/* ── MUSIC PICKER — EuAqui ─────────────────────────────── */
+#music-picker-overlay{
+  position:fixed;inset:0;
+  background:rgba(0,0,0,.88);
+  backdrop-filter:blur(12px);
+  z-index:9999;
+  display:none;
+  align-items:flex-end;
+  justify-content:center;
+  padding:0;
+}
+#music-picker-overlay.on{ display:flex; }
+#music-picker-box{
+  width:100%;
+  max-width:560px;
+  background:var(--bg-card);
+  border:1px solid var(--border-glow);
+  border-radius:20px 20px 0 0;
+  padding:20px;
+  max-height:80vh;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  box-shadow:0 -8px 40px rgba(0,255,204,.12);
+}
+.music-picker-title{
+  font-family:'Silkscreen',monospace;
+  font-size:13px;
+  color:var(--neon-cyan);
+  letter-spacing:1px;
+  display:flex;align-items:center;gap:8px;
+}
+.music-search-row{
+  display:flex;gap:8px;
+}
+.music-search-input{
+  flex:1;
+  background:rgba(255,255,255,.05);
+  border:1px solid var(--border-glow);
+  border-radius:20px;
+  padding:9px 16px;
+  color:var(--text-light);
+  font-family:'Space Mono',monospace;
+  font-size:12px;
+  outline:none;
+}
+.music-search-input:focus{ border-color:var(--neon-cyan); }
+.music-search-btn{
+  background:linear-gradient(135deg,var(--neon-cyan),var(--neon-purple));
+  border:none;border-radius:20px;
+  padding:9px 18px;
+  color:#fff;
+  font-family:'Silkscreen',monospace;
+  font-size:10px;
+  cursor:pointer;
+  white-space:nowrap;
+}
+.music-results{
+  flex:1;
+  overflow-y:auto;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  min-height:0;
+}
+.music-result-item{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px;
+  border-radius:10px;
+  border:1px solid rgba(255,255,255,.06);
+  cursor:pointer;
+  transition:all .15s;
+  background:rgba(255,255,255,.02);
+}
+.music-result-item:hover{
+  background:rgba(0,255,204,.06);
+  border-color:rgba(0,255,204,.25);
+}
+.music-result-item.selected{
+  background:rgba(0,255,204,.12);
+  border-color:var(--neon-cyan);
+}
+.music-capa{
+  width:46px;height:46px;
+  border-radius:8px;
+  object-fit:cover;
+  flex-shrink:0;
+  background:rgba(255,255,255,.05);
+}
+.music-info{ flex:1;min-width:0; }
+.music-titulo{
+  font-family:'Silkscreen',monospace;
+  font-size:10px;
+  color:var(--text-light);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.music-artista{
+  font-size:10px;
+  color:var(--neon-cyan);
+  margin-top:2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.music-play-mini{
+  width:32px;height:32px;
+  border-radius:50%;
+  background:rgba(0,255,204,.15);
+  border:1px solid rgba(0,255,204,.3);
+  color:var(--neon-cyan);
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;
+  cursor:pointer;
+  flex-shrink:0;
+}
+/* Pill de música selecionada no composer */
+.music-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  background:rgba(0,255,204,.08);
+  border:1px solid var(--neon-cyan);
+  border-radius:20px;
+  padding:4px 10px 4px 6px;
+  font-family:'Space Mono',monospace;
+  font-size:10px;
+  color:var(--neon-cyan);
+  margin-top:6px;
+  cursor:pointer;
+  max-width:100%;
+  overflow:hidden;
+}
+.music-pill img{
+  width:22px;height:22px;border-radius:4px;object-fit:cover;flex-shrink:0;
+}
+.music-pill-name{
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;
+}
+.music-pill-rm{
+  color:var(--neon-pink);font-size:14px;flex-shrink:0;
+}
+/* Player inline no post */
+.post-music-bar{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  background:rgba(0,255,204,.06);
+  border:1px solid rgba(0,255,204,.2);
+  border-radius:10px;
+  padding:8px 12px;
+  margin-top:6px;
+}
+.post-music-capa{
+  width:36px;height:36px;border-radius:6px;object-fit:cover;flex-shrink:0;
+}
+.post-music-info{flex:1;min-width:0;}
+.post-music-titulo{
+  font-family:'Silkscreen',monospace;font-size:9px;
+  color:var(--neon-cyan);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.post-music-artista{font-size:9px;color:var(--text-muted);margin-top:1px;}
+.post-music-play{
+  width:30px;height:30px;border-radius:50%;
+  background:linear-gradient(135deg,var(--neon-cyan),var(--neon-purple));
+  border:none;color:#fff;font-size:12px;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;transition:transform .15s;
+}
+.post-music-play:hover{transform:scale(1.1);}
+
 /* LOADING */
 #loading-screen{position:fixed;inset:0;background:var(--bg-deep);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;transition:opacity .4s;}
 .boot-logo{font-family:'VT323',monospace;font-size:80px;color:var(--neon-cyan);text-shadow:0 0 20px var(--neon-cyan),0 0 40px rgba(0,255,204,.5);}
@@ -4567,8 +4739,11 @@ body.day-mode::before{
             <button class="tbtn" onclick="trigUpload('video/*')">🎬 Vídeo</button>
             <button class="tbtn" onclick="openEmoji()">😊 Emoji</button>
             <button class="tbtn" onclick="openCapsModal()">⏳ Cápsula</button>
+            <button class="tbtn" id="music-picker-btn" onclick="openMusicPicker('post')" style="color:var(--neon-pink);">🎵 Música</button>
             <button class="post-btn" id="post-submit-btn" onclick="createPost()">POSTAR ▶</button><span style="font-size:9px;color:var(--text-muted);margin-left:6px;" title="Conteúdo moderado pela IA">🛡 IA</span>
           </div>
+          <!-- Pill de música selecionada -->
+          <div id="post-music-pill-wrap" style="display:none;"></div>
           <input type="file" id="media-input" accept="image/*,video/*" multiple style="display:none;" onchange="handleMedia(this)">
         </div>
         <div class="ftabs">
@@ -6628,6 +6803,7 @@ function renderPost(post,rxCounts={},myRx='',_origPostMap){
     }
     ${repostCardHtml}
     ${mediaHtml}
+    ${post.music_data ? renderMusicBar(post.music_data) : ''}
     <div class="preactions">${rxHtml}</div>
     ${(()=>{
       const hasVid = mediaTyps.some(t=>t==='video') || mediaUrls.some(u=>u&&u.match(/\.mp4$|\.webm$|\.mov$|\.ogg$/i));
@@ -8437,13 +8613,27 @@ async function createPost(){
   }
   btn.innerHTML = ''; btn.textContent = '⏳ Publicando...';
   // Monta payload — colunas garantidas pelo SQL de migração
+  // Processa música selecionada (se houver)
+  let _musicData = null;
+  if(window._musicAttached){
+    try{
+      showToast('⏳ Processando música...','success');
+      _musicData = await _ensureMusicCatalog(window._musicAttached);
+      // Muta vídeo se solicitado
+      if(window._musicMuteVideo && _musicData){
+        _musicData._muteVideo = true;
+      }
+    }catch(e){ console.warn('[music] catalog error:', e); }
+  }
+
   const payload={
     user_id: CU.id,
     content: content||null,
     type: mediaFiles.length ? (mediaFiles.some((_,i)=>mediaTypes[i]==='video') ? 'video' : 'image') : 'text',
     visibility: postVisibility||'public',
     media_urls: urls.length ? urls : [],
-    media_types: mTypes.length ? mTypes : []
+    media_types: mTypes.length ? mTypes : [],
+    music_data: _musicData ? JSON.stringify(_musicData) : null
   };
   const{data:postData,error}=await db.from('posts').insert(payload).select().maybeSingle();
   if(error){
@@ -8461,6 +8651,9 @@ async function createPost(){
   }
   document.getElementById('post-txt').value='';document.getElementById('c-char').textContent='0 / 500';
   mediaFiles=[];mediaTypes=[];
+  // Limpa música selecionada
+  window._musicAttached = null; window._musicMuteVideo = false;
+  _clearMusicPill('post');
   const mp=document.getElementById('media-prev');mp.style.display='none';mp.innerHTML='';
   cachedPostIds.clear(); cachedPosts = {}; window._feedPageCache = {};
   showToast('Post publicado! ✨','success');
@@ -21133,8 +21326,15 @@ async function oaPublish(){
 
     // 2) Grava metadados no Supabase
     const expiresAt = new Date(Date.now() + OA_TTL_HOURS*3600*1000).toISOString();
+    // Processa música do story (se houver)
+    let _oaMusicData = null;
+    if(window._musicAttached){
+      try{ _oaMusicData = await _ensureMusicCatalog(window._musicAttached); }catch(e){}
+    }
+
     // Monta payload — inclui metadata de negócio se vier de divulgação
     const _oaPayload = { user_id: CU.id, media_url: publicUrl, media_type: _oaPickedType, expires_at: expiresAt };
+    if(_oaMusicData) _oaPayload.music_data = JSON.stringify(_oaMusicData);
     if(window._oaPublishIsBiz && window._oaBizContext){
       _oaPayload.metadata = {
         type: 'business',
@@ -21152,9 +21352,11 @@ async function oaPublish(){
 
     showToast('✅ Olha Aqui publicado! Expira em 24h.','success');
     oaCloseCreate();
-    // Reset flags de negócio
+    // Reset flags de negócio e música
     window._oaPublishIsBiz = false;
     window._oaBizContext = null;
+    window._musicAttached = null; window._musicMuteVideo = false;
+    _clearMusicPill('story');
     _oaPickedFile = null; _oaPickedType = null;
     await oaLoadRail();
 
@@ -21194,6 +21396,8 @@ function oaCloseViewer(){
   oaViewer.open = false;
   _oaStopFloatLoop();
   _oaStopTimer();
+  // Para música do story
+  if(oaViewer._storyMusicPlayer){ oaViewer._storyMusicPlayer.pause(); oaViewer._storyMusicPlayer = null; }
   _oaCleanupMedia();
   _oaStopFloatLoop();
   document.getElementById('oa-viewer').classList.remove('on');
@@ -21354,6 +21558,30 @@ function oaRenderItem(){
     };
     img.onerror = ()=>{ load.innerHTML = '<div>⚠ FALHA AO CARREGAR</div>'; setTimeout(oaNext, 1500); };
     img.src = it.media_url;
+  }
+
+  // Toca música do story (se houver)
+  if(it.music_data){
+    try{
+      const _sm = typeof it.music_data==='string' ? JSON.parse(it.music_data) : it.music_data;
+      const _src = _sm?.url_audio_opus || _sm?.audio_mp3 || '';
+      if(_src && !oaViewer._storyMusicPlayer){
+        oaViewer._storyMusicPlayer = new Audio(_src);
+        oaViewer._storyMusicPlayer.loop = true;
+        oaViewer._storyMusicPlayer.volume = 0.7;
+      } else if(_src && oaViewer._storyMusicPlayer){
+        oaViewer._storyMusicPlayer.src = _src;
+      }
+      if(oaViewer._storyMusicPlayer && _src){
+        oaViewer._storyMusicPlayer.play().catch(()=>{});
+      }
+      // Mostra mini player no head do viewer
+      const _mname = document.getElementById('oa-v-time');
+      if(_mname) _mname.innerHTML = `🎵 ${_oaEscape(_sm.titulo||'')} <span style="color:var(--text-muted);">· ${_oaTimeAgo(it.created_at)}</span>`;
+    }catch(e){}
+  } else {
+    // Para música se story não tem
+    if(oaViewer._storyMusicPlayer){ oaViewer._storyMusicPlayer.pause(); }
   }
 
   // Pré-carrega a próxima mídia (UX mais suave)
@@ -21738,6 +21966,362 @@ function oaBoot(){
 
 // Expõe para que outras partes do seu app possam chamar quando o user logar
 window.oaBoot = oaBoot;
+
+// ═══════════════════════════════════════════════════════════════════════
+// MUSIC SYSTEM — EuAqui (Jamendo API + Supabase catalog + R2)
+// ═══════════════════════════════════════════════════════════════════════
+
+const JAMENDO_ID = 'a206574a';
+const JAMENDO_API = 'https://api.jamendo.com/v3.0';
+const MUSIC_CATALOG_TABLE = 'musicas_catalog';
+
+let _musicPickerCtx  = null;  // 'post' | 'story' | 'comm'
+let _musicSelected   = null;  // objeto da música selecionada
+let _musicPreviewPid = null;  // track em preview
+
+// ── Abre o picker ───────────────────────────────────────────────────
+function openMusicPicker(ctx) {
+  _musicPickerCtx = ctx || 'post';
+  _musicSelected  = window._musicAttached || null;
+
+  // Mostra opção de mudo se contexto tem vídeo
+  const hasvid = (ctx === 'post' && mediaFiles.some((_,i) => mediaTypes[i]==='video'))
+               || ctx === 'story';
+  const muteOpt = document.getElementById('music-mute-option');
+  if(muteOpt) muteOpt.style.display = hasvid ? 'flex' : 'none';
+
+  // Mostra preview se já tem música
+  if(_musicSelected) _renderSelectedPreview(_musicSelected);
+
+  document.getElementById('music-search-input').value = '';
+  document.getElementById('music-results').innerHTML =
+    '<div style="text-align:center;padding:30px;color:var(--text-muted);font-family:VT323,monospace;font-size:18px;">🎵 Digite para buscar músicas</div>';
+  document.getElementById('music-picker-overlay').classList.add('on');
+}
+window.openMusicPicker = openMusicPicker;
+
+function closeMusicPicker() {
+  document.getElementById('music-picker-overlay').classList.remove('on');
+  _stopMusicPreview();
+}
+window.closeMusicPicker = closeMusicPicker;
+
+// ── Busca na Jamendo ──────────────────────────────────────────────────
+async function searchMusic() {
+  const q = document.getElementById('music-search-input').value.trim();
+  if(!q) return;
+  const resultsEl = document.getElementById('music-results');
+  resultsEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--neon-cyan);font-family:VT323,monospace;font-size:16px;">⟳ Buscando...</div>';
+
+  try {
+    const url = `${JAMENDO_API}/tracks/?client_id=${JAMENDO_ID}&search=${encodeURIComponent(q)}&limit=20&format=json&include=musicinfo&imagesize=100&audioformat=mp32`;
+    const res  = await fetch(url);
+    const json = await res.json();
+    const tracks = json.results || [];
+
+    if(!tracks.length) {
+      resultsEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">Nenhuma música encontrada</div>';
+      return;
+    }
+
+    resultsEl.innerHTML = '';
+    tracks.forEach(t => {
+      const item = document.createElement('div');
+      item.className = 'music-result-item';
+      if(_musicSelected?.external_id === String(t.id)) item.classList.add('selected');
+      item.innerHTML = `
+        <img class="music-capa" src="${t.image || ''}" alt="" onerror="this.src='data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1 1\"><rect fill=\"%230a0a2a\"/></svg>'">
+        <div class="music-info">
+          <div class="music-titulo">${xss(t.name)}</div>
+          <div class="music-artista">${xss(t.artist_name)}</div>
+        </div>
+        <button class="music-play-mini" title="Preview" onclick="event.stopPropagation();toggleMusicPreview('${t.audio}','${t.id}',this)">▶</button>`;
+      item.onclick = () => selectMusic(t, item);
+      resultsEl.appendChild(item);
+    });
+  } catch(e) {
+    resultsEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--neon-pink);">Erro ao buscar. Verifique a conexão.</div>';
+    console.error('[music]', e);
+  }
+}
+window.searchMusic = searchMusic;
+
+// ── Preview de áudio ───────────────────────────────────────────────
+function toggleMusicPreview(audioUrl, trackId, btn) {
+  const player = document.getElementById('music-preview-player');
+  if(_musicPreviewPid === trackId) {
+    player.pause(); _musicPreviewPid = null;
+    document.querySelectorAll('.music-play-mini').forEach(b => b.textContent = '▶');
+    return;
+  }
+  _stopMusicPreview();
+  player.src = audioUrl;
+  player.play().catch(()=>{});
+  _musicPreviewPid = trackId;
+  btn.textContent = '⏸';
+  player.onended = () => { btn.textContent = '▶'; _musicPreviewPid = null; };
+}
+function _stopMusicPreview() {
+  const p = document.getElementById('music-preview-player');
+  if(p) { p.pause(); p.src = ''; }
+  _musicPreviewPid = null;
+  document.querySelectorAll('.music-play-mini').forEach(b => b.textContent = '▶');
+}
+window.toggleMusicPreview = toggleMusicPreview;
+
+// ── Seleciona música ───────────────────────────────────────────────
+function selectMusic(track, itemEl) {
+  document.querySelectorAll('.music-result-item').forEach(el => el.classList.remove('selected'));
+  itemEl.classList.add('selected');
+  _musicSelected = {
+    external_id: String(track.id),
+    titulo:      track.name,
+    artista:     track.artist_name,
+    audio_mp3:   track.audio,
+    capa_url:    track.image || '',
+  };
+  _renderSelectedPreview(_musicSelected);
+}
+function _renderSelectedPreview(m) {
+  const el = document.getElementById('music-selected-preview');
+  const info = document.getElementById('music-selected-info');
+  if(el && info) {
+    info.innerHTML = `<b>${xss(m.titulo)}</b> — ${xss(m.artista)}`;
+    el.style.display = 'block';
+  }
+}
+
+// ── Confirma a escolha ─────────────────────────────────────────────
+function confirmMusicPicker() {
+  if(!_musicSelected) { showToast('Selecione uma música','error'); return; }
+  _stopMusicPreview();
+  window._musicAttached   = _musicSelected;
+  window._musicMuteVideo  = document.getElementById('music-mute-video')?.checked || false;
+  _renderMusicPill(_musicPickerCtx, _musicSelected);
+  closeMusicPicker();
+  showToast('🎵 Música adicionada!','success');
+}
+window.confirmMusicPicker = confirmMusicPicker;
+
+function removeMusicPicker() {
+  window._musicAttached = null;
+  window._musicMuteVideo = false;
+  _clearMusicPill(_musicPickerCtx || 'post');
+  closeMusicPicker();
+}
+window.removeMusicPicker = removeMusicPicker;
+
+// ── Pill visual no composer / story ───────────────────────────────
+function _renderMusicPill(ctx, m) {
+  const wrapId = ctx === 'story' ? 'oa-music-pill-wrap' : 'post-music-pill-wrap';
+  const wrap = document.getElementById(wrapId);
+  if(!wrap) return;
+  wrap.style.display = 'block';
+  wrap.innerHTML = `
+    <div class="music-pill" onclick="openMusicPicker('${ctx}')">
+      <img src="${m.capa_url}" alt="">
+      <span class="music-pill-name">🎵 ${xss(m.titulo)} — ${xss(m.artista)}</span>
+      <span class="music-pill-rm" onclick="event.stopPropagation();removeMusicPill('${ctx}')">✕</span>
+    </div>`;
+}
+function _clearMusicPill(ctx) {
+  const wrapId = ctx === 'story' ? 'oa-music-pill-wrap' : 'post-music-pill-wrap';
+  const wrap = document.getElementById(wrapId);
+  if(wrap) { wrap.style.display = 'none'; wrap.innerHTML = ''; }
+}
+function removeMusicPill(ctx) {
+  window._musicAttached = null;
+  window._musicMuteVideo = false;
+  _clearMusicPill(ctx);
+}
+window.removeMusicPill = removeMusicPill;
+
+// ── Converte MP3 → WebM/Opus no browser via Web Audio API ──────────
+// Reduz ~5-10MB para ~300-600KB (96kbps opus)
+async function _convertMp3ToOpus(mp3Url, onProgress) {
+  // 1) Baixa o MP3 via proxy para evitar CORS
+  // Usa o Worker Cloudflare existente como proxy CORS (rota /music-proxy)
+  const proxyUrl = R2_BACKEND_URL + '/music-proxy?url=' + encodeURIComponent(mp3Url);
+  let arrayBuf;
+  try {
+    const res = await fetch(proxyUrl);
+    if(!res.ok) throw new Error('proxy ' + res.status);
+    arrayBuf = await res.arrayBuffer();
+  } catch(e) {
+    // Fallback: tenta direto (Jamendo tem CORS em alguns casos)
+    console.warn('[music] proxy failed, tentando direto:', e.message);
+    const res2 = await fetch(mp3Url);
+    arrayBuf = await res2.arrayBuffer();
+  }
+  if(onProgress) onProgress(0.2);
+
+  // 2) Decodifica MP3 com AudioContext
+  const actx = new (window.AudioContext || window.webkitAudioContext)();
+  const decoded = await actx.decodeAudioData(arrayBuf);
+  if(onProgress) onProgress(0.4);
+
+  // 3) Re-codifica para WebM/Opus via MediaRecorder
+  const dest = actx.createMediaStreamDestination();
+  const src  = actx.createBufferSource();
+  src.buffer = decoded;
+  src.connect(dest);
+
+  // Verifica suporte Opus
+  const opusMime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+    ? 'audio/webm;codecs=opus'
+    : (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : null);
+
+  if(!opusMime) {
+    // Browser não suporta gravação Opus — retorna MP3 original
+    await actx.close();
+    return new File([arrayBuf], 'audio.mp3', { type:'audio/mpeg' });
+  }
+
+  const chunks = [];
+  const rec = new MediaRecorder(dest.stream, {
+    mimeType: opusMime,
+    audioBitsPerSecond: 96_000 // 96kbps — boa qualidade, ~1/5 do MP3 padrão
+  });
+  rec.ondataavailable = e => { if(e.data.size) chunks.push(e.data); };
+
+  const blob = await new Promise((resolve, reject) => {
+    rec.onstop = () => resolve(new Blob(chunks, { type: opusMime }));
+    rec.onerror = reject;
+    rec.start(500);
+    src.start(0);
+    src.onended = () => { try{ rec.stop(); }catch(_){} };
+    // Segurança: para após duração + 5s
+    setTimeout(() => { try{ rec.stop(); src.stop(); }catch(_){} }, (decoded.duration + 5) * 1000);
+  });
+
+  await actx.close();
+  if(onProgress) onProgress(0.85);
+
+  const ext = opusMime.includes('opus') ? '.opus' : '.webm';
+  const outFile = new File([blob], 'audio' + ext, { type: opusMime });
+  console.log(`[music] MP3 ${(arrayBuf.byteLength/1024).toFixed(0)}KB → Opus ${(outFile.size/1024).toFixed(0)}KB (${Math.round(outFile.size/arrayBuf.byteLength*100)}%)`);
+  return outFile;
+}
+
+// ── Converte capa JPG → WebP no browser ──────────────────────────
+async function _convertCapaToWebp(capaUrl) {
+  if(!capaUrl) return capaUrl;
+  try {
+    const img = await new Promise((res, rej) => {
+      const i = new Image(); i.crossOrigin = 'anonymous';
+      i.onload = () => res(i); i.onerror = rej;
+      i.src = capaUrl;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = 200; canvas.height = 200; // thumbnail pequeno
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, 200, 200);
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/webp', 0.75));
+    return blob; // retorna Blob para upload
+  } catch(e) {
+    console.warn('[music] capa conversion failed:', e.message);
+    return null;
+  }
+}
+
+// ── Obtém ou cria o registro no catálogo com conversão no browser ──
+async function _ensureMusicCatalog(m, onProgress) {
+  // 1) Verifica se já existe no catálogo (cache = zero processamento)
+  const { data: existing } = await db.from(MUSIC_CATALOG_TABLE)
+    .select('*').eq('external_id', m.external_id).maybeSingle();
+  if(existing?.url_audio_opus) return existing;
+
+  if(onProgress) onProgress(0.05);
+  showToast('🎵 Otimizando música... aguarde', 'success');
+
+  let urlAudio = m.audio_mp3;
+  let urlCapa  = m.capa_url;
+
+  // 2) Converte áudio MP3 → Opus no browser
+  try {
+    const opusFile = await _convertMp3ToOpus(m.audio_mp3, onProgress);
+
+    // 3) Sobe o Opus para R2 usando o pipeline existente
+    window._oaUploadContext = 'musicas_catalog';
+    const uploadedAudioUrl = await uploadWithPipeline(opusFile, 'audio', ()=>{});
+    window._oaUploadContext = null;
+    urlAudio = uploadedAudioUrl;
+    if(onProgress) onProgress(0.9);
+  } catch(e) {
+    console.warn('[music] áudio conversion/upload failed, usando MP3 direto:', e.message);
+    window._oaUploadContext = null;
+  }
+
+  // 4) Converte e sobe a capa
+  try {
+    const capaBlob = await _convertCapaToWebp(m.capa_url);
+    if(capaBlob) {
+      const capaFile = new File([capaBlob], 'capa.webp', { type:'image/webp' });
+      window._oaUploadContext = 'musicas_catalog';
+      urlCapa = await uploadWithPipeline(capaFile, 'image', ()=>{});
+      window._oaUploadContext = null;
+    }
+  } catch(e) {
+    console.warn('[music] capa upload failed:', e.message);
+    window._oaUploadContext = null;
+  }
+
+  // 5) Registra no Supabase
+  const record = {
+    external_id:    m.external_id,
+    titulo:         m.titulo,
+    artista:        m.artista,
+    url_audio_opus: urlAudio,
+    url_capa_webp:  urlCapa
+  };
+  const { data: saved } = await db.from(MUSIC_CATALOG_TABLE)
+    .upsert(record, { onConflict:'external_id', ignoreDuplicates:false })
+    .select().maybeSingle();
+
+  if(onProgress) onProgress(1);
+  return saved || record;
+}
+
+// ── Renderiza player inline no post ──────────────────────────────
+function renderMusicBar(musicData) {
+  if(!musicData) return '';
+  const m = typeof musicData === 'string' ? JSON.parse(musicData) : musicData;
+  if(!m?.url_audio_opus && !m?.audio_mp3) return '';
+  const audioSrc = m.url_audio_opus || m.audio_mp3 || '';
+  const capa     = m.url_capa_webp  || m.capa_url  || '';
+  const uid = 'pmb-' + Math.random().toString(36).slice(2,8);
+  return `
+    <div class="post-music-bar">
+      ${capa ? `<img class="post-music-capa" src="${capa}" alt="">` : ''}
+      <div class="post-music-info">
+        <div class="post-music-titulo">🎵 ${xss(m.titulo||'Música')}</div>
+        <div class="post-music-artista">${xss(m.artista||'')}</div>
+      </div>
+      <button class="post-music-play" id="${uid}" onclick="_togglePostMusic('${audioSrc}','${uid}',this)">▶</button>
+    </div>`;
+}
+window.renderMusicBar = renderMusicBar;
+
+// Player global para posts (um de cada vez)
+let _postMusicPlayer = null;
+let _postMusicBtnId  = null;
+function _togglePostMusic(src, uid, btn) {
+  if(!_postMusicPlayer) _postMusicPlayer = new Audio();
+  if(_postMusicBtnId && _postMusicBtnId !== uid) {
+    _postMusicPlayer.pause();
+    const oldBtn = document.getElementById(_postMusicBtnId);
+    if(oldBtn) oldBtn.textContent = '▶';
+  }
+  if(_postMusicBtnId === uid && !_postMusicPlayer.paused) {
+    _postMusicPlayer.pause(); btn.textContent = '▶'; _postMusicBtnId = null; return;
+  }
+  _postMusicPlayer.src = src;
+  _postMusicPlayer.play().catch(()=>{});
+  btn.textContent = '⏸'; _postMusicBtnId = uid;
+  _postMusicPlayer.onended = () => { btn.textContent = '▶'; _postMusicBtnId = null; };
+}
+window._togglePostMusic = _togglePostMusic;
+
 window.oaLoadRail = oaLoadRail;
 
 // Chama após DOM pronto
@@ -21998,8 +22582,10 @@ export default {
     <div class="oa-c-actions" id="oa-c-actions">
       <button class="oa-c-btn" onclick="oaPickMedia('image/*')">&#128247; Escolher Foto</button>
       <button class="oa-c-btn sec" onclick="oaPickMedia('video/*')">&#127916; Escolher Video (max 30s)</button>
+      <button class="oa-c-btn" onclick="openMusicPicker('story')" style="background:linear-gradient(135deg,rgba(255,51,102,.2),rgba(191,95,255,.2));border-color:var(--neon-pink);">&#127925; Adicionar Música</button>
       <button class="oa-c-btn cancel" onclick="oaCloseCreate()">Cancelar</button>
     </div>
+    <div id="oa-music-pill-wrap" style="display:none;margin-top:6px;"></div>
     <div class="oa-c-actions" id="oa-c-confirm" style="display:none;">
       <button class="oa-c-btn" id="oa-c-publish" onclick="oaPublish()">&#128640; PUBLICAR</button>
       <button class="oa-c-btn cancel" onclick="oaResetCreate()">&#8617; Trocar midia</button>
@@ -22007,6 +22593,42 @@ export default {
     <input type="file" id="oa-c-file" accept="image/*,video/*" style="display:none;" onchange="oaOnFilePicked(this)">
   </div>
 </div>
+
+
+<!-- ══ MUSIC PICKER MODAL ══════════════════════════════════ -->
+<div id="music-picker-overlay" onclick="if(event.target===this)closeMusicPicker()">
+  <div id="music-picker-box">
+    <div class="music-picker-title">
+      🎵 Escolher Música
+      <button onclick="closeMusicPicker()" style="margin-left:auto;background:none;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;">✕</button>
+    </div>
+    <div class="music-search-row">
+      <input class="music-search-input" id="music-search-input" placeholder="Buscar música ou artista..." onkeydown="if(event.key==='Enter')searchMusic()">
+      <button class="music-search-btn" onclick="searchMusic()">🔍 Buscar</button>
+    </div>
+    <!-- Opção de mudo para vídeo -->
+    <div id="music-mute-option" style="display:none;align-items:center;gap:8px;padding:6px 10px;background:rgba(255,204,0,.06);border:1px solid rgba(255,204,0,.2);border-radius:10px;">
+      <span style="font-size:11px;color:var(--neon-yellow);font-family:'Space Mono',monospace;">🎬 Silenciar áudio do vídeo original?</span>
+      <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:11px;color:var(--text-light);">
+        <input type="checkbox" id="music-mute-video" style="accent-color:var(--neon-cyan);"> Sim
+      </label>
+    </div>
+    <div class="music-results" id="music-results">
+      <div style="text-align:center;padding:30px;color:var(--text-muted);font-family:'VT323',monospace;font-size:18px;">🎵 Digite para buscar músicas</div>
+    </div>
+    <div id="music-selected-preview" style="display:none;padding:10px;background:rgba(0,255,204,.06);border:1px solid var(--neon-cyan);border-radius:10px;">
+      <div style="font-family:'Silkscreen',monospace;font-size:9px;color:var(--neon-cyan);margin-bottom:6px;">✅ SELECIONADA</div>
+      <div id="music-selected-info" style="font-size:11px;color:var(--text-light);"></div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button onclick="confirmMusicPicker()" style="flex:1;background:linear-gradient(135deg,var(--neon-cyan),var(--neon-purple));border:none;border-radius:10px;padding:12px;color:#fff;font-family:'Silkscreen',monospace;font-size:11px;cursor:pointer;">✅ CONFIRMAR</button>
+      <button onclick="removeMusicPicker()" style="background:rgba(255,51,102,.1);border:1px solid var(--neon-pink);border-radius:10px;padding:12px 16px;color:var(--neon-pink);font-family:'Silkscreen',monospace;font-size:11px;cursor:pointer;">🗑 Remover</button>
+    </div>
+  </div>
+</div>
+
+<!-- Player de preview oculto -->
+<audio id="music-preview-player" style="display:none;" preload="none"></audio>
 
 </body>
 </html>
