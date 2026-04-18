@@ -4192,7 +4192,7 @@ body.day-mode::before{
 <nav id="main-nav">
   <!-- Row 1: Logo + main nav + search/avatar -->
   <div class="nav-main-row">
-    <div class="nav-logo" onclick="nav('home');cachedPostIds.clear();cachedPosts={};loadFeed(true);">Eu<span>Aqui</span></div>
+    <div class="nav-logo" onclick="nav('home');cachedPostIds.clear();cachedPosts={};window._feedPageCache={};window.scrollTo({top:0,behavior:'instant'});loadFeed(true);">Eu<span>Aqui</span></div>
     <div class="nav-center">
       <button class="nbtn active" id="nb-home" onclick="nav('home')">🏠 Feed</button>
       <button class="nbtn" id="nb-explore" onclick="nav('explore')">🔍 Explorar</button>
@@ -6087,10 +6087,11 @@ async function loadFeed(force=false){
   // Atualiza indicador de fim
   if(feedEnd){
     if(feedHasMore){
-      feedEnd.style.display='none';
+      feedEnd.style.display='block';
+      feedEnd.innerHTML='<span style="font-family:Space Mono,monospace;font-size:10px;color:var(--text-muted);opacity:.5;">↓ role para ver mais</span>';
     } else {
       feedEnd.style.display='block';
-      feedEnd.textContent='— FIM DO FEED —';
+      feedEnd.innerHTML='<span style="font-family:VT323,monospace;font-size:16px;color:var(--text-muted);">— FIM DO FEED —</span>';
     }
   }
 
@@ -6109,13 +6110,13 @@ function _initInfiniteScroll(){
   feedScrollObserver = new IntersectionObserver((entries)=>{
     entries.forEach(e=>{
       if(e.isIntersecting && feedHasMore && !feedLoading){
+        // Mostra indicador de carregando
+        sentinel.innerHTML = '<span style="font-family:VT323,monospace;font-size:16px;color:var(--neon-cyan);animation:oa-dot-blink 0.8s step-start infinite;">⟳</span> <span style="font-family:Space Mono,monospace;font-size:11px;color:var(--text-muted);">carregando mais 10...</span>';
+        sentinel.style.display='block';
         loadFeed(false);
       }
     });
-  }, { rootMargin: '400px 0px' }); // pré-carrega antes de chegar no fim
-  // Precisa estar visível para ser observado — garante display:block quando há mais
-  sentinel.style.display='block';
-  sentinel.textContent='⟳ carregando mais...';
+  }, { rootMargin: '200px 0px', threshold: 0 }); // dispara 200px antes do fim
   feedScrollObserver.observe(sentinel);
 }
 
@@ -21051,9 +21052,13 @@ if(document.readyState === 'loading'){
 // Também recarrega quando o usuário loga (bate numa eventual função existente)
 // Se você tiver um ponto central pós-login, chame oaLoadRail() lá também.
 if(typeof db !== 'undefined' && db?.auth?.onAuthStateChange){
-  db.auth.onAuthStateChange((event, session)=>{
+  db.auth.onAuthStateChange(async(event, session)=>{
     if(event === 'SIGNED_IN' || event === 'INITIAL_SESSION'){
-      setTimeout(()=>{ if(document.getElementById('oa-rail')) oaLoadRail(); }, 600);
+      // Aguarda CP (perfil real) estar carregado antes de renderizar o rail
+      // para que a foto real do usuário apareça imediatamente, sem piscar
+      let waited = 0;
+      while(!window.CP && waited < 3000){ await new Promise(r=>setTimeout(r,100)); waited+=100; }
+      if(document.getElementById('oa-rail')) oaLoadRail();
     }
   });
 }
