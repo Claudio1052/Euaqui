@@ -4011,20 +4011,20 @@ body.day-mode::before{
 .oa-v-foot{
   position:absolute;
   bottom:0; left:0; right:0;
-  display:flex; flex-direction:column; gap:8px;
-  z-index:3;
-  background:linear-gradient(0deg, rgba(0,0,0,.75) 0%, rgba(0,0,0,.40) 60%, transparent 100%);
-  padding:24px 14px 18px;
+  display:flex; flex-direction:column; gap:6px;
+  z-index:7; /* acima da float-layer (z-index:6) para botões serem clicáveis */
+  background:transparent; /* sem camada escura — mídia totalmente visível */
+  padding:8px 14px 14px;
 }
 .oa-v-reactions{
   display:flex; align-items:center; gap:6px;
   flex-wrap:nowrap; overflow-x:auto;
 }
 .oa-v-reaction-btn{
-  width:44px; height:44px;
+  width:46px; height:46px;
   border-radius:50%;
-  background:rgba(255,255,255,.10);
-  border:1.5px solid rgba(255,255,255,.20);
+  background:rgba(0,0,0,.40);
+  border:1.5px solid rgba(255,255,255,.25);
   font-size:22px;
   cursor:pointer;
   display:flex; align-items:center; justify-content:center;
@@ -4032,7 +4032,7 @@ body.day-mode::before{
   gap:1px;
   transition:all .15s;
   flex-shrink:0;
-  backdrop-filter:blur(6px);
+  backdrop-filter:blur(8px);
   position:relative;
 }
 .oa-v-reaction-btn:hover{ transform:scale(1.12) translateY(-2px); border-color:var(--neon-cyan); }
@@ -4043,27 +4043,42 @@ body.day-mode::before{
   box-shadow:0 0 12px rgba(0,255,204,.4);
 }
 .oa-v-reaction-count{
-  font-size:9px;
+  display:none; /* quantidade oculta visualmente, contada internamente */
+}
+/* Badge flutuante no canto do botão quando há reações */
+.oa-v-reaction-btn[data-count]:not([data-count="0"])::after{
+  content: attr(data-count);
+  position:absolute;
+  top:-4px; right:-4px;
+  background:var(--neon-pink);
+  color:#fff;
   font-family:'Space Mono',monospace;
-  color:rgba(255,255,255,.85);
-  line-height:1;
+  font-size:8px;
+  font-weight:bold;
+  border-radius:10px;
+  padding:1px 4px;
+  min-width:14px;
+  text-align:center;
+  line-height:14px;
+  border:1px solid #000;
+  pointer-events:none;
 }
 .oa-v-comment-row{
   display:flex; align-items:center; gap:8px;
 }
 .oa-v-comment-input{
   flex:1;
-  background:rgba(255,255,255,.08);
-  border:1px solid rgba(255,255,255,.18);
+  background:rgba(0,0,0,.45);
+  border:1px solid rgba(255,255,255,.25);
   border-radius:20px;
   padding:8px 14px;
   color:#fff;
   font-family:'Space Mono',monospace;
   font-size:11px;
   outline:none;
-  backdrop-filter:blur(4px);
+  backdrop-filter:blur(8px);
 }
-.oa-v-comment-input::placeholder{ color:rgba(255,255,255,.4); }
+.oa-v-comment-input::placeholder{ color:rgba(255,255,255,.5); }
 .oa-v-comment-send{
   background:linear-gradient(135deg,var(--neon-cyan),var(--neon-pink));
   border:none;
@@ -4080,9 +4095,13 @@ body.day-mode::before{
 }
 .oa-v-views{
   font-family:'VT323',monospace;
-  font-size:14px;
-  color:rgba(255,255,255,.6);
+  font-size:13px;
+  color:rgba(255,255,255,.9);
   display:flex;align-items:center;gap:4px;
+  background:rgba(0,0,0,.35);
+  padding:3px 8px;
+  border-radius:20px;
+  backdrop-filter:blur(4px);
 }
 .oa-v-del{
   background:rgba(255,51,102,.15);
@@ -21117,18 +21136,30 @@ document.addEventListener('keydown', (e)=>{
 // VIEWS, REAÇÕES E COMENTÁRIO DO STORY
 // =========================================================================
 
-// Mapa emoji → id do contador no HTML
-const _OA_RC_IDS = {'❤️':'oarc-heart','👏':'oarc-clap','😂':'oarc-laugh','😢':'oarc-cry','🔥':'oarc-fire','😮':'oarc-wow'};
+// Mapa emoji → data-r do botão (usa data-count, sem span)
+const _OA_RC_IDS = {'❤️':'❤️','👍':'👍','👏':'👏','😂':'😂','😢':'😢','🔥':'🔥','😮':'😮'};
+
+// Atualiza badge (data-count) de todos os botões de reação
+function _oaUpdateReactionBadges(rxCount){
+  document.querySelectorAll('.oa-v-reaction-btn[data-r]').forEach(btn=>{
+    const em = btn.getAttribute('data-r');
+    const n  = rxCount[em] || 0;
+    btn.setAttribute('data-count', n > 99 ? '99+' : String(n));
+  });
+}
 
 // Registra view e carrega reações + contagem de views
 async function _oaLoadStoryMeta(storyId){
   if(!storyId) return;
 
-  // Zera contadores antes de carregar
-  Object.values(_OA_RC_IDS).forEach(id=>{
-    const el=document.getElementById(id); if(el) el.textContent='0';
+  // Para efeito flutuante anterior imediatamente
+  _oaStopFloatLoop();
+
+  // Zera badges e seleção antes de carregar novo story
+  document.querySelectorAll('.oa-v-reaction-btn[data-r]').forEach(b=>{
+    b.classList.remove('selected');
+    b.setAttribute('data-count','0');
   });
-  document.querySelectorAll('.oa-v-reaction-btn').forEach(b=>b.classList.remove('selected'));
   const vEl = document.getElementById('oa-v-views');
   if(vEl) vEl.innerHTML = '👁 ...';
 
@@ -21157,19 +21188,18 @@ async function _oaLoadStoryMeta(storyId){
       .eq('story_id', storyId);
     const rxCount = {};
     (rxData||[]).forEach(r=>{ rxCount[r.reaction]=(rxCount[r.reaction]||0)+1; });
-    Object.entries(_OA_RC_IDS).forEach(([emoji, elId])=>{
-      const el=document.getElementById(elId);
-      if(el) el.textContent = rxCount[emoji]||0;
-    });
+    _oaUpdateReactionBadges(rxCount);
 
-    // Marca a reação do usuário atual
+    // Marca a reação do usuário atual e inicia float loop se tiver reação
     if(CU){
       const { data: myRx } = await db.from('olha_aqui_reactions')
         .select('reaction').eq('story_id', storyId).eq('user_id', CU.id).maybeSingle();
       if(myRx?.reaction){
-        const myElId = _OA_RC_IDS[myRx.reaction];
         const myBtn = document.querySelector(`.oa-v-reaction-btn[data-r="${myRx.reaction}"]`);
-        if(myBtn) myBtn.classList.add('selected');
+        if(myBtn){
+          myBtn.classList.add('selected');
+          _oaStartFloatLoop(myRx.reaction); // retoma o efeito da reação existente
+        }
       }
     }
   }catch(e){}
@@ -21227,15 +21257,12 @@ async function oaReact(emoji, btn){
       // Dispara emojis subindo continuamente
       _oaStartFloatLoop(emoji);
     }
-    // Atualiza contagens
+    // Atualiza badges de contagem
     const { data: rxData } = await db.from('olha_aqui_reactions')
       .select('reaction').eq('story_id', it.id);
     const rxCount = {};
     (rxData||[]).forEach(r=>{ rxCount[r.reaction]=(rxCount[r.reaction]||0)+1; });
-    Object.entries(_OA_RC_IDS).forEach(([em, elId])=>{
-      const el=document.getElementById(elId);
-      if(el) el.textContent = rxCount[em]||0;
-    });
+    _oaUpdateReactionBadges(rxCount);
   }catch(e){ showToast('Erro ao reagir','error'); }
 }
 window.oaReact = oaReact;
@@ -21569,12 +21596,13 @@ export default {
       </div>
       <!-- Reações -->
       <div class="oa-v-reactions" id="oa-v-reactions">
-        <button class="oa-v-reaction-btn" data-r="❤️"  onclick="oaReact('❤️',this)">❤️ <span class="oa-v-reaction-count" id="oarc-heart">0</span></button>
-        <button class="oa-v-reaction-btn" data-r="👏"  onclick="oaReact('👏',this)">👏 <span class="oa-v-reaction-count" id="oarc-clap">0</span></button>
-        <button class="oa-v-reaction-btn" data-r="😂"  onclick="oaReact('😂',this)">😂 <span class="oa-v-reaction-count" id="oarc-laugh">0</span></button>
-        <button class="oa-v-reaction-btn" data-r="😢"  onclick="oaReact('😢',this)">😢 <span class="oa-v-reaction-count" id="oarc-cry">0</span></button>
-        <button class="oa-v-reaction-btn" data-r="🔥"  onclick="oaReact('🔥',this)">🔥 <span class="oa-v-reaction-count" id="oarc-fire">0</span></button>
-        <button class="oa-v-reaction-btn" data-r="😮"  onclick="oaReact('😮',this)">😮 <span class="oa-v-reaction-count" id="oarc-wow">0</span></button>
+        <button class="oa-v-reaction-btn" data-r="❤️"  data-count="0" onclick="oaReact('❤️',this)">❤️</button>
+        <button class="oa-v-reaction-btn" data-r="👍"  data-count="0" onclick="oaReact('👍',this)">👍</button>
+        <button class="oa-v-reaction-btn" data-r="👏"  data-count="0" onclick="oaReact('👏',this)">👏</button>
+        <button class="oa-v-reaction-btn" data-r="😂"  data-count="0" onclick="oaReact('😂',this)">😂</button>
+        <button class="oa-v-reaction-btn" data-r="😢"  data-count="0" onclick="oaReact('😢',this)">😢</button>
+        <button class="oa-v-reaction-btn" data-r="🔥"  data-count="0" onclick="oaReact('🔥',this)">🔥</button>
+        <button class="oa-v-reaction-btn" data-r="😮"  data-count="0" onclick="oaReact('😮',this)">😮</button>
       </div>
       <!-- Comentário → vai pro DM da pessoa -->
       <div class="oa-v-comment-row" id="oa-v-comment-row">
