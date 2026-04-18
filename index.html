@@ -21152,22 +21152,37 @@ function oaRenderItem(){
   document.getElementById('oa-v-name').textContent = _displayName;
   document.getElementById('oa-v-time').textContent = _oaTimeAgo(it.created_at);
 
-  // CTA buttons — só aparecem em stories de negócio de outros usuários
+  // CTA buttons — aparecem em stories de negócio
   const _ctaBuy  = document.getElementById('oa-v-cta-buy');
   const _ctaBook = document.getElementById('oa-v-cta-book');
   if(_ctaBuy && _ctaBook){
-    const _showCta = _isBiz && !(CU && g.userId===CU.id);
-    if(_showCta){
+    const _isOwnerBiz = !!(CU && g.userId===CU.id); // dono não pode comprar de si
+    if(_isBiz){
       const _isLoja = (_itMeta.category||'loja') === 'loja';
-      _ctaBuy.style.display  = _isLoja ? 'flex' : 'none';
-      _ctaBook.style.display = _isLoja ? 'none'  : 'flex';
-      // Guarda dados para o clique
-      _ctaBuy.dataset.bizUserId  = g.userId;
-      _ctaBuy.dataset.itemName   = _itMeta.item_name||'';
-      _ctaBuy.dataset.bizName    = _itMeta.biz_name||g.username;
-      _ctaBook.dataset.bizUserId = g.userId;
-      _ctaBook.dataset.itemName  = _itMeta.item_name||'';
-      _ctaBook.dataset.bizName   = _itMeta.biz_name||g.username;
+      const _activBtn = _isLoja ? _ctaBuy : _ctaBook;
+      const _hiddenBtn = _isLoja ? _ctaBook : _ctaBuy;
+
+      _hiddenBtn.style.display = 'none';
+      _activBtn.style.display  = 'flex';
+
+      // Dono vê botão em modo preview (opaco, sem ação)
+      if(_isOwnerBiz){
+        _activBtn.style.opacity = '0.5';
+        _activBtn.style.pointerEvents = 'none';
+        _activBtn.title = 'Prévia — como seus clientes verão';
+      } else {
+        _activBtn.style.opacity = '1';
+        _activBtn.style.pointerEvents = 'auto';
+        _activBtn.title = '';
+        // Guarda dados para o clique
+        _activBtn.dataset.bizUserId = g.userId;
+        _activBtn.dataset.itemName  = _itMeta.item_name||'';
+        _activBtn.dataset.bizName   = _itMeta.biz_name||g.username;
+        _ctaBuy.dataset.bizUserId   = g.userId;
+        _ctaBuy.dataset.itemName    = _itMeta.item_name||'';
+        _ctaBook.dataset.bizUserId  = g.userId;
+        _ctaBook.dataset.itemName   = _itMeta.item_name||'';
+      }
     } else {
       _ctaBuy.style.display  = 'none';
       _ctaBook.style.display = 'none';
