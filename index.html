@@ -3888,12 +3888,11 @@ body.day-mode::before{
 /* Cabeçalho do viewer (avatar + nome + tempo) */
 .oa-v-head{
   position:absolute;
-  top:22px; left:12px; right:12px;
+  top:22px; left:0; right:0;
   display:flex; align-items:center; gap:10px;
   z-index:3;
-  background:linear-gradient(180deg, rgba(0,0,0,.55) 0%, transparent 100%);
-  padding:8px 6px 22px;
-  border-radius:10px;
+  background:linear-gradient(180deg, rgba(0,0,0,.70) 0%, rgba(0,0,0,.30) 60%, transparent 100%);
+  padding:8px 12px 28px;
 }
 .oa-v-avatar{
   width:36px; height:36px;
@@ -3971,12 +3970,72 @@ body.day-mode::before{
 }
 @keyframes oa-pulse{ 0%,100%{opacity:.4}50%{opacity:1} }
 
-/* Rodapé (excluir — apenas próprio usuário) */
+/* Rodapé — reações, comentário, views, excluir */
 .oa-v-foot{
   position:absolute;
-  bottom:14px; left:12px; right:12px;
-  display:flex; align-items:center; gap:10px;
+  bottom:0; left:0; right:0;
+  display:flex; flex-direction:column; gap:8px;
   z-index:3;
+  background:linear-gradient(0deg, rgba(0,0,0,.75) 0%, rgba(0,0,0,.40) 60%, transparent 100%);
+  padding:24px 14px 18px;
+}
+.oa-v-reactions{
+  display:flex; align-items:center; gap:6px;
+  flex-wrap:nowrap; overflow-x:auto;
+}
+.oa-v-reaction-btn{
+  background:rgba(255,255,255,.10);
+  border:1px solid rgba(255,255,255,.18);
+  border-radius:20px;
+  padding:5px 10px;
+  font-size:16px;
+  cursor:pointer;
+  display:flex;align-items:center;gap:4px;
+  color:#fff;
+  font-family:'Space Mono',monospace;
+  font-size:11px;
+  transition:all .15s;
+  flex-shrink:0;
+  backdrop-filter:blur(4px);
+}
+.oa-v-reaction-btn:active{ transform:scale(1.2); }
+.oa-v-reaction-btn.selected{ background:rgba(0,255,204,.18); border-color:var(--neon-cyan); }
+.oa-v-reaction-count{ font-size:10px; color:rgba(255,255,255,.7); min-width:8px; }
+.oa-v-comment-row{
+  display:flex; align-items:center; gap:8px;
+}
+.oa-v-comment-input{
+  flex:1;
+  background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.18);
+  border-radius:20px;
+  padding:8px 14px;
+  color:#fff;
+  font-family:'Space Mono',monospace;
+  font-size:11px;
+  outline:none;
+  backdrop-filter:blur(4px);
+}
+.oa-v-comment-input::placeholder{ color:rgba(255,255,255,.4); }
+.oa-v-comment-send{
+  background:linear-gradient(135deg,var(--neon-cyan),var(--neon-pink));
+  border:none;
+  border-radius:50%;
+  width:34px;height:34px;
+  color:#fff;
+  font-size:16px;
+  cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+}
+.oa-v-meta-row{
+  display:flex;align-items:center;gap:10px;
+}
+.oa-v-views{
+  font-family:'VT323',monospace;
+  font-size:14px;
+  color:rgba(255,255,255,.6);
+  display:flex;align-items:center;gap:4px;
 }
 .oa-v-del{
   background:rgba(255,51,102,.15);
@@ -5324,6 +5383,37 @@ const db = createClient(SB_URL, SB_KEY, {
     }
   }
 });
+
+/* ── SQL necessário no Supabase para views e reações de stories ──────────────
+   Execute no SQL Editor do Supabase:
+
+   -- Tabela de visualizações de stories
+   CREATE TABLE IF NOT EXISTS olha_aqui_views (
+     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+     story_id uuid REFERENCES olha_aqui(id) ON DELETE CASCADE,
+     user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+     created_at timestamptz DEFAULT now(),
+     UNIQUE(story_id, user_id)
+   );
+   ALTER TABLE olha_aqui_views ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY "anyone can view" ON olha_aqui_views FOR SELECT USING (true);
+   CREATE POLICY "auth insert" ON olha_aqui_views FOR INSERT WITH CHECK (auth.uid()=user_id);
+
+   -- Tabela de reações de stories
+   CREATE TABLE IF NOT EXISTS olha_aqui_reactions (
+     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+     story_id uuid REFERENCES olha_aqui(id) ON DELETE CASCADE,
+     user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+     reaction text NOT NULL,
+     created_at timestamptz DEFAULT now(),
+     UNIQUE(story_id, user_id)
+   );
+   ALTER TABLE olha_aqui_reactions ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY "anyone can view reactions" ON olha_aqui_reactions FOR SELECT USING (true);
+   CREATE POLICY "auth insert reactions" ON olha_aqui_reactions FOR INSERT WITH CHECK (auth.uid()=user_id);
+   CREATE POLICY "auth delete own reactions" ON olha_aqui_reactions FOR DELETE USING (auth.uid()=user_id);
+   CREATE POLICY "auth update own reactions" ON olha_aqui_reactions FOR UPDATE USING (auth.uid()=user_id);
+─────────────────────────────────────────────────────────────────────────── */
 
 // ===== BOOT — simples e direto =====
 function hideLS(){
@@ -20779,9 +20869,24 @@ function oaRenderItem(){
   document.getElementById('oa-v-name').textContent = '@'+g.username;
   document.getElementById('oa-v-time').textContent = _oaTimeAgo(it.created_at);
 
-  // Rodapé (excluir) apenas se for do próprio usuário
+  // Rodapé: sempre visível (tem reações e comentário para todos)
   const foot = document.getElementById('oa-v-foot');
-  foot.style.display = (CU && g.userId===CU.id) ? 'flex' : 'none';
+  foot.style.display = 'flex';
+
+  // Botão excluir: só para o dono
+  const delBtn = document.getElementById('oa-v-del-btn');
+  if(delBtn) delBtn.style.display = (CU && g.userId===CU.id) ? 'flex' : 'none';
+
+  // Oculta comentário se for o próprio story (não faz sentido mandar msg pra si)
+  const cmtRow = document.getElementById('oa-v-comment-row');
+  if(cmtRow) cmtRow.style.display = (CU && g.userId===CU.id) ? 'none' : 'flex';
+
+  // Limpa input de comentário
+  const cmtInput = document.getElementById('oa-v-comment-input');
+  if(cmtInput) cmtInput.value = '';
+
+  // Carrega views e reações do story atual
+  _oaLoadStoryMeta(it.id);
 
   // Barras de progresso (uma por item)
   const bars = document.getElementById('oa-v-bars');
@@ -20958,6 +21063,136 @@ document.addEventListener('keydown', (e)=>{
   else if(e.key === 'ArrowLeft'){ oaPrev(); }
   else if(e.key === ' '){ e.preventDefault(); oaTogglePause(); }
 });
+
+// =========================================================================
+// VIEWS, REAÇÕES E COMENTÁRIO DO STORY
+// =========================================================================
+
+// Mapa emoji → id do contador no HTML
+const _OA_RC_IDS = {'❤️':'oarc-heart','👏':'oarc-clap','😂':'oarc-laugh','😢':'oarc-cry','🔥':'oarc-fire','😮':'oarc-wow'};
+
+// Registra view e carrega reações + contagem de views
+async function _oaLoadStoryMeta(storyId){
+  if(!storyId) return;
+
+  // Zera contadores antes de carregar
+  Object.values(_OA_RC_IDS).forEach(id=>{
+    const el=document.getElementById(id); if(el) el.textContent='0';
+  });
+  document.querySelectorAll('.oa-v-reaction-btn').forEach(b=>b.classList.remove('selected'));
+  const vEl = document.getElementById('oa-v-views');
+  if(vEl) vEl.innerHTML = '👁 ...';
+
+  // 1) Registra view (upsert — idempotente por usuário)
+  if(CU){
+    try{
+      await db.from('olha_aqui_views').upsert(
+        { story_id: storyId, user_id: CU.id },
+        { onConflict: 'story_id,user_id', ignoreDuplicates: true }
+      );
+    }catch(e){}
+  }
+
+  // 2) Conta views totais
+  try{
+    const { count } = await db.from('olha_aqui_views')
+      .select('id', { count:'exact', head:true })
+      .eq('story_id', storyId);
+    if(vEl) vEl.innerHTML = '👁 ' + (count||0);
+  }catch(e){ if(vEl) vEl.innerHTML = '👁 0'; }
+
+  // 3) Conta reações agrupadas
+  try{
+    const { data: rxData } = await db.from('olha_aqui_reactions')
+      .select('reaction')
+      .eq('story_id', storyId);
+    const rxCount = {};
+    (rxData||[]).forEach(r=>{ rxCount[r.reaction]=(rxCount[r.reaction]||0)+1; });
+    Object.entries(_OA_RC_IDS).forEach(([emoji, elId])=>{
+      const el=document.getElementById(elId);
+      if(el) el.textContent = rxCount[emoji]||0;
+    });
+
+    // Marca a reação do usuário atual
+    if(CU){
+      const { data: myRx } = await db.from('olha_aqui_reactions')
+        .select('reaction').eq('story_id', storyId).eq('user_id', CU.id).maybeSingle();
+      if(myRx?.reaction){
+        const myElId = _OA_RC_IDS[myRx.reaction];
+        const myBtn = document.querySelector(`.oa-v-reaction-btn[data-r="${myRx.reaction}"]`);
+        if(myBtn) myBtn.classList.add('selected');
+      }
+    }
+  }catch(e){}
+}
+
+// Reagir ao story (toggle — se já reagiu com a mesma, remove)
+async function oaReact(emoji, btn){
+  if(!CU){ showToast('Faça login para reagir','error'); return; }
+  const g = oaGroups[oaViewer.groupIdx];
+  const it = g?.items?.[oaViewer.itemIdx];
+  if(!it) return;
+
+  const isSelected = btn.classList.contains('selected');
+
+  // Remove seleção visual de todos
+  document.querySelectorAll('.oa-v-reaction-btn').forEach(b=>b.classList.remove('selected'));
+
+  try{
+    if(isSelected){
+      // Toggle off — remove reação
+      await db.from('olha_aqui_reactions')
+        .delete()
+        .eq('story_id', it.id)
+        .eq('user_id', CU.id);
+    } else {
+      // Upsert nova reação (substitui se já tinha outra)
+      await db.from('olha_aqui_reactions').upsert(
+        { story_id: it.id, user_id: CU.id, reaction: emoji },
+        { onConflict: 'story_id,user_id' }
+      );
+      btn.classList.add('selected');
+      // Animação de feedback
+      btn.style.transform='scale(1.3)';
+      setTimeout(()=>{ btn.style.transform=''; }, 200);
+    }
+    // Recarrega contagens
+    const { data: rxData } = await db.from('olha_aqui_reactions')
+      .select('reaction').eq('story_id', it.id);
+    const rxCount = {};
+    (rxData||[]).forEach(r=>{ rxCount[r.reaction]=(rxCount[r.reaction]||0)+1; });
+    Object.entries(_OA_RC_IDS).forEach(([em, elId])=>{
+      const el=document.getElementById(elId);
+      if(el) el.textContent = rxCount[em]||0;
+    });
+  }catch(e){ showToast('Erro ao reagir','error'); }
+}
+window.oaReact = oaReact;
+
+// Enviar comentário como DM para o dono do story
+async function oaSendComment(){
+  if(!CU){ showToast('Faça login para comentar','error'); return; }
+  const input = document.getElementById('oa-v-comment-input');
+  const txt = (input?.value||'').trim();
+  if(!txt){ showToast('Digite uma mensagem','error'); return; }
+
+  const g = oaGroups[oaViewer.groupIdx];
+  if(!g || !g.userId){ showToast('Erro: story sem autor','error'); return; }
+  if(g.userId === CU.id) return; // não manda pra si mesmo
+
+  try{
+    const mention = `📸 *Olha Aqui de @${g.username}:* `;
+    await db.from('messages').insert({
+      sender_id: CU.id,
+      receiver_id: g.userId,
+      content: mention + txt,
+      read: false
+    });
+    input.value = '';
+    showToast('✅ Mensagem enviada para @'+g.username,'success');
+  }catch(e){ showToast('Erro ao enviar mensagem','error'); }
+}
+window.oaSendComment = oaSendComment;
 
 // =========================================================================
 // EXCLUSÃO MANUAL (usuário excluindo o próprio story)
@@ -21250,8 +21485,30 @@ export default {
          onpointerup="oaHoldEnd()"
          onpointerleave="oaHoldEnd()"></div>
     <div class="oa-v-tap next" onclick="oaNext()"></div>
-    <div class="oa-v-foot" id="oa-v-foot" style="display:none;">
-      <button class="oa-v-del" onclick="oaDeleteCurrent()">&#128465; Excluir</button>
+    <!-- Rodapé: views + reações + comentário + excluir -->
+    <div class="oa-v-foot" id="oa-v-foot">
+      <!-- Linha de views + excluir (só dono) -->
+      <div class="oa-v-meta-row">
+        <div class="oa-v-views" id="oa-v-views">👁 0</div>
+        <div style="flex:1"></div>
+        <button class="oa-v-del" id="oa-v-del-btn" onclick="oaDeleteCurrent()" style="display:none;">&#128465; Excluir</button>
+      </div>
+      <!-- Reações -->
+      <div class="oa-v-reactions" id="oa-v-reactions">
+        <button class="oa-v-reaction-btn" data-r="❤️"  onclick="oaReact('❤️',this)">❤️ <span class="oa-v-reaction-count" id="oarc-heart">0</span></button>
+        <button class="oa-v-reaction-btn" data-r="👏"  onclick="oaReact('👏',this)">👏 <span class="oa-v-reaction-count" id="oarc-clap">0</span></button>
+        <button class="oa-v-reaction-btn" data-r="😂"  onclick="oaReact('😂',this)">😂 <span class="oa-v-reaction-count" id="oarc-laugh">0</span></button>
+        <button class="oa-v-reaction-btn" data-r="😢"  onclick="oaReact('😢',this)">😢 <span class="oa-v-reaction-count" id="oarc-cry">0</span></button>
+        <button class="oa-v-reaction-btn" data-r="🔥"  onclick="oaReact('🔥',this)">🔥 <span class="oa-v-reaction-count" id="oarc-fire">0</span></button>
+        <button class="oa-v-reaction-btn" data-r="😮"  onclick="oaReact('😮',this)">😮 <span class="oa-v-reaction-count" id="oarc-wow">0</span></button>
+      </div>
+      <!-- Comentário → vai pro DM da pessoa -->
+      <div class="oa-v-comment-row" id="oa-v-comment-row">
+        <input class="oa-v-comment-input" id="oa-v-comment-input"
+               placeholder="Responder no chat privado..."
+               onkeydown="if(event.key==='Enter')oaSendComment()">
+        <button class="oa-v-comment-send" onclick="oaSendComment()" title="Enviar">➤</button>
+      </div>
     </div>
   </div>
 </div>
