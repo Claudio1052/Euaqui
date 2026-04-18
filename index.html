@@ -3857,9 +3857,12 @@ body.day-mode::before{
 }
 
 .oa-v-media{
+  position:absolute;
+  inset:0;
   width:100%; height:100%;
   object-fit:contain;
   background:#000;
+  z-index:1;
 }
 
 /* Barras de progresso */
@@ -3867,7 +3870,7 @@ body.day-mode::before{
   position:absolute;
   top:10px; left:10px; right:10px;
   display:flex; gap:4px;
-  z-index:3;
+  z-index:4;
 }
 .oa-v-bar{
   flex:1;
@@ -3891,8 +3894,14 @@ body.day-mode::before{
   top:22px; left:0; right:0;
   display:flex; align-items:center; gap:10px;
   z-index:3;
-  background:linear-gradient(180deg, rgba(0,0,0,.70) 0%, rgba(0,0,0,.30) 60%, transparent 100%);
-  padding:8px 12px 28px;
+  /* Gradiente fino só atrás do header, não cobre a mídia abaixo */
+  background:linear-gradient(180deg, rgba(0,0,0,.65) 0%, rgba(0,0,0,.10) 80%, transparent 100%);
+  padding:6px 12px 18px;
+  pointer-events:none; /* deixa cliques passarem para a mídia */
+}
+/* Botões no head precisam capturar cliques */
+.oa-v-head button, .oa-v-head img{
+  pointer-events:auto;
 }
 .oa-v-avatar{
   width:36px; height:36px;
@@ -3952,23 +3961,51 @@ body.day-mode::before{
   width:24%;
 }
 
-/* Loader dentro do viewer */
+/* Loader dentro do viewer — centralizado, não bloqueia a mídia */
 .oa-v-load{
   position:absolute;
-  inset:0;
-  display:flex;align-items:center;justify-content:center;
-  z-index:4;
+  top:50%; left:50%;
+  transform:translate(-50%,-50%);
+  z-index:5;
   pointer-events:none;
+  background:rgba(0,0,0,.55);
+  border-radius:12px;
+  padding:10px 18px;
 }
 .oa-v-load > div{
   font-family:'VT323',monospace;
-  font-size:22px;
+  font-size:18px;
   color:var(--neon-cyan);
   text-shadow:0 0 10px var(--neon-cyan);
   letter-spacing:2px;
   animation:oa-pulse 1s ease-in-out infinite;
 }
 @keyframes oa-pulse{ 0%,100%{opacity:.4}50%{opacity:1} }
+
+/* Camada de reações flutuantes do story viewer */
+#oa-v-float-layer{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  overflow:hidden;
+  z-index:6;
+}
+.oa-story-float{
+  position:absolute;
+  bottom:15%;
+  font-size:32px;
+  animation:oaFloatUp 2.8s ease-out forwards;
+  pointer-events:none;
+  will-change:transform,opacity;
+  text-shadow:0 2px 14px rgba(0,0,0,.6);
+  filter:drop-shadow(0 0 8px rgba(255,255,255,.4));
+}
+@keyframes oaFloatUp{
+  0%  { transform:translateY(0) scale(.5) rotate(0deg);  opacity:0; }
+  8%  { opacity:1; transform:translateY(-18px) scale(1.1) rotate(-6deg); }
+  40% { transform:translateY(-140px) scale(1.05) rotate(7deg); opacity:1; }
+  100%{ transform:translateY(-360px) scale(.85) rotate(-4deg); opacity:0; }
+}
 
 /* Rodapé — reações, comentário, views, excluir */
 .oa-v-foot{
@@ -3984,23 +4021,33 @@ body.day-mode::before{
   flex-wrap:nowrap; overflow-x:auto;
 }
 .oa-v-reaction-btn{
+  width:44px; height:44px;
+  border-radius:50%;
   background:rgba(255,255,255,.10);
-  border:1px solid rgba(255,255,255,.18);
-  border-radius:20px;
-  padding:5px 10px;
-  font-size:16px;
+  border:1.5px solid rgba(255,255,255,.20);
+  font-size:22px;
   cursor:pointer;
-  display:flex;align-items:center;gap:4px;
-  color:#fff;
-  font-family:'Space Mono',monospace;
-  font-size:11px;
+  display:flex; align-items:center; justify-content:center;
+  flex-direction:column;
+  gap:1px;
   transition:all .15s;
   flex-shrink:0;
-  backdrop-filter:blur(4px);
+  backdrop-filter:blur(6px);
+  position:relative;
 }
-.oa-v-reaction-btn:active{ transform:scale(1.2); }
-.oa-v-reaction-btn.selected{ background:rgba(0,255,204,.18); border-color:var(--neon-cyan); }
-.oa-v-reaction-count{ font-size:10px; color:rgba(255,255,255,.7); min-width:8px; }
+.oa-v-reaction-btn:hover{ transform:scale(1.12) translateY(-2px); border-color:var(--neon-cyan); }
+.oa-v-reaction-btn:active{ transform:scale(.9); }
+.oa-v-reaction-btn.selected{
+  background:rgba(0,255,204,.20);
+  border-color:var(--neon-cyan);
+  box-shadow:0 0 12px rgba(0,255,204,.4);
+}
+.oa-v-reaction-count{
+  font-size:9px;
+  font-family:'Space Mono',monospace;
+  color:rgba(255,255,255,.85);
+  line-height:1;
+}
 .oa-v-comment-row{
   display:flex; align-items:center; gap:8px;
 }
@@ -20831,8 +20878,10 @@ window.oaOpenViewer = oaOpenViewer;
 
 function oaCloseViewer(){
   oaViewer.open = false;
+  _oaStopFloatLoop();
   _oaStopTimer();
   _oaCleanupMedia();
+  _oaStopFloatLoop();
   document.getElementById('oa-viewer').classList.remove('on');
   document.body.style.overflow = '';
   _oaSaveSeen();
@@ -21126,6 +21175,30 @@ async function _oaLoadStoryMeta(storyId){
   }catch(e){}
 }
 
+// ── Emoji flutuante (igual à Live) ──────────────────────────────────────────
+function _oaSpawnFloat(emoji){
+  const layer = document.getElementById('oa-v-float-layer');
+  if(!layer) return;
+  const el = document.createElement('div');
+  el.className = 'oa-story-float';
+  el.textContent = emoji;
+  el.style.left    = (8 + Math.random()*75) + '%';
+  el.style.fontSize = (24 + Math.random()*16) + 'px';
+  layer.appendChild(el);
+  setTimeout(()=>{ try{ el.remove(); }catch(e){} }, 3000);
+}
+
+let _oaFloatInterval = null;
+function _oaStartFloatLoop(emoji){
+  _oaStopFloatLoop();
+  _oaSpawnFloat(emoji);                           // imediato
+  _oaFloatInterval = setInterval(()=>_oaSpawnFloat(emoji), 480); // contínuo
+}
+function _oaStopFloatLoop(){
+  if(_oaFloatInterval){ clearInterval(_oaFloatInterval); _oaFloatInterval = null; }
+}
+window._oaStopFloatLoop = _oaStopFloatLoop;
+
 // Reagir ao story (toggle — se já reagiu com a mesma, remove)
 async function oaReact(emoji, btn){
   if(!CU){ showToast('Faça login para reagir','error'); return; }
@@ -21135,28 +21208,26 @@ async function oaReact(emoji, btn){
 
   const isSelected = btn.classList.contains('selected');
 
-  // Remove seleção visual de todos
+  // Remove seleção visual e para loop anterior
   document.querySelectorAll('.oa-v-reaction-btn').forEach(b=>b.classList.remove('selected'));
+  _oaStopFloatLoop();
 
   try{
     if(isSelected){
       // Toggle off — remove reação
       await db.from('olha_aqui_reactions')
-        .delete()
-        .eq('story_id', it.id)
-        .eq('user_id', CU.id);
+        .delete().eq('story_id', it.id).eq('user_id', CU.id);
     } else {
-      // Upsert nova reação (substitui se já tinha outra)
+      // Upsert nova reação
       await db.from('olha_aqui_reactions').upsert(
         { story_id: it.id, user_id: CU.id, reaction: emoji },
         { onConflict: 'story_id,user_id' }
       );
       btn.classList.add('selected');
-      // Animação de feedback
-      btn.style.transform='scale(1.3)';
-      setTimeout(()=>{ btn.style.transform=''; }, 200);
+      // Dispara emojis subindo continuamente
+      _oaStartFloatLoop(emoji);
     }
-    // Recarrega contagens
+    // Atualiza contagens
     const { data: rxData } = await db.from('olha_aqui_reactions')
       .select('reaction').eq('story_id', it.id);
     const rxCount = {};
@@ -21477,7 +21548,7 @@ export default {
       <button class="oa-v-pause" id="oa-v-pause" onclick="oaTogglePause()" title="Pausar">&#9208;</button>
       <button class="oa-v-close" onclick="oaCloseViewer()" title="Fechar">&#10005;</button>
     </div>
-    <div id="oa-v-media-wrap" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;"></div>
+    <div id="oa-v-media-wrap" style="position:absolute;inset:0;z-index:1;display:flex;align-items:center;justify-content:center;background:#000;"></div>
     <div class="oa-v-load" id="oa-v-load" style="display:none;"><div>CARREGANDO...</div></div>
     <div class="oa-v-tap prev" onclick="oaPrev()"></div>
     <div class="oa-v-tap hold"
@@ -21485,6 +21556,9 @@ export default {
          onpointerup="oaHoldEnd()"
          onpointerleave="oaHoldEnd()"></div>
     <div class="oa-v-tap next" onclick="oaNext()"></div>
+    <!-- Camada flutuante de reações -->
+    <div id="oa-v-float-layer"></div>
+
     <!-- Rodapé: views + reações + comentário + excluir -->
     <div class="oa-v-foot" id="oa-v-foot">
       <!-- Linha de views + excluir (só dono) -->
