@@ -3851,7 +3851,7 @@ body.day-mode::before{
   max-width:480px;
   height:100%;
   max-height:100vh;
-  background:var(--bg-deep);
+  background:#000; /* fundo neutro apenas enquanto carrega */
   overflow:hidden;
   display:flex;align-items:center;justify-content:center;
 }
@@ -3860,7 +3860,7 @@ body.day-mode::before{
   position:absolute;
   inset:0;
   width:100%; height:100%;
-  object-fit:contain;
+  object-fit:cover; /* preenche o frame inteiro sem barras pretas */
   background:#000;
   z-index:1;
 }
@@ -20953,8 +20953,9 @@ function oaRenderItem(){
   const cmtInput = document.getElementById('oa-v-comment-input');
   if(cmtInput) cmtInput.value = '';
 
-  // Carrega views e reações do story atual
-  _oaLoadStoryMeta(it.id);
+  // Carrega views e reações — passa se é dono para controlar visibilidade
+  const _isOwner = !!(CU && g.userId === CU.id);
+  _oaLoadStoryMeta(it.id, _isOwner);
 
   // Barras de progresso (uma por item)
   const bars = document.getElementById('oa-v-bars');
@@ -21149,7 +21150,7 @@ function _oaUpdateReactionBadges(rxCount){
 }
 
 // Registra view e carrega reações + contagem de views
-async function _oaLoadStoryMeta(storyId){
+async function _oaLoadStoryMeta(storyId, isOwner){
   if(!storyId) return;
 
   // Para efeito flutuante anterior imediatamente
@@ -21160,8 +21161,18 @@ async function _oaLoadStoryMeta(storyId){
     b.classList.remove('selected');
     b.setAttribute('data-count','0');
   });
+
+  // Views: só mostra para o dono do story
   const vEl = document.getElementById('oa-v-views');
-  if(vEl) vEl.innerHTML = '👁 ...';
+  const metaRow = document.getElementById('oa-v-meta-row-el');
+  if(vEl){
+    if(isOwner){
+      vEl.style.display = 'flex';
+      vEl.innerHTML = '👁 ...';
+    } else {
+      vEl.style.display = 'none'; // outros usuários não veem a contagem
+    }
+  }
 
   // 1) Registra view (upsert — idempotente por usuário)
   if(CU){
@@ -21173,13 +21184,15 @@ async function _oaLoadStoryMeta(storyId){
     }catch(e){}
   }
 
-  // 2) Conta views totais
-  try{
-    const { count } = await db.from('olha_aqui_views')
-      .select('id', { count:'exact', head:true })
-      .eq('story_id', storyId);
-    if(vEl) vEl.innerHTML = '👁 ' + (count||0);
-  }catch(e){ if(vEl) vEl.innerHTML = '👁 0'; }
+  // 2) Conta views totais — só busca e exibe se for o dono
+  if(isOwner){
+    try{
+      const { count } = await db.from('olha_aqui_views')
+        .select('id', { count:'exact', head:true })
+        .eq('story_id', storyId);
+      if(vEl) vEl.innerHTML = '👁 ' + (count||0);
+    }catch(e){ if(vEl) vEl.innerHTML = '👁 0'; }
+  }
 
   // 3) Conta reações agrupadas
   try{
@@ -21188,7 +21201,16 @@ async function _oaLoadStoryMeta(storyId){
       .eq('story_id', storyId);
     const rxCount = {};
     (rxData||[]).forEach(r=>{ rxCount[r.reaction]=(rxCount[r.reaction]||0)+1; });
-    _oaUpdateReactionBadges(rxCount);
+
+    // Badges de quantidade: só o dono vê os números
+    if(isOwner){
+      _oaUpdateReactionBadges(rxCount);
+    } else {
+      // Outros: zera todos os badges (não veem quantidade)
+      document.querySelectorAll('.oa-v-reaction-btn[data-r]').forEach(b=>{
+        b.setAttribute('data-count','0');
+      });
+    }
 
     // Marca a reação do usuário atual e inicia float loop se tiver reação
     if(CU){
@@ -21198,7 +21220,7 @@ async function _oaLoadStoryMeta(storyId){
         const myBtn = document.querySelector(`.oa-v-reaction-btn[data-r="${myRx.reaction}"]`);
         if(myBtn){
           myBtn.classList.add('selected');
-          _oaStartFloatLoop(myRx.reaction); // retoma o efeito da reação existente
+          _oaStartFloatLoop(myRx.reaction);
         }
       }
     }
