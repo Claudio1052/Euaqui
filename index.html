@@ -1378,9 +1378,14 @@ body{
 /* Mobile: keep nav compact with tab row */
 
 
-/* Sidebar adjusts when nav tabs row is visible */
+/* Nav tabs row: visível só no mobile (desktop usa sidebar + navbar) */
 .nav-tabs-row.visible{
-  display:flex;
+  display:none; /* escondido por padrão no desktop */
+}
+@media(max-width:768px){
+  .nav-tabs-row.visible{
+    display:flex !important;
+  }
 }
 
 /* ===== CHAT MESSAGE BUBBLES ===== */
@@ -5317,7 +5322,9 @@ function showApp(){
     const navTabsRow = document.getElementById('nav-home-tabs');
     const mainLayout = document.getElementById('main-layout');
     if(navTabsRow) navTabsRow.classList.add('visible');
-    if(mainLayout) mainLayout.style.paddingTop = 'var(--nav-h-with-tabs)';
+    // No desktop (>768px) a barra de tabs fica oculta via CSS, então usa só --nav-h
+    if(mainLayout) mainLayout.style.paddingTop = window.innerWidth <= 768
+      ? 'var(--nav-h-with-tabs)' : 'var(--nav-h)';
   }catch(e){}
   // Load page data — each wrapped so one failure doesn't block the rest
   setTimeout(()=>{ try{ cachedPostIds.clear();cachedPosts={};loadFeed(true); }catch(e){ console.warn('loadFeed:',e); } }, 0);
@@ -5666,7 +5673,9 @@ function nav(page){
   const mainLayout = document.getElementById('main-layout');
   if(page === 'home'){
     if(navTabsRow) navTabsRow.classList.add('visible');
-    if(mainLayout) mainLayout.style.paddingTop = 'var(--nav-h-with-tabs)';
+    // Desktop (>768px): barra de tabs oculta via CSS, não precisa de padding extra
+    if(mainLayout) mainLayout.style.paddingTop = window.innerWidth <= 768
+      ? 'var(--nav-h-with-tabs)' : 'var(--nav-h)';
   } else {
     if(navTabsRow) navTabsRow.classList.remove('visible');
     if(mainLayout) mainLayout.style.paddingTop = '';
