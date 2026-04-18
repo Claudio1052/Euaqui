@@ -20876,37 +20876,52 @@ window.oaPickBizMedia = oaPickBizMedia;
 async function oaCtaAction(type){
   if(!CU){ showToast('Faça login para continuar','error'); return; }
   const btn = document.getElementById(type==='buy'?'oa-v-cta-buy':'oa-v-cta-book');
-  const itemName  = btn?.dataset.itemName || 'produto/serviço';
-  const bizId     = btn?.dataset.bizId    || '';
-  const bizUserId = btn?.dataset.bizUserId|| ''; // fallback se não achar owner
-  if(!bizUserId && !bizId){ showToast('Informação do vendedor não encontrada','error'); return; }
+  const itemName = btn?.dataset.itemName || 'produto/serviço';
+  const bizId    = btn?.dataset.bizId    || '';
+  const bizName  = btn?.dataset.bizName  || 'Loja';
 
-  const autoMsg = type==='buy'
-    ? `Olá! Vi seu anúncio no Olha Aqui: ${itemName}. Gostaria de mais informações para comprar.`
-    : `Olá! Vi seu anúncio no Olha Aqui: ${itemName}. Gostaria de agendar um horário.`;
+  if(!bizId){ showToast('Informação da loja não encontrada','error'); return; }
 
   try{
-    // Busca o owner_id real da loja — é quem deve receber a mensagem
-    let ownerId = bizUserId;
-    if(bizId){
-      const { data:biz } = await db.from('businesses').select('owner_id').eq('id',bizId).maybeSingle();
-      if(biz?.owner_id) ownerId = biz.owner_id;
+    // Verifica se é o próprio dono tentando interagir
+    const { data:biz } = await db.from('businesses').select('id,name,owner_id').eq('id',bizId).maybeSingle();
+    if(!biz){ showToast('Loja não encontrada','error'); return; }
+    if(biz.owner_id === CU.id){ showToast('Este é o seu próprio anúncio','error'); return; }
+
+    // Envia mensagem inicial no chat de atendimento da loja (business_chats)
+    // Cria ou recupera o chat de atendimento
+    let { data:chat } = await db.from('business_chats')
+      .select('*').eq('business_id', bizId).eq('customer_id', CU.id).maybeSingle();
+    if(!chat){
+      const { data:nc } = await db.from('business_chats')
+        .insert({ business_id: bizId, customer_id: CU.id }).select().single();
+      chat = nc;
     }
+    if(!chat){ showToast('Erro ao abrir atendimento','error'); return; }
 
-    if(!ownerId){ showToast('Vendedor não encontrado','error'); return; }
-    if(ownerId === CU.id){ showToast('Este é o seu próprio anúncio','error'); return; }
+    // Envia a mensagem automática no chat de atendimento
+    const autoMsg = type==='buy'
+      ? `🛒 Olá! Vi o anúncio no Olha Aqui: *${itemName}*. Gostaria de mais informações para comprar.`
+      : `📅 Olá! Vi o anúncio no Olha Aqui: *${itemName}*. Gostaria de agendar um horário.`;
 
-    const { data:prof } = await db.from('profiles').select('id,username,avatar_url').eq('id',ownerId).maybeSingle();
-    if(!prof){ showToast('Perfil do vendedor não encontrado','error'); return; }
+    await db.from('business_messages').insert({
+      chat_id:   chat.id,
+      sender_id: CU.id,
+      content:   autoMsg
+    });
 
-    await db.from('messages').insert({ sender_id:CU.id, receiver_id:ownerId, content:autoMsg, read:false });
     oaCloseViewer();
-    showToast('✅ Mensagem enviada! Abrindo chat...','success');
-    setTimeout(()=>{ nav('messages'); setTimeout(()=>{
-      const av = prof.avatar_url||('https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u'));
-      openChat(ownerId, prof.username||'', av);
-    },400); },600);
-  }catch(e){ showToast('Erro ao enviar mensagem','error'); }
+    showToast('✅ Mensagem enviada! Abrindo atendimento...','success');
+
+    // Navega para o chat de atendimento da loja
+    setTimeout(()=>{
+      openBizChatCustomer(bizId, biz.name || bizName);
+    }, 500);
+
+  }catch(e){
+    console.error('[oaCtaAction]', e);
+    showToast('Erro ao enviar mensagem','error');
+  }
 }
 window.oaCtaAction = oaCtaAction;
 
