@@ -3676,6 +3676,401 @@ body.day-mode::before{
 .prod-photo-slot{width:70px;height:70px;border-radius:8px;border:2px dashed var(--border-glow);display:flex;align-items:center;justify-content:center;font-size:22px;cursor:pointer;background:var(--glass);overflow:hidden;position:relative;flex-shrink:0;}
 .prod-photo-slot img{width:100%;height:100%;object-fit:cover;}
 .prod-photo-remove{position:absolute;top:2px;right:2px;background:rgba(255,51,102,.85);border:none;color:#fff;width:18px;height:18px;border-radius:50%;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;}
+
+/* ============================================================
+   OLHA AQUI! — Estilos (Stories do EuAqui)
+   Cole este bloco DENTRO da tag <style> existente, no FIM.
+   Identidade visual 100% EuAqui: cyberpunk + retrowave + vidro.
+   ============================================================ */
+
+/* ---------- Barra horizontal (rail) acima do composer ---------- */
+.oa-rail{
+  display:flex;
+  gap:10px;
+  padding:12px 8px 14px;
+  margin:0 0 14px;
+  overflow-x:auto;
+  overflow-y:hidden;
+  scrollbar-width:none;
+  background:var(--bg-card);
+  border:1px solid var(--border-glow);
+  border-radius:16px;
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+  position:relative;
+}
+.oa-rail::-webkit-scrollbar{display:none;}
+.oa-rail::before{
+  content:'OLHA AQUI!';
+  position:absolute;
+  top:-9px; left:14px;
+  font-family:'Silkscreen',monospace;
+  font-size:9px;
+  letter-spacing:2px;
+  color:var(--neon-pink);
+  background:var(--bg-deep);
+  padding:2px 8px;
+  border:1px solid var(--neon-pink);
+  border-radius:20px;
+  text-shadow:0 0 6px rgba(255,51,102,.7);
+}
+
+/* ---------- Bolha de cada usuário no rail ---------- */
+.oa-bubble{
+  flex-shrink:0;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:4px;
+  width:72px;
+  cursor:pointer;
+  transition:transform .2s;
+}
+.oa-bubble:hover{ transform:translateY(-2px); }
+
+.oa-ring{
+  width:62px; height:62px;
+  border-radius:50%;
+  padding:2.5px;
+  background:conic-gradient(
+    from 0deg,
+    var(--neon-cyan),
+    var(--neon-pink),
+    var(--neon-yellow),
+    var(--neon-purple),
+    var(--neon-cyan)
+  );
+  box-shadow:0 0 12px rgba(255,51,102,.35), 0 0 24px rgba(0,255,204,.2);
+  position:relative;
+  animation:oa-spin 6s linear infinite;
+}
+.oa-ring.seen{
+  background:linear-gradient(135deg, #444 0%, #222 100%);
+  box-shadow:none;
+  animation:none;
+  opacity:.65;
+}
+.oa-ring.me{
+  background:linear-gradient(135deg, var(--neon-cyan), var(--neon-purple));
+  animation:none;
+}
+@keyframes oa-spin{ to{ transform:rotate(360deg); } }
+
+.oa-ring > img{
+  width:100%; height:100%;
+  border-radius:50%;
+  object-fit:cover;
+  background:var(--bg-deep);
+  border:2px solid var(--bg-deep);
+  animation:oa-spin-reverse 6s linear infinite;
+}
+.oa-ring.seen > img, .oa-ring.me > img{ animation:none; }
+@keyframes oa-spin-reverse{ to{ transform:rotate(-360deg); } }
+
+.oa-plus{
+  position:absolute;
+  right:-2px; bottom:-2px;
+  width:22px; height:22px;
+  border-radius:50%;
+  background:var(--neon-pink);
+  color:#fff;
+  display:flex;align-items:center;justify-content:center;
+  font-size:16px; font-weight:bold;
+  border:2px solid var(--bg-deep);
+  box-shadow:0 0 8px var(--neon-pink);
+  animation:none;
+}
+
+.oa-name{
+  font-family:'Space Mono',monospace;
+  font-size:10px;
+  color:var(--text-light);
+  text-align:center;
+  max-width:70px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+.oa-empty{
+  padding:16px 14px;
+  font-family:'VT323',monospace;
+  font-size:15px;
+  color:var(--text-muted);
+  letter-spacing:1px;
+  flex:1;
+  text-align:center;
+}
+
+/* ---------- Viewer (tela cheia) ---------- */
+#oa-viewer{
+  position:fixed;
+  inset:0;
+  background:#000;
+  z-index:10050;
+  display:none;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  user-select:none;
+  -webkit-tap-highlight-color:transparent;
+}
+#oa-viewer.on{ display:flex; }
+
+.oa-v-stage{
+  position:relative;
+  width:100%;
+  max-width:480px;
+  height:100%;
+  max-height:100vh;
+  background:var(--bg-deep);
+  overflow:hidden;
+  display:flex;align-items:center;justify-content:center;
+}
+
+.oa-v-media{
+  width:100%; height:100%;
+  object-fit:contain;
+  background:#000;
+}
+
+/* Barras de progresso */
+.oa-v-bars{
+  position:absolute;
+  top:10px; left:10px; right:10px;
+  display:flex; gap:4px;
+  z-index:3;
+}
+.oa-v-bar{
+  flex:1;
+  height:3px;
+  background:rgba(255,255,255,.25);
+  border-radius:2px;
+  overflow:hidden;
+}
+.oa-v-bar > i{
+  display:block;
+  height:100%;
+  width:0%;
+  background:linear-gradient(90deg,var(--neon-cyan),var(--neon-pink));
+  box-shadow:0 0 6px var(--neon-cyan);
+}
+.oa-v-bar.done > i{ width:100%; }
+
+/* Cabeçalho do viewer (avatar + nome + tempo) */
+.oa-v-head{
+  position:absolute;
+  top:22px; left:12px; right:12px;
+  display:flex; align-items:center; gap:10px;
+  z-index:3;
+  background:linear-gradient(180deg, rgba(0,0,0,.55) 0%, transparent 100%);
+  padding:8px 6px 22px;
+  border-radius:10px;
+}
+.oa-v-avatar{
+  width:36px; height:36px;
+  border-radius:50%;
+  border:2px solid var(--neon-cyan);
+  object-fit:cover;
+  box-shadow:0 0 8px rgba(0,255,204,.5);
+}
+.oa-v-info{ flex:1; min-width:0; }
+.oa-v-name{
+  font-family:'Silkscreen',monospace;
+  font-size:12px;
+  color:var(--text-light);
+  text-shadow:0 0 6px rgba(0,255,204,.5);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.oa-v-time{
+  font-family:'VT323',monospace;
+  font-size:13px;
+  color:var(--neon-yellow);
+  letter-spacing:1px;
+}
+.oa-v-close{
+  background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.2);
+  color:#fff;
+  width:34px; height:34px;
+  border-radius:50%;
+  font-size:16px;
+  cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+}
+.oa-v-pause{
+  background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.2);
+  color:#fff;
+  width:34px; height:34px;
+  border-radius:50%;
+  font-size:14px;
+  cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+}
+
+/* Áreas de toque (esquerda = voltar, direita = avançar) */
+.oa-v-tap{
+  position:absolute;
+  top:0; bottom:0;
+  width:38%;
+  z-index:2;
+  cursor:pointer;
+  background:transparent;
+}
+.oa-v-tap.prev{ left:0; }
+.oa-v-tap.next{ right:0; }
+.oa-v-tap.hold{
+  left:38%; right:38%;
+  width:24%;
+}
+
+/* Loader dentro do viewer */
+.oa-v-load{
+  position:absolute;
+  inset:0;
+  display:flex;align-items:center;justify-content:center;
+  z-index:4;
+  pointer-events:none;
+}
+.oa-v-load > div{
+  font-family:'VT323',monospace;
+  font-size:22px;
+  color:var(--neon-cyan);
+  text-shadow:0 0 10px var(--neon-cyan);
+  letter-spacing:2px;
+  animation:oa-pulse 1s ease-in-out infinite;
+}
+@keyframes oa-pulse{ 0%,100%{opacity:.4}50%{opacity:1} }
+
+/* Rodapé (excluir — apenas próprio usuário) */
+.oa-v-foot{
+  position:absolute;
+  bottom:14px; left:12px; right:12px;
+  display:flex; align-items:center; gap:10px;
+  z-index:3;
+}
+.oa-v-del{
+  background:rgba(255,51,102,.15);
+  border:1px solid var(--neon-pink);
+  color:var(--neon-pink);
+  padding:8px 14px;
+  border-radius:20px;
+  font-family:'Silkscreen',monospace;
+  font-size:10px;
+  letter-spacing:1px;
+  cursor:pointer;
+}
+.oa-v-del:hover{ background:rgba(255,51,102,.3); }
+
+/* ---------- Modal de criação ---------- */
+#oa-create-modal{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.85);
+  z-index:10040;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  backdrop-filter:blur(6px);
+  padding:16px;
+}
+#oa-create-modal.on{ display:flex; }
+.oa-c-box{
+  background:var(--bg-card);
+  border:1px solid var(--border-glow);
+  border-radius:16px;
+  padding:22px;
+  max-width:380px;
+  width:100%;
+  backdrop-filter:blur(20px);
+  box-shadow:0 0 30px rgba(0,255,204,.15);
+}
+.oa-c-title{
+  font-family:'Silkscreen',monospace;
+  font-size:14px;
+  color:var(--neon-pink);
+  letter-spacing:2px;
+  text-shadow:0 0 6px rgba(255,51,102,.5);
+  margin-bottom:6px;
+}
+.oa-c-sub{
+  font-family:'Space Mono',monospace;
+  font-size:11px;
+  color:var(--text-muted);
+  margin-bottom:18px;
+  line-height:1.5;
+}
+.oa-c-actions{
+  display:flex; gap:10px;
+  flex-direction:column;
+}
+.oa-c-btn{
+  background:linear-gradient(135deg, var(--neon-pink), var(--neon-purple));
+  border:none;
+  color:#fff;
+  padding:14px;
+  border-radius:10px;
+  cursor:pointer;
+  font-family:'Silkscreen',monospace;
+  font-size:11px;
+  letter-spacing:1px;
+  box-shadow:0 4px 12px rgba(255,51,102,.3);
+}
+.oa-c-btn.sec{
+  background:transparent;
+  border:1px solid var(--border-glow);
+  color:var(--neon-cyan);
+  box-shadow:none;
+}
+.oa-c-btn.cancel{
+  background:transparent;
+  border:1px solid rgba(255,255,255,.1);
+  color:var(--text-muted);
+  box-shadow:none;
+}
+.oa-c-preview{
+  width:100%;
+  max-height:280px;
+  border-radius:10px;
+  object-fit:contain;
+  background:#000;
+  margin-bottom:12px;
+  border:1px solid var(--border-glow);
+}
+.oa-c-progress{
+  width:100%;
+  height:16px;
+  background:rgba(0,255,204,.08);
+  border:1px solid var(--neon-cyan);
+  border-radius:8px;
+  overflow:hidden;
+  margin:10px 0;
+  position:relative;
+}
+.oa-c-progress > i{
+  display:block;
+  height:100%;
+  width:0%;
+  background:linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+  transition:width .3s;
+  box-shadow:0 0 8px var(--neon-cyan);
+}
+.oa-c-progress > span{
+  position:absolute; inset:0;
+  display:flex;align-items:center;justify-content:center;
+  font-family:'VT323',monospace;
+  font-size:13px; color:#fff;
+}
+
+/* Mobile: reduzir largura do viewer */
+@media (max-width:480px){
+  .oa-v-stage{ max-width:100%; }
+  .oa-rail{ margin:0 0 12px; padding:12px 6px 14px; }
+  .oa-bubble{ width:68px; }
+  .oa-ring{ width:58px; height:58px; }
+}
+
 </style>
 </head>
 <body>
@@ -3869,6 +4264,10 @@ body.day-mode::before{
 
       <!-- TAB: FEED -->
       <div class="tab-panel active" id="ht-feed" style="padding-top:16px;">
+
+        <!-- OLHA AQUI! Rail horizontal de stories (injetado) -->
+        <div class="oa-rail" id="oa-rail"></div>
+
         <div class="composer" id="composer-box">
           <div style="display:flex;gap:10px;margin-bottom:10px;">
             <img class="cav" id="c-av" src="https://api.dicebear.com/7.x/pixel-art/svg?seed=default" data-dicebear-direct="1">
@@ -19823,6 +20222,727 @@ async function checkCanCreateComm(){
   return true;
 }
 
+
+
+/* ============================================================
+   OLHA AQUI! Modulo injetado (EuAqui Stories)
+   ============================================================ */
+/* ============================================================================
+   OLHA AQUI! — Modulo JavaScript (EuAqui Stories)
+   ----------------------------------------------------------------------------
+   ONDE COLAR: no FINAL do seu bloco script principal (antes do fechamento
+               da tag script). Depende das variaveis GLOBAIS ja existentes:
+                 - db              (cliente Supabase)
+                 - CU              (usuário logado: {id, username, avatar_url, ...})
+                 - CP              (perfil atual)
+                 - uploadWithPipeline(file, type, onStatus)  → retorna URL pública R2
+                 - showToast(msg, kind)
+   ============================================================================ */
+(function(){
+'use strict';
+
+// =========================================================================
+// CONFIG
+// =========================================================================
+const OA_IMAGE_DURATION_MS = 6000;   // Imagem: 6s na tela
+const OA_VIDEO_MAX_MS      = 30000;  // Vídeo: máximo 30s
+const OA_TTL_HOURS         = 24;     // Expiração: 24h
+const OA_POLL_MS           = 60000;  // Recarregar rail a cada 60s
+
+// =========================================================================
+// ESTADO
+// =========================================================================
+let oaGroups = [];        // [{userId, username, avatar_url, items:[...], seen:bool}]
+let oaViewer = {
+  open:false,
+  groupIdx:0,
+  itemIdx:0,
+  timer:null,
+  startedAt:0,
+  remaining:0,
+  paused:false,
+  videoEl:null,
+  duration:OA_IMAGE_DURATION_MS
+};
+let oaSeenSet = _oaLoadSeen();
+
+// =========================================================================
+// HELPERS
+// =========================================================================
+function _oaLoadSeen(){
+  try{ return new Set(JSON.parse(localStorage.getItem('oa_seen')||'[]')); }
+  catch(e){ return new Set(); }
+}
+function _oaSaveSeen(){
+  try{
+    // Só guardamos os últimos 500 IDs pra não estourar o localStorage
+    const arr = [...oaSeenSet].slice(-500);
+    localStorage.setItem('oa_seen', JSON.stringify(arr));
+  }catch(e){}
+}
+function _oaTimeAgo(iso){
+  const diff = Math.max(0, Date.now() - new Date(iso).getTime());
+  const m = Math.floor(diff/60000);
+  if(m < 1) return 'agora';
+  if(m < 60) return m+'m';
+  const h = Math.floor(m/60);
+  return h+'h';
+}
+function _oaEscape(s){
+  return String(s||'').replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+
+// =========================================================================
+// BUSCA DADOS NO SUPABASE
+// =========================================================================
+// Helper: extrai SOMENTE strings dos objetos de erro — nunca retorna
+// o próprio objeto (evita DataCloneError em hooks de debug de browser).
+function _oaErrInfo(err){
+  if(!err) return { message:'(no error)' };
+  const out = {};
+  try{ out.message = String(err.message||err.error_description||err); }catch(e){ out.message='(unreadable)'; }
+  try{ if(err.code) out.code = String(err.code); }catch(e){}
+  try{ if(err.hint) out.hint = String(err.hint); }catch(e){}
+  try{ if(err.details) out.details = String(err.details); }catch(e){}
+  try{ if(err.status) out.status = String(err.status); }catch(e){}
+  return out;
+}
+
+let _oaTableMissing = false;   // trava para não spammar tentativas se não existe
+let _oaProfilesBad  = false;   // trava se falha em profiles
+
+async function oaLoadRail(){
+  // Se já detectamos que a tabela não existe, nem tenta
+  if(_oaTableMissing){ renderOaRail([]); return; }
+
+  // 1) BUSCA os stories ativos (isolado em try/catch próprio)
+  let items = [];
+  try{
+    const cutoff = new Date(Date.now() - OA_TTL_HOURS*3600*1000).toISOString();
+    const resp = await db
+      .from('olha_aqui')
+      .select('id, user_id, media_url, media_type, created_at, expires_at')
+      .gte('created_at', cutoff)
+      .order('created_at', { ascending:false })
+      .limit(200);
+
+    if(resp && resp.error){
+      const info = _oaErrInfo(resp.error);
+      // 42P01 = undefined_table. 42703 = undefined_column.
+      if(info.code === '42P01' || /does not exist/i.test(info.message||'')){
+        _oaTableMissing = true;
+        console.warn('[OA] tabela "olha_aqui" nao existe no Supabase. Rode o SQL 4_supabase.sql para criar.');
+      } else if(info.code === 'PGRST301' || /jwt|JWT|permission/i.test(info.message||'')){
+        console.warn('[OA] RLS/JWT bloqueou SELECT em olha_aqui. Verifique as policies.');
+      } else {
+        console.warn('[OA] erro lendo olha_aqui:', info.message, '(code:', info.code||'?', ')');
+      }
+      renderOaRail([]);
+      return;
+    }
+    items = (resp && resp.data) || [];
+  }catch(e){
+    console.warn('[OA] excecao lendo olha_aqui:', _oaErrInfo(e).message);
+    renderOaRail([]);
+    return;
+  }
+
+  if(!items.length){ oaGroups=[]; renderOaRail([]); return; }
+
+  // 2) BUSCA os profiles (isolado — se falhar, usamos placeholders)
+  const userIds = [...new Set(items.map(x=>x.user_id).filter(Boolean))];
+  let profMap = {};
+  if(userIds.length && !_oaProfilesBad){
+    try{
+      const resp2 = await db
+        .from('profiles')
+        .select('id, username, full_name, avatar_url')
+        .in('id', userIds);
+      if(resp2 && resp2.error){
+        const info = _oaErrInfo(resp2.error);
+        console.warn('[OA] erro lendo profiles:', info.message, '(code:', info.code||'?', ') — usando fallback');
+        _oaProfilesBad = true;
+      } else {
+        (resp2?.data || []).forEach(p => { profMap[p.id] = p; });
+      }
+    }catch(e){
+      console.warn('[OA] excecao lendo profiles:', _oaErrInfo(e).message, '— usando fallback');
+      _oaProfilesBad = true;
+    }
+  }
+
+    // Agrupa por usuário
+  // 3) AGRUPAR e RENDERIZAR
+  const byUser = {};
+  items.forEach(it=>{
+    if(!byUser[it.user_id]) byUser[it.user_id] = {
+      userId: it.user_id,
+      username: profMap[it.user_id]?.username || 'usuario',
+      fullName: profMap[it.user_id]?.full_name || '',
+      avatar_url: profMap[it.user_id]?.avatar_url || '',
+      items: []
+    };
+    byUser[it.user_id].items.push(it);
+  });
+
+  // Ordena itens de cada usuário do mais antigo para o mais novo
+  Object.values(byUser).forEach(g=>{
+    g.items.sort((a,b)=> new Date(a.created_at) - new Date(b.created_at));
+    g.seen = g.items.every(it => oaSeenSet.has(it.id));
+  });
+
+  // Ordem no rail: MEU PROPRIO primeiro, depois nao-vistos, depois vistos
+  oaGroups = Object.values(byUser).sort((a,b)=>{
+    if(CU && a.userId===CU.id) return -1;
+    if(CU && b.userId===CU.id) return 1;
+    if(a.seen !== b.seen) return a.seen ? 1 : -1;
+    const la = a.items[a.items.length-1]?.created_at || '';
+    const lb = b.items[b.items.length-1]?.created_at || '';
+    return lb.localeCompare(la);
+  });
+
+  renderOaRail(oaGroups);
+}
+
+// =========================================================================
+// RENDERIZAÇÃO DO RAIL
+// =========================================================================
+function renderOaRail(groups){
+  const rail = document.getElementById('oa-rail');
+  if(!rail) return;
+
+  // Bolha "+ Seu Olha Aqui" (sempre primeiro se logado)
+  let html = '';
+  if(CU){
+    const myGroup = groups.find(g=>g.userId===CU.id);
+    const myAv = (CP?.avatar_url || CU?.avatar_url ||
+                 'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(CU?.id||'me'));
+    html += `
+      <div class="oa-bubble" onclick="oaOpenCreate()">
+        <div class="oa-ring me">
+          <img src="${_oaEscape(myAv)}" alt="você" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${_oaEscape(CU.id||'me')}'">
+          <div class="oa-plus">+</div>
+        </div>
+        <div class="oa-name">${myGroup ? 'Seu Olha' : 'Adicionar'}</div>
+      </div>
+    `;
+    // Se o usuário tem stories próprios, também entra no fluxo normal
+  }
+
+  // Demais usuários (exclui o próprio, já representado acima pela bolha +)
+  groups.filter(g => !CU || g.userId !== CU.id).forEach((g, i)=>{
+    const realIdx = oaGroups.indexOf(g);
+    html += `
+      <div class="oa-bubble" onclick="oaOpenViewer(${realIdx})">
+        <div class="oa-ring ${g.seen?'seen':''}">
+          <img src="${_oaEscape(g.avatar_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+g.userId))}"
+               alt="${_oaEscape(g.username)}"
+               onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${_oaEscape(g.userId)}'">
+        </div>
+        <div class="oa-name">@${_oaEscape(g.username)}</div>
+      </div>
+    `;
+  });
+
+  // Quando o usuário TEM o próprio story, oferece também ver os próprios na bolha +
+  // (re-clica-se na bolha +; lógica abaixo abre viewer se já existir)
+  if(!groups.length && !CU){
+    html = '<div class="oa-empty">✨ Faça login e seja o primeiro a postar um Olha Aqui!</div>';
+  }
+  if(!groups.length && CU){
+    // Mantém apenas a bolha "Adicionar" — adiciona um dica
+    html += '<div class="oa-empty">✨ Seja o primeiro a postar um Olha Aqui hoje!</div>';
+  }
+
+  rail.innerHTML = html;
+}
+
+// =========================================================================
+// CRIAÇÃO — MODAL, SELEÇÃO, UPLOAD
+// =========================================================================
+let _oaPickedFile = null;
+let _oaPickedType = null; // 'image' | 'video'
+
+function oaOpenCreate(){
+  if(!CU){ showToast('Faça login para publicar','error'); return; }
+  // Se usuário já tem stories, damos escolha: ver os meus ou publicar novo
+  const mine = oaGroups.find(g=>g.userId===CU.id);
+  if(mine){
+    // Menu rápido
+    const choose = confirm('Você já tem um Olha Aqui ativo.\n\nOK = Publicar outro\nCancelar = Ver os meus');
+    if(!choose){ oaOpenViewer(oaGroups.indexOf(mine)); return; }
+  }
+  _oaPickedFile = null; _oaPickedType = null;
+  document.getElementById('oa-c-actions').style.display = 'flex';
+  document.getElementById('oa-c-confirm').style.display = 'none';
+  document.getElementById('oa-c-preview-wrap').style.display = 'none';
+  document.getElementById('oa-c-preview-wrap').innerHTML = '';
+  document.getElementById('oa-c-progress').style.display = 'none';
+  document.getElementById('oa-create-modal').classList.add('on');
+}
+window.oaOpenCreate = oaOpenCreate;
+
+function oaCloseCreate(){
+  document.getElementById('oa-create-modal').classList.remove('on');
+  _oaPickedFile = null; _oaPickedType = null;
+}
+window.oaCloseCreate = oaCloseCreate;
+
+function oaPickMedia(accept){
+  const inp = document.getElementById('oa-c-file');
+  inp.accept = accept;
+  inp.value = '';
+  inp.click();
+}
+window.oaPickMedia = oaPickMedia;
+
+async function oaOnFilePicked(input){
+  const f = input.files && input.files[0];
+  if(!f) return;
+  const isVid = f.type.startsWith('video/');
+
+  // Validação de duração do vídeo (30s)
+  if(isVid){
+    const dur = await new Promise(res=>{
+      const v=document.createElement('video');
+      v.preload='metadata';
+      v.src=URL.createObjectURL(f);
+      v.onloadedmetadata=()=>{ URL.revokeObjectURL(v.src); res(v.duration||0); };
+      v.onerror=()=>res(0);
+      setTimeout(()=>res(0),5000);
+    });
+    if(dur > (OA_VIDEO_MAX_MS/1000)+0.5){
+      showToast(`🚫 Vídeo muito longo (${Math.round(dur)}s). Máximo: ${OA_VIDEO_MAX_MS/1000}s.`,'error');
+      return;
+    }
+  }
+
+  _oaPickedFile = f;
+  _oaPickedType = isVid ? 'video' : 'image';
+
+  // Preview
+  const wrap = document.getElementById('oa-c-preview-wrap');
+  wrap.innerHTML = '';
+  const url = URL.createObjectURL(f);
+  if(isVid){
+    const v = document.createElement('video');
+    v.src = url; v.className='oa-c-preview'; v.controls=true; v.muted=true; v.playsInline=true;
+    wrap.appendChild(v);
+  } else {
+    const img = document.createElement('img');
+    img.src = url; img.className='oa-c-preview';
+    wrap.appendChild(img);
+  }
+  wrap.style.display = 'block';
+  document.getElementById('oa-c-actions').style.display = 'none';
+  document.getElementById('oa-c-confirm').style.display = 'flex';
+}
+window.oaOnFilePicked = oaOnFilePicked;
+
+function oaResetCreate(){
+  _oaPickedFile = null; _oaPickedType = null;
+  document.getElementById('oa-c-preview-wrap').style.display = 'none';
+  document.getElementById('oa-c-preview-wrap').innerHTML = '';
+  document.getElementById('oa-c-actions').style.display = 'flex';
+  document.getElementById('oa-c-confirm').style.display = 'none';
+}
+window.oaResetCreate = oaResetCreate;
+
+async function oaPublish(){
+  if(!_oaPickedFile || !_oaPickedType){ showToast('Escolha uma mídia','error'); return; }
+  if(!CU){ showToast('Faça login','error'); return; }
+
+  const btn = document.getElementById('oa-c-publish');
+  btn.disabled = true; btn.textContent = '⏳ Enviando...';
+
+  const prog = document.getElementById('oa-c-progress');
+  const fill = document.getElementById('oa-c-progress-fill');
+  const txt  = document.getElementById('oa-c-progress-text');
+  prog.style.display = 'block';
+
+  try{
+    // 1) Upload usando a MESMA pipeline do feed (Sightengine + compressão + R2)
+    const publicUrl = await uploadWithPipeline(_oaPickedFile, _oaPickedType, (status)=>{
+      if(typeof status === 'string' && status.startsWith('PROGRESS:')){
+        const parts = status.split(':');
+        const pct = parseInt(parts[1]||'0',10);
+        const label = parts.slice(2).join(':') || '';
+        fill.style.width = pct+'%';
+        txt.textContent = pct+'% ' + label;
+      }
+    });
+
+    // 2) Grava metadados no Supabase
+    const expiresAt = new Date(Date.now() + OA_TTL_HOURS*3600*1000).toISOString();
+    const { data, error } = await db.from('olha_aqui').insert({
+      user_id: CU.id,
+      media_url: publicUrl,
+      media_type: _oaPickedType,
+      expires_at: expiresAt
+    }).select().single();
+
+    if(error) throw error;
+
+    showToast('✅ Olha Aqui publicado! Expira em 24h.','success');
+    oaCloseCreate();
+    // Reset e recarrega o rail
+    _oaPickedFile = null; _oaPickedType = null;
+    await oaLoadRail();
+
+  }catch(e){
+    console.error('[OA] publish error:', e);
+    const msg = e.userMessage || e.message || 'Falha ao publicar';
+    showToast('❌ '+msg, 'error');
+  }finally{
+    btn.disabled = false; btn.textContent = '🚀 PUBLICAR';
+  }
+}
+window.oaPublish = oaPublish;
+
+// =========================================================================
+// VIEWER — ABERTURA, NAVEGAÇÃO, TIMERS
+// =========================================================================
+function oaOpenViewer(groupIdx, itemIdx){
+  if(!oaGroups.length) return;
+  if(groupIdx < 0 || groupIdx >= oaGroups.length) return;
+
+  oaViewer.open = true;
+  oaViewer.groupIdx = groupIdx;
+  oaViewer.itemIdx = Math.max(0, itemIdx||0);
+  oaViewer.paused = false;
+
+  document.getElementById('oa-viewer').classList.add('on');
+  // Trava scroll do body enquanto viewer está aberto
+  document.body.style.overflow = 'hidden';
+
+  oaRenderItem();
+}
+window.oaOpenViewer = oaOpenViewer;
+
+function oaCloseViewer(){
+  oaViewer.open = false;
+  _oaStopTimer();
+  _oaCleanupMedia();
+  document.getElementById('oa-viewer').classList.remove('on');
+  document.body.style.overflow = '';
+  _oaSaveSeen();
+  // Atualiza rail (pra marcar como visto, remover anéis, etc.)
+  renderOaRail(oaGroups);
+}
+window.oaCloseViewer = oaCloseViewer;
+
+function _oaCleanupMedia(){
+  const wrap = document.getElementById('oa-v-media-wrap');
+  if(!wrap) return;
+  // Pausa qualquer vídeo
+  wrap.querySelectorAll('video').forEach(v=>{ try{ v.pause(); }catch(e){} });
+  wrap.innerHTML = '';
+  oaViewer.videoEl = null;
+}
+
+function oaRenderItem(){
+  const g = oaGroups[oaViewer.groupIdx];
+  if(!g){ oaCloseViewer(); return; }
+  const it = g.items[oaViewer.itemIdx];
+  if(!it){ oaCloseViewer(); return; }
+
+  _oaStopTimer();
+  _oaCleanupMedia();
+
+  // Marca como visto
+  oaSeenSet.add(it.id);
+  g.seen = g.items.every(x=> oaSeenSet.has(x.id));
+
+  // Header
+  document.getElementById('oa-v-avatar').src = g.avatar_url ||
+    ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+g.userId);
+  document.getElementById('oa-v-name').textContent = '@'+g.username;
+  document.getElementById('oa-v-time').textContent = _oaTimeAgo(it.created_at);
+
+  // Rodapé (excluir) apenas se for do próprio usuário
+  const foot = document.getElementById('oa-v-foot');
+  foot.style.display = (CU && g.userId===CU.id) ? 'flex' : 'none';
+
+  // Barras de progresso (uma por item)
+  const bars = document.getElementById('oa-v-bars');
+  bars.innerHTML = g.items.map((x,i)=>{
+    const cls = i < oaViewer.itemIdx ? 'oa-v-bar done' : 'oa-v-bar';
+    return `<div class="${cls}"><i></i></div>`;
+  }).join('');
+
+  // Loader
+  const load = document.getElementById('oa-v-load');
+  load.style.display = 'flex';
+
+  // Render de mídia
+  const wrap = document.getElementById('oa-v-media-wrap');
+  if(it.media_type === 'video'){
+    const v = document.createElement('video');
+    v.src = it.media_url;
+    v.className = 'oa-v-media';
+    v.playsInline = true;
+    v.autoplay = true;
+    v.muted = false;
+    v.preload = 'auto';
+    v.onloadedmetadata = ()=>{
+      load.style.display = 'none';
+      // Duração do story = min(vídeo real, 30s)
+      const realMs = Math.min((v.duration||0)*1000, OA_VIDEO_MAX_MS);
+      oaViewer.duration = realMs || OA_VIDEO_MAX_MS;
+      _oaStartTimer();
+    };
+    v.onerror = ()=>{ load.innerHTML = '<div>⚠ FALHA AO CARREGAR</div>'; setTimeout(oaNext, 1500); };
+    v.onended = oaNext;
+    // Evita que o vídeo passe de 30s
+    v.ontimeupdate = ()=>{
+      if(v.currentTime*1000 >= OA_VIDEO_MAX_MS){ try{v.pause();}catch(e){} oaNext(); }
+    };
+    oaViewer.videoEl = v;
+    wrap.appendChild(v);
+    // Alguns browsers podem bloquear autoplay com som — tentamos dar play explicitamente
+    v.play().catch(()=>{
+      // Fallback: muta e tenta de novo
+      v.muted = true; v.play().catch(()=>{});
+    });
+  } else {
+    // Imagem
+    const img = new Image();
+    img.className = 'oa-v-media';
+    img.onload = ()=>{
+      load.style.display = 'none';
+      oaViewer.duration = OA_IMAGE_DURATION_MS;
+      wrap.appendChild(img);
+      _oaStartTimer();
+    };
+    img.onerror = ()=>{ load.innerHTML = '<div>⚠ FALHA AO CARREGAR</div>'; setTimeout(oaNext, 1500); };
+    img.src = it.media_url;
+  }
+
+  // Pré-carrega a próxima mídia (UX mais suave)
+  const nextItem = g.items[oaViewer.itemIdx+1] ||
+                   oaGroups[oaViewer.groupIdx+1]?.items?.[0];
+  if(nextItem){
+    if(nextItem.media_type==='video'){
+      // Hint: cria preload link
+      try{
+        const link = document.createElement('link');
+        link.rel='prefetch'; link.as='video'; link.href=nextItem.media_url;
+        document.head.appendChild(link);
+        setTimeout(()=>{ try{link.remove();}catch(e){} }, 10000);
+      }catch(e){}
+    }else{
+      const pre = new Image(); pre.src = nextItem.media_url;
+    }
+  }
+}
+
+function _oaStartTimer(){
+  _oaStopTimer();
+  oaViewer.startedAt = Date.now();
+  oaViewer.remaining = oaViewer.duration;
+
+  // Atualiza barra ~30 vezes por segundo
+  const bar = document.querySelectorAll('#oa-v-bars .oa-v-bar')[oaViewer.itemIdx];
+  const fill = bar ? bar.querySelector('i') : null;
+
+  const tick = ()=>{
+    if(!oaViewer.open) return;
+    if(oaViewer.paused){ oaViewer.timer = requestAnimationFrame(tick); return; }
+    const elapsed = Date.now() - oaViewer.startedAt;
+    const pct = Math.min(100, (elapsed / oaViewer.duration) * 100);
+    if(fill) fill.style.width = pct + '%';
+    if(elapsed >= oaViewer.duration){
+      oaNext();
+      return;
+    }
+    oaViewer.timer = requestAnimationFrame(tick);
+  };
+  oaViewer.timer = requestAnimationFrame(tick);
+}
+
+function _oaStopTimer(){
+  if(oaViewer.timer){ cancelAnimationFrame(oaViewer.timer); oaViewer.timer = null; }
+}
+
+function oaNext(){
+  if(!oaViewer.open) return;
+  const g = oaGroups[oaViewer.groupIdx];
+  if(!g){ oaCloseViewer(); return; }
+  if(oaViewer.itemIdx + 1 < g.items.length){
+    oaViewer.itemIdx++;
+    oaRenderItem();
+  } else if(oaViewer.groupIdx + 1 < oaGroups.length){
+    oaViewer.groupIdx++;
+    oaViewer.itemIdx = 0;
+    oaRenderItem();
+  } else {
+    oaCloseViewer();
+  }
+}
+window.oaNext = oaNext;
+
+function oaPrev(){
+  if(!oaViewer.open) return;
+  if(oaViewer.itemIdx > 0){
+    oaViewer.itemIdx--;
+    oaRenderItem();
+  } else if(oaViewer.groupIdx > 0){
+    oaViewer.groupIdx--;
+    const g = oaGroups[oaViewer.groupIdx];
+    oaViewer.itemIdx = Math.max(0, (g.items.length||1) - 1);
+    oaRenderItem();
+  } else {
+    // Primeiro do primeiro: reinicia barra
+    _oaStartTimer();
+  }
+}
+window.oaPrev = oaPrev;
+
+function oaTogglePause(){
+  oaViewer.paused = !oaViewer.paused;
+  const btn = document.getElementById('oa-v-pause');
+  if(oaViewer.paused){
+    btn.textContent = '▶';
+    // Ao pausar: se for vídeo, pausa de fato e "congela" tempo decorrido
+    if(oaViewer.videoEl){ try{ oaViewer.videoEl.pause(); }catch(e){} }
+    // Preserva tempo decorrido
+    oaViewer.remaining = oaViewer.duration - (Date.now() - oaViewer.startedAt);
+  } else {
+    btn.textContent = '⏸';
+    if(oaViewer.videoEl){ try{ oaViewer.videoEl.play(); }catch(e){} }
+    // Reinicia contagem do tempo restante
+    oaViewer.startedAt = Date.now() - (oaViewer.duration - Math.max(0, oaViewer.remaining));
+  }
+}
+window.oaTogglePause = oaTogglePause;
+
+// Hold-to-pause (dedo pressionado no centro)
+let _oaHoldTimer = null;
+function oaHoldStart(){
+  _oaHoldTimer = setTimeout(()=>{
+    if(!oaViewer.paused) oaTogglePause();
+  }, 180); // 180ms = hold; abaixo disso é só click acidental
+}
+window.oaHoldStart = oaHoldStart;
+function oaHoldEnd(){
+  if(_oaHoldTimer){ clearTimeout(_oaHoldTimer); _oaHoldTimer = null; }
+  if(oaViewer.paused) oaTogglePause();
+}
+window.oaHoldEnd = oaHoldEnd;
+
+// Teclas (desktop)
+document.addEventListener('keydown', (e)=>{
+  if(!oaViewer.open) return;
+  if(e.key === 'Escape'){ oaCloseViewer(); }
+  else if(e.key === 'ArrowRight'){ oaNext(); }
+  else if(e.key === 'ArrowLeft'){ oaPrev(); }
+  else if(e.key === ' '){ e.preventDefault(); oaTogglePause(); }
+});
+
+// =========================================================================
+// EXCLUSÃO MANUAL (usuário excluindo o próprio story)
+// =========================================================================
+async function oaDeleteCurrent(){
+  const g = oaGroups[oaViewer.groupIdx];
+  const it = g?.items?.[oaViewer.itemIdx];
+  if(!it || !CU || g.userId !== CU.id) return;
+  if(!confirm('Excluir este Olha Aqui? Isso remove a mídia do R2 também.')) return;
+
+  // Pausa timer enquanto exclui
+  _oaStopTimer();
+  try{
+    // 1) Remove registro no Supabase
+    const { error } = await db.from('olha_aqui').delete().eq('id', it.id);
+    if(error) throw error;
+
+    // 2) Remove arquivo do R2 via backend Java (opcional mas recomendado)
+    //    O backend deve expor DELETE /api/r2/object?key=... autenticado
+    //    Se você já tem essa rota, chamamos silenciosamente. Se não tem,
+    //    o lifecycle rule de 1 dia garante a limpeza igual. Vale nos 2 casos.
+    try{
+      if(window.R2_BACKEND_URL && it.media_url){
+        // Tenta extrair a key (último segmento ou tudo após '/media/')
+        const key = _oaExtractKey(it.media_url);
+        if(key){
+          fetch(window.R2_BACKEND_URL + '/api/r2/object?key=' + encodeURIComponent(key), {
+            method:'DELETE',
+            headers:{ 'Authorization':'Bearer '+(CU.id||'') }
+          }).catch(()=>{});
+        }
+      }
+    }catch(e){}
+
+    // Remove do estado local
+    g.items.splice(oaViewer.itemIdx, 1);
+    if(!g.items.length){
+      // Usuário ficou sem stories
+      oaGroups.splice(oaViewer.groupIdx, 1);
+      oaCloseViewer();
+      await oaLoadRail();
+      return;
+    }
+    if(oaViewer.itemIdx >= g.items.length) oaViewer.itemIdx = g.items.length-1;
+    oaRenderItem();
+    showToast('🗑 Olha Aqui excluído','success');
+  }catch(e){
+    console.error('[OA] delete error:', e);
+    showToast('❌ Falha ao excluir: '+(e.message||e),'error');
+    _oaStartTimer();
+  }
+}
+window.oaDeleteCurrent = oaDeleteCurrent;
+
+function _oaExtractKey(url){
+  try{
+    const u = new URL(url);
+    // Remove barra inicial do path
+    return u.pathname.replace(/^\//,'');
+  }catch(e){ return null; }
+}
+
+// =========================================================================
+// BOOT — carrega rail quando o usuário tá logado e o DOM está pronto
+// =========================================================================
+function oaBoot(){
+  // Só tenta carregar se o rail existe no DOM (pode estar em outra aba/página)
+  if(!document.getElementById('oa-rail')) return;
+  oaLoadRail();
+  // Auto-refresh leve
+  if(!window._oaPollTimer){
+    window._oaPollTimer = setInterval(()=>{
+      if(document.getElementById('oa-rail') && !oaViewer.open){
+        oaLoadRail();
+      }
+    }, OA_POLL_MS);
+  }
+}
+
+// Expõe para que outras partes do seu app possam chamar quando o user logar
+window.oaBoot = oaBoot;
+window.oaLoadRail = oaLoadRail;
+
+// Chama após DOM pronto
+if(document.readyState === 'loading'){
+  document.addEventListener('DOMContentLoaded', oaBoot);
+} else {
+  // Pequeno delay pra garantir que CU/CP já foram preenchidos pelo seu boot
+  setTimeout(oaBoot, 800);
+}
+
+// Também recarrega quando o usuário loga (bate numa eventual função existente)
+// Se você tiver um ponto central pós-login, chame oaLoadRail() lá também.
+if(typeof db !== 'undefined' && db?.auth?.onAuthStateChange){
+  db.auth.onAuthStateChange((event, session)=>{
+    if(event === 'SIGNED_IN' || event === 'INITIAL_SESSION'){
+      setTimeout(()=>{ if(document.getElementById('oa-rail')) oaLoadRail(); }, 600);
+    }
+  });
+}
+
+})();
+
 </script>
 
 
@@ -19985,6 +21105,57 @@ export default {
 */
 
 </script>
+
+
+<!-- OLHA AQUI! Viewer (injetado) -->
+<div id="oa-viewer" role="dialog" aria-label="Olha Aqui viewer">
+  <div class="oa-v-stage" id="oa-v-stage">
+    <div class="oa-v-bars" id="oa-v-bars"></div>
+    <div class="oa-v-head">
+      <img class="oa-v-avatar" id="oa-v-avatar" src="" alt="">
+      <div class="oa-v-info">
+        <div class="oa-v-name" id="oa-v-name">-</div>
+        <div class="oa-v-time" id="oa-v-time">agora</div>
+      </div>
+      <button class="oa-v-pause" id="oa-v-pause" onclick="oaTogglePause()" title="Pausar">&#9208;</button>
+      <button class="oa-v-close" onclick="oaCloseViewer()" title="Fechar">&#10005;</button>
+    </div>
+    <div id="oa-v-media-wrap" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;"></div>
+    <div class="oa-v-load" id="oa-v-load" style="display:none;"><div>CARREGANDO...</div></div>
+    <div class="oa-v-tap prev" onclick="oaPrev()"></div>
+    <div class="oa-v-tap hold"
+         onpointerdown="oaHoldStart()"
+         onpointerup="oaHoldEnd()"
+         onpointerleave="oaHoldEnd()"></div>
+    <div class="oa-v-tap next" onclick="oaNext()"></div>
+    <div class="oa-v-foot" id="oa-v-foot" style="display:none;">
+      <button class="oa-v-del" onclick="oaDeleteCurrent()">&#128465; Excluir</button>
+    </div>
+  </div>
+</div>
+
+<!-- OLHA AQUI! Modal de criacao (injetado) -->
+<div id="oa-create-modal" role="dialog" aria-label="Criar Olha Aqui">
+  <div class="oa-c-box">
+    <div class="oa-c-title">&#10024; NOVO OLHA AQUI!</div>
+    <div class="oa-c-sub">Publique uma foto ou video curto. Expira em 24 horas automaticamente.</div>
+    <div id="oa-c-preview-wrap" style="display:none;"></div>
+    <div class="oa-c-progress" id="oa-c-progress" style="display:none;">
+      <i id="oa-c-progress-fill"></i>
+      <span id="oa-c-progress-text">0%</span>
+    </div>
+    <div class="oa-c-actions" id="oa-c-actions">
+      <button class="oa-c-btn" onclick="oaPickMedia('image/*')">&#128247; Escolher Foto</button>
+      <button class="oa-c-btn sec" onclick="oaPickMedia('video/*')">&#127916; Escolher Video (max 30s)</button>
+      <button class="oa-c-btn cancel" onclick="oaCloseCreate()">Cancelar</button>
+    </div>
+    <div class="oa-c-actions" id="oa-c-confirm" style="display:none;">
+      <button class="oa-c-btn" id="oa-c-publish" onclick="oaPublish()">&#128640; PUBLICAR</button>
+      <button class="oa-c-btn cancel" onclick="oaResetCreate()">&#8617; Trocar midia</button>
+    </div>
+    <input type="file" id="oa-c-file" accept="image/*,video/*" style="display:none;" onchange="oaOnFilePicked(this)">
+  </div>
+</div>
 
 </body>
 </html>
