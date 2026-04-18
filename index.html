@@ -4001,12 +4001,14 @@ body.day-mode::before{
 /* CTA do story de negócio (Comprar / Agendar) */
 .oa-v-cta-btn{
   display:none; /* JS sobrescreve com 'flex' */
-  width:100%;
-  padding:12px;
-  border-radius:12px;
+  width:72%;           /* não ocupa tudo — mais elegante */
+  max-width:280px;
+  margin:0 auto 8px;   /* centralizado, com espaço abaixo */
+  padding:10px 18px;
+  border-radius:30px;  /* pílula */
   border:none;
   font-family:'Silkscreen',monospace;
-  font-size:13px;
+  font-size:12px;
   letter-spacing:1px;
   cursor:pointer;
   color:#fff;
@@ -4016,8 +4018,9 @@ body.day-mode::before{
   gap:8px;
   outline:none;
   -webkit-tap-highlight-color:transparent;
-  margin-bottom:6px;
   animation:oa-cta-pulse 1.6s ease-in-out infinite;
+  position:relative;
+  z-index:8;
 }
 .oa-v-cta-btn.buy{
   background:linear-gradient(135deg, #00b894, #00cec9);
@@ -4068,10 +4071,10 @@ body.day-mode::before{
 .oa-v-foot{
   position:absolute;
   bottom:0; left:0; right:0;
-  display:flex; flex-direction:column; gap:6px;
+  display:flex; flex-direction:column; gap:4px;
   z-index:7;
   background:transparent;
-  padding:8px 14px max(14px, env(safe-area-inset-bottom, 14px));
+  padding:0 14px max(10px, env(safe-area-inset-bottom, 10px));
 }
 .oa-v-reactions{
   display:flex; align-items:center; gap:6px;
@@ -14325,7 +14328,7 @@ async function loadMyBusiness(){
         <div class="prod-price">${p.price?'R$ '+Number(p.price).toFixed(2):xss(p.price_label||'Sob consulta')}</div>
         <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">
           <button class="tbtn" style="flex:1;font-size:9px;color:var(--neon-cyan);padding:5px;" onclick="divulgarProduto('${data.id}','${xss(p.name)}',${p.price||0},'${xss(p.image_url||'')}','${xss(p.price_label||'')}')">📢 Divulgar</button>
-          <button class="tbtn" style="flex:1;font-size:9px;color:var(--neon-pink);padding:5px;border-color:rgba(255,51,102,.4);" onclick="oaDivulgarProduto('${data.id}','${p.id}','${xss(p.name)}','${xss(p.image_url||'')}','${xss(myBusiness?.category||'loja')}','${xss(myBusiness?.logo_url||'')}','${xss(myBusiness?.name||'')}')">🚀 Story</button>
+          <button class="tbtn" style="flex:1;font-size:9px;color:var(--neon-pink);padding:5px;border-color:rgba(255,51,102,.4);" onclick="oaDivulgarProduto('${data.id}','${p.id}','${xss(p.name)}','${xss(p.image_url||'')}','${xss(myBusiness?.category||'loja')}','${xss(myBusiness?.logo_url||'')}','${xss(myBusiness?.name||'')}')">🚀 Olha Aqui</button>
           <button class="tbtn" style="font-size:9px;color:var(--neon-yellow);padding:5px;" onclick="editProduct('${p.id}','${xss(p.name)}',${p.price||0},'${xss(p.price_label||'')}','${xss(p.description||'')}','${xss(p.image_url||'')}','${_pUrls}')">✏️</button>
           <button class="tbtn" style="font-size:9px;padding:5px;" onclick="deleteProduct('${p.id}')">🗑</button>
         </div>`;
@@ -20873,21 +20876,35 @@ window.oaPickBizMedia = oaPickBizMedia;
 async function oaCtaAction(type){
   if(!CU){ showToast('Faça login para continuar','error'); return; }
   const btn = document.getElementById(type==='buy'?'oa-v-cta-buy':'oa-v-cta-book');
-  const bizUserId = btn?.dataset.bizUserId;
   const itemName  = btn?.dataset.itemName || 'produto/serviço';
-  if(!bizUserId){ showToast('Informação do vendedor não encontrada','error'); return; }
+  const bizId     = btn?.dataset.bizId    || '';
+  const bizUserId = btn?.dataset.bizUserId|| ''; // fallback se não achar owner
+  if(!bizUserId && !bizId){ showToast('Informação do vendedor não encontrada','error'); return; }
+
   const autoMsg = type==='buy'
     ? `Olá! Vi seu anúncio no Olha Aqui: ${itemName}. Gostaria de mais informações para comprar.`
     : `Olá! Vi seu anúncio no Olha Aqui: ${itemName}. Gostaria de agendar um horário.`;
+
   try{
-    const { data:prof } = await db.from('profiles').select('id,username,avatar_url').eq('id',bizUserId).maybeSingle();
-    if(!prof){ showToast('Vendedor não encontrado','error'); return; }
-    await db.from('messages').insert({ sender_id:CU.id, receiver_id:bizUserId, content:autoMsg, read:false });
+    // Busca o owner_id real da loja — é quem deve receber a mensagem
+    let ownerId = bizUserId;
+    if(bizId){
+      const { data:biz } = await db.from('businesses').select('owner_id').eq('id',bizId).maybeSingle();
+      if(biz?.owner_id) ownerId = biz.owner_id;
+    }
+
+    if(!ownerId){ showToast('Vendedor não encontrado','error'); return; }
+    if(ownerId === CU.id){ showToast('Este é o seu próprio anúncio','error'); return; }
+
+    const { data:prof } = await db.from('profiles').select('id,username,avatar_url').eq('id',ownerId).maybeSingle();
+    if(!prof){ showToast('Perfil do vendedor não encontrado','error'); return; }
+
+    await db.from('messages').insert({ sender_id:CU.id, receiver_id:ownerId, content:autoMsg, read:false });
     oaCloseViewer();
     showToast('✅ Mensagem enviada! Abrindo chat...','success');
     setTimeout(()=>{ nav('messages'); setTimeout(()=>{
       const av = prof.avatar_url||('https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u'));
-      openChat(bizUserId, prof.username||'', av);
+      openChat(ownerId, prof.username||'', av);
     },400); },600);
   }catch(e){ showToast('Erro ao enviar mensagem','error'); }
 }
@@ -21176,11 +21193,14 @@ function oaRenderItem(){
         _activBtn.title = '';
         // Guarda dados para o clique
         _activBtn.dataset.bizUserId = g.userId;
+        _activBtn.dataset.bizId     = _itMeta.business_id||'';
         _activBtn.dataset.itemName  = _itMeta.item_name||'';
         _activBtn.dataset.bizName   = _itMeta.biz_name||g.username;
         _ctaBuy.dataset.bizUserId   = g.userId;
+        _ctaBuy.dataset.bizId       = _itMeta.business_id||'';
         _ctaBuy.dataset.itemName    = _itMeta.item_name||'';
         _ctaBook.dataset.bizUserId  = g.userId;
+        _ctaBook.dataset.bizId      = _itMeta.business_id||'';
         _ctaBook.dataset.itemName   = _itMeta.item_name||'';
       }
     } else {
