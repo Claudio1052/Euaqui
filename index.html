@@ -7883,7 +7883,7 @@ async function r2GetPresign(file){
     r = await fetch(R2_BACKEND_URL+'/api/r2/presign', {
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+(CU?.id||'')},
-      body: JSON.stringify({ filename:safeName, contentType:file.type, size:file.size, userId:CU?.id })
+      body: JSON.stringify({ filename:safeName, contentType:file.type, size:file.size, userId:CU?.id, context: window._oaUploadContext || undefined })
     });
   }catch(netErr){
     const e = new Error('BACKEND_OFFLINE');
@@ -20563,6 +20563,11 @@ async function oaPublish(){
   prog.style.display = 'block';
 
   try{
+    // Sinaliza para o r2GetPresign que este upload é de "Olha Aqui"
+    // (o r2GetPresign lerá window._oaUploadContext e mandará context:'olha_aqui'
+    //  para o Worker, que por sua vez salvará no prefixo olha_aqui/)
+    window._oaUploadContext = 'olha_aqui';
+
     // 1) Upload usando a MESMA pipeline do feed (Sightengine + compressão + R2)
     const publicUrl = await uploadWithPipeline(_oaPickedFile, _oaPickedType, (status)=>{
       if(typeof status === 'string' && status.startsWith('PROGRESS:')){
@@ -20573,6 +20578,9 @@ async function oaPublish(){
         txt.textContent = pct+'% ' + label;
       }
     });
+
+    // Limpa a flag imediatamente após o upload
+    window._oaUploadContext = null;
 
     // 2) Grava metadados no Supabase
     const expiresAt = new Date(Date.now() + OA_TTL_HOURS*3600*1000).toISOString();
@@ -20596,6 +20604,8 @@ async function oaPublish(){
     const msg = e.userMessage || e.message || 'Falha ao publicar';
     showToast('❌ '+msg, 'error');
   }finally{
+    // Garante que a flag de contexto OA seja limpa sempre
+    window._oaUploadContext = null;
     btn.disabled = false; btn.textContent = '🚀 PUBLICAR';
   }
 }
