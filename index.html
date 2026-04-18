@@ -466,24 +466,45 @@ body.day-mode .repost-embed-card:hover{
 .ci-last{font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;}
 .ci-unread{background:var(--neon-pink);color:#fff;font-size:9px;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 4px;flex-shrink:0;}
 .chat-window{display:flex;flex-direction:column;background:var(--bg-deep);height:100%;overflow:hidden;}
-/* Biz chat window desktop — garante que o input fica fixo no rodapé */
+/* ── Biz chat atendimento desktop ──────────────────────────── */
+/* page-tabs ~44px + fc padding-top 16px + padding-bottom 80px */
+#biz-chats{
+  padding:0 !important;
+  margin:0 !important;
+}
+#biz-chat-wrap{
+  display:grid;
+  grid-template-columns:280px 1fr;
+  height:calc(100vh - var(--nav-h) - 44px); /* desconta a barra de abas */
+  overflow:hidden;
+  margin:0 -20px; /* cancela padding do .fc */
+}
+#biz-chat-sidebar{
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  border-right:1px solid var(--border-glow);
+  background:rgba(10,10,42,.8);
+  height:100%;
+}
 #biz-chat-window{
   display:flex;
   flex-direction:column;
   height:100%;
   overflow:hidden;
+  background:var(--bg-deep);
 }
 #biz-msgs-area{
   flex:1;
   overflow-y:auto;
-  min-height:0; /* essencial para flex scroll funcionar */
-  padding:16px;
+  min-height:0;
+  padding:14px 16px 8px;
   display:flex;
   flex-direction:column;
   gap:8px;
 }
 #biz-msg-in-area{
-  flex-shrink:0; /* nunca comprime — fica fixo */
+  flex-shrink:0;
   padding:10px 14px;
   border-top:1px solid var(--border-glow);
   background:rgba(10,10,42,.97);
@@ -491,13 +512,10 @@ body.day-mode .repost-embed-card:hover{
   display:none; /* JS alterna para flex */
   flex-direction:column;
   gap:6px;
-  position:sticky;
-  bottom:0;
   z-index:10;
-  max-height:160px; /* limite máximo do rodapé */
 }
 #biz-msg-in{
-  max-height:80px; /* limita crescimento do textarea */
+  max-height:80px;
   min-height:36px;
   resize:none;
   overflow-y:auto;
@@ -1112,12 +1130,12 @@ body{
     display: none !important;
   }
   #biz-chat-wrap {
-    flex: 1 !important;
-    min-height: 0 !important;
-    height: 100% !important;
-    position: relative !important;
-    overflow: hidden !important;
-    display: block !important;
+    display:block !important;
+    grid-template-columns:none !important;
+    height:calc(100vh - var(--nav-h) - 60px) !important;
+    position:relative !important;
+    overflow:hidden !important;
+    margin:0 !important;
   }
   #biz-chat-sidebar {
     position: absolute !important;
@@ -4926,8 +4944,8 @@ body.day-mode::before{
       </div>
 
       <!-- TAB: ATENDIMENTO (chat) -->
-      <div class="tab-panel" id="biz-chats" style="padding:0;margin:0;height:calc(100vh - var(--nav-h) - 50px);display:flex;flex-direction:column;overflow:hidden;">
-        <div class="chat-page-wrap" id="biz-chat-wrap" style="flex:1;min-height:0;height:100%;overflow:hidden;">
+      <div class="tab-panel" id="biz-chats" style="padding:0;margin:0;">
+        <div class="chat-page-wrap" id="biz-chat-wrap" style="">
           <div class="chat-sidebar" id="biz-chat-sidebar">
             <div class="chat-sb-hdr">
               <span class="chat-sb-title">💬 Atendimentos</span>
