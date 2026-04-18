@@ -3712,8 +3712,8 @@ body.day-mode::before{
   content:'';
   width:8px; height:8px;
   border-radius:50%;
-  background:var(--neon-pink);
-  box-shadow:0 0 6px var(--neon-pink), 0 0 12px var(--neon-pink);
+  background:var(--neon-cyan);
+  box-shadow:0 0 6px var(--neon-cyan), 0 0 12px var(--neon-cyan);
   animation:oa-dot-blink 1s step-start infinite;
   flex-shrink:0;
 }
@@ -3842,6 +3842,9 @@ body.day-mode::before{
   justify-content:center;
   user-select:none;
   -webkit-tap-highlight-color:transparent;
+  /* Garante que ocupe toda a área visível incluindo safe-area do mobile */
+  padding-top:env(safe-area-inset-top);
+  padding-bottom:env(safe-area-inset-bottom);
 }
 #oa-viewer.on{ display:flex; }
 
@@ -3849,9 +3852,9 @@ body.day-mode::before{
   position:relative;
   width:100%;
   max-width:480px;
-  height:100%;
-  max-height:100vh;
-  background:#000; /* fundo neutro apenas enquanto carrega */
+  height:100dvh; /* usa dvh para preencher até embaixo no mobile */
+  max-height:100dvh;
+  background:#000;
   overflow:hidden;
   display:flex;align-items:center;justify-content:center;
 }
@@ -3868,7 +3871,8 @@ body.day-mode::before{
 /* Barras de progresso */
 .oa-v-bars{
   position:absolute;
-  top:10px; left:10px; right:10px;
+  top:max(10px, env(safe-area-inset-top, 10px));
+  left:10px; right:10px;
   display:flex; gap:4px;
   z-index:4;
 }
@@ -3891,13 +3895,13 @@ body.day-mode::before{
 /* Cabeçalho do viewer (avatar + nome + tempo) */
 .oa-v-head{
   position:absolute;
-  top:22px; left:0; right:0;
+  top:max(22px, calc(env(safe-area-inset-top, 0px) + 16px));
+  left:0; right:0;
   display:flex; align-items:center; gap:10px;
   z-index:3;
-  /* Gradiente fino só atrás do header, não cobre a mídia abaixo */
   background:linear-gradient(180deg, rgba(0,0,0,.65) 0%, rgba(0,0,0,.10) 80%, transparent 100%);
   padding:6px 12px 18px;
-  pointer-events:none; /* deixa cliques passarem para a mídia */
+  pointer-events:none;
 }
 /* Botões no head precisam capturar cliques */
 .oa-v-head button, .oa-v-head img{
@@ -4012,9 +4016,9 @@ body.day-mode::before{
   position:absolute;
   bottom:0; left:0; right:0;
   display:flex; flex-direction:column; gap:6px;
-  z-index:7; /* acima da float-layer (z-index:6) para botões serem clicáveis */
-  background:transparent; /* sem camada escura — mídia totalmente visível */
-  padding:8px 14px 14px;
+  z-index:7;
+  background:transparent;
+  padding:8px 14px max(14px, env(safe-area-inset-bottom, 14px));
 }
 .oa-v-reactions{
   display:flex; align-items:center; gap:6px;
@@ -4034,6 +4038,9 @@ body.day-mode::before{
   flex-shrink:0;
   backdrop-filter:blur(8px);
   position:relative;
+  outline:none;        /* remove borda azul do browser ao clicar */
+  -webkit-tap-highlight-color:transparent; /* remove highlight no mobile */
+  user-select:none;
 }
 .oa-v-reaction-btn:hover{ transform:scale(1.12) translateY(-2px); border-color:var(--neon-cyan); }
 .oa-v-reaction-btn:active{ transform:scale(.9); }
@@ -4046,7 +4053,8 @@ body.day-mode::before{
   display:none; /* quantidade oculta visualmente, contada internamente */
 }
 /* Badge flutuante no canto do botão quando há reações */
-.oa-v-reaction-btn[data-count]:not([data-count="0"])::after{
+/* Badge só aparece quando o stage tem classe 'is-owner' */
+.oa-v-stage.is-owner .oa-v-reaction-btn[data-count]:not([data-count="0"])::after{
   content: attr(data-count);
   position:absolute;
   top:-4px; right:-4px;
@@ -4089,6 +4097,8 @@ body.day-mode::before{
   cursor:pointer;
   display:flex;align-items:center;justify-content:center;
   flex-shrink:0;
+  outline:none;
+  -webkit-tap-highlight-color:transparent;
 }
 .oa-v-meta-row{
   display:flex;align-items:center;gap:10px;
@@ -4420,7 +4430,7 @@ body.day-mode::before{
 
         <!-- OLHA AQUI! Rail horizontal de stories (injetado) -->
         <div class="oa-rail-wrap">
-          <div class="oa-rail-label">OLHA AQUI!</div>
+          <div class="oa-rail-label"><span style="color:var(--neon-cyan);text-shadow:0 0 8px var(--neon-cyan);">Olha</span> <span style="color:var(--neon-pink);text-shadow:0 0 8px var(--neon-pink);">Aqui!</span></div>
           <div class="oa-rail" id="oa-rail"></div>
         </div>
 
@@ -20953,8 +20963,10 @@ function oaRenderItem(){
   const cmtInput = document.getElementById('oa-v-comment-input');
   if(cmtInput) cmtInput.value = '';
 
-  // Carrega views e reações — passa se é dono para controlar visibilidade
+  // Marca o stage com classe is-owner para CSS condicional dos badges
   const _isOwner = !!(CU && g.userId === CU.id);
+  const _stage = document.getElementById('oa-v-stage');
+  if(_stage){ _isOwner ? _stage.classList.add('is-owner') : _stage.classList.remove('is-owner'); }
   _oaLoadStoryMeta(it.id, _isOwner);
 
   // Barras de progresso (uma por item)
