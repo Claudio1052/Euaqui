@@ -3866,6 +3866,11 @@ body.day-mode::before{
   object-fit:contain;
   background:#000;
   z-index:1;
+  /* Garante renderização nítida sem herdar filtros dos pais */
+  filter:none;
+  -webkit-filter:none;
+  transform:translateZ(0); /* força GPU layer própria */
+  will-change:contents;
 }
 
 /* Barras de progresso */
@@ -3895,12 +3900,13 @@ body.day-mode::before{
 /* Cabeçalho do viewer (avatar + nome + tempo) */
 .oa-v-head{
   position:absolute;
-  top:max(22px, calc(env(safe-area-inset-top, 0px) + 16px));
-  left:0; right:0;
+  top:0; left:0; right:0;
   display:flex; align-items:center; gap:10px;
   z-index:3;
   background:linear-gradient(180deg, rgba(0,0,0,.65) 0%, rgba(0,0,0,.10) 80%, transparent 100%);
-  padding:6px 12px 18px;
+  /* padding-top empurra o conteúdo abaixo das barras: safe-area + 3px barra + 6px gap */
+  padding-top:max(22px, calc(env(safe-area-inset-top, 0px) + 18px));
+  padding-left:12px; padding-right:12px; padding-bottom:18px;
   pointer-events:none;
 }
 /* Botões no head precisam capturar cliques */
@@ -4022,7 +4028,10 @@ body.day-mode::before{
 }
 .oa-v-reactions{
   display:flex; align-items:center; gap:6px;
-  flex-wrap:nowrap; overflow-x:auto;
+  flex-wrap:wrap; /* wrap em vez de scroll — elimina foco no container */
+  justify-content:center;
+  outline:none;
+  -webkit-tap-highlight-color:transparent;
 }
 .oa-v-reaction-btn{
   width:46px; height:46px;
@@ -4036,14 +4045,16 @@ body.day-mode::before{
   gap:1px;
   transition:all .15s;
   flex-shrink:0;
-  backdrop-filter:blur(8px);
+  backdrop-filter:none; /* removido — causava embaçamento no vídeo em alguns browsers */
   position:relative;
-  outline:none;        /* remove borda azul do browser ao clicar */
-  -webkit-tap-highlight-color:transparent; /* remove highlight no mobile */
+  outline:none;
+  -webkit-tap-highlight-color:transparent;
   user-select:none;
 }
 .oa-v-reaction-btn:hover{ transform:scale(1.12) translateY(-2px); border-color:var(--neon-cyan); }
 .oa-v-reaction-btn:active{ transform:scale(.9); }
+.oa-v-reaction-btn:focus{ outline:none; box-shadow:none; }
+.oa-v-reaction-btn:focus-visible{ outline:none; box-shadow:none; }
 .oa-v-reaction-btn.selected{
   background:rgba(0,255,204,.20);
   border-color:var(--neon-cyan);
