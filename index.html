@@ -3779,6 +3779,8 @@ body.day-mode::before{
   border:2px solid var(--bg-deep);
   box-shadow:0 0 8px var(--neon-pink);
   animation:none;
+  cursor:pointer;
+  z-index:2;
 }
 
 .oa-name{
@@ -5284,6 +5286,9 @@ const db = createClient(SB_URL, SB_KEY, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
+    // Desabilita BroadcastChannel entre abas — evita DataCloneError causado pelo
+    // Supabase v2 tentando fazer postMessage de um objeto com Headers não-clonável.
+    broadcast: false,
     lock: async (name, acquireTimeout, fn) => {
       // Simple non-blocking lock to avoid the 5s timeout warning
       return await fn();
@@ -20299,14 +20304,39 @@ function _oaEscape(s){
 // =========================================================================
 // Helper: extrai SOMENTE strings dos objetos de erro — nunca retorna
 // o próprio objeto (evita DataCloneError em hooks de debug de browser).
+// Extrai info de erro de forma 100% segura — nunca acessa getters que possam
+// disparar structuredClone/postMessage internamente (bug Supabase v2 + Headers).
 function _oaErrInfo(err){
-  if(!err) return { message:'(no error)' };
-  const out = {};
-  try{ out.message = String(err.message||err.error_description||err); }catch(e){ out.message='(unreadable)'; }
-  try{ if(err.code) out.code = String(err.code); }catch(e){}
-  try{ if(err.hint) out.hint = String(err.hint); }catch(e){}
-  try{ if(err.details) out.details = String(err.details); }catch(e){}
-  try{ if(err.status) out.status = String(err.status); }catch(e){}
+  if(!err) return { message:'(no error)', code:'' };
+  const out = { message:'(unreadable)', code:'' };
+
+  // Lê uma propriedade OWN do objeto como string pura, sem acionar getters herdados
+  const _own = (obj, key) => {
+    try{
+      const desc = Object.getOwnPropertyDescriptor(obj, key);
+      if(!desc) return '';
+      const v = desc.value; // só lê 'value', ignora get/set que podem clonar Headers
+      if(v === null || v === undefined) return '';
+      const t = typeof v;
+      if(t === 'string') return v.slice(0, 300);
+      if(t === 'number' || t === 'boolean') return String(v);
+      return '';
+    }catch(_){ return ''; }
+  };
+
+  // Tenta JSON.stringify isolado como fallback seguro
+  const _safeStr = (obj) => {
+    try{ return JSON.stringify(obj).slice(0, 300); }catch(_){ return ''; }
+  };
+
+  const msg = _own(err,'message') || _own(err,'error_description') || _own(err,'msg') || _own(err,'error') || _safeStr(err);
+  out.message = msg || '(unreadable)';
+
+  const code = _own(err,'code'); if(code) out.code = code;
+  const hint = _own(err,'hint'); if(hint) out.hint = hint;
+  const det  = _own(err,'details'); if(det) out.details = det;
+  const st   = _own(err,'status') || _own(err,'statusCode'); if(st) out.status = st;
+
   return out;
 }
 
@@ -20328,13 +20358,19 @@ async function oaLoadRail(){
       .order('created_at', { ascending:false })
       .limit(200);
 
-    if(resp && resp.error){
-      const info = _oaErrInfo(resp.error);
-      // 42P01 = undefined_table. 42703 = undefined_column.
-      if(info.code === '42P01' || /does not exist/i.test(info.message||'')){
+    // Supabase v2: resp.error pode conter objeto Response com Headers não-clonável.
+    // Isolamos tudo num try/catch separado e usamos getOwnPropertyDescriptor para
+    // nunca acionar getters que disparam structuredClone/postMessage internamente.
+    let _hasErr = false;
+    try{ _hasErr = !!(resp && resp.error); }catch(_){ _hasErr = true; }
+    if(_hasErr){
+      let info = { message:'(erro desconhecido)', code:'' };
+      try{ info = _oaErrInfo(resp.error); }catch(_){}
+      // 42P01 = undefined_table
+      if(info.code === '42P01' || /does not exist/i.test(info.message)){
         _oaTableMissing = true;
-        console.warn('[OA] tabela "olha_aqui" nao existe no Supabase. Rode o SQL 4_supabase.sql para criar.');
-      } else if(info.code === 'PGRST301' || /jwt|JWT|permission/i.test(info.message||'')){
+        console.warn('[OA] tabela "olha_aqui" nao existe. Rode o SQL 4_supabase.sql.');
+      } else if(info.code === 'PGRST301' || /jwt|JWT|permission/i.test(info.message)){
         console.warn('[OA] RLS/JWT bloqueou SELECT em olha_aqui. Verifique as policies.');
       } else {
         console.warn('[OA] erro lendo olha_aqui:', info.message, '(code:', info.code||'?', ')');
@@ -20344,7 +20380,10 @@ async function oaLoadRail(){
     }
     items = (resp && resp.data) || [];
   }catch(e){
-    console.warn('[OA] excecao lendo olha_aqui:', _oaErrInfo(e).message);
+    // DataCloneError: Supabase v2 pode retornar objeto Response com Headers não clonável.
+    // Nunca logamos 'e' diretamente — sempre passamos por _oaErrInfo que extrai só primitivos.
+    const _em = (()=>{ try{ return _oaErrInfo(e).message; }catch(_){ return e?.name||'unknown error'; } })();
+    console.warn('[OA] excecao lendo olha_aqui:', _em);
     renderOaRail([]);
     return;
   }
@@ -20360,15 +20399,20 @@ async function oaLoadRail(){
         .from('profiles')
         .select('id, username, full_name, avatar_url')
         .in('id', userIds);
-      if(resp2 && resp2.error){
-        const info = _oaErrInfo(resp2.error);
-        console.warn('[OA] erro lendo profiles:', info.message, '(code:', info.code||'?', ') — usando fallback');
+      let _hasErr2 = false;
+      try{ _hasErr2 = !!(resp2 && resp2.error); }catch(_){ _hasErr2 = true; }
+      if(_hasErr2){
+        let info2 = { message:'(erro)', code:'' };
+        try{ info2 = _oaErrInfo(resp2.error); }catch(_){}
+        console.warn('[OA] erro lendo profiles:', info2.message, '(code:', info2.code||'?', ') — usando fallback');
         _oaProfilesBad = true;
       } else {
         (resp2?.data || []).forEach(p => { profMap[p.id] = p; });
       }
     }catch(e){
-      console.warn('[OA] excecao lendo profiles:', _oaErrInfo(e).message, '— usando fallback');
+      let _em = '(erro)';
+      try{ _em = _oaErrInfo(e).message; }catch(_){}
+      console.warn('[OA] excecao lendo profiles:', _em, '— usando fallback');
       _oaProfilesBad = true;
     }
   }
@@ -20420,12 +20464,12 @@ function renderOaRail(groups){
     const myAv = (CP?.avatar_url || CU?.avatar_url ||
                  'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(CU?.id||'me'));
     html += `
-      <div class="oa-bubble" onclick="oaOpenCreate()">
+      <div class="oa-bubble" onclick="oaHandleMyBubbleClick(event)">
         <div class="oa-ring me">
-          <img src="${_oaEscape(myAv)}" alt="você" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${_oaEscape(CU.id||'me')}'">
-          <div class="oa-plus">+</div>
+          <img src="${_oaEscape(myAv)}" alt="você" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${_oaEscape(CU.id||'me')}'" onclick="oaHandleMyAvatarClick(event)">
+          <div class="oa-plus" onclick="oaHandleMyPlusClick(event)">+</div>
         </div>
-        <div class="oa-name">${myGroup ? 'Seu Olha' : 'Adicionar'}</div>
+        <div class="oa-name">Olha Aqui</div>
       </div>
     `;
     // Se o usuário tem stories próprios, também entra no fluxo normal
@@ -20465,6 +20509,46 @@ function renderOaRail(groups){
 let _oaPickedFile = null;
 let _oaPickedType = null; // 'image' | 'video'
 
+// Clique no container da bolha própria (delega para avatar ou plus)
+function oaHandleMyBubbleClick(e){
+  // Ignora cliques em filhos com handlers próprios — eles cuidam de si mesmos
+}
+window.oaHandleMyBubbleClick = oaHandleMyBubbleClick;
+
+// Clique no AVATAR do próprio usuário: ver stories se tiver, senão abrir criação
+function oaHandleMyAvatarClick(e){
+  e.stopPropagation();
+  if(!CU){ showToast('Faça login para publicar','error'); return; }
+  const mine = oaGroups.find(g=>g.userId===CU.id);
+  if(mine){
+    // Tem story ativo → abre o viewer dos próprios
+    oaOpenViewer(oaGroups.indexOf(mine));
+  } else {
+    // Sem story → abre modal de criação
+    _oaStartCreate();
+  }
+}
+window.oaHandleMyAvatarClick = oaHandleMyAvatarClick;
+
+// Clique no BOTÃO + : sempre abre modal de criação (publicar novo)
+function oaHandleMyPlusClick(e){
+  e.stopPropagation();
+  if(!CU){ showToast('Faça login para publicar','error'); return; }
+  _oaStartCreate();
+}
+window.oaHandleMyPlusClick = oaHandleMyPlusClick;
+
+// Abre o modal de criação de story (sem confirmação)
+function _oaStartCreate(){
+  _oaPickedFile = null; _oaPickedType = null;
+  document.getElementById('oa-c-actions').style.display = 'flex';
+  document.getElementById('oa-c-confirm').style.display = 'none';
+  document.getElementById('oa-c-preview-wrap').style.display = 'none';
+  document.getElementById('oa-c-preview-wrap').innerHTML = '';
+  document.getElementById('oa-c-progress').style.display = 'none';
+  document.getElementById('oa-create-modal').classList.add('on');
+}
+
 function oaOpenCreate(){
   if(!CU){ showToast('Faça login para publicar','error'); return; }
   // Se usuário já tem stories, damos escolha: ver os meus ou publicar novo
@@ -20474,13 +20558,7 @@ function oaOpenCreate(){
     const choose = confirm('Você já tem um Olha Aqui ativo.\n\nOK = Publicar outro\nCancelar = Ver os meus');
     if(!choose){ oaOpenViewer(oaGroups.indexOf(mine)); return; }
   }
-  _oaPickedFile = null; _oaPickedType = null;
-  document.getElementById('oa-c-actions').style.display = 'flex';
-  document.getElementById('oa-c-confirm').style.display = 'none';
-  document.getElementById('oa-c-preview-wrap').style.display = 'none';
-  document.getElementById('oa-c-preview-wrap').innerHTML = '';
-  document.getElementById('oa-c-progress').style.display = 'none';
-  document.getElementById('oa-create-modal').classList.add('on');
+  _oaStartCreate();
 }
 window.oaOpenCreate = oaOpenCreate;
 
