@@ -21519,21 +21519,29 @@ async function oaPublish(){
       try{
         const _ma = window._musicAttached;
         if(_ma._fromHistory && _ma._preUploadedUrl){
-          // ✅ Histórico: URL já no R2 — usa direto sem qualquer upload
-          const _trimUrl = _ma._preUploadedUrl;
+          // ✅ Histórico: já está no R2 — usa direto, zero upload, zero processamento
           _oaMusicData = {
-            external_id:    _ma.external_id + '_' + Math.round(_ma._trimStart||0) + '_' + Math.round(_ma._trimEnd||0),
-            titulo:         _ma.titulo,
-            artista:        _ma.artista,
-            url_audio_opus: _trimUrl,  // URL do R2 — este é o que será tocado no story
-            url_capa_webp:  _ma.capa_url || _ma.url_capa_webp || '',
-            trim_start:     _ma._trimStart || 0,
-            trim_end:       _ma._trimEnd   || 0,
-            trim_duration:  _ma._trimDuration || 0
+            external_id:   _ma.external_id,          // ID original, sem sufixo
+            titulo:        _ma.titulo,
+            artista:       _ma.artista,
+            url_audio_opus: _ma._preUploadedUrl,     // URL do R2 existente
+            url_capa_webp:  _ma.url_capa_webp || _ma.capa_url || '',
+            trim_duration:  _ma._trimDuration || _ma._prefillTrim || 0
           };
-          // Propaga a URL para o _musicAttached para o histórico pegar
-          window._musicAttached.url_audio_opus = _trimUrl;
-          // Upsert no catálogo (cache para próximos usos)
+          // Nenhum upsert — o registro já existe no banco, não desperdiça operação
+        } else if(_ma._preUploadedUrl){
+          // 🆕 Música nova já cortada e subida pelo editor
+          _oaMusicData = {
+            external_id:   _ma.external_id + '_' + Math.round(_ma._trimStart||0) + '_' + Math.round(_ma._trimEnd||0),
+            titulo:        _ma.titulo,
+            artista:       _ma.artista,
+            url_audio_opus: _ma._preUploadedUrl,
+            url_capa_webp:  _ma.capa_url || _ma.url_capa_webp || '',
+            trim_start:    _ma._trimStart || 0,
+            trim_end:      _ma._trimEnd   || 0,
+            trim_duration: _ma._trimDuration || 0
+          };
+          window._musicAttached.url_audio_opus = _ma._preUploadedUrl;
           try {
             await db.from(MUSIC_CATALOG_TABLE).upsert(_oaMusicData, { onConflict:'external_id' });
           } catch(e) { console.warn('[music-catalog] upsert:', e.message); }
