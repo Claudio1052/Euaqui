@@ -476,15 +476,23 @@ a{text-decoration:none;}
   background:rgba(255,140,0,.15);
   border:2px solid #ffa040;
   border-radius:4px;z-index:2;cursor:grab;
+  touch-action:none;
 }
 .oa-se-vid-region:active{ cursor:grabbing; }
-.oa-se-vid-region::before,
-.oa-se-vid-region::after{
-  content:'';position:absolute;top:0;bottom:0;width:4px;
-  background:#ffa040;box-shadow:0 0 8px #ffa040;
+.oa-se-vid-handle-l,
+.oa-se-vid-handle-r{
+  position:absolute;top:0;bottom:0;width:18px;
+  background:#ffa040;
+  display:flex;align-items:center;justify-content:center;
+  cursor:ew-resize;z-index:3;touch-action:none;
+  box-shadow:0 0 8px #ffa040;
 }
-.oa-se-vid-region::before{ left:0;border-radius:2px 0 0 2px; }
-.oa-se-vid-region::after { right:0;border-radius:0 2px 2px 0; }
+.oa-se-vid-handle-l{ left:0;border-radius:2px 0 0 2px; }
+.oa-se-vid-handle-r{ right:0;border-radius:0 2px 2px 0; }
+.oa-se-vid-handle-l::after,
+.oa-se-vid-handle-r::after{
+  content:'⋮';font-size:12px;color:rgba(0,0,0,.6);pointer-events:none;
+}
 .oa-se-vid-playhead{
   position:absolute;top:0;bottom:0;width:2px;
   background:var(--neon-pink);z-index:4;pointer-events:none;
@@ -23716,7 +23724,7 @@ function _oaInitVideoTrim() {
   // Vídeo > 30s: mostra timeline
   document.getElementById('oa-se-vid-trim-section').style.display = 'block';
   _seVidTrimStart = 0;
-  _seVidTrimEnd   = 30;
+  _seVidTrimEnd   = Math.min(_seMediaDur, 30); // começa com até 30s
 
   // Gera frames visuais (miniaturas fake com timestamps)
   const frames = document.getElementById('oa-se-vid-frames');
@@ -23771,73 +23779,103 @@ function _oaUpdateVideoTrim() {
 function _oaInitVideoTrimDrag() {
   const timeline = document.getElementById('oa-se-vid-timeline');
   const region   = document.getElementById('oa-se-vid-region');
+  const hl       = document.getElementById('oa-se-vid-hl');
+  const hr       = document.getElementById('oa-se-vid-hr');
   if(!timeline || !region) return;
 
-  const WIN = 30; // janela fixa de 30s
+  const MIN_WIN = 1;   // mínimo 1s
+  const MAX_WIN = 30;  // máximo 30s
 
   function xToTime(clientX) {
     const rect = timeline.getBoundingClientRect();
     return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * _seMediaDur;
   }
 
+  // modo: 'move' | 'resize-l' | 'resize-r'
+  let _mode    = null;
   let _dragOff = 0;
 
-  function startDragRegion(e) {
-    e.preventDefault();
-    _seVidDragActive = true;
-    const t = xToTime(e.clientX);
-    _dragOff = t - _seVidTrimStart;
-    try { region.setPointerCapture(e.pointerId); } catch(_) {}
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  function applyDrag(clientX) {
+    const t = xToTime(clientX);
+    if(_mode === 'move') {
+      const win = _seVidTrimEnd - _seVidTrimStart;
+      let s = clamp(t - _dragOff, 0, _seMediaDur - win);
+      _seVidTrimStart = s;
+      _seVidTrimEnd   = s + win;
+
+    } else if(_mode === 'resize-l') {
+      let s = clamp(t, 0, _seVidTrimEnd - MIN_WIN);
+      // não deixa janela passar de MAX_WIN
+      if(_seVidTrimEnd - s > MAX_WIN) s = _seVidTrimEnd - MAX_WIN;
+      _seVidTrimStart = s;
+
+    } else if(_mode === 'resize-r') {
+      let e = clamp(t, _seVidTrimStart + MIN_WIN, _seMediaDur);
+      // não deixa janela passar de MAX_WIN
+      if(e - _seVidTrimStart > MAX_WIN) e = _seVidTrimStart + MAX_WIN;
+      _seVidTrimEnd = e;
+    }
+    _oaUpdateVideoTrim();
   }
 
-  region.addEventListener('pointerdown', startDragRegion, { passive:false });
+  function onUp() { _mode = null; }
 
-  region.addEventListener('pointermove', e => {
-    if(!_seVidDragActive) return;
-    e.preventDefault();
-    let newStart = xToTime(e.clientX) - _dragOff;
-    newStart = Math.max(0, Math.min(_seMediaDur - WIN, newStart));
-    _seVidTrimStart = newStart;
-    _seVidTrimEnd   = newStart + WIN;
-    _oaUpdateVideoTrim();
+  // ── Alça esquerda (resize-l) ───────────────────────────────
+  hl.addEventListener('pointerdown', e => {
+    e.stopPropagation(); e.preventDefault();
+    _mode = 'resize-l';
+    try { hl.setPointerCapture(e.pointerId); } catch(_) {}
   }, { passive:false });
+  hl.addEventListener('pointermove', e => { if(_mode === 'resize-l'){ e.preventDefault(); applyDrag(e.clientX); }}, { passive:false });
+  hl.addEventListener('pointerup',     onUp);
+  hl.addEventListener('pointercancel', onUp);
 
-  region.addEventListener('pointerup',     () => { _seVidDragActive = false; });
-  region.addEventListener('pointercancel', () => { _seVidDragActive = false; });
+  // ── Alça direita (resize-r) ────────────────────────────────
+  hr.addEventListener('pointerdown', e => {
+    e.stopPropagation(); e.preventDefault();
+    _mode = 'resize-r';
+    try { hr.setPointerCapture(e.pointerId); } catch(_) {}
+  }, { passive:false });
+  hr.addEventListener('pointermove', e => { if(_mode === 'resize-r'){ e.preventDefault(); applyDrag(e.clientX); }}, { passive:false });
+  hr.addEventListener('pointerup',     onUp);
+  hr.addEventListener('pointercancel', onUp);
 
-  // Clique fora da janela reposiciona
+  // ── Centro da região (move) ────────────────────────────────
+  region.addEventListener('pointerdown', e => {
+    if(e.target === hl || e.target === hr) return;
+    e.preventDefault();
+    _mode    = 'move';
+    _dragOff = xToTime(e.clientX) - _seVidTrimStart;
+    try { region.setPointerCapture(e.pointerId); } catch(_) {}
+  }, { passive:false });
+  region.addEventListener('pointermove', e => { if(_mode === 'move'){ e.preventDefault(); applyDrag(e.clientX); }}, { passive:false });
+  region.addEventListener('pointerup',     onUp);
+  region.addEventListener('pointercancel', onUp);
+
+  // ── Clique fora da janela — reposiciona o centro ───────────
   timeline.addEventListener('pointerdown', e => {
     if(e.target === region || region.contains(e.target)) return;
     e.preventDefault();
-    const t = xToTime(e.clientX);
-    let newStart = t - WIN/2;
-    newStart = Math.max(0, Math.min(_seMediaDur - WIN, newStart));
-    _seVidTrimStart = newStart;
-    _seVidTrimEnd   = newStart + WIN;
+    const t   = xToTime(e.clientX);
+    const win = _seVidTrimEnd - _seVidTrimStart;
+    let s = clamp(t - win/2, 0, _seMediaDur - win);
+    _seVidTrimStart = s;
+    _seVidTrimEnd   = s + win;
     _oaUpdateVideoTrim();
-
-    // Inicia drag
-    _seVidDragActive = true;
-    _dragOff = WIN / 2;
+    _mode    = 'move';
+    _dragOff = win / 2;
     try { timeline.setPointerCapture(e.pointerId); } catch(_) {}
 
-    const onM = e2 => {
-      if(!_seVidDragActive) return;
-      let s = xToTime(e2.clientX) - _dragOff;
-      s = Math.max(0, Math.min(_seMediaDur - WIN, s));
-      _seVidTrimStart = s; _seVidTrimEnd = s + WIN;
-      _oaUpdateVideoTrim();
-    };
-    const onU = () => {
-      _seVidDragActive = false;
-      timeline.removeEventListener('pointermove', onM);
-    };
+    const onM = e2 => { if(_mode === 'move'){ e2.preventDefault(); applyDrag(e2.clientX); }};
+    const onU = ()  => { _mode = null; timeline.removeEventListener('pointermove', onM); };
     timeline.addEventListener('pointermove', onM, { passive:false });
     timeline.addEventListener('pointerup',     onU, { once:true });
     timeline.addEventListener('pointercancel', onU, { once:true });
   }, { passive:false });
 
-  // Playhead animado acompanha o vídeo
+  // ── Playhead animado acompanha o vídeo ─────────────────────
   const tickV = () => {
     if(!document.getElementById('oa-story-editor')?.classList.contains('on')) return;
     const ph = document.getElementById('oa-se-vid-playhead');
@@ -24376,14 +24414,17 @@ export default {
         <div class="oa-se-vid-trim">
           <div class="oa-se-vid-trim-label">
             <span id="oa-se-vid-start">0s</span>
-            <span style="color:#ffa040;" id="oa-se-vid-dur">30s selecionados</span>
+            <span style="color:#ffa040;" id="oa-se-vid-dur">0s selecionados</span>
             <span id="oa-se-vid-end">0s</span>
           </div>
           <div class="oa-se-vid-timeline" id="oa-se-vid-timeline">
             <div class="oa-se-vid-frames" id="oa-se-vid-frames"></div>
             <div class="oa-se-vid-outside" id="oa-se-vid-out-l" style="left:0;width:0;"></div>
             <div class="oa-se-vid-outside" id="oa-se-vid-out-r" style="right:0;width:0;"></div>
-            <div class="oa-se-vid-region" id="oa-se-vid-region"></div>
+            <div class="oa-se-vid-region" id="oa-se-vid-region">
+              <div class="oa-se-vid-handle-l" id="oa-se-vid-hl"></div>
+              <div class="oa-se-vid-handle-r" id="oa-se-vid-hr"></div>
+            </div>
             <div class="oa-se-vid-playhead" id="oa-se-vid-playhead" style="left:0;"></div>
           </div>
         </div>
