@@ -23411,15 +23411,8 @@ function _renderMusicHistoryItems(items, list) {
   });
 }
 
-// Salva no histórico após confirmar no picker
-const _origConfirmMusicPicker = window.confirmMusicPicker;
-window.confirmMusicPicker = function() {
-  if(_musicSelected) {
-    const dur = Math.round(_seTrimEnd - _seTrimStart) || _seMaxTrim;
-    _saveMusicToHistory(_musicSelected, dur);
-  }
-  if(_origConfirmMusicPicker) _origConfirmMusicPicker();
-};
+// NÃO salva no histórico ao confirmar picker —
+// salva APENAS após publicar o story com sucesso (oaPublish)
 
 window.oaLoadRail = oaLoadRail;
 
