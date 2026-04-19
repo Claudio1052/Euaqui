@@ -6080,6 +6080,157 @@ const db = createClient(SB_URL, SB_KEY, {
    CREATE POLICY "auth insert reactions" ON olha_aqui_reactions FOR INSERT WITH CHECK (auth.uid()=user_id);
    CREATE POLICY "auth delete own reactions" ON olha_aqui_reactions FOR DELETE USING (auth.uid()=user_id);
    CREATE POLICY "auth update own reactions" ON olha_aqui_reactions FOR UPDATE USING (auth.uid()=user_id);
+
+   ══════════════════════════════════════════════════════════════════════════
+   TRIGGERS DE LIMPEZA AUTOMÁTICA DE STORAGE (Zero Egress Waste)
+   Execute também no SQL Editor do Supabase — economiza Storage e Egress
+   excluindo arquivos do R2/Storage automaticamente quando o registro é
+   apagado do banco (por usuário, por expiração ou pelo sistema).
+   ══════════════════════════════════════════════════════════════════════════
+
+   -- ─────────────────────────────────────────────────────────────────────
+   -- TABELA DE FILA DE EXCLUSÃO (r2_delete_queue)
+   -- Guarda as keys dos arquivos a deletar no R2.
+   -- O seu backend Java deve consumir essa fila periodicamente (ex: 1x/hora)
+   -- chamando DELETE /api/r2/object?key=... para cada item.
+   -- ─────────────────────────────────────────────────────────────────────
+   CREATE TABLE IF NOT EXISTS r2_delete_queue (
+     id          uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+     object_key  text NOT NULL,
+     created_at  timestamptz DEFAULT now(),
+     attempted   int  DEFAULT 0,
+     done        boolean DEFAULT false
+   );
+   ALTER TABLE r2_delete_queue ENABLE ROW LEVEL SECURITY;
+   -- Apenas o service_role pode ler/inserir (via trigger interno)
+   CREATE POLICY "service only" ON r2_delete_queue USING (false);
+
+   -- ─────────────────────────────────────────────────────────────────────
+   -- FUNÇÃO AUXILIAR: extrai a key do R2 a partir de uma URL pública
+   -- Suporta URLs do tipo:
+   --   https://cdn.euaqui.store/olha_aqui/abc.mp4
+   --   https://pub-xxx.r2.dev/media/posts/abc.jpg
+   --   https://BUCKET.account.r2.cloudflarestorage.com/key/abc.jpg
+   -- ─────────────────────────────────────────────────────────────────────
+   CREATE OR REPLACE FUNCTION _extract_r2_key(url text)
+   RETURNS text LANGUAGE plpgsql AS $$
+   DECLARE
+     path_part text;
+   BEGIN
+     IF url IS NULL OR url = '' THEN RETURN NULL; END IF;
+     -- Pega apenas o path (tudo depois do host)
+     path_part := regexp_replace(url, '^https?://[^/]+/', '');
+     -- Remove query string se houver
+     path_part := split_part(path_part, '?', 1);
+     -- Remove barra inicial residual
+     path_part := ltrim(path_part, '/');
+     IF path_part = '' THEN RETURN NULL; END IF;
+     RETURN path_part;
+   END;
+   $$;
+
+   -- ─────────────────────────────────────────────────────────────────────
+   -- TRIGGER 1: Ao excluir um STORY (olha_aqui) → enfileira deleção R2
+   -- ─────────────────────────────────────────────────────────────────────
+   CREATE OR REPLACE FUNCTION _on_story_delete()
+   RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+   DECLARE
+     r2key text;
+   BEGIN
+     -- Enfileira o arquivo de mídia principal
+     r2key := _extract_r2_key(OLD.media_url);
+     IF r2key IS NOT NULL THEN
+       INSERT INTO r2_delete_queue (object_key) VALUES (r2key)
+       ON CONFLICT DO NOTHING;
+     END IF;
+     -- Enfileira o áudio de música (se houver URL salva no music_data)
+     IF OLD.music_data IS NOT NULL THEN
+       r2key := _extract_r2_key(
+         (OLD.music_data::jsonb ->> 'url_audio_opus')
+       );
+       IF r2key IS NOT NULL THEN
+         INSERT INTO r2_delete_queue (object_key) VALUES (r2key)
+         ON CONFLICT DO NOTHING;
+       END IF;
+     END IF;
+     RETURN OLD;
+   END;
+   $$;
+
+   DROP TRIGGER IF EXISTS trg_story_delete ON olha_aqui;
+   CREATE TRIGGER trg_story_delete
+     AFTER DELETE ON olha_aqui
+     FOR EACH ROW EXECUTE FUNCTION _on_story_delete();
+
+   -- ─────────────────────────────────────────────────────────────────────
+   -- TRIGGER 2: Ao excluir um POST → enfileira todos os media_urls no R2
+   -- ─────────────────────────────────────────────────────────────────────
+   CREATE OR REPLACE FUNCTION _on_post_delete()
+   RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+   DECLARE
+     url_item text;
+     r2key    text;
+   BEGIN
+     -- media_urls é jsonb array: ["https://...", "https://..."]
+     IF OLD.media_urls IS NOT NULL THEN
+       FOR url_item IN
+         SELECT jsonb_array_elements_text(OLD.media_urls)
+       LOOP
+         r2key := _extract_r2_key(url_item);
+         IF r2key IS NOT NULL THEN
+           INSERT INTO r2_delete_queue (object_key) VALUES (r2key)
+           ON CONFLICT DO NOTHING;
+         END IF;
+       END LOOP;
+     END IF;
+     RETURN OLD;
+   END;
+   $$;
+
+   DROP TRIGGER IF EXISTS trg_post_delete ON posts;
+   CREATE TRIGGER trg_post_delete
+     AFTER DELETE ON posts
+     FOR EACH ROW EXECUTE FUNCTION _on_post_delete();
+
+   -- ─────────────────────────────────────────────────────────────────────
+   -- TRIGGER 3: Limpeza automática de stories EXPIRADOS (cron-friendly)
+   -- Chame via pg_cron ou pelo seu backend Java 1x por hora:
+   --   SELECT _cleanup_expired_stories();
+   -- Ou configure o pg_cron no Supabase:
+   --   SELECT cron.schedule('cleanup-stories', '0 * * * *', 'SELECT _cleanup_expired_stories()');
+   -- ─────────────────────────────────────────────────────────────────────
+   CREATE OR REPLACE FUNCTION _cleanup_expired_stories()
+   RETURNS int LANGUAGE plpgsql SECURITY DEFINER AS $$
+   DECLARE
+     deleted_count int;
+   BEGIN
+     -- O trigger trg_story_delete cuida de enfileirar os arquivos R2
+     DELETE FROM olha_aqui WHERE expires_at < now();
+     GET DIAGNOSTICS deleted_count = ROW_COUNT;
+     RETURN deleted_count;
+   END;
+   $$;
+
+   -- ─────────────────────────────────────────────────────────────────────
+   -- ÍNDICES para performance
+   -- ─────────────────────────────────────────────────────────────────────
+   CREATE INDEX IF NOT EXISTS idx_r2_delete_queue_done ON r2_delete_queue(done) WHERE done = false;
+   CREATE INDEX IF NOT EXISTS idx_olha_aqui_expires ON olha_aqui(expires_at);
+
+   ══════════════════════════════════════════════════════════════════════════
+   COMO CONSUMIR A FILA r2_delete_queue NO SEU BACKEND JAVA:
+
+   1. A cada 1 hora, consulte:
+      SELECT id, object_key FROM r2_delete_queue WHERE done = false AND attempted < 3 ORDER BY created_at LIMIT 100;
+
+   2. Para cada item:
+      a) Chame DELETE no R2: DELETE https://api.cloudflare.com/client/v4/accounts/{id}/r2/buckets/{bucket}/objects/{key}
+      b) Marque como feito: UPDATE r2_delete_queue SET done = true WHERE id = '...';
+      c) Em caso de erro: UPDATE r2_delete_queue SET attempted = attempted + 1 WHERE id = '...';
+
+   3. Opcionalmente limpe a fila concluída 1x por dia:
+      DELETE FROM r2_delete_queue WHERE done = true AND created_at < now() - interval '7 days';
+   ══════════════════════════════════════════════════════════════════════════
 ─────────────────────────────────────────────────────────────────────────── */
 
 // ===== BOOT — simples e direto =====
@@ -9004,6 +9155,20 @@ function _euConfirm(msg, icon){
 
 async function deletePost(postId){
   if(!await _euConfirm('Deseja excluir este post?<br>Esta ação não pode ser desfeita.','🗑️')) return;
+
+  // Busca as URLs de mídia antes de deletar (para limpeza no R2)
+  let mediaUrlsToDelete = [];
+  try {
+    const { data: postData } = await db.from('posts')
+      .select('media_urls')
+      .eq('id', postId)
+      .eq('user_id', CU.id)
+      .maybeSingle();
+    if(postData?.media_urls && Array.isArray(postData.media_urls)) {
+      mediaUrlsToDelete = postData.media_urls.filter(Boolean);
+    }
+  } catch(e) { /* silencioso — o trigger SQL cobre este caso */ }
+
   // Exclui post + todos os registros filhos do banco em paralelo
   await Promise.allSettled([
     db.from('posts').delete().eq('id',postId).eq('user_id',CU.id),
@@ -9013,6 +9178,23 @@ async function deletePost(postId){
     db.from('saved_posts').delete().eq('post_id',postId),
     db.from('notifications').delete().eq('post_id',postId),
   ]);
+
+  // Limpeza de arquivos no R2 (client-side fallback — o trigger SQL já cobre via r2_delete_queue,
+  // mas chamamos silenciosamente aqui também como caminho direto se o backend estiver disponível)
+  if(window.R2_BACKEND_URL && mediaUrlsToDelete.length) {
+    mediaUrlsToDelete.forEach(url => {
+      try {
+        const key = _oaExtractKey(url);
+        if(key) {
+          fetch(window.R2_BACKEND_URL + '/api/r2/object?key=' + encodeURIComponent(key), {
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + (CU?.id || '') }
+          }).catch(() => {});
+        }
+      } catch(e) {}
+    });
+  }
+
   document.getElementById('post-'+postId)?.remove();
   cachedPostIds.delete(postId);cachedPosts={};
   showToast('Post excluído','success');
@@ -22826,7 +23008,7 @@ window._togglePostMusic = _togglePostMusic;
 // ═══════════════════════════════════════════════════════════════════════
 // STORY EDITOR — Preview fullscreen + corte de música + mute de vídeo
 // ═══════════════════════════════════════════════════════════════════════
-let _seFile      = null;   // File original
+let _seFile      = null;   // File original (100% local, sem upload até Publicar)
 let _seType      = null;   // 'image' | 'video'
 let _seMediaDur  = 0;      // duração do vídeo (0 p/ foto)
 let _seMaxTrim   = 6;      // seg máx de música (6 foto / 30 vídeo)
@@ -22837,10 +23019,19 @@ let _sePlayer    = null;   // Audio player de preview
 let _sePlayhead  = null;   // raf handle
 let _seMuteOrig  = false;  // mute do vídeo original
 let _seVideoEl   = null;   // elemento <video> no preview
+let _seLocalPreviewUrl = null; // ObjectURL local — revogado ao fechar/publicar
 // Trim de vídeo
 let _seVidTrimStart = 0;   // início do trecho do vídeo (seg)
 let _seVidTrimEnd   = 0;   // fim do trecho do vídeo (seg)
 let _seVidDragActive = false;
+
+// ── Garante que nunca existe ObjectURL vazando entre sessões ─────────────
+function _seRevokePreview() {
+  if(_seLocalPreviewUrl) {
+    try { URL.revokeObjectURL(_seLocalPreviewUrl); } catch(e) {}
+    _seLocalPreviewUrl = null;
+  }
+}
 
 // Abre o editor após escolher um arquivo
 async function oaEditorOpen(file, type) {
@@ -22855,10 +23046,14 @@ async function oaEditorOpen(file, type) {
   _seVidTrimEnd    = 0;
   _seVidDragActive = false;
 
+  // ── REGRA DE OURO: tudo offline até o botão Publicar ────────────────
+  // Revoga qualquer URL anterior para evitar leak de memória
+  _seRevokePreview();
+
   // Duração máxima da música = duração do vídeo (max 30s) ou 6s p/ foto
   _seMaxTrim = (type === 'video') ? 30 : 6;
 
-  // Preview da mídia
+  // Preview da mídia — usa ObjectURL 100% local, zero upload aqui
   const prev = document.getElementById('oa-se-preview');
   prev.innerHTML = '';
   const objUrl = URL.createObjectURL(file);
@@ -22871,8 +23066,9 @@ async function oaEditorOpen(file, type) {
       v.onerror = () => res(0);
       setTimeout(() => res(0), 5000);
     });
-    // Re-cria com nova objectUrl
+    // Re-cria ObjectURL para o player de preview (salva ref para revogar depois)
     const url2 = URL.createObjectURL(file);
+    _seLocalPreviewUrl = url2; // ← salvo para revogação no close/publish
     const v2 = document.createElement('video');
     v2.src = url2; v2.muted = _seMuteOrig; v2.loop = false;
     v2.playsInline = true; v2.autoplay = true;
@@ -22885,6 +23081,7 @@ async function oaEditorOpen(file, type) {
     setTimeout(_oaInitVideoTrim, 100);
   } else {
     _seMediaDur = 0;
+    _seLocalPreviewUrl = objUrl; // ← salvo para revogação no close/publish
     const img = document.createElement('img');
     img.src = objUrl;
     img.style.cssText = 'width:100%;height:100%;object-fit:contain;';
@@ -22908,11 +23105,13 @@ window.oaEditorOpen = oaEditorOpen;
 
 function oaEditorClose() {
   _oaEditorStopPreview();
-  // Para o vídeo do preview
+  // Para o vídeo do preview e libera ObjectURL local (zero upload aconteceu aqui)
   if(_seVideoEl) {
     try { _seVideoEl.pause(); _seVideoEl.src = ''; } catch(e) {}
     _seVideoEl = null;
   }
+  // Revoga a ObjectURL local — libera memória do browser (desktop + mobile)
+  _seRevokePreview();
   // Limpa o preview
   const prev = document.getElementById('oa-se-preview');
   if(prev) prev.innerHTML = '';
@@ -23194,6 +23393,10 @@ async function oaEditorPublish() {
     _seVideoEl = null;
   }
 
+  // ── REGRA DE OURO: libera a ObjectURL de preview agora que o upload vai começar
+  // Toda a edição (trim, música, corte) aconteceu 100% local — zero Egress até aqui.
+  _seRevokePreview();
+
   // Desabilita botão de publicar no editor
   const pubBtn = document.querySelector('.oa-se-publish-btn');
   if(pubBtn){ pubBtn.disabled = true; pubBtn.textContent = '⏳ Processando...'; }
@@ -23221,13 +23424,12 @@ async function oaEditorPublish() {
 
   // ─── MAPA DE PROGRESSO ──────────────────────────────────────────────
   // 2%    → iniciando
-  // 5-18% → cortando música
-  // 20-25%→ enviando música
-  // 25-50%→ cortando vídeo (em tempo real)
+  // 5-18% → cortando música (local, sem upload)
+  // 20-25%→ enviando música ao R2  ← 1º upload real
+  // 25-50%→ cortando vídeo (local, sem upload)
   // 50%   → vídeo cortado / preparando
-  // 55%   → comprimindo vídeo (pipeline interno emite 55→88%)
-  // 88%   → enviando ao R2
-  // 95%   → gravando no banco
+  // 55-88%→ comprimindo + enviando vídeo ao R2  ← 2º upload real
+  // 95%   → gravando no Supabase
   // 100%  → publicado!
   // ────────────────────────────────────────────────────────────────────
 
