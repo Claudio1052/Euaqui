@@ -304,12 +304,13 @@ a{text-decoration:none;}
   display:flex;justify-content:space-between;
 }
 .oa-se-waveform{
-  position:relative;height:52px;border-radius:8px; /* maior = mais fácil de tocar */
-  background:rgba(0,255,204,.06);border:1px solid rgba(0,255,204,.2);
-  overflow:visible; /* handles podem sair da área */
-  cursor:pointer;
+  position:relative;height:64px;border-radius:8px;
+  background:rgba(0,0,0,.3);border:1px solid rgba(0,255,204,.2);
+  overflow:hidden;
+  cursor:crosshair;
   touch-action:none;
   user-select:none;
+  -webkit-user-select:none;
 }
 /* Barras fake de waveform */
 .oa-se-wave-bars{
@@ -319,33 +320,54 @@ a{text-decoration:none;}
 .oa-se-wave-bar{
   flex:1;background:rgba(0,255,204,.3);border-radius:1px;min-height:4px;
 }
-/* Região selecionada */
+/* Janela de seleção deslizante (largura fixa = trim) */
 .oa-se-trim-region{
   position:absolute;top:0;bottom:0;
-  background:rgba(0,255,204,.18);
-  border-left:2px solid var(--neon-cyan);
-  border-right:2px solid var(--neon-cyan);
+  background:rgba(0,255,204,.15);
+  border:none;
   pointer-events:none;
+  z-index:2;
 }
-/* Handle esquerdo e direito */
-.oa-se-handle{
-  position:absolute;top:-4px;bottom:-4px;width:28px; /* maior área de toque */
-  display:flex;align-items:center;justify-content:center;
-  cursor:ew-resize;z-index:4;
-  touch-action:none;
+/* Bordas laterais da janela */
+.oa-se-trim-region::before,
+.oa-se-trim-region::after{
+  content:'';
+  position:absolute;top:0;bottom:0;width:4px;
+  background:var(--neon-cyan);
+  box-shadow:0 0 10px var(--neon-cyan);
 }
-.oa-se-handle::after{
-  content:'';width:5px;height:28px;
-  background:var(--neon-cyan);border-radius:3px;
-  box-shadow:0 0 8px var(--neon-cyan), 0 0 16px rgba(0,255,204,.4);
+.oa-se-trim-region::before{ left:0; border-radius:2px 0 0 2px; }
+.oa-se-trim-region::after { right:0; border-radius:0 2px 2px 0; }
+
+/* Overlay escuro fora da janela */
+.oa-se-trim-outside{
+  position:absolute;top:0;bottom:0;
+  background:rgba(0,0,0,.55);
+  pointer-events:none;z-index:1;
 }
-#oa-se-handle-l{ left:-14px; }
-#oa-se-handle-r{ right:-14px; }
-/* Barra de tempo atual */
+
+/* Alça central de arrasto */
+.oa-se-drag-handle{
+  position:absolute;top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  width:32px;height:20px;
+  display:flex;align-items:center;justify-content:center;gap:3px;
+  z-index:3;pointer-events:none;
+}
+.oa-se-drag-handle span{
+  width:3px;height:14px;border-radius:2px;
+  background:rgba(255,255,255,.7);
+}
+
+/* Cursor de arrasto na região */
+#oa-se-region{ cursor:grab; pointer-events:all; }
+#oa-se-region:active{ cursor:grabbing; }
+
+/* Playhead */
 .oa-se-playhead{
   position:absolute;top:0;bottom:0;width:2px;
-  background:var(--neon-pink);pointer-events:none;z-index:3;
-  box-shadow:0 0 4px var(--neon-pink);
+  background:var(--neon-pink);pointer-events:none;z-index:5;
+  box-shadow:0 0 6px var(--neon-pink);
 }
 /* Toggle mute vídeo */
 .oa-se-mute-row{
@@ -22811,111 +22833,148 @@ function oaEditorPickMusic() {
 }
 window.oaEditorPickMusic = oaEditorPickMusic;
 
-// ── Waveform fake (barras aleatórias mas seed consistente) ───────────
+// ── Waveform com barras pseudo-aleatórias ────────────────────────────
 function _oaEditorDrawWave() {
   const bars = document.getElementById('oa-se-wave-bars');
   if(!bars) return;
-  const N = 60;
+  const N = 80;
   let html = '';
   for(let i = 0; i < N; i++) {
-    // Seed pseudo-aleatória baseada no índice
-    const h = 20 + Math.abs(Math.sin(i * 2.3 + 1.1) * 60) + Math.abs(Math.cos(i * 1.7) * 30);
-    html += `<div class="oa-se-wave-bar" style="height:${Math.min(h,90)}%;"></div>`;
+    const h = 15 + Math.abs(Math.sin(i * 2.1 + 0.8) * 55) + Math.abs(Math.cos(i * 1.4 + 0.3) * 30);
+    const bright = (i % 4 === 0) ? 0.8 : 0.45;
+    html += `<div class="oa-se-wave-bar" style="height:${Math.min(h,92)}%;opacity:${bright};"></div>`;
   }
   bars.innerHTML = html;
   _oaEditorUpdateRegion();
   _oaEditorInitTrimDrag();
 }
 
+// Atualiza a janela de seleção — largura fixa, posição variável
 function _oaEditorUpdateRegion() {
   if(_seMusicDur <= 0) return;
-  const region  = document.getElementById('oa-se-region');
-  const handleL = document.getElementById('oa-se-handle-l');
-  const handleR = document.getElementById('oa-se-handle-r');
+  const region   = document.getElementById('oa-se-region');
+  const outsideL = document.getElementById('oa-se-outside-l');
+  const outsideR = document.getElementById('oa-se-outside-r');
+  if(!region) return;
+
   const pctL = (_seTrimStart / _seMusicDur) * 100;
   const pctR = (_seTrimEnd   / _seMusicDur) * 100;
+  const pctW = pctR - pctL;
+
   region.style.left  = pctL + '%';
-  region.style.width = (pctR - pctL) + '%';
-  handleL.style.left = pctL + '%';
-  handleR.style.left = pctR + '%';
+  region.style.width = pctW + '%';
+
+  // Overlays escuros fora da janela
+  if(outsideL) { outsideL.style.left = '0'; outsideL.style.width = pctL + '%'; }
+  if(outsideR) { outsideR.style.right = '0'; outsideR.style.width = (100 - pctR) + '%'; }
 }
 
 function _oaEditorUpdateTrimLabels() {
-  const dur = Math.round(_seTrimEnd - _seTrimStart);
-  document.getElementById('oa-se-start-lbl').textContent = Math.round(_seTrimStart) + 's';
-  document.getElementById('oa-se-end-lbl').textContent   = Math.round(_seTrimEnd)   + 's';
-  document.getElementById('oa-se-dur-lbl').textContent   = 'duração: ' + dur + 's';
+  const dur  = _seTrimEnd - _seTrimStart;
+  const fmt  = t => t < 60 ? Math.round(t)+'s' : Math.floor(t/60)+'m'+Math.round(t%60)+'s';
+  const el   = document.getElementById('oa-se-start-lbl');
+  const er   = document.getElementById('oa-se-end-lbl');
+  const ed   = document.getElementById('oa-se-dur-lbl');
+  if(el) el.textContent = fmt(_seTrimStart);
+  if(er) er.textContent = fmt(_seTrimEnd);
+  if(ed) ed.textContent = 'duração: ' + fmt(dur);
 }
 
-// ── Drag dos handles de trim (Pointer Events API — mouse + touch + stylus) ──
+// ── JANELA DESLIZANTE — arrasto move a seleção de largura fixa ───────
+// O usuário arrasta a janela inteira; a duração é sempre = _seMaxTrim
 function _oaEditorInitTrimDrag() {
-  const wave    = document.getElementById('oa-se-waveform');
-  const handleL = document.getElementById('oa-se-handle-l');
-  const handleR = document.getElementById('oa-se-handle-r');
-  if(!wave || !handleL || !handleR) return;
+  const wave   = document.getElementById('oa-se-waveform');
+  const region = document.getElementById('oa-se-region');
+  if(!wave || !region) return;
 
+  // Largura fixa da janela em segundos
+  const winSec = () => Math.min(_seMaxTrim, _seMusicDur);
+
+  // Converte X do cliente para tempo na música
   function xToTime(clientX) {
     const rect = wave.getBoundingClientRect();
-    const pct  = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    return pct * _seMusicDur;
+    return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * _seMusicDur;
   }
 
-  function startDrag(handle, isLeft) {
-    handle.setPointerCapture && handle.setPointerCapture(handle._pid);
-    const onMove = e => {
-      e.preventDefault();
-      const t = xToTime(e.clientX);
-      if(isLeft) {
-        _seTrimStart = Math.max(0, Math.min(t, _seTrimEnd - 0.5));
-        if((_seTrimEnd - _seTrimStart) > _seMaxTrim) _seTrimStart = _seTrimEnd - _seMaxTrim;
-      } else {
-        _seTrimEnd = Math.min(_seMusicDur, Math.max(t, _seTrimStart + 0.5));
-        if((_seTrimEnd - _seTrimStart) > _seMaxTrim) _seTrimEnd = _seTrimStart + _seMaxTrim;
-      }
+  // Move a janela para que o ponto clicado fique em offsetSec dentro da janela
+  function moveWindow(centerTime) {
+    const half = winSec() / 2;
+    let start  = centerTime - half;
+    // Clamp: janela não sai da música
+    start = Math.max(0, Math.min(_seMusicDur - winSec(), start));
+    _seTrimStart = start;
+    _seTrimEnd   = start + winSec();
+    _oaEditorUpdateRegion();
+    _oaEditorUpdateTrimLabels();
+  }
+
+  // Arrasto da janela
+  let _dragActive  = false;
+  let _dragOffsetSec = 0; // posição do clique dentro da janela em segundos
+
+  function onPointerDown(e) {
+    e.preventDefault();
+    _dragActive = true;
+    const clickTime  = xToTime(e.clientX);
+    _dragOffsetSec   = clickTime - _seTrimStart; // onde na janela clicou
+    // Captura o pointer para receber eventos fora do elemento
+    try { region.setPointerCapture(e.pointerId); } catch(_) {}
+  }
+
+  function onPointerMove(e) {
+    if(!_dragActive) return;
+    e.preventDefault();
+    const clickTime = xToTime(e.clientX);
+    // Mantém o ponto de clique na mesma posição relativa dentro da janela
+    let newStart = clickTime - _dragOffsetSec;
+    newStart = Math.max(0, Math.min(_seMusicDur - winSec(), newStart));
+    _seTrimStart = newStart;
+    _seTrimEnd   = newStart + winSec();
+    _oaEditorUpdateRegion();
+    _oaEditorUpdateTrimLabels();
+  }
+
+  function onPointerUp(e) {
+    _dragActive = false;
+  }
+
+  region.addEventListener('pointerdown',   onPointerDown, { passive:false });
+  region.addEventListener('pointermove',   onPointerMove, { passive:false });
+  region.addEventListener('pointerup',     onPointerUp);
+  region.addEventListener('pointercancel', onPointerUp);
+
+  // Clique FORA da janela reposiciona o centro da janela no ponto clicado
+  wave.addEventListener('pointerdown', e => {
+    if(e.target === region || region.contains(e.target)) return;
+    e.preventDefault();
+    const t = xToTime(e.clientX);
+    moveWindow(t);
+
+    // Inicia drag a partir do clique fora (captura o evento)
+    _dragActive    = true;
+    _dragOffsetSec = winSec() / 2; // centraliza o clique
+    try { wave.setPointerCapture(e.pointerId); } catch(_) {}
+
+    const onWaveMove = e2 => {
+      if(!_dragActive) return;
+      const t2     = xToTime(e2.clientX);
+      let newStart = t2 - _dragOffsetSec;
+      newStart     = Math.max(0, Math.min(_seMusicDur - winSec(), newStart));
+      _seTrimStart = newStart;
+      _seTrimEnd   = newStart + winSec();
       _oaEditorUpdateRegion();
       _oaEditorUpdateTrimLabels();
     };
-    const onUp = () => {
-      handle.removeEventListener('pointermove', onMove);
-      handle.removeEventListener('pointerup', onUp);
-      handle.removeEventListener('pointercancel', onUp);
+    const onWaveUp = () => {
+      _dragActive = false;
+      wave.removeEventListener('pointermove',   onWaveMove);
+      wave.removeEventListener('pointerup',     onWaveUp);
+      wave.removeEventListener('pointercancel', onWaveUp);
     };
-    handle.addEventListener('pointermove', onMove, { passive:false });
-    handle.addEventListener('pointerup',   onUp,   { once:true });
-    handle.addEventListener('pointercancel', onUp, { once:true });
-  }
-
-  handleL.addEventListener('pointerdown', e => {
-    e.preventDefault(); e.stopPropagation();
-    handleL._pid = e.pointerId;
-    try{ handleL.setPointerCapture(e.pointerId); }catch(_){}
-    startDrag(handleL, true);
+    wave.addEventListener('pointermove',   onWaveMove, { passive:false });
+    wave.addEventListener('pointerup',     onWaveUp,   { once:true });
+    wave.addEventListener('pointercancel', onWaveUp,   { once:true });
   }, { passive:false });
-
-  handleR.addEventListener('pointerdown', e => {
-    e.preventDefault(); e.stopPropagation();
-    handleR._pid = e.pointerId;
-    try{ handleR.setPointerCapture(e.pointerId); }catch(_){}
-    startDrag(handleR, false);
-  }, { passive:false });
-
-  // Clique na waveform move o handle mais próximo
-  wave.addEventListener('pointerdown', e => {
-    if(e.target === handleL || e.target === handleR) return;
-    const t    = xToTime(e.clientX);
-    const dL   = Math.abs(t - _seTrimStart);
-    const dR   = Math.abs(t - _seTrimEnd);
-    const isL  = dL <= dR;
-    if(isL) {
-      _seTrimStart = Math.max(0, Math.min(t, _seTrimEnd - 0.5));
-      if((_seTrimEnd - _seTrimStart) > _seMaxTrim) _seTrimStart = _seTrimEnd - _seMaxTrim;
-    } else {
-      _seTrimEnd = Math.min(_seMusicDur, Math.max(t, _seTrimStart + 0.5));
-      if((_seTrimEnd - _seTrimStart) > _seMaxTrim) _seTrimEnd = _seTrimStart + _seMaxTrim;
-    }
-    _oaEditorUpdateRegion();
-    _oaEditorUpdateTrimLabels();
-  }, { passive:true });
 }
 
 // ── Preview da música no trecho selecionado ──────────────────────────
@@ -23723,10 +23782,19 @@ export default {
               <span id="oa-se-end-lbl">0s</span>
             </div>
             <div class="oa-se-waveform" id="oa-se-waveform">
+              <!-- Barras da waveform -->
               <div class="oa-se-wave-bars" id="oa-se-wave-bars"></div>
-              <div class="oa-se-trim-region" id="oa-se-region"></div>
-              <div class="oa-se-handle" id="oa-se-handle-l"></div>
-              <div class="oa-se-handle" id="oa-se-handle-r"></div>
+              <!-- Overlay escuro à esquerda da janela -->
+              <div class="oa-se-trim-outside" id="oa-se-outside-l" style="left:0;width:0;"></div>
+              <!-- Overlay escuro à direita da janela -->
+              <div class="oa-se-trim-outside" id="oa-se-outside-r" style="right:0;width:0;"></div>
+              <!-- Janela de seleção (arrastável) -->
+              <div class="oa-se-trim-region" id="oa-se-region">
+                <div class="oa-se-drag-handle">
+                  <span></span><span></span><span></span>
+                </div>
+              </div>
+              <!-- Playhead -->
               <div class="oa-se-playhead" id="oa-se-playhead" style="left:0%;"></div>
             </div>
           </div>
