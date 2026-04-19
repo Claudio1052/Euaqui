@@ -198,6 +198,187 @@ a{text-decoration:none;}
 }
 .post-music-play:hover{transform:scale(1.1);}
 
+
+/* ── STORY EDITOR MODAL ─────────────────────────────────────── */
+#oa-story-editor{
+  position:fixed;inset:0;
+  background:rgba(0,0,0,.96);
+  z-index:10055;
+  display:none;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+}
+#oa-story-editor.on{ display:flex; }
+.oa-se-wrap{
+  width:100%;max-width:420px;
+  height:100%;max-height:100dvh;
+  display:flex;flex-direction:column;
+  position:relative;
+  background:#000;
+}
+/* Preview de mídia (ocupa tela toda como story real) */
+.oa-se-preview{
+  flex:1;
+  position:relative;
+  overflow:hidden;
+  background:#000;
+  display:flex;align-items:center;justify-content:center;
+}
+.oa-se-preview video,
+.oa-se-preview img{
+  width:100%;height:100%;
+  object-fit:contain;
+  display:block;
+}
+/* Overlay de controles no topo */
+.oa-se-topbar{
+  position:absolute;
+  top:0;left:0;right:0;
+  padding:12px 14px 8px;
+  display:flex;align-items:center;gap:8px;
+  background:linear-gradient(180deg,rgba(0,0,0,.7) 0%,transparent 100%);
+  z-index:3;
+}
+.oa-se-close{
+  background:rgba(255,255,255,.12);border:none;
+  color:#fff;width:32px;height:32px;border-radius:50%;
+  font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+}
+.oa-se-title{
+  font-family:'Silkscreen',monospace;font-size:11px;
+  color:#fff;letter-spacing:1px;flex:1;text-align:center;
+}
+/* Painel inferior de controles */
+.oa-se-panel{
+  flex-shrink:0;
+  padding:12px 14px 16px;
+  background:rgba(10,10,30,.97);
+  border-top:1px solid rgba(255,255,255,.08);
+  display:flex;flex-direction:column;gap:10px;
+}
+/* Barra de música com waveform fake e handles de corte */
+.oa-se-music-bar{
+  background:rgba(255,255,255,.04);
+  border:1px solid rgba(0,255,204,.25);
+  border-radius:12px;
+  padding:10px 12px;
+  display:flex;flex-direction:column;gap:8px;
+}
+.oa-se-music-info{
+  display:flex;align-items:center;gap:8px;
+}
+.oa-se-music-capa{
+  width:36px;height:36px;border-radius:6px;object-fit:cover;flex-shrink:0;
+}
+.oa-se-music-name{
+  flex:1;min-width:0;
+}
+.oa-se-music-titulo{
+  font-family:'Silkscreen',monospace;font-size:9px;color:var(--neon-cyan);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.oa-se-music-artista{
+  font-size:9px;color:var(--text-muted);margin-top:1px;
+}
+.oa-se-music-btns{
+  display:flex;gap:6px;align-items:center;
+}
+.oa-se-play-btn{
+  width:28px;height:28px;border-radius:50%;
+  background:linear-gradient(135deg,var(--neon-cyan),var(--neon-purple));
+  border:none;color:#fff;font-size:12px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.oa-se-rm-btn{
+  background:rgba(255,51,102,.15);border:1px solid var(--neon-pink);
+  border-radius:20px;padding:4px 8px;color:var(--neon-pink);
+  font-size:9px;font-family:'Space Mono',monospace;cursor:pointer;
+}
+/* Slider de corte — trilha waveform */
+.oa-se-trim{
+  display:flex;flex-direction:column;gap:4px;
+}
+.oa-se-trim-label{
+  font-size:9px;color:var(--text-muted);font-family:'Space Mono',monospace;
+  display:flex;justify-content:space-between;
+}
+.oa-se-waveform{
+  position:relative;height:36px;border-radius:6px;
+  background:rgba(0,255,204,.06);border:1px solid rgba(0,255,204,.15);
+  overflow:hidden;cursor:pointer;
+}
+/* Barras fake de waveform */
+.oa-se-wave-bars{
+  position:absolute;inset:0;
+  display:flex;align-items:center;gap:1px;padding:0 2px;
+}
+.oa-se-wave-bar{
+  flex:1;background:rgba(0,255,204,.3);border-radius:1px;min-height:4px;
+}
+/* Região selecionada */
+.oa-se-trim-region{
+  position:absolute;top:0;bottom:0;
+  background:rgba(0,255,204,.18);
+  border-left:2px solid var(--neon-cyan);
+  border-right:2px solid var(--neon-cyan);
+  pointer-events:none;
+}
+/* Handle esquerdo e direito */
+.oa-se-handle{
+  position:absolute;top:0;bottom:0;width:16px;
+  display:flex;align-items:center;justify-content:center;
+  cursor:ew-resize;z-index:2;
+}
+.oa-se-handle::after{
+  content:'';width:4px;height:22px;
+  background:var(--neon-cyan);border-radius:2px;
+  box-shadow:0 0 6px var(--neon-cyan);
+}
+#oa-se-handle-l{ left:-8px; }
+#oa-se-handle-r{ right:-8px; }
+/* Barra de tempo atual */
+.oa-se-playhead{
+  position:absolute;top:0;bottom:0;width:2px;
+  background:var(--neon-pink);pointer-events:none;z-index:3;
+  box-shadow:0 0 4px var(--neon-pink);
+}
+/* Toggle mute vídeo */
+.oa-se-mute-row{
+  display:flex;align-items:center;gap:8px;
+}
+.oa-se-mute-label{
+  font-size:10px;color:var(--text-muted);font-family:'Space Mono',monospace;flex:1;
+}
+.oa-se-toggle{
+  width:38px;height:20px;border-radius:10px;
+  background:rgba(255,255,255,.1);border:none;
+  position:relative;cursor:pointer;transition:background .2s;flex-shrink:0;
+}
+.oa-se-toggle.on{ background:var(--neon-cyan); }
+.oa-se-toggle::after{
+  content:'';position:absolute;top:2px;left:2px;
+  width:16px;height:16px;border-radius:50%;background:#fff;
+  transition:left .2s;
+}
+.oa-se-toggle.on::after{ left:20px; }
+/* Botão publicar */
+.oa-se-publish-btn{
+  background:linear-gradient(135deg,var(--neon-pink),var(--neon-purple));
+  border:none;border-radius:12px;padding:14px;
+  color:#fff;font-family:'Silkscreen',monospace;font-size:12px;
+  letter-spacing:1px;cursor:pointer;width:100%;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+}
+.oa-se-add-music{
+  background:rgba(0,255,204,.06);border:1px dashed rgba(0,255,204,.3);
+  border-radius:12px;padding:12px;
+  color:var(--neon-cyan);font-family:'Space Mono',monospace;font-size:11px;
+  cursor:pointer;width:100%;text-align:center;
+  display:flex;align-items:center;justify-content:center;gap:6px;
+}
+.oa-se-add-music:hover{ background:rgba(0,255,204,.10); }
+
 /* LOADING */
 #loading-screen{position:fixed;inset:0;background:var(--bg-deep);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;transition:opacity .4s;}
 .boot-logo{font-family:'VT323',monospace;font-size:80px;color:var(--neon-cyan);text-shadow:0 0 20px var(--neon-cyan),0 0 40px rgba(0,255,204,.5);}
@@ -21261,25 +21442,8 @@ async function oaOnFilePicked(input){
     }
   }
 
-  _oaPickedFile = f;
-  _oaPickedType = isVid ? 'video' : 'image';
-
-  // Preview
-  const wrap = document.getElementById('oa-c-preview-wrap');
-  wrap.innerHTML = '';
-  const url = URL.createObjectURL(f);
-  if(isVid){
-    const v = document.createElement('video');
-    v.src = url; v.className='oa-c-preview'; v.controls=true; v.muted=true; v.playsInline=true;
-    wrap.appendChild(v);
-  } else {
-    const img = document.createElement('img');
-    img.src = url; img.className='oa-c-preview';
-    wrap.appendChild(img);
-  }
-  wrap.style.display = 'block';
-  document.getElementById('oa-c-actions').style.display = 'none';
-  document.getElementById('oa-c-confirm').style.display = 'flex';
+  // Abre o editor visual de story (preview + música + trim + mute)
+  await oaEditorOpen(f, isVid ? 'video' : 'image');
 }
 window.oaOnFilePicked = oaOnFilePicked;
 
@@ -21329,7 +21493,29 @@ async function oaPublish(){
     // Processa música do story (se houver)
     let _oaMusicData = null;
     if(window._musicAttached){
-      try{ _oaMusicData = await _ensureMusicCatalog(window._musicAttached); }catch(e){}
+      try{
+        const _ma = window._musicAttached;
+        if(_ma._trimmedFile){
+          // Trecho já cortado pelo editor — sobe direto para R2
+          window._oaUploadContext = 'musicas_catalog';
+          const _trimUrl = await uploadWithPipeline(_ma._trimmedFile, 'audio', ()=>{});
+          window._oaUploadContext = null;
+          _oaMusicData = {
+            external_id:    _ma.external_id + '_' + Math.round(_ma._trimStart) + '_' + Math.round(_ma._trimEnd),
+            titulo:         _ma.titulo,
+            artista:        _ma.artista,
+            url_audio_opus: _trimUrl,
+            url_capa_webp:  _ma.capa_url,
+            trim_start:     _ma._trimStart,
+            trim_end:       _ma._trimEnd,
+            trim_duration:  _ma._trimDuration
+          };
+          // Salva no catálogo para cache
+          await db.from(MUSIC_CATALOG_TABLE).upsert(_oaMusicData, { onConflict:'external_id', ignoreDuplicates:true });
+        } else {
+          _oaMusicData = await _ensureMusicCatalog(_ma);
+        }
+      }catch(e){ console.warn('[oa-music]', e); window._oaUploadContext = null; }
     }
 
     // Monta payload — inclui metadata de negócio se vier de divulgação
@@ -22322,6 +22508,390 @@ function _togglePostMusic(src, uid, btn) {
 }
 window._togglePostMusic = _togglePostMusic;
 
+
+// ═══════════════════════════════════════════════════════════════════════
+// STORY EDITOR — Preview fullscreen + corte de música + mute de vídeo
+// ═══════════════════════════════════════════════════════════════════════
+let _seFile      = null;   // File original
+let _seType      = null;   // 'image' | 'video'
+let _seMediaDur  = 0;      // duração do vídeo (0 p/ foto)
+let _seMaxTrim   = 6;      // seg máx de música (6 foto / 30 vídeo)
+let _seTrimStart = 0;      // início do corte (seg)
+let _seTrimEnd   = 0;      // fim do corte (seg)
+let _seMusicDur  = 0;      // duração total do MP3
+let _sePlayer    = null;   // Audio player de preview
+let _sePlayhead  = null;   // raf handle
+let _seMuteOrig  = false;  // mute do vídeo original
+let _seVideoEl   = null;   // elemento <video> no preview
+
+// Abre o editor após escolher um arquivo
+async function oaEditorOpen(file, type) {
+  _seFile      = file;
+  _seType      = type;
+  _seMuteOrig  = false;
+  _seTrimStart = 0;
+  _seTrimEnd   = 0;
+  _seMusicDur  = 0;
+  _seVideoEl   = null;
+
+  // Duração máxima da música = duração do vídeo (max 30s) ou 6s p/ foto
+  _seMaxTrim = (type === 'video') ? 30 : 6;
+
+  // Preview da mídia
+  const prev = document.getElementById('oa-se-preview');
+  prev.innerHTML = '';
+  const objUrl = URL.createObjectURL(file);
+
+  if(type === 'video') {
+    _seMediaDur = await new Promise(res => {
+      const v = document.createElement('video');
+      v.src = objUrl; v.muted = true; v.playsInline = true; v.preload = 'metadata';
+      v.onloadedmetadata = () => { URL.revokeObjectURL(objUrl); res(Math.min(v.duration, 30)); };
+      v.onerror = () => res(30);
+      setTimeout(() => res(30), 5000);
+    });
+    // Re-cria com nova objectUrl
+    const url2 = URL.createObjectURL(file);
+    const v2 = document.createElement('video');
+    v2.src = url2; v2.muted = _seMuteOrig; v2.loop = true;
+    v2.playsInline = true; v2.autoplay = true;
+    v2.style.cssText = 'width:100%;height:100%;object-fit:contain;';
+    prev.appendChild(v2);
+    _seVideoEl = v2;
+    _seMaxTrim = Math.min(_seMediaDur, 30);
+    document.getElementById('oa-se-mute-row').style.display = 'flex';
+  } else {
+    _seMediaDur = 0;
+    const img = document.createElement('img');
+    img.src = objUrl;
+    img.style.cssText = 'width:100%;height:100%;object-fit:contain;';
+    prev.appendChild(img);
+    document.getElementById('oa-se-mute-row').style.display = 'none';
+  }
+
+  // Reset music section
+  _oaEditorResetMusicUI();
+
+  // Se já tem música selecionada, mostra
+  if(window._musicAttached) {
+    _oaEditorShowMusic(window._musicAttached);
+  }
+
+  // Fecha o modal de criação e abre o editor
+  document.getElementById('oa-create-modal').classList.remove('on');
+  document.getElementById('oa-story-editor').classList.add('on');
+}
+window.oaEditorOpen = oaEditorOpen;
+
+function oaEditorClose() {
+  _oaEditorStopPreview();
+  document.getElementById('oa-story-editor').classList.remove('on');
+  // Volta para o modal de criação
+  document.getElementById('oa-create-modal').classList.add('on');
+}
+window.oaEditorClose = oaEditorClose;
+
+// ── Música: mostra UI de trim ────────────────────────────────────────
+function _oaEditorShowMusic(m) {
+  const sec = document.getElementById('oa-se-music-section');
+  const addBtn = document.getElementById('oa-se-add-music-btn');
+  sec.style.display = 'block';
+  addBtn.style.display = 'none';
+
+  document.getElementById('oa-se-capa').src    = m.capa_url  || '';
+  document.getElementById('oa-se-titulo').textContent  = m.titulo  || '—';
+  document.getElementById('oa-se-artista').textContent = m.artista || '—';
+
+  // Carrega MP3 para saber duração
+  if(!_sePlayer) _sePlayer = new Audio();
+  _sePlayer.src = m.audio_mp3 || m.url_audio_opus || '';
+  _sePlayer.addEventListener('loadedmetadata', () => {
+    _seMusicDur  = _sePlayer.duration || 60;
+    _seTrimStart = 0;
+    _seTrimEnd   = Math.min(_seMaxTrim, _seMusicDur);
+    _oaEditorDrawWave();
+    _oaEditorUpdateTrimLabels();
+  }, { once: true });
+  _sePlayer.load();
+}
+
+function _oaEditorResetMusicUI() {
+  document.getElementById('oa-se-music-section').style.display = 'none';
+  document.getElementById('oa-se-add-music-btn').style.display = 'flex';
+  _oaEditorStopPreview();
+}
+
+function oaEditorRemoveMusic() {
+  window._musicAttached = null;
+  _oaEditorResetMusicUI();
+  _clearMusicPill('story');
+}
+window.oaEditorRemoveMusic = oaEditorRemoveMusic;
+
+function oaEditorPickMusic() {
+  openMusicPicker('story');
+  // Ao confirmar, confirmMusicPicker chama _renderMusicPill e seta window._musicAttached
+  // Precisamos detectar essa mudança — override do confirm
+  const origConfirm = window.confirmMusicPicker;
+  window.confirmMusicPicker = function() {
+    origConfirm();
+    // Após confirmar, mostra no editor
+    if(window._musicAttached) {
+      _oaEditorShowMusic(window._musicAttached);
+    }
+    window.confirmMusicPicker = origConfirm; // restaura
+  };
+}
+window.oaEditorPickMusic = oaEditorPickMusic;
+
+// ── Waveform fake (barras aleatórias mas seed consistente) ───────────
+function _oaEditorDrawWave() {
+  const bars = document.getElementById('oa-se-wave-bars');
+  if(!bars) return;
+  const N = 60;
+  let html = '';
+  for(let i = 0; i < N; i++) {
+    // Seed pseudo-aleatória baseada no índice
+    const h = 20 + Math.abs(Math.sin(i * 2.3 + 1.1) * 60) + Math.abs(Math.cos(i * 1.7) * 30);
+    html += `<div class="oa-se-wave-bar" style="height:${Math.min(h,90)}%;"></div>`;
+  }
+  bars.innerHTML = html;
+  _oaEditorUpdateRegion();
+  _oaEditorInitTrimDrag();
+}
+
+function _oaEditorUpdateRegion() {
+  if(_seMusicDur <= 0) return;
+  const region  = document.getElementById('oa-se-region');
+  const handleL = document.getElementById('oa-se-handle-l');
+  const handleR = document.getElementById('oa-se-handle-r');
+  const pctL = (_seTrimStart / _seMusicDur) * 100;
+  const pctR = (_seTrimEnd   / _seMusicDur) * 100;
+  region.style.left  = pctL + '%';
+  region.style.width = (pctR - pctL) + '%';
+  handleL.style.left = pctL + '%';
+  handleR.style.left = pctR + '%';
+}
+
+function _oaEditorUpdateTrimLabels() {
+  const dur = Math.round(_seTrimEnd - _seTrimStart);
+  document.getElementById('oa-se-start-lbl').textContent = Math.round(_seTrimStart) + 's';
+  document.getElementById('oa-se-end-lbl').textContent   = Math.round(_seTrimEnd)   + 's';
+  document.getElementById('oa-se-dur-lbl').textContent   = 'duração: ' + dur + 's';
+}
+
+// ── Drag dos handles de trim ─────────────────────────────────────────
+function _oaEditorInitTrimDrag() {
+  const wave    = document.getElementById('oa-se-waveform');
+  const handleL = document.getElementById('oa-se-handle-l');
+  const handleR = document.getElementById('oa-se-handle-r');
+  if(!wave || !handleL || !handleR) return;
+
+  function pctFromEvent(e) {
+    const rect = wave.getBoundingClientRect();
+    const x    = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    return Math.max(0, Math.min(1, x / rect.width));
+  }
+  function timeFromPct(p) { return p * _seMusicDur; }
+
+  // Handle esquerdo
+  function onDragL(e) {
+    e.preventDefault();
+    const t = timeFromPct(pctFromEvent(e));
+    _seTrimStart = Math.max(0, Math.min(t, _seTrimEnd - 1));
+    // Garante que a seleção não excede _seMaxTrim
+    if((_seTrimEnd - _seTrimStart) > _seMaxTrim) _seTrimStart = _seTrimEnd - _seMaxTrim;
+    _oaEditorUpdateRegion();
+    _oaEditorUpdateTrimLabels();
+  }
+  function onDragR(e) {
+    e.preventDefault();
+    const t = timeFromPct(pctFromEvent(e));
+    _seTrimEnd = Math.min(_seMusicDur, Math.max(t, _seTrimStart + 1));
+    // Garante que não excede _seMaxTrim
+    if((_seTrimEnd - _seTrimStart) > _seMaxTrim) _seTrimEnd = _seTrimStart + _seMaxTrim;
+    _oaEditorUpdateRegion();
+    _oaEditorUpdateTrimLabels();
+  }
+
+  ['mousedown','touchstart'].forEach(ev => {
+    handleL.addEventListener(ev, e => {
+      e.stopPropagation();
+      const move = ev === 'mousedown' ? 'mousemove' : 'touchmove';
+      const up   = ev === 'mousedown' ? 'mouseup'   : 'touchend';
+      const onM  = onDragL;
+      document.addEventListener(move, onM, { passive:false });
+      document.addEventListener(up, () => document.removeEventListener(move, onM), { once:true });
+    }, { passive:false });
+    handleR.addEventListener(ev, e => {
+      e.stopPropagation();
+      const move = ev === 'mousedown' ? 'mousemove' : 'touchmove';
+      const up   = ev === 'mousedown' ? 'mouseup'   : 'touchend';
+      const onM  = onDragR;
+      document.addEventListener(move, onM, { passive:false });
+      document.addEventListener(up, () => document.removeEventListener(move, onM), { once:true });
+    }, { passive:false });
+  });
+}
+
+// ── Preview da música no trecho selecionado ──────────────────────────
+function oaEditorTogglePreview() {
+  const btn = document.getElementById('oa-se-play');
+  if(!_sePlayer) return;
+  if(!_sePlayer.paused) {
+    _sePlayer.pause();
+    btn.textContent = '▶';
+    _oaEditorStopPlayhead();
+    return;
+  }
+  _sePlayer.currentTime = _seTrimStart;
+  _sePlayer.play().catch(()=>{});
+  btn.textContent = '⏸';
+  _oaEditorAnimPlayhead();
+  // Para ao chegar no fim do corte
+  _sePlayer.ontimeupdate = () => {
+    if(_sePlayer.currentTime >= _seTrimEnd) {
+      _sePlayer.pause();
+      btn.textContent = '▶';
+      _oaEditorStopPlayhead();
+    }
+  };
+}
+window.oaEditorTogglePreview = oaEditorTogglePreview;
+
+function _oaEditorStopPreview() {
+  if(_sePlayer) { try{ _sePlayer.pause(); }catch(e){} }
+  _oaEditorStopPlayhead();
+  const btn = document.getElementById('oa-se-play');
+  if(btn) btn.textContent = '▶';
+}
+
+function _oaEditorAnimPlayhead() {
+  _oaEditorStopPlayhead();
+  const ph = document.getElementById('oa-se-playhead');
+  const tick = () => {
+    if(!_sePlayer || _sePlayer.paused) return;
+    if(_seMusicDur > 0 && ph) {
+      const pct = (_sePlayer.currentTime / _seMusicDur) * 100;
+      ph.style.left = pct + '%';
+    }
+    _sePlayhead = requestAnimationFrame(tick);
+  };
+  _sePlayhead = requestAnimationFrame(tick);
+}
+function _oaEditorStopPlayhead() {
+  if(_sePlayhead) { cancelAnimationFrame(_sePlayhead); _sePlayhead = null; }
+}
+
+// ── Toggle mute do vídeo original ───────────────────────────────────
+function oaEditorToggleMute(btn) {
+  _seMuteOrig = !_seMuteOrig;
+  btn.classList.toggle('on', _seMuteOrig);
+  if(_seVideoEl) _seVideoEl.muted = _seMuteOrig;
+}
+window.oaEditorToggleMute = oaEditorToggleMute;
+
+// ── PUBLICAR — corta e sobe a música, depois publica o story ─────────
+async function oaEditorPublish() {
+  if(!_seFile) { showToast('Nenhum arquivo selecionado','error'); return; }
+  if(!CU) { showToast('Faça login','error'); return; }
+
+  _oaEditorStopPreview();
+
+  // Salva configs no contexto global
+  window._musicMuteVideo = _seMuteOrig;
+
+  // Se tem música, corta o trecho selecionado
+  if(window._musicAttached && _seMusicDur > 0) {
+    showToast('✂️ Cortando trecho da música...','success');
+    try {
+      const trimmedFile = await _oaEditorTrimAudio(
+        window._musicAttached.audio_mp3 || window._musicAttached.url_audio_opus,
+        _seTrimStart,
+        _seTrimEnd
+      );
+      // Substitui o arquivo de áudio pelo trecho cortado
+      window._musicAttached._trimmedFile  = trimmedFile;
+      window._musicAttached._trimStart    = _seTrimStart;
+      window._musicAttached._trimEnd      = _seTrimEnd;
+      window._musicAttached._trimDuration = _seTrimEnd - _seTrimStart;
+    } catch(e) {
+      console.warn('[editor] trim falhou, usa MP3 completo:', e.message);
+    }
+  }
+
+  // Seta o arquivo e tipo para o oaPublish existente
+  _oaPickedFile = _seFile;
+  _oaPickedType = _seType;
+
+  // Fecha o editor e abre o progresso no modal original
+  document.getElementById('oa-story-editor').classList.remove('on');
+  document.getElementById('oa-create-modal').classList.add('on');
+  document.getElementById('oa-c-actions').style.display  = 'none';
+  document.getElementById('oa-c-confirm').style.display  = 'none';
+  document.getElementById('oa-c-progress').style.display = 'block';
+
+  // Publica usando o pipeline existente
+  await oaPublish();
+}
+window.oaEditorPublish = oaEditorPublish;
+
+// ── Corta o áudio usando Web Audio API ──────────────────────────────
+async function _oaEditorTrimAudio(mp3Url, startSec, endSec) {
+  const proxyUrl = R2_BACKEND_URL + '/music-proxy?url=' + encodeURIComponent(mp3Url);
+  let buf;
+  try {
+    const res = await fetch(proxyUrl);
+    buf = await res.arrayBuffer();
+  } catch(e) {
+    const res2 = await fetch(mp3Url);
+    buf = await res2.arrayBuffer();
+  }
+
+  const actx    = new (window.AudioContext || window.webkitAudioContext)();
+  const decoded = await actx.decodeAudioData(buf);
+  const sr      = decoded.sampleRate;
+  const startSample = Math.floor(startSec * sr);
+  const endSample   = Math.min(Math.ceil(endSec * sr), decoded.length);
+  const length      = endSample - startSample;
+
+  // Cria buffer apenas com o trecho
+  const trimBuf = actx.createBuffer(decoded.numberOfChannels, length, sr);
+  for(let ch = 0; ch < decoded.numberOfChannels; ch++) {
+    const src  = decoded.getChannelData(ch).subarray(startSample, endSample);
+    trimBuf.copyToChannel(src, ch);
+  }
+
+  // Re-codifica o trecho para Opus/WebM via MediaRecorder
+  const dest = actx.createMediaStreamDestination();
+  const src2 = actx.createBufferSource();
+  src2.buffer = trimBuf;
+  src2.connect(dest);
+
+  const opusMime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+    ? 'audio/webm;codecs=opus' : 'audio/webm';
+
+  const chunks = [];
+  const rec = new MediaRecorder(dest.stream, { mimeType: opusMime, audioBitsPerSecond: 96_000 });
+  rec.ondataavailable = e => { if(e.data.size) chunks.push(e.data); };
+
+  const blob = await new Promise((res, rej) => {
+    rec.onstop = () => res(new Blob(chunks, { type: opusMime }));
+    rec.onerror = rej;
+    rec.start(200);
+    src2.start(0);
+    src2.onended = () => { try{ rec.stop(); }catch(_){} };
+    setTimeout(() => { try{ rec.stop(); src2.stop(); }catch(_){} }, (length/sr + 2) * 1000);
+  });
+
+  await actx.close();
+  const dur  = Math.round(endSec - startSec);
+  const ext  = opusMime.includes('opus') ? '.opus' : '.webm';
+  const file = new File([blob], 'music_trim_' + dur + 's' + ext, { type: opusMime });
+  console.log(`[editor] trim ${startSec.toFixed(1)}s–${endSec.toFixed(1)}s → ${(file.size/1024).toFixed(0)}KB Opus`);
+  return file;
+}
+
 window.oaLoadRail = oaLoadRail;
 
 // Chama após DOM pronto
@@ -22629,6 +23199,76 @@ export default {
 
 <!-- Player de preview oculto -->
 <audio id="music-preview-player" style="display:none;" preload="none"></audio>
+
+
+<!-- ══ STORY EDITOR ═══════════════════════════════════════════ -->
+<div id="oa-story-editor">
+  <div class="oa-se-wrap">
+    <!-- Topbar -->
+    <div class="oa-se-topbar">
+      <button class="oa-se-close" onclick="oaEditorClose()">✕</button>
+      <div class="oa-se-title" id="oa-se-title">OLHA AQUI!</div>
+      <div style="width:32px;"></div><!-- spacer -->
+    </div>
+
+    <!-- Preview de mídia (fullscreen do story) -->
+    <div class="oa-se-preview" id="oa-se-preview"></div>
+
+    <!-- Painel de controles -->
+    <div class="oa-se-panel">
+
+      <!-- Música selecionada + trim -->
+      <div id="oa-se-music-section" style="display:none;">
+        <div class="oa-se-music-bar">
+          <div class="oa-se-music-info">
+            <img class="oa-se-music-capa" id="oa-se-capa" src="" alt="">
+            <div class="oa-se-music-name">
+              <div class="oa-se-music-titulo" id="oa-se-titulo">—</div>
+              <div class="oa-se-music-artista" id="oa-se-artista">—</div>
+            </div>
+            <div class="oa-se-music-btns">
+              <button class="oa-se-play-btn" id="oa-se-play" onclick="oaEditorTogglePreview()">▶</button>
+              <button class="oa-se-rm-btn" onclick="oaEditorRemoveMusic()">✕ Remover</button>
+            </div>
+          </div>
+
+          <!-- Waveform + trim handles -->
+          <div class="oa-se-trim">
+            <div class="oa-se-trim-label">
+              <span id="oa-se-start-lbl">0s</span>
+              <span id="oa-se-dur-lbl" style="color:var(--neon-cyan);">duração: 0s</span>
+              <span id="oa-se-end-lbl">0s</span>
+            </div>
+            <div class="oa-se-waveform" id="oa-se-waveform">
+              <div class="oa-se-wave-bars" id="oa-se-wave-bars"></div>
+              <div class="oa-se-trim-region" id="oa-se-region"></div>
+              <div class="oa-se-handle" id="oa-se-handle-l"></div>
+              <div class="oa-se-handle" id="oa-se-handle-r"></div>
+              <div class="oa-se-playhead" id="oa-se-playhead" style="left:0%;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Botão adicionar música (se não tiver) -->
+      <button class="oa-se-add-music" id="oa-se-add-music-btn" onclick="oaEditorPickMusic()">
+        🎵 Adicionar Música
+      </button>
+
+      <!-- Mute do vídeo original (só aparece se for vídeo) -->
+      <div class="oa-se-mute-row" id="oa-se-mute-row" style="display:none;">
+        <span class="oa-se-mute-label">🔇 Silenciar som original do vídeo</span>
+        <button class="oa-se-toggle" id="oa-se-mute-btn" onclick="oaEditorToggleMute(this)"></button>
+      </div>
+
+      <!-- Publicar -->
+      <button class="oa-se-publish-btn" onclick="oaEditorPublish()">
+        🚀 PUBLICAR STORY
+      </button>
+
+    </div>
+  </div>
+</div>
 
 </body>
 </html>
