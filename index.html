@@ -22230,8 +22230,10 @@ window.oaBoot = oaBoot;
 // MUSIC SYSTEM — EuAqui (Jamendo API + Supabase catalog + R2)
 // ═══════════════════════════════════════════════════════════════════════
 
-const JAMENDO_ID = 'a206574a';
-const JAMENDO_API = 'https://api.jamendo.com/v3.0';
+const JAMENDO_ID      = 'a206574a';
+const JAMENDO_API     = 'https://api.jamendo.com/v3.0';
+const FREESOUND_TOKEN = 'z2uYjUFx9G7UxUYbGBqseLueJXpHsane9FF51oal';
+const FREESOUND_API   = 'https://freesound.org/apiv2';
 const MUSIC_CATALOG_TABLE = 'musicas_catalog';
 
 let _musicPickerCtx  = null;  // 'post' | 'story' | 'comm'
@@ -22265,45 +22267,100 @@ function closeMusicPicker() {
 }
 window.closeMusicPicker = closeMusicPicker;
 
-// ── Busca na Jamendo ──────────────────────────────────────────────────
+// ── Busca de músicas: Jamendo + Freesound em paralelo ─────────────────
+let _musicSearchSource = 'both'; // 'jamendo' | 'freesound' | 'both'
+
 async function searchMusic() {
   const q = document.getElementById('music-search-input').value.trim();
   if(!q) return;
   const resultsEl = document.getElementById('music-results');
-  resultsEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--neon-cyan);font-family:VT323,monospace;font-size:16px;">⟳ Buscando...</div>';
+  resultsEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--neon-cyan);font-family:VT323,monospace;font-size:16px;">⟳ Buscando em Jamendo e Freesound...</div>';
 
   try {
-    const url = `${JAMENDO_API}/tracks/?client_id=${JAMENDO_ID}&search=${encodeURIComponent(q)}&limit=20&format=json&include=musicinfo&imagesize=100&audioformat=mp32`;
-    const res  = await fetch(url);
-    const json = await res.json();
-    const tracks = json.results || [];
+    // Busca em paralelo nos dois serviços
+    const [jamTracks, freeTracks] = await Promise.allSettled([
+      _searchJamendo(q),
+      _searchFreesound(q)
+    ]);
 
-    if(!tracks.length) {
+    const all = [
+      ...(jamTracks.status  === 'fulfilled' ? jamTracks.value  : []),
+      ...(freeTracks.status === 'fulfilled' ? freeTracks.value : [])
+    ];
+
+    if(!all.length) {
       resultsEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">Nenhuma música encontrada</div>';
       return;
     }
 
     resultsEl.innerHTML = '';
-    tracks.forEach(t => {
+    all.forEach(t => {
       const item = document.createElement('div');
       item.className = 'music-result-item';
-      if(_musicSelected?.external_id === String(t.id)) item.classList.add('selected');
+      if(_musicSelected?.external_id === t.external_id) item.classList.add('selected');
+
+      // Badge da fonte
+      const badge = t._source === 'freesound'
+        ? `<span style="font-size:8px;background:rgba(255,140,0,.2);border:1px solid rgba(255,140,0,.4);color:#ffa040;border-radius:4px;padding:1px 4px;flex-shrink:0;">FS</span>`
+        : `<span style="font-size:8px;background:rgba(0,255,204,.1);border:1px solid rgba(0,255,204,.3);color:var(--neon-cyan);border-radius:4px;padding:1px 4px;flex-shrink:0;">JM</span>`;
+
       item.innerHTML = `
-        <img class="music-capa" src="${t.image || ''}" alt="" onerror="this.src='data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1 1\"><rect fill=\"%230a0a2a\"/></svg>'">
-        <div class="music-info">
-          <div class="music-titulo">${xss(t.name)}</div>
-          <div class="music-artista">${xss(t.artist_name)}</div>
+        <img class="music-capa" src="${t.capa_url || ''}" alt=""
+             onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1 1%22><rect fill=%22%230a0a2a%22/></svg>'">
+        <div class="music-info" style="min-width:0;flex:1;">
+          <div class="music-titulo" style="display:flex;align-items:center;gap:4px;">
+            ${badge} ${xss(t.titulo)}
+          </div>
+          <div class="music-artista">${xss(t.artista)}</div>
         </div>
-        <button class="music-play-mini" title="Preview" onclick="event.stopPropagation();toggleMusicPreview('${t.audio}','${t.id}',this)">▶</button>`;
-      item.onclick = () => selectMusic(t, item);
+        <button class="music-play-mini" title="Preview"
+          onclick="event.stopPropagation();toggleMusicPreview('${t.audio_mp3}','${t.external_id}',this)">▶</button>`;
+      item.onclick = () => {
+        document.querySelectorAll('#music-results .music-result-item').forEach(el=>el.classList.remove('selected'));
+        item.classList.add('selected');
+        _musicSelected = t;
+        _renderSelectedPreview(t);
+      };
       resultsEl.appendChild(item);
     });
   } catch(e) {
     resultsEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--neon-pink);">Erro ao buscar. Verifique a conexão.</div>';
-    console.error('[music]', e);
+    console.error('[music-search]', e);
   }
 }
 window.searchMusic = searchMusic;
+
+// ── Jamendo search ────────────────────────────────────────────────────
+async function _searchJamendo(q) {
+  const url = `${JAMENDO_API}/tracks/?client_id=${JAMENDO_ID}&search=${encodeURIComponent(q)}&limit=15&format=json&imagesize=100&audioformat=mp32`;
+  const res  = await fetch(url);
+  const json = await res.json();
+  return (json.results || []).map(t => ({
+    external_id: 'jm_' + t.id,
+    titulo:      t.name,
+    artista:     t.artist_name,
+    audio_mp3:   t.audio,
+    capa_url:    t.image || '',
+    _source:     'jamendo'
+  }));
+}
+
+// ── Freesound search ─────────────────────────────────────────────────
+async function _searchFreesound(q) {
+  const fields = 'id,name,username,previews,images,duration,tags';
+  const url = `${FREESOUND_API}/search/text/?query=${encodeURIComponent(q)}&token=${FREESOUND_TOKEN}&fields=${fields}&filter=duration:[3 TO 300]&page_size=15&sort=rating_desc`;
+  const res  = await fetch(url);
+  if(!res.ok) throw new Error('Freesound ' + res.status);
+  const json = await res.json();
+  return (json.results || []).map(s => ({
+    external_id: 'fs_' + s.id,
+    titulo:      s.name,
+    artista:     s.username || 'Freesound',
+    audio_mp3:   s.previews?.['preview-hq-mp3'] || s.previews?.['preview-lq-mp3'] || '',
+    capa_url:    s.images?.waveform_m || s.images?.spectral_m || '',
+    _source:     'freesound'
+  }));
+}
 
 // ── Preview de áudio ───────────────────────────────────────────────
 function toggleMusicPreview(audioUrl, trackId, btn) {
@@ -22328,17 +22385,12 @@ function _stopMusicPreview() {
 }
 window.toggleMusicPreview = toggleMusicPreview;
 
-// ── Seleciona música ───────────────────────────────────────────────
+// ── Seleciona música (formato já unificado pelo search) ────────────
 function selectMusic(track, itemEl) {
   document.querySelectorAll('.music-result-item').forEach(el => el.classList.remove('selected'));
   itemEl.classList.add('selected');
-  _musicSelected = {
-    external_id: String(track.id),
-    titulo:      track.name,
-    artista:     track.artist_name,
-    audio_mp3:   track.audio,
-    capa_url:    track.image || '',
-  };
+  // track já vem no formato unificado {external_id, titulo, artista, audio_mp3, capa_url}
+  _musicSelected = track;
   _renderSelectedPreview(_musicSelected);
 }
 function _renderSelectedPreview(m) {
@@ -22972,13 +23024,16 @@ async function _oaEditorTrimAudio(mp3Url, startSec, endSec) {
 
   // 1) Baixa o MP3 via proxy CORS (Worker) ou direto
   let buf;
-  const isJamendo = mp3Url && (
+  // Detecta se precisa de proxy CORS (Jamendo ou Freesound CDN)
+  const needsProxy = mp3Url && (
     mp3Url.includes('jamendo.com') ||
     mp3Url.includes('mp3d.') ||
-    mp3Url.includes('storage.')
+    mp3Url.includes('storage.') ||
+    mp3Url.includes('freesound.org') ||
+    mp3Url.includes('cdn.freesound.org')
   );
 
-  if(isJamendo) {
+  if(needsProxy) {
     const proxyUrl = R2_BACKEND_URL + '/music-proxy?url=' + encodeURIComponent(mp3Url);
     try {
       const res = await fetch(proxyUrl, { cache:'force-cache' });
