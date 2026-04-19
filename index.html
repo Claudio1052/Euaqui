@@ -4960,11 +4960,8 @@ body.day-mode::before{
             <button class="tbtn" onclick="trigUpload('video/*')">🎬 Vídeo</button>
             <button class="tbtn" onclick="openEmoji()">😊 Emoji</button>
             <button class="tbtn" onclick="openCapsModal()">⏳ Cápsula</button>
-            <button class="tbtn" id="music-picker-btn" onclick="openMusicPicker('post')" style="color:var(--neon-pink);">🎵 Música</button>
             <button class="post-btn" id="post-submit-btn" onclick="createPost()">POSTAR ▶</button><span style="font-size:9px;color:var(--text-muted);margin-left:6px;" title="Conteúdo moderado pela IA">🛡 IA</span>
           </div>
-          <!-- Pill de música selecionada -->
-          <div id="post-music-pill-wrap" style="display:none;"></div>
           <input type="file" id="media-input" accept="image/*,video/*" multiple style="display:none;" onchange="handleMedia(this)">
         </div>
         <div class="ftabs">
@@ -7024,7 +7021,6 @@ function renderPost(post,rxCounts={},myRx='',_origPostMap){
     }
     ${repostCardHtml}
     ${mediaHtml}
-    ${post.music_data ? renderMusicBar(post.music_data) : ''}
     <div class="preactions">${rxHtml}</div>
     ${(()=>{
       const hasVid = mediaTyps.some(t=>t==='video') || mediaUrls.some(u=>u&&u.match(/\.mp4$|\.webm$|\.mov$|\.ogg$/i));
@@ -8834,27 +8830,13 @@ async function createPost(){
   }
   btn.innerHTML = ''; btn.textContent = '⏳ Publicando...';
   // Monta payload — colunas garantidas pelo SQL de migração
-  // Processa música selecionada (se houver)
-  let _musicData = null;
-  if(window._musicAttached){
-    try{
-      showToast('⏳ Processando música...','success');
-      _musicData = await _ensureMusicCatalog(window._musicAttached);
-      // Muta vídeo se solicitado
-      if(window._musicMuteVideo && _musicData){
-        _musicData._muteVideo = true;
-      }
-    }catch(e){ console.warn('[music] catalog error:', e); }
-  }
-
   const payload={
     user_id: CU.id,
     content: content||null,
     type: mediaFiles.length ? (mediaFiles.some((_,i)=>mediaTypes[i]==='video') ? 'video' : 'image') : 'text',
     visibility: postVisibility||'public',
     media_urls: urls.length ? urls : [],
-    media_types: mTypes.length ? mTypes : [],
-    music_data: _musicData ? JSON.stringify(_musicData) : null
+    media_types: mTypes.length ? mTypes : []
   };
   const{data:postData,error}=await db.from('posts').insert(payload).select().maybeSingle();
   if(error){
@@ -8872,9 +8854,6 @@ async function createPost(){
   }
   document.getElementById('post-txt').value='';document.getElementById('c-char').textContent='0 / 500';
   mediaFiles=[];mediaTypes=[];
-  // Limpa música selecionada
-  window._musicAttached = null; window._musicMuteVideo = false;
-  _clearMusicPill('post');
   const mp=document.getElementById('media-prev');mp.style.display='none';mp.innerHTML='';
   cachedPostIds.clear(); cachedPosts = {}; window._feedPageCache = {};
   showToast('Post publicado! ✨','success');
