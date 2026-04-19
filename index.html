@@ -23209,10 +23209,32 @@ async function oaEditorPublish() {
   const txt  = document.getElementById('oa-c-progress-text');
   if(prog) prog.style.display = 'block';
 
+  // ── Ticker de progresso suave ────────────────────────────────────────
+  // Anima a barra suavemente entre etapas sem depender de callbacks internos
+  let _targetPct = 2;
+  let _currentPct = 0;
+  let _targetLabel = '🚀 Iniciando...';
+  let _tickerRunning = true;
+
   function setEditorProgress(pct, label) {
+    _targetPct   = pct;
+    _targetLabel = label;
     if(fill) fill.style.width = pct + '%';
     if(txt)  txt.textContent  = pct + '% ' + label;
   }
+
+  // Ticker que avança lentamente até _targetPct (garante movimento visual constante)
+  function _runTicker() {
+    if(!_tickerRunning) return;
+    if(fill && txt && _currentPct < _targetPct - 0.5) {
+      _currentPct += Math.max(0.05, (_targetPct - _currentPct) * 0.04);
+      const display = Math.floor(_currentPct);
+      fill.style.width = display + '%';
+      txt.textContent  = display + '% ' + _targetLabel;
+    }
+    requestAnimationFrame(_runTicker);
+  }
+  requestAnimationFrame(_runTicker);
 
   window._musicMuteVideo = _seMuteOrig;
 
@@ -23308,11 +23330,12 @@ async function oaEditorPublish() {
   window.oaCloseCreate = _origClose;
   window._oaEditorProgressCb = null;
 
-  // Anima até 100% e só então fecha o modal
+  // Para o ticker, anima manualmente até 100%
+  _tickerRunning = false;
   setEditorProgress(98, '💾 Salvando OlheAqui...');
-  await new Promise(r => setTimeout(r, 300));
+  await new Promise(r => setTimeout(r, 400));
   setEditorProgress(100, '✅ Publicado!');
-  await new Promise(r => setTimeout(r, 700)); // deixa o usuário ver o 100%
+  await new Promise(r => setTimeout(r, 700));
   if(_closePending) _origClose();
 
   if(pubBtn){ pubBtn.disabled = false; pubBtn.textContent = '🚀 PUBLICAR STORY'; }
