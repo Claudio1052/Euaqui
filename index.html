@@ -23216,17 +23216,28 @@ async function oaEditorPublish() {
 
   window._musicMuteVideo = _seMuteOrig;
 
+  // ─── MAPA DE PROGRESSO ──────────────────────────────────────────────
+  // 0-5%   → iniciando
+  // 5-20%  → cortando música
+  // 20-25% → enviando música ao R2
+  // 25-50% → cortando vídeo (em tempo real)
+  // 50-55% → preparando envio
+  // 55-90% → comprimindo + enviando ao R2
+  // 90-98% → salvando no banco
+  // 100%   → publicado!
+  // ────────────────────────────────────────────────────────────────────
+
+  setEditorProgress(2, '🚀 Iniciando...');
+
   // ─ ETAPA 1 e 2: Cortar e subir música (pula se já está no R2) ──────
   if(window._musicAttached) {
     const _ma = window._musicAttached;
 
     if(_ma._fromHistory && _ma._preUploadedUrl) {
-      // ✅ Música do histórico — já está no R2, pula corte e upload
-      setEditorProgress(50, '🎵 Música do R2 (sem reenvio)');
+      setEditorProgress(20, '🎵 Música já no R2...');
       console.log('[editor] música do histórico — usando URL do R2:', _ma._preUploadedUrl);
 
     } else if(_seMusicDur > 0) {
-      // 🆕 Música nova — corta e sobe
       setEditorProgress(5, '✂️ Cortando música...');
       try {
         const trimmedFile = await _oaEditorTrimAudio(
@@ -23238,48 +23249,59 @@ async function oaEditorPublish() {
         _ma._trimStart    = _seTrimStart;
         _ma._trimEnd      = _seTrimEnd;
         _ma._trimDuration = _seTrimEnd - _seTrimStart;
-        setEditorProgress(25, '✂️ Música cortada!');
+        setEditorProgress(18, '✂️ Música cortada!');
 
-        setEditorProgress(30, '🎵 Enviando ao R2...');
+        setEditorProgress(20, '🎵 Enviando música...');
         const _trimUrl = await _uploadAudioDirectR2(trimmedFile);
-        setEditorProgress(50, '🎵 Música no R2!');
+        setEditorProgress(25, '🎵 Música enviada!');
         _ma._preUploadedUrl = _trimUrl;
 
       } catch(e) {
         console.warn('[editor] trim/upload falhou:', e.message);
         window._oaUploadContext = null;
-        setEditorProgress(50, '⚠️ Falha na música, continuando...');
+        setEditorProgress(25, '⚠️ Falha na música, continuando...');
       }
     }
   }
 
-  // ─ ETAPA 3: Cortar vídeo se necessário (0–50%) e upload (50–95%)
-  // Se o vídeo tem mais de 30s e o usuário selecionou um trecho,
-  // precisamos extrair esse trecho antes de subir
+  // ─ ETAPA 3: Cortar vídeo com progresso em tempo real ───────────────
   let _finalFile = _seFile;
   if(_seType === 'video' && _seMediaDur > 30 && _seVidTrimEnd > _seVidTrimStart) {
-    setEditorProgress(50, '✂️ Cortando vídeo...');
+    setEditorProgress(25, '✂️ Cortando vídeo...');
     try {
-      _finalFile = await _oaTrimVideo(_seFile, _seVidTrimStart, _seVidTrimEnd);
-      setEditorProgress(55, '✂️ Vídeo cortado!');
+      _finalFile = await _oaTrimVideo(
+        _seFile, _seVidTrimStart, _seVidTrimEnd,
+        (frac) => {
+          // frac: 0→1 durante o corte → mapeia para 25%→50%
+          const p = 25 + Math.round(frac * 25);
+          setEditorProgress(p, `✂️ Cortando vídeo... ${Math.round(frac*100)}%`);
+        }
+      );
+      setEditorProgress(50, '✂️ Vídeo cortado!');
     } catch(e) {
       console.warn('[editor] trim vídeo falhou, usando original:', e.message);
       _finalFile = _seFile;
+      setEditorProgress(50, '⚠️ Usando vídeo original...');
     }
+  } else {
+    setEditorProgress(50, '📦 Preparando envio...');
   }
 
   _oaPickedFile = _finalFile;
   _oaPickedType = _seType;
 
-  // Injeta callback de progresso na etapa de mídia (mapeia 0-100% → 55-98%)
-  window._oaEditorProgressCb = (pct, label) => setEditorProgress(55 + Math.round(pct * 0.43), label);
+  // Injeta callback de progresso na etapa de mídia (mapeia 0-100% → 55-90%)
+  window._oaEditorProgressCb = (pct, label) => {
+    const p = 55 + Math.round(pct * 0.35);
+    setEditorProgress(p, label);
+  };
 
   // Bloqueia o oaCloseCreate durante o publish para controlar o fechamento nós mesmos
   const _origClose = window.oaCloseCreate;
   let _closePending = false;
   window.oaCloseCreate = () => { _closePending = true; };
 
-  setEditorProgress(55, '📤 Enviando mídia...');
+  setEditorProgress(55, '📤 Comprimindo e enviando...');
   await oaPublish();
 
   // Restaura o close original
@@ -23287,8 +23309,10 @@ async function oaEditorPublish() {
   window._oaEditorProgressCb = null;
 
   // Anima até 100% e só então fecha o modal
+  setEditorProgress(98, '💾 Salvando OlheAqui...');
+  await new Promise(r => setTimeout(r, 300));
   setEditorProgress(100, '✅ Publicado!');
-  await new Promise(r => setTimeout(r, 800)); // deixa o usuário ver o 100%
+  await new Promise(r => setTimeout(r, 700)); // deixa o usuário ver o 100%
   if(_closePending) _origClose();
 
   if(pubBtn){ pubBtn.disabled = false; pubBtn.textContent = '🚀 PUBLICAR STORY'; }
@@ -23915,7 +23939,7 @@ function _oaInitVideoTrimDrag() {
 // ── Corta trecho do vídeo usando MediaRecorder ─────────────────────
 // startSec: início do trecho | endSec: fim do trecho
 // Não precisa de FFmpeg — usa a API nativa do browser
-async function _oaTrimVideo(file, startSec, endSec) {
+async function _oaTrimVideo(file, startSec, endSec, onProgress) {
   const dur = endSec - startSec;
   if(dur <= 0 || dur > 30) throw new Error('trim inválido');
 
@@ -23928,6 +23952,7 @@ async function _oaTrimVideo(file, startSec, endSec) {
     video.playsInline = true;
 
     let _started = false;
+    let _progRaf = null;
 
     function startRecording() {
       if(_started) return;
@@ -23959,11 +23984,13 @@ async function _oaTrimVideo(file, startSec, endSec) {
       const rec = new MediaRecorder(combined, { mimeType: mime, videoBitsPerSecond: 2_000_000 });
       rec.ondataavailable = e => { if(e.data.size) chunks.push(e.data); };
       rec.onstop = () => {
+        if(_progRaf) cancelAnimationFrame(_progRaf);
         URL.revokeObjectURL(objUrl);
         const blob = new Blob(chunks, { type: mime });
         const ext  = mime.includes('mp4') ? '.mp4' : '.webm';
         const out  = new File([blob], 'video_trim_'+Math.round(dur)+'s'+ext, { type: mime });
         console.log(`[vid-trim] ${startSec.toFixed(1)}s→${endSec.toFixed(1)}s | ${(out.size/1024/1024).toFixed(1)}MB`);
+        if(onProgress) onProgress(1);
         resolve(out);
       };
       rec.onerror = e => { URL.revokeObjectURL(objUrl); reject(e.error || e); };
@@ -23975,9 +24002,14 @@ async function _oaTrimVideo(file, startSec, endSec) {
       const drawFrame = () => {
         if(video.paused || video.ended) return;
         ctx.drawImage(video, 0, 0, w, h);
-        requestAnimationFrame(drawFrame);
+        // Emite progresso baseado no tempo atual dentro do trecho
+        if(onProgress && dur > 0) {
+          const elapsed = Math.max(0, video.currentTime - startSec);
+          onProgress(Math.min(elapsed / dur, 0.98));
+        }
+        _progRaf = requestAnimationFrame(drawFrame);
       };
-      requestAnimationFrame(drawFrame);
+      _progRaf = requestAnimationFrame(drawFrame);
 
       // Para após a duração do trim
       setTimeout(() => {
