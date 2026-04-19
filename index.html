@@ -21575,7 +21575,11 @@ async function oaPublish(){
 
     // Monta payload — inclui metadata de negócio se vier de divulgação
     const _oaPayload = { user_id: CU.id, media_url: publicUrl, media_type: _oaPickedType, expires_at: expiresAt };
-    if(_oaMusicData) _oaPayload.music_data = JSON.stringify(_oaMusicData);
+    if(_oaMusicData) {
+      // Inclui flag de mute do vídeo original no music_data
+      if(window._musicMuteVideo) _oaMusicData.mute_video = true;
+      _oaPayload.music_data = JSON.stringify(_oaMusicData);
+    }
     if(window._oaPublishIsBiz && window._oaBizContext){
       _oaPayload.metadata = {
         type: 'business',
@@ -21791,9 +21795,20 @@ function oaRenderItem(){
     };
     oaViewer.videoEl = v;
     wrap.appendChild(v);
+
+    // Pré-verifica music_data para mutar ANTES de dar play
+    try {
+      if(it.music_data) {
+        const _preSm = typeof it.music_data==='string' ? JSON.parse(it.music_data) : it.music_data;
+        if(_preSm?.mute_video) {
+          v.muted  = true;
+          v.volume = 0;
+        }
+      }
+    } catch(e) {}
+
     // Alguns browsers podem bloquear autoplay com som — tentamos dar play explicitamente
     v.play().catch(()=>{
-      // Fallback: muta e tenta de novo
       v.muted = true; v.play().catch(()=>{});
     });
   } else {
@@ -21815,8 +21830,14 @@ function oaRenderItem(){
     try{
       const _sm = typeof it.music_data==='string' ? JSON.parse(it.music_data) : it.music_data;
       const _src = _sm?.url_audio_opus || _sm?.audio_mp3 || '';
+
+      // ✅ FIX: Silenciar vídeo original se mute_video=true
+      if(_sm?.mute_video && oaViewer.videoEl) {
+        oaViewer.videoEl.muted  = true;
+        oaViewer.videoEl.volume = 0;
+      }
+
       if(_src){
-        // Para e recria sempre — garante que começa do início com a URL correta
         if(oaViewer._storyMusicPlayer){
           try{ oaViewer._storyMusicPlayer.pause(); }catch(e){}
         }
@@ -21826,13 +21847,10 @@ function oaRenderItem(){
         oaViewer._storyMusicPlayer.volume  = 0.75;
         oaViewer._storyMusicPlayer.src = _src;
 
-        // Função de play robusta — tenta imediatamente e no canplay
         const _tryPlay = () => {
           if(!oaViewer._storyMusicPlayer) return;
           oaViewer._storyMusicPlayer.play().catch(err => {
-            // NotAllowedError = precisa de gesto do usuário
             if(err.name === 'NotAllowedError') {
-              // Aguarda próximo toque/clique do usuário no viewer
               const _stage = document.getElementById('oa-v-stage');
               if(_stage) {
                 const _unlock = () => {
@@ -21846,20 +21864,26 @@ function oaRenderItem(){
         };
 
         oaViewer._storyMusicPlayer.addEventListener('canplay', _tryPlay, { once:true });
-        // Tenta imediatamente também
         setTimeout(_tryPlay, 100);
-        // Mostra mini player no head do viewer com ícone pulsante
+
+        // Mini player no header
         const _mname = document.getElementById('oa-v-time');
-        if(_mname) _mname.innerHTML = `<span style="animation:oa-dot-blink .8s step-start infinite;display:inline-block;">🎵</span> ${_oaEscape(_sm.titulo||'')} <span style="color:var(--text-muted);font-size:10px;">· ${_oaTimeAgo(it.created_at)}</span>`;
+        if(_mname){
+          const muteIcon = _sm.mute_video ? ' 🔇' : '';
+          _mname.innerHTML = `<span style="animation:oa-dot-blink .8s step-start infinite;display:inline-block;">🎵</span> ${_oaEscape(_sm.titulo||'')}${muteIcon} <span style="color:var(--text-muted);font-size:10px;">· ${_oaTimeAgo(it.created_at)}</span>`;
+        }
       }
     }catch(e){ console.warn('[story-music]', e); }
   } else {
-    // Para música se story não tem
+    // Restaura volume do vídeo (sem música = não muta)
+    if(oaViewer.videoEl){
+      oaViewer.videoEl.muted  = false;
+      oaViewer.videoEl.volume = 1;
+    }
     if(oaViewer._storyMusicPlayer){
       try{ oaViewer._storyMusicPlayer.pause(); }catch(e){}
       oaViewer._storyMusicPlayer = null;
     }
-    // Restaura o tempo normal no header
     const _mname = document.getElementById('oa-v-time');
     if(_mname) _mname.textContent = _oaTimeAgo(it.created_at);
   }
