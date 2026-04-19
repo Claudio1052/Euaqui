@@ -23271,16 +23271,26 @@ async function oaEditorPublish() {
   _oaPickedFile = _finalFile;
   _oaPickedType = _seType;
 
-  // Injeta callback de progresso na etapa de mídia (mapeia 0-100% → 55-99%)
-  window._oaEditorProgressCb = (pct, label) => setEditorProgress(55 + Math.round(pct * 0.44), label);
+  // Injeta callback de progresso na etapa de mídia (mapeia 0-100% → 55-98%)
+  window._oaEditorProgressCb = (pct, label) => setEditorProgress(55 + Math.round(pct * 0.43), label);
+
+  // Bloqueia o oaCloseCreate durante o publish para controlar o fechamento nós mesmos
+  const _origClose = window.oaCloseCreate;
+  let _closePending = false;
+  window.oaCloseCreate = () => { _closePending = true; };
 
   setEditorProgress(55, '📤 Enviando mídia...');
   await oaPublish();
 
-  // ── Fix 2: garante que a barra chega a 100% ──
-  setEditorProgress(100, '✅ Publicado!');
-
+  // Restaura o close original
+  window.oaCloseCreate = _origClose;
   window._oaEditorProgressCb = null;
+
+  // Anima até 100% e só então fecha o modal
+  setEditorProgress(100, '✅ Publicado!');
+  await new Promise(r => setTimeout(r, 800)); // deixa o usuário ver o 100%
+  if(_closePending) _origClose();
+
   if(pubBtn){ pubBtn.disabled = false; pubBtn.textContent = '🚀 PUBLICAR STORY'; }
 }
 window.oaEditorPublish = oaEditorPublish;
@@ -23913,7 +23923,7 @@ async function _oaTrimVideo(file, startSec, endSec) {
     const objUrl = URL.createObjectURL(file);
     const video  = document.createElement('video');
     video.src     = objUrl;
-    video.muted   = false;
+    video.muted   = true;   // sem áudio durante o corte (evita vazamento de som)
     video.preload = 'auto';
     video.playsInline = true;
 
