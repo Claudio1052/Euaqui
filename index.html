@@ -22347,10 +22347,13 @@ async function _searchJamendo(q) {
 
 // ── Freesound search ─────────────────────────────────────────────────
 async function _searchFreesound(q) {
-  const fields = 'id,name,username,previews,images,duration,tags';
-  const url = `${FREESOUND_API}/search/text/?query=${encodeURIComponent(q)}&token=${FREESOUND_TOKEN}&fields=${fields}&filter=duration:[3 TO 300]&page_size=15&sort=rating_desc`;
-  const res  = await fetch(url);
-  if(!res.ok) throw new Error('Freesound ' + res.status);
+  // Freesound não tem CORS aberto — passa pelo Worker (/freesound-proxy)
+  const fields = 'id,name,username,previews,images,duration';
+  const fsUrl  = `${FREESOUND_API}/search/text/?query=${encodeURIComponent(q)}&token=${FREESOUND_TOKEN}&fields=${fields}&filter=duration:[3%20TO%20300]&page_size=15&sort=rating_desc`;
+  const proxyUrl = R2_BACKEND_URL + '/freesound-proxy?url=' + encodeURIComponent(fsUrl);
+
+  const res = await fetch(proxyUrl);
+  if(!res.ok) throw new Error('Freesound proxy ' + res.status);
   const json = await res.json();
   return (json.results || []).map(s => ({
     external_id: 'fs_' + s.id,
