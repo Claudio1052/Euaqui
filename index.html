@@ -21559,24 +21559,84 @@ let _oaBizContext = null;
 
 function oaDivulgarProduto(bizId, itemId, itemName, itemImgUrl, category, logoUrl, bizName){
   if(!CU){ showToast('Faça login','error'); return; }
-  _oaBizContext = { bizId, itemId, itemName, category, logoUrl, bizName };
+  // cta_type padrão por categoria; pode ser alterado pelo usuário no picker
+  const defaultCta = (category === 'servico' || category === 'serviço') ? 'book' : 'buy';
+  _oaBizContext = { bizId, itemId, itemName, category, logoUrl, bizName, cta_type: defaultCta };
+
   const ov = document.createElement('div');
   ov.id = 'oa-biz-picker';
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(8px);z-index:10045;display:flex;align-items:center;justify-content:center;padding:20px;';
-  ov.innerHTML = `
-    <div style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:20px;padding:24px;max-width:380px;width:100%;box-shadow:0 0 40px rgba(0,255,204,.15);">
-      <div style="font-family:'Silkscreen',monospace;font-size:13px;color:var(--neon-cyan);margin-bottom:6px;letter-spacing:1px;">🚀 DIVULGAR NO OLHA AQUI</div>
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:20px;font-family:'Space Mono',monospace;">${itemName.substring(0,40)}</div>
-      ${itemImgUrl ? `<button onclick="oaUseBizImage('${itemImgUrl.replace(/'/g,"&apos;")}')" style="width:100%;background:rgba(0,255,204,.08);border:1px solid var(--neon-cyan);border-radius:12px;padding:14px;margin-bottom:10px;cursor:pointer;display:flex;align-items:center;gap:12px;color:var(--text-light);font-family:'Space Mono',monospace;font-size:11px;">
-        <img src="${itemImgUrl}" style="width:48px;height:48px;border-radius:8px;object-fit:cover;flex-shrink:0;">
-        <div style="text-align:left;"><div style="color:var(--neon-cyan);font-family:'Silkscreen',monospace;font-size:10px;margin-bottom:2px;">✅ Usar foto do produto</div><div style="color:var(--text-muted);font-size:9px;">Publicação instantânea</div></div>
+
+  // Helpers para destacar o CTA selecionado
+  function _ctaStyle(type){
+    return _oaBizContext.cta_type === type
+      ? `background:rgba(0,255,204,.18);border:2px solid var(--neon-cyan);`
+      : `background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.15);`;
+  }
+
+  function _renderPicker(){
+    ov.innerHTML = `
+    <div style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:20px;padding:24px;max-width:400px;width:100%;box-shadow:0 0 40px rgba(0,255,204,.15);">
+
+      <!-- Cabeçalho -->
+      <div style="font-family:'Silkscreen',monospace;font-size:13px;color:var(--neon-cyan);margin-bottom:4px;letter-spacing:1px;">🚀 DIVULGAR NO OLHA AQUI</div>
+      <div style="font-size:10px;color:var(--text-muted);margin-bottom:18px;font-family:'Space Mono',monospace;">${itemName.substring(0,45)}</div>
+
+      <!-- ── OPÇÃO 1: Usar foto do produto ── -->
+      ${itemImgUrl ? `<button id="oa-biz-use-img" onclick="oaUseBizImage('${itemImgUrl.replace(/'/g,"&apos;")}')" style="width:100%;background:rgba(0,255,204,.08);border:1px solid var(--neon-cyan);border-radius:12px;padding:14px;margin-bottom:10px;cursor:pointer;display:flex;align-items:center;gap:12px;color:var(--text-light);font-family:'Space Mono',monospace;font-size:11px;">
+        <img src="${itemImgUrl}" style="width:48px;height:48px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">
+        <div style="text-align:left;">
+          <div style="color:var(--neon-cyan);font-family:'Silkscreen',monospace;font-size:10px;margin-bottom:2px;">✅ Usar foto do produto</div>
+          <div style="color:var(--text-muted);font-size:9px;">Publicação instantânea</div>
+        </div>
       </button>` : ''}
-      <button onclick="oaPickBizMedia()" style="width:100%;background:rgba(255,51,102,.08);border:1px solid var(--neon-pink);border-radius:12px;padding:14px;margin-bottom:10px;cursor:pointer;color:var(--text-light);font-family:'Space Mono',monospace;font-size:11px;">
+
+      <!-- ── OPÇÃO 2: Enviar foto/vídeo ── -->
+      <button onclick="oaPickBizMedia()" style="width:100%;background:rgba(255,51,102,.08);border:1px solid var(--neon-pink);border-radius:12px;padding:14px;margin-bottom:14px;cursor:pointer;color:var(--text-light);font-family:'Space Mono',monospace;font-size:11px;text-align:left;">
         <div style="color:var(--neon-pink);font-family:'Silkscreen',monospace;font-size:10px;margin-bottom:2px;">📹 Enviar foto/vídeo</div>
         <div style="color:var(--text-muted);font-size:9px;">Escolha da galeria (imagem ou vídeo até 30s)</div>
       </button>
-      <button onclick="document.getElementById('oa-biz-picker').remove();window._oaBizContext=null;" style="width:100%;background:transparent;border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:10px;cursor:pointer;color:var(--text-muted);font-family:'Space Mono',monospace;font-size:10px;">Cancelar</button>
+
+      <!-- ── Separador: Botão de ação no story ── -->
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+        <div style="flex:1;height:1px;background:rgba(255,255,255,.08);"></div>
+        <div style="font-family:'Silkscreen',monospace;font-size:9px;color:var(--text-muted);white-space:nowrap;">BOTÃO DE AÇÃO NO STORY</div>
+        <div style="flex:1;height:1px;background:rgba(255,255,255,.08);"></div>
+      </div>
+      <div style="font-size:9px;color:var(--text-muted);font-family:'Space Mono',monospace;margin-bottom:10px;text-align:center;">Escolha o botão que aparece para quem ver o story:</div>
+
+      <!-- CTA: Comprar Agora -->
+      <button onclick="_oaBizSetCta('buy')" id="oa-cta-buy-btn" style="width:100%;${_ctaStyle('buy')}border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;gap:12px;color:var(--text-light);font-family:'Space Mono',monospace;font-size:11px;">
+        <span style="font-size:18px;">🛒</span>
+        <div style="text-align:left;">
+          <div style="color:${_oaBizContext.cta_type==='buy'?'var(--neon-cyan)':'var(--text-light)'};font-family:'Silkscreen',monospace;font-size:10px;margin-bottom:2px;">COMPRAR AGORA</div>
+          <div style="color:var(--text-muted);font-size:9px;">Abre chat de compra direto com a loja</div>
+        </div>
+        ${_oaBizContext.cta_type==='buy' ? '<span style="margin-left:auto;color:var(--neon-cyan);font-size:16px;">✓</span>' : ''}
+      </button>
+
+      <!-- CTA: Agende Aqui -->
+      <button onclick="_oaBizSetCta('book')" id="oa-cta-book-btn" style="width:100%;${_ctaStyle('book')}border-radius:12px;padding:12px 14px;margin-bottom:14px;cursor:pointer;display:flex;align-items:center;gap:12px;color:var(--text-light);font-family:'Space Mono',monospace;font-size:11px;">
+        <span style="font-size:18px;">📅</span>
+        <div style="text-align:left;">
+          <div style="color:${_oaBizContext.cta_type==='book'?'var(--neon-cyan)':'var(--text-light)'};font-family:'Silkscreen',monospace;font-size:10px;margin-bottom:2px;">AGENDE AQUI</div>
+          <div style="color:var(--text-muted);font-size:9px;">Abre chat de agendamento com o serviço</div>
+        </div>
+        ${_oaBizContext.cta_type==='book' ? '<span style="margin-left:auto;color:var(--neon-cyan);font-size:16px;">✓</span>' : ''}
+      </button>
+
+      <!-- Cancelar -->
+      <button onclick="document.getElementById('oa-biz-picker').remove();_oaBizContext=null;" style="width:100%;background:transparent;border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:10px;cursor:pointer;color:var(--text-muted);font-family:'Space Mono',monospace;font-size:10px;">Cancelar</button>
     </div>`;
+  }
+
+  // Função global para alternar CTA — redraw do picker
+  window._oaBizSetCta = function(type){
+    if(_oaBizContext) _oaBizContext.cta_type = type;
+    _renderPicker();
+  };
+
+  _renderPicker();
   document.body.appendChild(ov);
   ov.onclick = e=>{ if(e.target===ov){ ov.remove(); _oaBizContext=null; } };
 }
@@ -21590,7 +21650,8 @@ async function oaUseBizImage(imgUrl){
     const expiresAt = new Date(Date.now() + OA_TTL_HOURS*3600*1000).toISOString();
     const meta = { type:'business', business_id:_oaBizContext.bizId, item_id:_oaBizContext.itemId,
       item_name:_oaBizContext.itemName, category:_oaBizContext.category,
-      logo_url:_oaBizContext.logoUrl, biz_name:_oaBizContext.bizName };
+      logo_url:_oaBizContext.logoUrl, biz_name:_oaBizContext.bizName,
+      cta_type: _oaBizContext.cta_type || ((_oaBizContext.category==='servico'||_oaBizContext.category==='serviço')?'book':'buy') };
     const { error } = await db.from('olha_aqui').insert({
       user_id:CU.id, media_url:imgUrl, media_type:'image', expires_at:expiresAt, metadata:meta });
     if(error) throw error;
@@ -21605,12 +21666,9 @@ function oaPickBizMedia(){
   document.getElementById('oa-biz-picker')?.remove();
   _oaPickedFile = null; _oaPickedType = null;
   window._oaPublishIsBiz = true;
-  document.getElementById('oa-c-actions').style.display = 'flex';
-  document.getElementById('oa-c-confirm').style.display = 'none';
-  document.getElementById('oa-c-preview-wrap').style.display = 'none';
-  document.getElementById('oa-c-preview-wrap').innerHTML = '';
-  document.getElementById('oa-c-progress').style.display = 'none';
-  document.getElementById('oa-create-modal').classList.add('on');
+  // Vai direto para o seletor de arquivo (imagem OU video) — sem abrir modal generico
+  const inp = document.getElementById('oa-c-file');
+  if(inp){ inp.accept = 'image/*,video/*'; inp.value = ''; inp.click(); }
 }
 window.oaPickBizMedia = oaPickBizMedia;
 
@@ -21722,6 +21780,8 @@ window.oaOpenCreate = oaOpenCreate;
 function oaCloseCreate(){
   document.getElementById('oa-create-modal').classList.remove('on');
   _oaPickedFile = null; _oaPickedType = null;
+  // Limpa flags de negócio se o usuário cancelar (sem ter publicado)
+  if(window._oaPublishIsBiz){ window._oaPublishIsBiz = false; }
 }
 window.oaCloseCreate = oaCloseCreate;
 
@@ -21846,7 +21906,8 @@ async function oaPublish(){
         item_name:   window._oaBizContext.itemName,
         category:    window._oaBizContext.category,
         logo_url:    window._oaBizContext.logoUrl,
-        biz_name:    window._oaBizContext.bizName
+        biz_name:    window._oaBizContext.bizName,
+        cta_type:    window._oaBizContext.cta_type || ((window._oaBizContext.category==='servico'||window._oaBizContext.category==='serviço')?'book':'buy')
       };
     }
     const { data, error } = await db.from('olha_aqui').insert(_oaPayload).select().single();
@@ -21961,9 +22022,10 @@ function oaRenderItem(){
   if(_ctaBuy && _ctaBook){
     const _isOwnerBiz = !!(CU && g.userId===CU.id); // dono não pode comprar de si
     if(_isBiz){
-      const _isLoja = (_itMeta.category||'loja') === 'loja';
-      const _activBtn = _isLoja ? _ctaBuy : _ctaBook;
-      const _hiddenBtn = _isLoja ? _ctaBook : _ctaBuy;
+      // Usa cta_type salvo no metadata; fallback por categoria
+      const _ctaType = _itMeta.cta_type || ((_itMeta.category==='servico'||_itMeta.category==='serviço') ? 'book' : 'buy');
+      const _activBtn  = _ctaType === 'book' ? _ctaBook : _ctaBuy;
+      const _hiddenBtn = _ctaType === 'book' ? _ctaBuy  : _ctaBook;
 
       _hiddenBtn.style.display = 'none';
       _activBtn.style.display  = 'flex';
@@ -23099,6 +23161,27 @@ async function oaEditorOpen(file, type) {
 
   // Fecha o modal de criação e abre o editor
   document.getElementById('oa-create-modal').classList.remove('on');
+
+  // Badge de negócio no editor: mostra logo+nome da loja quando for divulgação biz
+  const _seTitle = document.getElementById('oa-se-title');
+  const _seBizBadge = document.getElementById('oa-se-biz-badge');
+  if(window._oaPublishIsBiz && window._oaBizContext){
+    if(_seTitle) _seTitle.textContent = '🏪 DIVULGAR LOJA';
+    if(_seBizBadge){
+      _seBizBadge.style.display = 'flex';
+      const _logoEl = _seBizBadge.querySelector('.oa-se-biz-logo');
+      const _nameEl = _seBizBadge.querySelector('.oa-se-biz-name');
+      const _ctaEl  = _seBizBadge.querySelector('.oa-se-biz-cta');
+      if(_logoEl && window._oaBizContext.logoUrl){ _logoEl.src = window._oaBizContext.logoUrl; _logoEl.style.display=''; }
+      else if(_logoEl){ _logoEl.style.display='none'; }
+      if(_nameEl) _nameEl.textContent = window._oaBizContext.bizName || 'Loja';
+      if(_ctaEl)  _ctaEl.textContent  = window._oaBizContext.cta_type === 'book' ? '📅 AGENDE AQUI' : '🛒 COMPRAR AGORA';
+    }
+  } else {
+    if(_seTitle) _seTitle.textContent = 'OLHA AQUI!';
+    if(_seBizBadge) _seBizBadge.style.display = 'none';
+  }
+
   document.getElementById('oa-story-editor').classList.add('on');
 }
 window.oaEditorOpen = oaEditorOpen;
@@ -23115,8 +23198,19 @@ function oaEditorClose() {
   // Limpa o preview
   const prev = document.getElementById('oa-se-preview');
   if(prev) prev.innerHTML = '';
+  // Reset badge de negócio e título do editor
+  const _seTitleEl = document.getElementById('oa-se-title');
+  if(_seTitleEl) _seTitleEl.textContent = 'OLHA AQUI!';
+  const _bizBadge = document.getElementById('oa-se-biz-badge');
+  if(_bizBadge) _bizBadge.style.display = 'none';
   document.getElementById('oa-story-editor').classList.remove('on');
-  document.getElementById('oa-create-modal').classList.add('on');
+  // Se era fluxo biz: limpa flags e não abre modal genérico
+  if(window._oaPublishIsBiz){
+    window._oaPublishIsBiz = false;
+    // Não reabre nada — usuário pode usar o botão Divulgar novamente
+  } else {
+    document.getElementById('oa-create-modal').classList.add('on');
+  }
 }
 window.oaEditorClose = oaEditorClose;
 
@@ -23527,6 +23621,12 @@ async function oaEditorPublish() {
   setEditorProgress(100, '✅ Publicado!');
   await new Promise(r => setTimeout(r, 800));
   if(_closePending) _origClose();
+
+  // Reseta badge de negócio e título do editor após publicar
+  const _seTitleEl2 = document.getElementById('oa-se-title');
+  if(_seTitleEl2) _seTitleEl2.textContent = 'OLHA AQUI!';
+  const _bizBadge2 = document.getElementById('oa-se-biz-badge');
+  if(_bizBadge2) _bizBadge2.style.display = 'none';
 
   if(pubBtn){ pubBtn.disabled = false; pubBtn.textContent = '🚀 PUBLICAR STORY'; }
 }
@@ -24618,6 +24718,16 @@ export default {
       <button class="oa-se-close" onclick="oaEditorClose()">✕</button>
       <div class="oa-se-title" id="oa-se-title">OLHA AQUI!</div>
       <div style="width:32px;"></div><!-- spacer -->
+    </div>
+
+    <!-- Badge de negócio (aparece só ao divulgar loja/serviço via foto/vídeo) -->
+    <div id="oa-se-biz-badge" style="display:none;align-items:center;gap:8px;padding:6px 12px;background:rgba(0,255,204,.08);border-bottom:1px solid rgba(0,255,204,.18);">
+      <img class="oa-se-biz-logo" src="" alt="" style="width:28px;height:28px;border-radius:6px;object-fit:cover;flex-shrink:0;">
+      <div style="flex:1;min-width:0;">
+        <div class="oa-se-biz-name" style="font-family:'Silkscreen',monospace;font-size:9px;color:var(--neon-cyan);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+        <div style="font-size:8px;color:var(--text-muted);font-family:'Space Mono',monospace;">Story de negócio · expira em 24h</div>
+      </div>
+      <span class="oa-se-biz-cta" style="font-family:'Silkscreen',monospace;font-size:8px;color:var(--neon-yellow);background:rgba(255,204,0,.12);border:1px solid rgba(255,204,0,.3);border-radius:8px;padding:3px 8px;white-space:nowrap;"></span>
     </div>
 
     <!-- Preview de mídia (fullscreen do story) -->
