@@ -21083,7 +21083,7 @@ async function oaLoadRail(){
     const cutoff = new Date(Date.now() - OA_TTL_HOURS*3600*1000).toISOString();
     const resp = await db
       .from('olha_aqui')
-      .select('id, user_id, media_url, media_type, created_at, expires_at, metadata')
+      .select('id, user_id, media_url, media_type, created_at, expires_at, metadata, music_data')
       .gte('created_at', cutoff)
       .order('created_at', { ascending:false })
       .limit(200);
@@ -21821,16 +21821,29 @@ function oaRenderItem(){
         oaViewer._storyMusicPlayer.loop    = true;
         oaViewer._storyMusicPlayer.volume  = 0.75;
         oaViewer._storyMusicPlayer.src = _src;
-        // Play após carregar metadados (evita falha em mobile)
-        oaViewer._storyMusicPlayer.addEventListener('canplaythrough', ()=>{
-          oaViewer._storyMusicPlayer?.play().catch(()=>{});
-        }, { once:true });
-        // Fallback: tenta tocar direto após 800ms
-        setTimeout(()=>{
-          if(oaViewer._storyMusicPlayer?.paused){
-            oaViewer._storyMusicPlayer.play().catch(()=>{});
-          }
-        }, 800);
+
+        // Função de play robusta — tenta imediatamente e no canplay
+        const _tryPlay = () => {
+          if(!oaViewer._storyMusicPlayer) return;
+          oaViewer._storyMusicPlayer.play().catch(err => {
+            // NotAllowedError = precisa de gesto do usuário
+            if(err.name === 'NotAllowedError') {
+              // Aguarda próximo toque/clique do usuário no viewer
+              const _stage = document.getElementById('oa-v-stage');
+              if(_stage) {
+                const _unlock = () => {
+                  oaViewer._storyMusicPlayer?.play().catch(()=>{});
+                  _stage.removeEventListener('pointerdown', _unlock);
+                };
+                _stage.addEventListener('pointerdown', _unlock, { once:true, passive:true });
+              }
+            }
+          });
+        };
+
+        oaViewer._storyMusicPlayer.addEventListener('canplay', _tryPlay, { once:true });
+        // Tenta imediatamente também
+        setTimeout(_tryPlay, 100);
         // Mostra mini player no head do viewer com ícone pulsante
         const _mname = document.getElementById('oa-v-time');
         if(_mname) _mname.innerHTML = `<span style="animation:oa-dot-blink .8s step-start infinite;display:inline-block;">🎵</span> ${_oaEscape(_sm.titulo||'')} <span style="color:var(--text-muted);font-size:10px;">· ${_oaTimeAgo(it.created_at)}</span>`;
@@ -21932,14 +21945,15 @@ function oaTogglePause(){
   const btn = document.getElementById('oa-v-pause');
   if(oaViewer.paused){
     btn.textContent = '▶';
-    // Ao pausar: se for vídeo, pausa de fato e "congela" tempo decorrido
     if(oaViewer.videoEl){ try{ oaViewer.videoEl.pause(); }catch(e){} }
-    // Preserva tempo decorrido
+    // Pausa a música junto
+    if(oaViewer._storyMusicPlayer){ try{ oaViewer._storyMusicPlayer.pause(); }catch(e){} }
     oaViewer.remaining = oaViewer.duration - (Date.now() - oaViewer.startedAt);
   } else {
     btn.textContent = '⏸';
     if(oaViewer.videoEl){ try{ oaViewer.videoEl.play(); }catch(e){} }
-    // Reinicia contagem do tempo restante
+    // Retoma a música junto
+    if(oaViewer._storyMusicPlayer){ try{ oaViewer._storyMusicPlayer.play().catch(()=>{}); }catch(e){} }
     oaViewer.startedAt = Date.now() - (oaViewer.duration - Math.max(0, oaViewer.remaining));
   }
 }
@@ -22156,7 +22170,7 @@ async function oaDeleteCurrent(){
   const g = oaGroups[oaViewer.groupIdx];
   const it = g?.items?.[oaViewer.itemIdx];
   if(!it || !CU || g.userId !== CU.id) return;
-  if(!confirm('Excluir este Olha Aqui? Isso remove a mídia do R2 também.')) return;
+  if(!await _euConfirm('Tem certeza que deseja excluir este Story?<br>Esta ação não pode ser desfeita.','🗑️')) return;
 
   // Pausa timer enquanto exclui
   _oaStopTimer();
