@@ -22295,17 +22295,40 @@ window.closeMusicPicker = closeMusicPicker;
 // ── Busca de músicas: Jamendo + Freesound em paralelo ─────────────────
 let _musicSearchSource = 'both'; // 'jamendo' | 'freesound' | 'both'
 
+function setMusicSource(src) {
+  _musicSearchSource = src;
+  // Atualiza visual dos botões
+  ['both','jamendo','freesound'].forEach(s => {
+    const btn = document.getElementById('msrc-' + s);
+    if(!btn) return;
+    const isActive = s === src;
+    const colors = { both:'rgba(0,255,204,.15)', jamendo:'rgba(0,255,204,.15)', freesound:'rgba(255,140,0,.15)' };
+    const textColors = { both:'var(--neon-cyan)', jamendo:'var(--neon-cyan)', freesound:'#ffa040' };
+    btn.style.background = isActive ? colors[s] : 'transparent';
+    btn.style.color      = isActive ? textColors[s] : 'var(--text-muted)';
+  });
+  // Rebusca se já tem query
+  const q = document.getElementById('music-search-input')?.value.trim();
+  if(q) searchMusic();
+}
+window.setMusicSource = setMusicSource;
+
 async function searchMusic() {
   const q = document.getElementById('music-search-input').value.trim();
   if(!q) return;
   const resultsEl = document.getElementById('music-results');
   resultsEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--neon-cyan);font-family:VT323,monospace;font-size:16px;">⟳ Buscando em Jamendo e Freesound...</div>';
 
+  // Lê filtros
+  const genre = document.getElementById('music-genre-filter')?.value || '';
+
   try {
-    // Busca em paralelo nos dois serviços
+    // Busca de acordo com a fonte selecionada
+    const doJam  = _musicSearchSource !== 'freesound';
+    const doFree = _musicSearchSource !== 'jamendo';
     const [jamTracks, freeTracks] = await Promise.allSettled([
-      _searchJamendo(q),
-      _searchFreesound(q)
+      doJam  ? _searchJamendo(q, genre)   : Promise.resolve([]),
+      doFree ? _searchFreesound(q, genre) : Promise.resolve([])
     ]);
 
     // Log de erros visíveis para debug
@@ -22370,8 +22393,9 @@ async function searchMusic() {
 window.searchMusic = searchMusic;
 
 // ── Jamendo search ────────────────────────────────────────────────────
-async function _searchJamendo(q) {
-  const url = `${JAMENDO_API}/tracks/?client_id=${JAMENDO_ID}&search=${encodeURIComponent(q)}&limit=15&format=json&imagesize=100&audioformat=mp32`;
+async function _searchJamendo(q, genre='') {
+  const tags = genre ? `&tags=${encodeURIComponent(genre)}` : '';
+  const url = `${JAMENDO_API}/tracks/?client_id=${JAMENDO_ID}&search=${encodeURIComponent(q)}${tags}&limit=15&format=json&imagesize=100&audioformat=mp32`;
   const res  = await fetch(url);
   const json = await res.json();
   return (json.results || []).map(t => ({
@@ -22385,9 +22409,11 @@ async function _searchJamendo(q) {
 }
 
 // ── Freesound search ─────────────────────────────────────────────────
-async function _searchFreesound(q) {
+async function _searchFreesound(q, genre='') {
   const fields  = 'id,name,username,previews,images,duration';
-  const fsParams = `query=${encodeURIComponent(q)}&token=${FREESOUND_TOKEN}&fields=${fields}&filter=duration:[3 TO 300]&page_size=15&sort=rating_desc`;
+  // Combina query + gênero na busca do Freesound
+  const fullQ   = genre ? `${q} ${genre}` : q;
+  const fsParams = `query=${encodeURIComponent(fullQ)}&token=${FREESOUND_TOKEN}&fields=${fields}&filter=duration:[3 TO 300]&page_size=15&sort=rating_desc`;
   const fsUrl   = `${FREESOUND_API}/search/text/?${fsParams}`;
 
   let json = null;
@@ -23318,6 +23344,10 @@ function _saveMusicToHistory(m, trimDuration) {
 
 // Exclui uma entrada do histórico (banco + cache)
 async function _deleteMusicFromHistory(externalId) {
+  // Popup de confirmação padrão EuAqui
+  const ok = await _euConfirm('Deseja remover esta música do histórico?', '🎵');
+  if(!ok) return;
+
   // Remove do cache local
   const cache    = _getMusicHistoryCache();
   const filtered = cache.filter(h => h.external_id !== externalId);
@@ -23329,9 +23359,13 @@ async function _deleteMusicFromHistory(externalId) {
       .delete()
       .eq('external_id', externalId)
       .eq('user_id', CU.id);
-    if(error) console.warn('[music-history] delete:', error.message);
+    if(error) {
+      console.warn('[music-history] delete:', error.message);
+      showToast('Erro ao remover', 'error');
+      return;
+    }
   }
-  // Re-renderiza
+  showToast('🗑 Removido do histórico', 'success');
   await _renderMusicHistory();
 }
 window._deleteMusicFromHistory = _deleteMusicFromHistory;
@@ -23753,10 +23787,50 @@ export default {
         <input class="music-search-input" id="music-search-input" placeholder="Buscar música ou artista..." onkeydown="if(event.key==='Enter')searchMusic()">
         <button class="music-search-btn" onclick="searchMusic()">🔍 Buscar</button>
       </div>
+      <!-- Filtros de gênero e fonte -->
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center;">
+        <select id="music-genre-filter" onchange="searchMusic()"
+          style="flex:1;min-width:130px;background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:6px 10px;color:var(--text-light);font-family:'Space Mono',monospace;font-size:10px;outline:none;cursor:pointer;">
+          <option value="">🎵 Todos os estilos</option>
+          <option value="pop">🎤 Pop</option>
+          <option value="rock">🎸 Rock</option>
+          <option value="gospel">✝️ Gospel</option>
+          <option value="jazz">🎷 Jazz</option>
+          <option value="classical">🎻 Clássica</option>
+          <option value="electronic">🎛 Eletrônica</option>
+          <option value="hip hop">🎤 Hip Hop / Rap</option>
+          <option value="r&b soul">🎶 R&B / Soul</option>
+          <option value="samba">🥁 Samba</option>
+          <option value="forró">🪗 Forró</option>
+          <option value="funk">🔥 Funk</option>
+          <option value="pagode">🎵 Pagode</option>
+          <option value="sertanejo">🤠 Sertanejo</option>
+          <option value="reggae">🌴 Reggae</option>
+          <option value="country">🤠 Country</option>
+          <option value="blues">🎸 Blues</option>
+          <option value="metal">🤘 Metal</option>
+          <option value="ambient">🌊 Ambient</option>
+          <option value="lofi">☕ Lo-fi</option>
+          <option value="cinematic">🎬 Cinematográfica</option>
+          <option value="acoustic">🎸 Acústica</option>
+          <option value="latin">💃 Latin</option>
+          <option value="children">👶 Infantil</option>
+          <option value="christmas">🎄 Natal</option>
+        </select>
+        <!-- Filtro de fonte -->
+        <div style="display:flex;gap:4px;">
+          <button id="msrc-both" onclick="setMusicSource('both')"
+            style="padding:5px 10px;border-radius:8px;border:1px solid var(--border-glow);background:rgba(0,255,204,.15);color:var(--neon-cyan);font-size:9px;font-family:'Space Mono',monospace;cursor:pointer;">JM+FS</button>
+          <button id="msrc-jamendo" onclick="setMusicSource('jamendo')"
+            style="padding:5px 10px;border-radius:8px;border:1px solid rgba(0,255,204,.2);background:transparent;color:var(--text-muted);font-size:9px;font-family:'Space Mono',monospace;cursor:pointer;">JM</button>
+          <button id="msrc-freesound" onclick="setMusicSource('freesound')"
+            style="padding:5px 10px;border-radius:8px;border:1px solid rgba(255,140,0,.2);background:transparent;color:var(--text-muted);font-size:9px;font-family:'Space Mono',monospace;cursor:pointer;">FS</button>
+        </div>
+      </div>
     </div>
     <!-- Painel histórico -->
     <div id="music-panel-history" style="display:none;">
-      <div class="music-results" id="music-history-list" style="max-height:200px;">
+      <div class="music-results" id="music-history-list" style="max-height:280px;overflow-y:auto;">
         <div style="text-align:center;padding:20px;color:var(--text-muted);font-size:11px;">Nenhuma música usada ainda</div>
       </div>
     </div>
