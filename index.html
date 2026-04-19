@@ -22283,13 +22283,27 @@ async function searchMusic() {
       _searchFreesound(q)
     ]);
 
-    const all = [
-      ...(jamTracks.status  === 'fulfilled' ? jamTracks.value  : []),
-      ...(freeTracks.status === 'fulfilled' ? freeTracks.value : [])
-    ];
+    // Log de erros visíveis para debug
+    if(jamTracks.status  === 'rejected') console.error('[Jamendo]',   jamTracks.reason);
+    if(freeTracks.status === 'rejected') console.error('[Freesound]', freeTracks.reason);
+
+    const jamResults  = jamTracks.status  === 'fulfilled' ? jamTracks.value  : [];
+    const freeResults = freeTracks.status === 'fulfilled' ? freeTracks.value : [];
+    const all = [...jamResults, ...freeResults];
+
+    // Mostra status de cada fonte
+    const statusParts = [];
+    if(jamResults.length)  statusParts.push(`JM: ${jamResults.length}`);
+    else if(jamTracks.status  === 'rejected') statusParts.push(`JM: ❌`);
+    if(freeResults.length) statusParts.push(`FS: ${freeResults.length}`);
+    else if(freeTracks.status === 'rejected') statusParts.push(`FS: ❌ ${freeTracks.reason?.message||''}`);
+    console.log('[music-search]', statusParts.join(' | '));
 
     if(!all.length) {
-      resultsEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">Nenhuma música encontrada</div>';
+      resultsEl.innerHTML = `<div style="text-align:center;padding:20px;color:var(--text-muted);">
+        Nenhuma música encontrada<br>
+        <span style="font-size:10px;color:var(--neon-pink);">${statusParts.join(' · ')}</span>
+      </div>`;
       return;
     }
 
@@ -22347,22 +22361,44 @@ async function _searchJamendo(q) {
 
 // ── Freesound search ─────────────────────────────────────────────────
 async function _searchFreesound(q) {
-  // Freesound não tem CORS aberto — passa pelo Worker (/freesound-proxy)
-  const fields = 'id,name,username,previews,images,duration';
-  const fsUrl  = `${FREESOUND_API}/search/text/?query=${encodeURIComponent(q)}&token=${FREESOUND_TOKEN}&fields=${fields}&filter=duration:[3%20TO%20300]&page_size=15&sort=rating_desc`;
-  const proxyUrl = R2_BACKEND_URL + '/freesound-proxy?url=' + encodeURIComponent(fsUrl);
+  const fields  = 'id,name,username,previews,images,duration';
+  const fsParams = `query=${encodeURIComponent(q)}&token=${FREESOUND_TOKEN}&fields=${fields}&filter=duration:[3 TO 300]&page_size=15&sort=rating_desc`;
+  const fsUrl   = `${FREESOUND_API}/search/text/?${fsParams}`;
 
-  const res = await fetch(proxyUrl);
-  if(!res.ok) throw new Error('Freesound proxy ' + res.status);
-  const json = await res.json();
-  return (json.results || []).map(s => ({
+  let json = null;
+
+  // Tenta 1: Worker proxy (garante CORS)
+  try {
+    const proxyUrl = R2_BACKEND_URL + '/freesound-proxy?url=' + encodeURIComponent(fsUrl);
+    const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+    if(res.ok) {
+      json = await res.json();
+      console.log('[Freesound] via proxy OK, hits:', json.count);
+    } else {
+      console.warn('[Freesound] proxy HTTP', res.status, '— tentando direto');
+    }
+  } catch(e) {
+    console.warn('[Freesound] proxy falhou:', e.message, '— tentando direto');
+  }
+
+  // Tenta 2: Direto (funciona se Freesound tiver CORS ou estiver em localhost)
+  if(!json) {
+    const res = await fetch(fsUrl, { signal: AbortSignal.timeout(8000) });
+    if(!res.ok) throw new Error('Freesound direto ' + res.status);
+    json = await res.json();
+    console.log('[Freesound] via direto OK, hits:', json.count);
+  }
+
+  if(!json?.results?.length) return [];
+
+  return json.results.map(s => ({
     external_id: 'fs_' + s.id,
-    titulo:      s.name,
-    artista:     s.username || 'Freesound',
+    titulo:      s.name       || 'Sem título',
+    artista:     s.username   || 'Freesound',
     audio_mp3:   s.previews?.['preview-hq-mp3'] || s.previews?.['preview-lq-mp3'] || '',
     capa_url:    s.images?.waveform_m || s.images?.spectral_m || '',
     _source:     'freesound'
-  }));
+  })).filter(s => s.audio_mp3); // só mostra se tiver preview disponível
 }
 
 // ── Preview de áudio ───────────────────────────────────────────────
