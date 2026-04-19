@@ -21547,21 +21547,8 @@ async function oaOnFilePicked(input){
   if(!f) return;
   const isVid = f.type.startsWith('video/');
 
-  // Validação de duração do vídeo (30s)
-  if(isVid){
-    const dur = await new Promise(res=>{
-      const v=document.createElement('video');
-      v.preload='metadata';
-      v.src=URL.createObjectURL(f);
-      v.onloadedmetadata=()=>{ URL.revokeObjectURL(v.src); res(v.duration||0); };
-      v.onerror=()=>res(0);
-      setTimeout(()=>res(0),5000);
-    });
-    if(dur > (OA_VIDEO_MAX_MS/1000)+0.5){
-      showToast(`🚫 Vídeo muito longo (${Math.round(dur)}s). Máximo: ${OA_VIDEO_MAX_MS/1000}s.`,'error');
-      return;
-    }
-  }
+  // Validação de duração removida — vídeos longos são tratados
+  // pelo editor com a timeline de corte (janela deslizante de 30s)
 
   // Abre o editor visual de story (preview + música + trim + mute)
   await oaEditorOpen(f, isVid ? 'video' : 'image');
@@ -24220,7 +24207,7 @@ export default {
     </div>
     <div class="oa-c-actions" id="oa-c-actions">
       <button class="oa-c-btn" onclick="oaPickMedia('image/*')">&#128247; Escolher Foto</button>
-      <button class="oa-c-btn sec" onclick="oaPickMedia('video/*')">&#127916; Escolher Video (max 30s)</button>
+      <button class="oa-c-btn sec" onclick="oaPickMedia('video/*')">&#127916; Escolher Vídeo</button>
       <button class="oa-c-btn cancel" onclick="oaCloseCreate()">Cancelar</button>
     </div>
     <div id="oa-music-pill-wrap" style="display:none;margin-top:6px;"></div>
