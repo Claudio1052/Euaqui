@@ -441,6 +441,56 @@ a{text-decoration:none;}
   pointer-events:none;
 }
 
+
+/* ── Video trim timeline ────────────────────────────── */
+.oa-se-vid-trim{
+  display:flex;flex-direction:column;gap:4px;
+}
+.oa-se-vid-trim-label{
+  display:flex;justify-content:space-between;
+  font-size:9px;font-family:'Space Mono',monospace;color:var(--text-muted);
+}
+.oa-se-vid-timeline{
+  position:relative;height:44px;border-radius:8px;
+  background:rgba(255,140,0,.08);border:1px solid rgba(255,140,0,.25);
+  overflow:hidden;cursor:crosshair;
+  touch-action:none;user-select:none;-webkit-user-select:none;
+}
+.oa-se-vid-frames{
+  position:absolute;inset:0;
+  display:flex;align-items:stretch;
+  pointer-events:none;
+}
+.oa-se-vid-frame{
+  flex:1;border-right:1px solid rgba(0,0,0,.2);
+  background:rgba(255,140,0,.12);
+  display:flex;align-items:center;justify-content:center;
+  font-size:7px;color:rgba(255,200,100,.4);
+  overflow:hidden;
+}
+.oa-se-vid-outside{
+  position:absolute;top:0;bottom:0;background:rgba(0,0,0,.6);pointer-events:none;z-index:1;
+}
+.oa-se-vid-region{
+  position:absolute;top:0;bottom:0;
+  background:rgba(255,140,0,.15);
+  border:2px solid #ffa040;
+  border-radius:4px;z-index:2;cursor:grab;
+}
+.oa-se-vid-region:active{ cursor:grabbing; }
+.oa-se-vid-region::before,
+.oa-se-vid-region::after{
+  content:'';position:absolute;top:0;bottom:0;width:4px;
+  background:#ffa040;box-shadow:0 0 8px #ffa040;
+}
+.oa-se-vid-region::before{ left:0;border-radius:2px 0 0 2px; }
+.oa-se-vid-region::after { right:0;border-radius:0 2px 2px 0; }
+.oa-se-vid-playhead{
+  position:absolute;top:0;bottom:0;width:2px;
+  background:var(--neon-pink);z-index:4;pointer-events:none;
+  box-shadow:0 0 6px var(--neon-pink);
+}
+
 /* LOADING */
 #loading-screen{position:fixed;inset:0;background:var(--bg-deep);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;transition:opacity .4s;}
 .boot-logo{font-family:'VT323',monospace;font-size:80px;color:var(--neon-cyan);text-shadow:0 0 20px var(--neon-cyan),0 0 40px rgba(0,255,204,.5);}
@@ -8495,26 +8545,21 @@ function patchStco(view, delta){
   }
 }
 
-// --- Compressão de vídeo via MediaRecorder (API NATIVA, sem CDN/WASM) ---
-// No desktop, a re-codificação via canvas+captureStream congela a imagem pois o
-// browser bloqueia captureStream em vídeos locais (política de segurança).
-// Solução: desktop envia o arquivo original diretamente (sem re-codificação).
-// Mobile usa o fluxo normal pois captura da câmera nativa funciona.
+// --- Compressão de vídeo via MediaRecorder (API NATIVA, funciona desktop e mobile) ---
+// Técnica: carrega o vídeo em um elemento <video> offscreen, captura
+// frame a frame via canvas.drawImage() e re-codifica com MediaRecorder.
+// Diferente do captureStream() direto (que falha no desktop), esta abordagem
+// usa play() + requestAnimationFrame para capturar os frames manualmente.
 async function compressVideo(file, onProgress){
   try{
-    // Desktop: skip re-encoding — evita congelamento de imagem
-    const isDesktop = window.innerWidth > 768 && !/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
-    if(isDesktop){
-      console.log('[compressVideo] desktop detectado — enviando original sem re-codificar');
-      if(onProgress) onProgress(1);
-      return file;
-    }
     if(typeof MediaRecorder === 'undefined'){
       console.warn('[MediaRecorder] não suportado, enviando original');
+      if(onProgress) onProgress(1);
       return file;
     }
     const url = URL.createObjectURL(file);
     const video = document.createElement('video');
+    // crossOrigin não necessário para blob URL
     video.src = url; video.muted = true; video.playsInline = true; video.volume = 0;
     video.preload = 'auto';
     await new Promise((res,rej)=>{
@@ -8522,28 +8567,44 @@ async function compressVideo(file, onProgress){
       video.onerror = ()=>rej(new Error('não consegui ler o vídeo'));
       setTimeout(()=>res(), 8000);
     });
-    // Resolução alvo (adaptativa por tamanho)
+
+    // Resolução alvo — adaptativa por tamanho do arquivo
     const sizeMB = file.size/1024/1024;
-    let maxH = R2_VIDEO_MAX_HEIGHT; // 720
-    let vBitrate = 1_800_000;       // 1.8 Mbps
+    let maxH    = R2_VIDEO_MAX_HEIGHT; // 720p
+    let vBitrate = 1_800_000;          // 1.8 Mbps
     if(sizeMB > 30){ maxH = 540; vBitrate = 1_200_000; }
-    if(sizeMB > 80){ maxH = 480; vBitrate = 900_000;  }
+    if(sizeMB > 80){ maxH = 480; vBitrate =   900_000; }
     let w = video.videoWidth||640, h = video.videoHeight||480;
     if(h > maxH){ w = Math.round(w*maxH/h); h = maxH; }
-    w -= w%2; h -= h%2; // dimensões pares
-    console.log(`[MediaRecorder] ${sizeMB.toFixed(1)}MB ${video.videoWidth}x${video.videoHeight} -> ${w}x${h} @ ${Math.round(vBitrate/1000)}kbps`);
+    w -= w%2; h -= h%2;
+    console.log(`[compress] entrada: ${sizeMB.toFixed(1)}MB ${video.videoWidth}x${video.videoHeight} → saída: ${w}x${h} @ ${Math.round(vBitrate/1000)}kbps`);
+
+    // ── Canvas (frames de vídeo) ─────────────────────────────────────
     const canvas = document.createElement('canvas');
     canvas.width = w; canvas.height = h;
     const ctx = canvas.getContext('2d');
     const vStream = canvas.captureStream(30);
-    // Áudio: tenta capturar do próprio elemento de vídeo
-    let aTracks = [];
-    try{
-      const s = video.captureStream ? video.captureStream() : (video.mozCaptureStream?video.mozCaptureStream():null);
-      if(s) aTracks = s.getAudioTracks();
-    }catch(_){}
-    const combined = new MediaStream([...vStream.getVideoTracks(), ...aTracks]);
-    // Escolhe o melhor MIME disponível
+
+    // ── Áudio via Web Audio API — funciona no desktop E mobile ───────
+    // Não usa video.captureStream() (que falha no desktop com arquivos locais)
+    // Em vez disso, conecta o elemento <video> ao AudioContext e captura a saída
+    let audioTracks = [];
+    let _actx = null;
+    try {
+      _actx = new (window.AudioContext || window.webkitAudioContext)();
+      const src  = _actx.createMediaElementSource(video);
+      const dest = _actx.createMediaStreamDestination();
+      src.connect(dest);
+      src.connect(_actx.destination); // mantém o áudio audível (ou mudo se video.muted)
+      audioTracks = dest.stream.getAudioTracks();
+      console.log('[compress] áudio via WebAudio OK, tracks:', audioTracks.length);
+    } catch(e) {
+      console.warn('[compress] WebAudio falhou, vídeo sem áudio:', e.message);
+    }
+
+    const combined = new MediaStream([...vStream.getVideoTracks(), ...audioTracks]);
+
+    // Melhor MIME suportado
     const mimes = [
       'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
       'video/mp4',
@@ -8553,50 +8614,69 @@ async function compressVideo(file, onProgress){
     ];
     let mimeType = '';
     for(const m of mimes){ if(MediaRecorder.isTypeSupported(m)){ mimeType = m; break; } }
-    if(!mimeType){ console.warn('[MediaRecorder] nenhum MIME suportado'); URL.revokeObjectURL(url); return file; }
-    console.log('[MediaRecorder] MIME:', mimeType);
+    if(!mimeType){
+      console.warn('[compress] nenhum MIME suportado, enviando original');
+      URL.revokeObjectURL(url);
+      if(_actx) _actx.close().catch(()=>{});
+      if(onProgress) onProgress(1);
+      return file;
+    }
+    console.log('[compress] MIME:', mimeType);
+
     const recOpts = { mimeType, videoBitsPerSecond: vBitrate, audioBitsPerSecond: 96_000 };
-    const rec = new MediaRecorder(combined, recOpts);
-    const chunks = [];
+    const rec     = new MediaRecorder(combined, recOpts);
+    const chunks  = [];
     rec.ondataavailable = e=>{ if(e.data && e.data.size) chunks.push(e.data); };
-    const result = await new Promise((resolve,reject)=>{
+
+    const result = await new Promise((resolve, reject)=>{
       let stopped = false;
-      const stop = ()=>{ if(stopped) return; stopped=true; try{ rec.stop(); }catch(_){} };
+      const stop = ()=>{
+        if(stopped) return; stopped = true;
+        try{ rec.stop(); }catch(_){}
+        if(_actx) _actx.close().catch(()=>{});
+      };
       rec.onstop = ()=>{
         URL.revokeObjectURL(url);
-        const outType = mimeType.split(';')[0]; // video/mp4 ou video/webm
-        const ext = outType.includes('mp4') ? '.mp4' : '.webm';
+        const outType = mimeType.split(';')[0];
+        const ext  = outType.includes('mp4') ? '.mp4' : '.webm';
         const blob = new Blob(chunks, { type: outType });
-        const name = file.name.replace(/\.[^.]+$/,'') + ext;
-        const out = new File([blob], name, { type: outType });
-        console.log(`[MediaRecorder] saída=${(out.size/1024/1024).toFixed(1)}MB`);
+        const name = file.name.replace(/\.[^.]+$/, '') + ext;
+        const out  = new File([blob], name, { type: outType });
+        console.log(`[compress] saída: ${(out.size/1024/1024).toFixed(1)}MB (${Math.round(out.size/file.size*100)}% do original)`);
         resolve(out);
       };
-      rec.onerror = (e)=>{ stop(); reject(e.error||new Error('MediaRecorder erro')); };
+      rec.onerror = e=>{ stop(); reject(e.error||new Error('MediaRecorder erro')); };
       video.onended = stop;
+
       const draw = ()=>{
         if(stopped) return;
         if(video.ended){ stop(); return; }
         ctx.drawImage(video, 0, 0, w, h);
         if(onProgress && video.duration){
-          onProgress(Math.min(0.99, video.currentTime/video.duration));
+          onProgress(Math.min(0.99, video.currentTime / video.duration));
         }
         requestAnimationFrame(draw);
       };
-      rec.start(1000); // chunks de 1s
-      video.play().then(()=>requestAnimationFrame(draw)).catch(err=>{ stop(); reject(err); });
-      // Timeout de segurança: duração do vídeo + 30s
-      const maxMs = ((video.duration||60)+30)*1000;
+
+      rec.start(1000);
+      video.play()
+        .then(()=>requestAnimationFrame(draw))
+        .catch(err=>{ stop(); reject(err); });
+
+      // Timeout: duração real + 30s de margem
+      const maxMs = ((video.duration||60) + 30) * 1000;
       setTimeout(stop, maxMs);
     });
-    // Só mantém o original se a "compressão" ficou maior que 98% dele
-    if(result.size >= file.size*0.98){
-      console.log('[MediaRecorder] saída ~= original, mantendo original');
+
+    // Se a compressão não ajudou, mantém o original
+    if(result.size >= file.size * 0.98){
+      console.log('[compress] saída ≥ original — mantendo original');
       return file;
     }
     return result;
+
   }catch(e){
-    console.error('[MediaRecorder] falhou:', e);
+    console.error('[compress] falhou:', e.message, '— enviando original');
     return file;
   }
 }
@@ -22754,13 +22834,17 @@ let _seFile      = null;   // File original
 let _seType      = null;   // 'image' | 'video'
 let _seMediaDur  = 0;      // duração do vídeo (0 p/ foto)
 let _seMaxTrim   = 6;      // seg máx de música (6 foto / 30 vídeo)
-let _seTrimStart = 0;      // início do corte (seg)
-let _seTrimEnd   = 0;      // fim do corte (seg)
+let _seTrimStart = 0;      // início do corte música (seg)
+let _seTrimEnd   = 0;      // fim do corte música (seg)
 let _seMusicDur  = 0;      // duração total do MP3
 let _sePlayer    = null;   // Audio player de preview
 let _sePlayhead  = null;   // raf handle
 let _seMuteOrig  = false;  // mute do vídeo original
 let _seVideoEl   = null;   // elemento <video> no preview
+// Trim de vídeo
+let _seVidTrimStart = 0;   // início do trecho do vídeo (seg)
+let _seVidTrimEnd   = 0;   // fim do trecho do vídeo (seg)
+let _seVidDragActive = false;
 
 // Abre o editor após escolher um arquivo
 async function oaEditorOpen(file, type) {
@@ -22798,6 +22882,8 @@ async function oaEditorOpen(file, type) {
     _seVideoEl = v2;
     _seMaxTrim = Math.min(_seMediaDur, 30);
     document.getElementById('oa-se-mute-row').style.display = 'flex';
+    // Inicializa timeline de trim de vídeo (aparece só se > 30s)
+    setTimeout(_oaInitVideoTrim, 100);
   } else {
     _seMediaDur = 0;
     const img = document.createElement('img');
@@ -22823,8 +22909,15 @@ window.oaEditorOpen = oaEditorOpen;
 
 function oaEditorClose() {
   _oaEditorStopPreview();
+  // Para o vídeo do preview
+  if(_seVideoEl) {
+    try { _seVideoEl.pause(); _seVideoEl.src = ''; } catch(e) {}
+    _seVideoEl = null;
+  }
+  // Limpa o preview
+  const prev = document.getElementById('oa-se-preview');
+  if(prev) prev.innerHTML = '';
   document.getElementById('oa-story-editor').classList.remove('on');
-  // Volta para o modal de criação
   document.getElementById('oa-create-modal').classList.add('on');
 }
 window.oaEditorClose = oaEditorClose;
@@ -23082,7 +23175,10 @@ function _oaEditorStopPlayhead() {
 function oaEditorToggleMute(btn) {
   _seMuteOrig = !_seMuteOrig;
   btn.classList.toggle('on', _seMuteOrig);
-  if(_seVideoEl) _seVideoEl.muted = _seMuteOrig;
+  if(_seVideoEl) {
+    _seVideoEl.muted  = _seMuteOrig;
+    _seVideoEl.volume = _seMuteOrig ? 0 : 1;
+  }
 }
 window.oaEditorToggleMute = oaEditorToggleMute;
 
@@ -23153,8 +23249,22 @@ async function oaEditorPublish() {
     }
   }
 
-  // ─ ETAPA 3: Upload da mídia (50–95%) via oaPublish ────────────
-  _oaPickedFile = _seFile;
+  // ─ ETAPA 3: Cortar vídeo se necessário (0–50%) e upload (50–95%)
+  // Se o vídeo tem mais de 30s e o usuário selecionou um trecho,
+  // precisamos extrair esse trecho antes de subir
+  let _finalFile = _seFile;
+  if(_seType === 'video' && _seMediaDur > 30 && _seVidTrimEnd > _seVidTrimStart) {
+    setEditorProgress(50, '✂️ Cortando vídeo...');
+    try {
+      _finalFile = await _oaTrimVideo(_seFile, _seVidTrimStart, _seVidTrimEnd);
+      setEditorProgress(55, '✂️ Vídeo cortado!');
+    } catch(e) {
+      console.warn('[editor] trim vídeo falhou, usando original:', e.message);
+      _finalFile = _seFile;
+    }
+  }
+
+  _oaPickedFile = _finalFile;
   _oaPickedType = _seType;
 
   // Injeta callback de progresso na etapa de mídia (mapeia 0-100% → 50-95%)
@@ -23595,6 +23705,235 @@ function toggleGenreDropdown(forceState) {
 }
 window.toggleGenreDropdown = toggleGenreDropdown;
 
+
+// ── Video Trim Timeline (janela deslizante de 30s) ─────────────────
+function _oaInitVideoTrim() {
+  const timeline = document.getElementById('oa-se-vid-timeline');
+  const region   = document.getElementById('oa-se-vid-region');
+  if(!timeline || !region || _seMediaDur <= 30) {
+    // Vídeo <= 30s: sem trim necessário, usa o vídeo completo
+    document.getElementById('oa-se-vid-trim-section').style.display = 'none';
+    _seVidTrimStart = 0;
+    _seVidTrimEnd   = _seMediaDur;
+    return;
+  }
+
+  // Vídeo > 30s: mostra timeline
+  document.getElementById('oa-se-vid-trim-section').style.display = 'block';
+  _seVidTrimStart = 0;
+  _seVidTrimEnd   = 30;
+
+  // Gera frames visuais (miniaturas fake com timestamps)
+  const frames = document.getElementById('oa-se-vid-frames');
+  const N = Math.min(Math.ceil(_seMediaDur), 20);
+  frames.innerHTML = '';
+  for(let i = 0; i < N; i++) {
+    const f = document.createElement('div');
+    f.className = 'oa-se-vid-frame';
+    f.textContent = Math.round(i * _seMediaDur / N) + 's';
+    frames.appendChild(f);
+  }
+
+  _oaUpdateVideoTrim();
+  _oaInitVideoTrimDrag();
+}
+
+function _oaUpdateVideoTrim() {
+  const dur = _seMediaDur;
+  if(dur <= 0) return;
+  const pctL = (_seVidTrimStart / dur) * 100;
+  const pctR = (_seVidTrimEnd   / dur) * 100;
+
+  const region  = document.getElementById('oa-se-vid-region');
+  const outL    = document.getElementById('oa-se-vid-out-l');
+  const outR    = document.getElementById('oa-se-vid-out-r');
+  if(region) { region.style.left = pctL+'%'; region.style.width = (pctR-pctL)+'%'; }
+  if(outL)   { outL.style.width = pctL+'%'; }
+  if(outR)   { outR.style.width = (100-pctR)+'%'; }
+
+  const fmtT = t => t < 60 ? Math.round(t)+'s' : Math.floor(t/60)+'m'+Math.round(t%60)+'s';
+  const elS = document.getElementById('oa-se-vid-start');
+  const elE = document.getElementById('oa-se-vid-end');
+  const elD = document.getElementById('oa-se-vid-dur');
+  if(elS) elS.textContent = fmtT(_seVidTrimStart);
+  if(elE) elE.textContent = fmtT(_seVidTrimEnd);
+  if(elD) elD.textContent = Math.round(_seVidTrimEnd - _seVidTrimStart) + 's selecionados';
+
+  // Sincroniza o vídeo de preview com o início do trim
+  if(_seVideoEl && !_seVideoEl.paused) {
+    if(_seVideoEl.currentTime < _seVidTrimStart || _seVideoEl.currentTime > _seVidTrimEnd) {
+      _seVideoEl.currentTime = _seVidTrimStart;
+    }
+  }
+}
+
+function _oaInitVideoTrimDrag() {
+  const timeline = document.getElementById('oa-se-vid-timeline');
+  const region   = document.getElementById('oa-se-vid-region');
+  if(!timeline || !region) return;
+
+  const WIN = 30; // janela fixa de 30s
+
+  function xToTime(clientX) {
+    const rect = timeline.getBoundingClientRect();
+    return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * _seMediaDur;
+  }
+
+  let _dragOff = 0;
+
+  function startDragRegion(e) {
+    e.preventDefault();
+    _seVidDragActive = true;
+    const t = xToTime(e.clientX);
+    _dragOff = t - _seVidTrimStart;
+    try { region.setPointerCapture(e.pointerId); } catch(_) {}
+  }
+
+  region.addEventListener('pointerdown', startDragRegion, { passive:false });
+
+  region.addEventListener('pointermove', e => {
+    if(!_seVidDragActive) return;
+    e.preventDefault();
+    let newStart = xToTime(e.clientX) - _dragOff;
+    newStart = Math.max(0, Math.min(_seMediaDur - WIN, newStart));
+    _seVidTrimStart = newStart;
+    _seVidTrimEnd   = newStart + WIN;
+    _oaUpdateVideoTrim();
+  }, { passive:false });
+
+  region.addEventListener('pointerup',     () => { _seVidDragActive = false; });
+  region.addEventListener('pointercancel', () => { _seVidDragActive = false; });
+
+  // Clique fora da janela reposiciona
+  timeline.addEventListener('pointerdown', e => {
+    if(e.target === region || region.contains(e.target)) return;
+    e.preventDefault();
+    const t = xToTime(e.clientX);
+    let newStart = t - WIN/2;
+    newStart = Math.max(0, Math.min(_seMediaDur - WIN, newStart));
+    _seVidTrimStart = newStart;
+    _seVidTrimEnd   = newStart + WIN;
+    _oaUpdateVideoTrim();
+
+    // Inicia drag
+    _seVidDragActive = true;
+    _dragOff = WIN / 2;
+    try { timeline.setPointerCapture(e.pointerId); } catch(_) {}
+
+    const onM = e2 => {
+      if(!_seVidDragActive) return;
+      let s = xToTime(e2.clientX) - _dragOff;
+      s = Math.max(0, Math.min(_seMediaDur - WIN, s));
+      _seVidTrimStart = s; _seVidTrimEnd = s + WIN;
+      _oaUpdateVideoTrim();
+    };
+    const onU = () => {
+      _seVidDragActive = false;
+      timeline.removeEventListener('pointermove', onM);
+    };
+    timeline.addEventListener('pointermove', onM, { passive:false });
+    timeline.addEventListener('pointerup',     onU, { once:true });
+    timeline.addEventListener('pointercancel', onU, { once:true });
+  }, { passive:false });
+
+  // Playhead animado acompanha o vídeo
+  const tickV = () => {
+    if(!document.getElementById('oa-story-editor')?.classList.contains('on')) return;
+    const ph = document.getElementById('oa-se-vid-playhead');
+    if(ph && _seVideoEl && _seMediaDur > 0) {
+      const pct = (_seVideoEl.currentTime / _seMediaDur) * 100;
+      ph.style.left = pct + '%';
+      // Loop dentro da janela
+      if(_seVideoEl.currentTime >= _seVidTrimEnd) {
+        _seVideoEl.currentTime = _seVidTrimStart;
+      }
+    }
+    requestAnimationFrame(tickV);
+  };
+  requestAnimationFrame(tickV);
+}
+
+
+// ── Corta trecho do vídeo usando MediaRecorder ─────────────────────
+// startSec: início do trecho | endSec: fim do trecho
+// Não precisa de FFmpeg — usa a API nativa do browser
+async function _oaTrimVideo(file, startSec, endSec) {
+  const dur = endSec - startSec;
+  if(dur <= 0 || dur > 30) throw new Error('trim inválido');
+
+  return new Promise((resolve, reject) => {
+    const objUrl = URL.createObjectURL(file);
+    const video  = document.createElement('video');
+    video.src    = objUrl;
+    video.muted  = false;
+    video.preload = 'auto';
+
+    video.onloadedmetadata = () => {
+      video.currentTime = startSec; // salta para o início do trim
+    };
+
+    video.onseeked = () => {
+      // Canvas para capturar frames
+      const w = video.videoWidth  || 720;
+      const h = video.videoHeight || 1280;
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+
+      // Stream do canvas + áudio do vídeo
+      const vStream = canvas.captureStream(30);
+      let aStream;
+      try {
+        aStream = video.captureStream ? video.captureStream() : (video.mozCaptureStream ? video.mozCaptureStream() : null);
+      } catch(e) { aStream = null; }
+
+      const tracks = [...vStream.getVideoTracks()];
+      if(aStream) aStream.getAudioTracks().forEach(t => tracks.push(t));
+      const combined = new MediaStream(tracks);
+
+      // Mime preferido
+      const mimes = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm'];
+      const mime  = mimes.find(m => { try{ return MediaRecorder.isTypeSupported(m); }catch(e){ return false; }}) || 'video/webm';
+
+      const chunks = [];
+      const rec = new MediaRecorder(combined, { mimeType: mime, videoBitsPerSecond: 2_000_000 });
+      rec.ondataavailable = e => { if(e.data.size) chunks.push(e.data); };
+      rec.onstop = () => {
+        URL.revokeObjectURL(objUrl);
+        const blob = new Blob(chunks, { type: mime });
+        const ext  = mime.includes('mp4') ? '.mp4' : '.webm';
+        const out  = new File([blob], 'video_trim_'+Math.round(dur)+'s'+ext, { type: mime });
+        console.log(`[vid-trim] ${startSec.toFixed(1)}s→${endSec.toFixed(1)}s | ${(out.size/1024/1024).toFixed(1)}MB`);
+        resolve(out);
+      };
+      rec.onerror = e => { URL.revokeObjectURL(objUrl); reject(e.error || e); };
+
+      // Grava por dur segundos
+      rec.start(200);
+      video.play().catch(() => {});
+
+      const drawFrame = () => {
+        if(video.paused || video.ended) return;
+        ctx.drawImage(video, 0, 0, w, h);
+        requestAnimationFrame(drawFrame);
+      };
+      requestAnimationFrame(drawFrame);
+
+      // Para após a duração do trim
+      setTimeout(() => {
+        try { video.pause(); rec.stop(); } catch(e) {}
+      }, dur * 1000 + 300);
+
+      // Segurança: timeout máximo
+      setTimeout(() => {
+        if(rec.state !== 'inactive') { try { rec.stop(); } catch(_) {} }
+      }, (dur + 5) * 1000);
+    };
+
+    video.onerror = () => { URL.revokeObjectURL(objUrl); reject(new Error('vídeo inválido')); };
+  });
+}
+
 window.oaLoadRail = oaLoadRail;
 
 // Chama após DOM pronto
@@ -24017,6 +24356,24 @@ export default {
       <button class="oa-se-add-music" id="oa-se-add-music-btn" onclick="oaEditorPickMusic()">
         🎵 Adicionar Música
       </button>
+
+      <!-- Timeline de corte do vídeo (só aparece se for vídeo longo) -->
+      <div id="oa-se-vid-trim-section" style="display:none;">
+        <div class="oa-se-vid-trim">
+          <div class="oa-se-vid-trim-label">
+            <span id="oa-se-vid-start">0s</span>
+            <span style="color:#ffa040;" id="oa-se-vid-dur">30s selecionados</span>
+            <span id="oa-se-vid-end">0s</span>
+          </div>
+          <div class="oa-se-vid-timeline" id="oa-se-vid-timeline">
+            <div class="oa-se-vid-frames" id="oa-se-vid-frames"></div>
+            <div class="oa-se-vid-outside" id="oa-se-vid-out-l" style="left:0;width:0;"></div>
+            <div class="oa-se-vid-outside" id="oa-se-vid-out-r" style="right:0;width:0;"></div>
+            <div class="oa-se-vid-region" id="oa-se-vid-region"></div>
+            <div class="oa-se-vid-playhead" id="oa-se-vid-playhead" style="left:0;"></div>
+          </div>
+        </div>
+      </div>
 
       <!-- Mute do vídeo original (só aparece se for vídeo) -->
       <div class="oa-se-mute-row" id="oa-se-mute-row" style="display:none;">
