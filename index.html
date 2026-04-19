@@ -23147,6 +23147,10 @@ window.oaEditorTogglePreview = oaEditorTogglePreview;
 
 function _oaEditorStopPreview() {
   if(_sePlayer) { try{ _sePlayer.pause(); }catch(e){} }
+  // Para e desanexa o vídeo de preview para evitar áudio duplicado ao publicar
+  if(_seVideoEl) {
+    try { _seVideoEl.pause(); _seVideoEl.src = ''; } catch(e) {}
+  }
   _oaEditorStopPlayhead();
   const btn = document.getElementById('oa-se-play');
   if(btn) btn.textContent = '▶';
@@ -23265,11 +23269,20 @@ async function oaEditorPublish() {
   _oaPickedFile = _finalFile;
   _oaPickedType = _seType;
 
-  // Injeta callback de progresso na etapa de mídia (mapeia 0-100% → 50-95%)
-  window._oaEditorProgressCb = (pct, label) => setEditorProgress(50 + Math.round(pct * 0.45), label);
+  // ── Fix 1: Para o vídeo de preview ANTES de qualquer coisa ──
+  if(_seVideoEl) {
+    try { _seVideoEl.pause(); _seVideoEl.src = ''; } catch(e) {}
+    _seVideoEl = null;
+  }
 
-  setEditorProgress(50, '📤 Enviando mídia...');
+  // Injeta callback de progresso na etapa de mídia (mapeia 0-100% → 55-99%)
+  window._oaEditorProgressCb = (pct, label) => setEditorProgress(55 + Math.round(pct * 0.44), label);
+
+  setEditorProgress(55, '📤 Enviando mídia...');
   await oaPublish();
+
+  // ── Fix 2: garante que a barra chega a 100% ──
+  setEditorProgress(100, '✅ Publicado!');
 
   window._oaEditorProgressCb = null;
   if(pubBtn){ pubBtn.disabled = false; pubBtn.textContent = '🚀 PUBLICAR STORY'; }
