@@ -22280,6 +22280,9 @@ function openMusicPicker(ctx) {
   document.getElementById('music-results').innerHTML =
     '<div style="text-align:center;padding:30px;color:var(--text-muted);font-family:VT323,monospace;font-size:18px;">🎵 Digite para buscar músicas</div>';
   document.getElementById('music-picker-overlay').classList.add('on');
+  // Sempre abre na aba de busca E carrega histórico em background
+  switchMusicTab('search');
+  _renderMusicHistory(); // pré-carrega histórico em background
 }
 window.openMusicPicker = openMusicPicker;
 
@@ -23278,132 +23281,178 @@ function _getMusicHistoryCache() {
 
 function _saveMusicToHistory(m, trimDuration) {
   if(!CU) return;
+
+  const r2Url = m.url_audio_opus || m._preUploadedUrl || '';
+  // GUARDRAIL: só salva se tiver URL do R2 — evita entradas sem áudio
+  if(!r2Url) {
+    console.warn('[music-history] pulando save: sem url_audio_opus (R2)');
+    return;
+  }
+
   const dur = Math.round(trimDuration || 0);
-
-  // 1) Salva no cache local
-  const cache = _getMusicHistoryCache();
-  const entry = {
-    external_id:    m.external_id,
-    titulo:         m.titulo,
-    artista:        m.artista,
-    url_audio_opus: m.url_audio_opus || m._preUploadedUrl || '',
-    url_capa_webp:  m.url_capa_webp  || m.capa_url        || '',
-    trim_duration:  dur,
-    user_id:        CU.id,
-    updated_at:     new Date().toISOString()
-  };
-  const filtered = cache.filter(h => !(h.external_id === m.external_id && h.trim_duration === dur));
-  filtered.unshift(entry);
-  try { localStorage.setItem(MUSIC_HISTORY_KEY, JSON.stringify(filtered.slice(0,30))); } catch(e) {}
-
-  // 2) Upsert no Supabase com user_id
-  // external_id inclui duração para permitir múltiplos cortes da mesma música
   const dbKey = m.external_id + '_u' + CU.id.slice(0,8) + '_' + dur + 's';
-  db.from(MUSIC_CATALOG_TABLE).upsert({
+
+  const entry = {
     external_id:    dbKey,
     titulo:         m.titulo,
     artista:        m.artista,
-    url_audio_opus: entry.url_audio_opus,
-    url_capa_webp:  entry.url_capa_webp,
+    url_audio_opus: r2Url,
+    url_capa_webp:  m.url_capa_webp || m.capa_url || '',
     trim_duration:  dur,
     user_id:        CU.id
-  }, { onConflict:'external_id' }).then(({error}) => {
-    if(error) console.warn('[music-history] upsert:', error.message);
-  });
+  };
+
+  // 1) Cache local
+  const cache    = _getMusicHistoryCache();
+  const filtered = cache.filter(h => h.external_id !== dbKey);
+  filtered.unshift(entry);
+  try { localStorage.setItem(MUSIC_HISTORY_KEY, JSON.stringify(filtered.slice(0,30))); } catch(e) {}
+
+  // 2) Upsert no Supabase
+  db.from(MUSIC_CATALOG_TABLE).upsert(entry, { onConflict:'external_id' })
+    .then(({error}) => {
+      if(error) console.warn('[music-history] upsert:', error.message);
+      else console.log('[music-history] salvo no banco:', entry.titulo, dur+'s');
+    });
 }
+
+// Exclui uma entrada do histórico (banco + cache)
+async function _deleteMusicFromHistory(externalId) {
+  // Remove do cache local
+  const cache    = _getMusicHistoryCache();
+  const filtered = cache.filter(h => h.external_id !== externalId);
+  try { localStorage.setItem(MUSIC_HISTORY_KEY, JSON.stringify(filtered)); } catch(e) {}
+
+  // Remove do banco
+  if(CU) {
+    const { error } = await db.from(MUSIC_CATALOG_TABLE)
+      .delete()
+      .eq('external_id', externalId)
+      .eq('user_id', CU.id);
+    if(error) console.warn('[music-history] delete:', error.message);
+  }
+  // Re-renderiza
+  await _renderMusicHistory();
+}
+window._deleteMusicFromHistory = _deleteMusicFromHistory;
+
+// Limpa todo o histórico do usuário
+async function _clearAllMusicHistory() {
+  if(!await _euConfirm('Limpar todo o histórico de músicas?','🗑️')) return;
+  try { localStorage.removeItem(MUSIC_HISTORY_KEY); } catch(e) {}
+  if(CU) {
+    await db.from(MUSIC_CATALOG_TABLE)
+      .delete()
+      .eq('user_id', CU.id)
+      .gt('trim_duration', 0);
+  }
+  await _renderMusicHistory();
+  showToast('Histórico limpo','success');
+}
+window._clearAllMusicHistory = _clearAllMusicHistory;
 
 async function _renderMusicHistory() {
   const list = document.getElementById('music-history-list');
   if(!list) return;
   const maxDur = _seMaxTrim || 6;
 
-  // Mostra cache local enquanto carrega
-  const cache = _getMusicHistoryCache().filter(h => {
-    return (h.trim_duration || 0) <= maxDur;
-  });
-  if(cache.length) _renderMusicHistoryItems(cache, list);
-  else list.innerHTML = '<div style="text-align:center;padding:14px;color:var(--text-muted);font-size:11px;">⟳ Buscando...</div>';
+  list.innerHTML = '<div style="text-align:center;padding:14px;color:var(--text-muted);font-size:11px;">⟳ Atualizando...</div>';
 
-  if(!CU) return;
+  if(!CU) {
+    list.innerHTML = '<div style="text-align:center;padding:14px;color:var(--text-muted);font-size:11px;">Faça login</div>';
+    return;
+  }
 
   try {
-    // Busca do Supabase: músicas deste usuário com trim_duration <= maxDur
-    // url_audio_opus aponta para o R2
+    // Busca SEMPRE do Supabase (fonte da verdade)
+    // Filtra: user_id = meu, trim_duration <= maxDur, tem url_audio_opus (R2)
     const { data, error } = await db.from(MUSIC_CATALOG_TABLE)
       .select('external_id, titulo, artista, url_audio_opus, url_capa_webp, trim_duration, created_at')
       .eq('user_id', CU.id)
       .lte('trim_duration', maxDur)
       .gt('trim_duration', 0)
+      .not('url_audio_opus', 'is', null)
+      .neq('url_audio_opus', '')
       .order('created_at', { ascending: false })
       .limit(30);
 
     if(error) throw error;
 
-    if(!data || !data.length) {
-      if(!cache.length) {
-        list.innerHTML = `<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:11px;">
-          Nenhuma música de até ${maxDur}s usada ainda
-        </div>`;
-      }
+    // Filtra localmente entradas sem URL R2 (segurança extra)
+    const valid = (data || []).filter(d => d.url_audio_opus && d.url_audio_opus.startsWith('http'));
+
+    // Atualiza cache local
+    try { localStorage.setItem(MUSIC_HISTORY_KEY, JSON.stringify(valid)); } catch(e) {}
+
+    if(!valid.length) {
+      list.innerHTML = `<div style="text-align:center;padding:24px;color:var(--text-muted);font-size:11px;">
+        🎵 Nenhuma música de até ${maxDur}s publicada ainda
+      </div>`;
       return;
     }
 
-    // Atualiza cache local com dados frescos do banco
-    try { localStorage.setItem(MUSIC_HISTORY_KEY, JSON.stringify(data.map(d => ({
-      external_id: d.external_id, titulo: d.titulo, artista: d.artista,
-      url_audio_opus: d.url_audio_opus, url_capa_webp: d.url_capa_webp,
-      trim_duration: d.trim_duration, user_id: CU.id
-    })))); } catch(e) {}
+    // Header com botão "Limpar tudo"
+    list.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 2px 8px;border-bottom:1px solid rgba(255,255,255,.06);margin-bottom:4px;">
+        <span style="font-size:10px;color:var(--text-muted);font-family:'Space Mono',monospace;">${valid.length} música${valid.length>1?'s':''} · ${maxDur}s</span>
+        <button onclick="_clearAllMusicHistory()" style="background:none;border:1px solid rgba(255,51,102,.3);color:var(--neon-pink);border-radius:6px;padding:3px 8px;font-size:9px;cursor:pointer;font-family:'Space Mono',monospace;">🗑 Limpar tudo</button>
+      </div>`;
 
-    _renderMusicHistoryItems(data, list);
+    _renderMusicHistoryItems(valid, list, true);
 
   } catch(e) {
     console.warn('[music-history]', e.message);
-    if(!cache.length) {
-      list.innerHTML = '<div style="text-align:center;padding:14px;color:var(--neon-pink);font-size:11px;">Erro ao carregar histórico</div>';
-    }
+    list.innerHTML = `<div style="text-align:center;padding:14px;color:var(--neon-pink);font-size:11px;">
+      Erro ao carregar: ${e.message}
+    </div>`;
   }
 }
 
-function _renderMusicHistoryItems(items, list) {
-  list.innerHTML = '';
+function _renderMusicHistoryItems(items, list, append=false) {
+  if(!append) list.innerHTML = '';
   items.forEach(m => {
-    const audioSrc = m.url_audio_opus || ''; // URL do R2
+    const audioSrc = m.url_audio_opus || '';
     const capaSrc  = m.url_capa_webp  || '';
-    const dur      = m.trim_duration  || m._savedDur || 0;
+    const dur      = m.trim_duration  || 0;
     const extId    = m.external_id    || '';
 
     const item = document.createElement('div');
     item.className = 'music-result-item';
+    item.style.cssText = 'position:relative;';
     if(_musicSelected?.external_id === extId) item.classList.add('selected');
     item.innerHTML = `
       <img class="music-capa" src="${capaSrc}" alt=""
            onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1 1%22><rect fill=%22%230a0a2a%22/></svg>'">
-      <div class="music-info">
+      <div class="music-info" style="flex:1;min-width:0;">
         <div class="music-titulo">${xss(m.titulo || '—')}</div>
         <div class="music-artista">${xss(m.artista || '—')}
           <span style="color:var(--neon-yellow);font-size:9px;margin-left:4px;">· ${dur}s · R2</span>
         </div>
       </div>
-      <button class="music-play-mini" title="Ouvir"
-        onclick="event.stopPropagation();toggleMusicPreview('${audioSrc}','hist_${extId}',this)">▶</button>`;
+      <div style="display:flex;gap:4px;align-items:center;flex-shrink:0;">
+        <button class="music-play-mini" title="Ouvir"
+          onclick="event.stopPropagation();toggleMusicPreview('${audioSrc}','hist_${extId}',this)">▶</button>
+        <button title="Excluir do histórico"
+          onclick="event.stopPropagation();_deleteMusicFromHistory('${extId}')"
+          style="width:26px;height:26px;border-radius:50%;background:rgba(255,51,102,.12);border:1px solid rgba(255,51,102,.35);color:var(--neon-pink);font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">✕</button>
+      </div>`;
 
-    item.onclick = () => {
+    item.onclick = e => {
+      if(e.target.closest('button')) return; // não seleciona se clicar nos botões
       document.querySelectorAll('#music-history-list .music-result-item').forEach(el=>el.classList.remove('selected'));
       item.classList.add('selected');
-      // Vem do R2 — não precisa baixar da Jamendo nem re-enviar
       _musicSelected = {
-        external_id:    extId,
-        titulo:         m.titulo,
-        artista:        m.artista,
-        url_audio_opus: audioSrc,   // URL já no R2
-        audio_mp3:      audioSrc,   // alias para compatibilidade
-        capa_url:       capaSrc,
-        url_capa_webp:  capaSrc,
-        _prefillTrim:   dur,        // pré-preenche o trim
-        _fromHistory:   true,       // sinaliza: já está no R2, pular corte/upload
-        _preUploadedUrl: audioSrc,  // URL final — usada direto no payload
-        _trimDuration:  dur
+        external_id:     extId,
+        titulo:          m.titulo,
+        artista:         m.artista,
+        url_audio_opus:  audioSrc,
+        audio_mp3:       audioSrc,
+        capa_url:        capaSrc,
+        url_capa_webp:   capaSrc,
+        _prefillTrim:    dur,
+        _fromHistory:    true,
+        _preUploadedUrl: audioSrc,
+        _trimDuration:   dur
       };
       _renderSelectedPreview(_musicSelected);
     };
