@@ -21518,14 +21518,9 @@ async function oaPublish(){
     if(window._musicAttached){
       try{
         const _ma = window._musicAttached;
-        if(_ma._trimmedFile){
-          // Usa URL já subida pelo editor (evita duplo upload)
-          const _trimUrl = _ma._preUploadedUrl || await (async()=>{
-            window._oaUploadContext = 'musicas_catalog';
-            const u = await _uploadAudioDirectR2(_ma._trimmedFile);
-            window._oaUploadContext = null;
-            return u;
-          })();
+        if(_ma._fromHistory && _ma._preUploadedUrl){
+          // ✅ Histórico: URL já no R2 — usa direto sem qualquer upload
+          const _trimUrl = _ma._preUploadedUrl;
           _oaMusicData = {
             external_id:    _ma.external_id + '_' + Math.round(_ma._trimStart||0) + '_' + Math.round(_ma._trimEnd||0),
             titulo:         _ma.titulo,
@@ -22911,35 +22906,40 @@ async function oaEditorPublish() {
 
   window._musicMuteVideo = _seMuteOrig;
 
-  // ─ ETAPA 1: Cortar música (0–30%) ─────────────────────────────
-  if(window._musicAttached && _seMusicDur > 0) {
-    setEditorProgress(5, '✂️ Cortando música...');
-    try {
-      const trimmedFile = await _oaEditorTrimAudio(
-        window._musicAttached.audio_mp3 || window._musicAttached.url_audio_opus,
-        _seTrimStart,
-        _seTrimEnd
-      );
-      window._musicAttached._trimmedFile  = trimmedFile;
-      window._musicAttached._trimStart    = _seTrimStart;
-      window._musicAttached._trimEnd      = _seTrimEnd;
-      window._musicAttached._trimDuration = _seTrimEnd - _seTrimStart;
-      setEditorProgress(25, '✂️ Música cortada!');
+  // ─ ETAPA 1 e 2: Cortar e subir música (pula se já está no R2) ──────
+  if(window._musicAttached) {
+    const _ma = window._musicAttached;
 
-      // ─ ETAPA 2: Upload da música (25–50%) ──────────────────────
-      setEditorProgress(30, '🎵 Enviando música...');
-      window._oaUploadContext = 'musicas_catalog';
-      const _trimUrl = await _uploadAudioDirectR2(trimmedFile);
-      window._oaUploadContext = null;
-      setEditorProgress(50, '🎵 Música enviada!');
+    if(_ma._fromHistory && _ma._preUploadedUrl) {
+      // ✅ Música do histórico — já está no R2, pula corte e upload
+      setEditorProgress(50, '🎵 Música do R2 (sem reenvio)');
+      console.log('[editor] música do histórico — usando URL do R2:', _ma._preUploadedUrl);
 
-      // Prepara música data para usar no payload
-      window._musicAttached._preUploadedUrl = _trimUrl;
+    } else if(_seMusicDur > 0) {
+      // 🆕 Música nova — corta e sobe
+      setEditorProgress(5, '✂️ Cortando música...');
+      try {
+        const trimmedFile = await _oaEditorTrimAudio(
+          _ma.audio_mp3 || _ma.url_audio_opus,
+          _seTrimStart,
+          _seTrimEnd
+        );
+        _ma._trimmedFile  = trimmedFile;
+        _ma._trimStart    = _seTrimStart;
+        _ma._trimEnd      = _seTrimEnd;
+        _ma._trimDuration = _seTrimEnd - _seTrimStart;
+        setEditorProgress(25, '✂️ Música cortada!');
 
-    } catch(e) {
-      console.warn('[editor] trim/upload falhou:', e.message);
-      window._oaUploadContext = null;
-      setEditorProgress(50, '⚠️ Música: usando original');
+        setEditorProgress(30, '🎵 Enviando ao R2...');
+        const _trimUrl = await _uploadAudioDirectR2(trimmedFile);
+        setEditorProgress(50, '🎵 Música no R2!');
+        _ma._preUploadedUrl = _trimUrl;
+
+      } catch(e) {
+        console.warn('[editor] trim/upload falhou:', e.message);
+        window._oaUploadContext = null;
+        setEditorProgress(50, '⚠️ Falha na música, continuando...');
+      }
     }
   }
 
@@ -23230,16 +23230,19 @@ function _renderMusicHistoryItems(items, list) {
     item.onclick = () => {
       document.querySelectorAll('#music-history-list .music-result-item').forEach(el=>el.classList.remove('selected'));
       item.classList.add('selected');
-      // Usa a URL do R2 diretamente — não precisa rebaixar da Jamendo
+      // Vem do R2 — não precisa baixar da Jamendo nem re-enviar
       _musicSelected = {
         external_id:    extId,
         titulo:         m.titulo,
         artista:        m.artista,
-        url_audio_opus: audioSrc,   // R2 — usado no player e no trim
+        url_audio_opus: audioSrc,   // URL já no R2
         audio_mp3:      audioSrc,   // alias para compatibilidade
         capa_url:       capaSrc,
         url_capa_webp:  capaSrc,
-        _prefillTrim:   dur         // pré-preenche o trim com a duração anterior
+        _prefillTrim:   dur,        // pré-preenche o trim
+        _fromHistory:   true,       // sinaliza: já está no R2, pular corte/upload
+        _preUploadedUrl: audioSrc,  // URL final — usada direto no payload
+        _trimDuration:  dur
       };
       _renderSelectedPreview(_musicSelected);
     };
