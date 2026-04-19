@@ -21548,17 +21548,21 @@ async function oaPublish(){
             return u;
           })();
           _oaMusicData = {
-            external_id:    _ma.external_id + '_' + Math.round(_ma._trimStart) + '_' + Math.round(_ma._trimEnd),
+            external_id:    _ma.external_id + '_' + Math.round(_ma._trimStart||0) + '_' + Math.round(_ma._trimEnd||0),
             titulo:         _ma.titulo,
             artista:        _ma.artista,
-            url_audio_opus: _trimUrl,
-            url_capa_webp:  _ma.capa_url,
-            trim_start:     _ma._trimStart,
-            trim_end:       _ma._trimEnd,
-            trim_duration:  _ma._trimDuration
+            url_audio_opus: _trimUrl,  // URL do R2 — este é o que será tocado no story
+            url_capa_webp:  _ma.capa_url || _ma.url_capa_webp || '',
+            trim_start:     _ma._trimStart || 0,
+            trim_end:       _ma._trimEnd   || 0,
+            trim_duration:  _ma._trimDuration || 0
           };
-          // Salva no catálogo para cache
-          await db.from(MUSIC_CATALOG_TABLE).upsert(_oaMusicData, { onConflict:'external_id', ignoreDuplicates:true });
+          // Propaga a URL para o _musicAttached para o histórico pegar
+          window._musicAttached.url_audio_opus = _trimUrl;
+          // Upsert no catálogo (cache para próximos usos)
+          try {
+            await db.from(MUSIC_CATALOG_TABLE).upsert(_oaMusicData, { onConflict:'external_id' });
+          } catch(e) { console.warn('[music-catalog] upsert:', e.message); }
         } else {
           _oaMusicData = await _ensureMusicCatalog(_ma);
         }
@@ -21588,9 +21592,13 @@ async function oaPublish(){
     // Reset flags de negócio e música
     window._oaPublishIsBiz = false;
     window._oaBizContext = null;
-    // Salva a música no histórico antes de limpar
+    // Salva no histórico com URL do R2 para reuso futuro
     if(window._musicAttached) {
       const _dur = window._musicAttached._trimDuration || _seMaxTrim || 6;
+      // Garante que a URL do R2 fica salva no histórico
+      if(window._musicAttached._preUploadedUrl) {
+        window._musicAttached.url_audio_opus = window._musicAttached._preUploadedUrl;
+      }
       _saveMusicToHistory(window._musicAttached, _dur);
     }
     window._musicAttached = null; window._musicMuteVideo = false;
@@ -22673,7 +22681,8 @@ function _oaEditorShowMusic(m) {
 
   // Carrega MP3 para saber duração
   if(!_sePlayer) _sePlayer = new Audio();
-  _sePlayer.src = m.audio_mp3 || m.url_audio_opus || '';
+  // Prefere URL do R2 (já processada) para o preview no editor
+  _sePlayer.src = m.url_audio_opus || m.audio_mp3 || '';
   _sePlayer.addEventListener('loadedmetadata', () => {
     _seMusicDur  = _sePlayer.duration || 60;
     _seTrimStart = 0;
@@ -22956,78 +22965,138 @@ async function oaEditorPublish() {
 }
 window.oaEditorPublish = oaEditorPublish;
 
-// ── Corta o áudio usando Web Audio API ──────────────────────────────
+// ── Corta o áudio usando Web Audio API + MediaRecorder ──────────────
 async function _oaEditorTrimAudio(mp3Url, startSec, endSec) {
-  const proxyUrl = R2_BACKEND_URL + '/music-proxy?url=' + encodeURIComponent(mp3Url);
+  if(endSec <= startSec) throw new Error('trim: end <= start');
+
+  // 1) Baixa o MP3 via proxy CORS (Worker) ou direto
   let buf;
-  try {
-    const res = await fetch(proxyUrl);
+  const isJamendo = mp3Url && (
+    mp3Url.includes('jamendo.com') ||
+    mp3Url.includes('mp3d.') ||
+    mp3Url.includes('storage.')
+  );
+
+  if(isJamendo) {
+    const proxyUrl = R2_BACKEND_URL + '/music-proxy?url=' + encodeURIComponent(mp3Url);
+    try {
+      const res = await fetch(proxyUrl, { cache:'force-cache' });
+      if(!res.ok) throw new Error('proxy ' + res.status);
+      buf = await res.arrayBuffer();
+      console.log('[trim] baixado via proxy:', (buf.byteLength/1024).toFixed(0)+'KB');
+    } catch(e) {
+      console.warn('[trim] proxy falhou, tentando direto:', e.message);
+      const res2 = await fetch(mp3Url);
+      buf = await res2.arrayBuffer();
+    }
+  } else {
+    // URL do R2 — busca direto
+    const res = await fetch(mp3Url);
     buf = await res.arrayBuffer();
+    console.log('[trim] baixado do R2:', (buf.byteLength/1024).toFixed(0)+'KB');
+  }
+
+  // 2) Decodifica
+  const actx    = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
+  let decoded;
+  try {
+    decoded = await actx.decodeAudioData(buf.slice(0));
   } catch(e) {
-    const res2 = await fetch(mp3Url);
-    buf = await res2.arrayBuffer();
+    await actx.close();
+    throw new Error('decode audio: ' + e.message);
   }
 
-  const actx    = new (window.AudioContext || window.webkitAudioContext)();
-  const decoded = await actx.decodeAudioData(buf);
-  const sr      = decoded.sampleRate;
-  const startSample = Math.floor(startSec * sr);
-  const endSample   = Math.min(Math.ceil(endSec * sr), decoded.length);
-  const length      = endSample - startSample;
+  const sr         = decoded.sampleRate;
+  const startSmp   = Math.max(0, Math.floor(startSec * sr));
+  const endSmp     = Math.min(decoded.length, Math.ceil(endSec * sr));
+  const trimLen    = endSmp - startSmp;
+  if(trimLen <= 0) { await actx.close(); throw new Error('trim vazio'); }
 
-  // Cria buffer apenas com o trecho
-  const trimBuf = actx.createBuffer(decoded.numberOfChannels, length, sr);
-  for(let ch = 0; ch < decoded.numberOfChannels; ch++) {
-    const src  = decoded.getChannelData(ch).subarray(startSample, endSample);
-    trimBuf.copyToChannel(src, ch);
+  // 3) Cria buffer do trecho
+  const nCh    = decoded.numberOfChannels;
+  const trimBuf = actx.createBuffer(nCh, trimLen, sr);
+  for(let ch = 0; ch < nCh; ch++) {
+    trimBuf.copyToChannel(decoded.getChannelData(ch).subarray(startSmp, endSmp), ch);
   }
 
-  // Re-codifica o trecho para Opus/WebM via MediaRecorder
+  // 4) Re-codifica via MediaRecorder (Opus 96kbps)
   const dest = actx.createMediaStreamDestination();
-  const src2 = actx.createBufferSource();
-  src2.buffer = trimBuf;
-  src2.connect(dest);
+  const src  = actx.createBufferSource();
+  src.buffer = trimBuf;
+  src.connect(dest);
 
-  const opusMime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-    ? 'audio/webm;codecs=opus' : 'audio/webm';
+  // Melhor mime disponível
+  const MIMES = ['audio/webm;codecs=opus','audio/ogg;codecs=opus','audio/webm'];
+  const mime  = MIMES.find(m => { try{ return MediaRecorder.isTypeSupported(m); }catch(e){ return false; } })
+              || 'audio/webm';
 
   const chunks = [];
-  const rec = new MediaRecorder(dest.stream, { mimeType: opusMime, audioBitsPerSecond: 96_000 });
-  rec.ondataavailable = e => { if(e.data.size) chunks.push(e.data); };
+  const rec    = new MediaRecorder(dest.stream, { mimeType: mime, audioBitsPerSecond: 96_000 });
+  rec.ondataavailable = e => { if(e.data && e.data.size > 0) chunks.push(e.data); };
 
-  const blob = await new Promise((res, rej) => {
-    rec.onstop = () => res(new Blob(chunks, { type: opusMime }));
-    rec.onerror = rej;
-    rec.start(200);
-    src2.start(0);
-    src2.onended = () => { try{ rec.stop(); }catch(_){} };
-    setTimeout(() => { try{ rec.stop(); src2.stop(); }catch(_){} }, (length/sr + 2) * 1000);
+  const blob = await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      try{ rec.stop(); src.stop(); }catch(_){}
+      reject(new Error('trim timeout'));
+    }, (trimLen/sr + 5) * 1000);
+
+    rec.onstop = () => {
+      clearTimeout(timeout);
+      resolve(new Blob(chunks, { type: mime }));
+    };
+    rec.onerror = e => { clearTimeout(timeout); reject(e.error || e); };
+    rec.start(100);
+    src.start(0);
+    src.onended = () => { setTimeout(() => { try{ rec.stop(); }catch(_){} }, 200); };
   });
 
   await actx.close();
-  const dur  = Math.round(endSec - startSec);
-  const ext  = opusMime.includes('opus') ? '.opus' : '.webm';
-  const file = new File([blob], 'music_trim_' + dur + 's' + ext, { type: opusMime });
-  console.log(`[editor] trim ${startSec.toFixed(1)}s–${endSec.toFixed(1)}s → ${(file.size/1024).toFixed(0)}KB Opus`);
+
+  const ext  = mime.includes('ogg') ? '.ogg' : '.webm';
+  const dur  = (endSec - startSec).toFixed(1);
+  const file = new File([blob], `music_${dur}s${ext}`, { type: mime });
+  console.log(`[trim] ${startSec.toFixed(1)}s→${endSec.toFixed(1)}s | ${(blob.size/1024).toFixed(0)}KB ${mime}`);
   return file;
 }
 
 
-// Upload direto de arquivo de áudio para R2 via presign (sem pipeline de moderação)
+// Upload de áudio cortado direto para R2 (presign manual — sem pipeline de moderação)
+// Garante filename com extensão correta e context=musicas_catalog
 async function _uploadAudioDirectR2(audioFile) {
+  // Normaliza o tipo e extensão
+  const ct  = audioFile.type || 'audio/webm';
+  const ext = ct.includes('opus') ? '.opus' : ct.includes('webm') ? '.webm' : '.mp3';
+  const safeName = ('music_' + Date.now() + ext).replace(/[^a-zA-Z0-9._-]/g,'_');
+
+  // Cria novo File com nome correto para o presign
+  const namedFile = new File([audioFile], safeName, { type: ct });
+
+  // Salva e força o context correto
+  const prevCtx = window._oaUploadContext;
+  window._oaUploadContext = 'musicas_catalog';
+
   try {
-    // Obtém presign do Worker
-    const pres = await r2GetPresign(audioFile);
-    // PUT direto no R2
+    // 1) Pede presign ao Worker
+    const pres = await r2GetPresign(namedFile);
+
+    // 2) PUT direto no R2
     const r = await fetch(pres.uploadUrl, {
-      method: 'PUT',
-      headers: { 'Content-Type': audioFile.type || 'audio/webm' },
-      body: audioFile
+      method:  'PUT',
+      headers: { 'Content-Type': ct },
+      body:    namedFile
     });
-    if(!r.ok) throw new Error('R2 audio PUT ' + r.status);
+    if(!r.ok) {
+      const txt = await r.text().catch(()=>'');
+      throw new Error('R2 PUT ' + r.status + ' ' + txt);
+    }
+
+    window._oaUploadContext = prevCtx;
+    console.log('[music-upload] OK →', pres.publicUrl, (namedFile.size/1024).toFixed(0)+'KB');
     return pres.publicUrl;
+
   } catch(e) {
-    console.error('[audio-upload]', e);
+    window._oaUploadContext = prevCtx;
+    console.error('[music-upload] ERRO:', e.message);
     throw e;
   }
 }
@@ -23093,7 +23162,7 @@ function _renderMusicHistory() {
         <div class="music-titulo">${xss(m.titulo)}</div>
         <div class="music-artista">${xss(m.artista)} <span style="color:var(--neon-yellow);font-size:9px;">· ${m._savedDur}s</span></div>
       </div>
-      <button class="music-play-mini" onclick="event.stopPropagation();toggleMusicPreview('${m.audio_mp3||''}','hist_${m.external_id}',this)">▶</button>`;
+      <button class="music-play-mini" onclick="event.stopPropagation();toggleMusicPreview('${m.url_audio_opus||m.audio_mp3||''}','hist_${m.external_id}',this)">▶</button>`;
     item.onclick = () => {
       // Pré-configura o trim para o mesmo usado antes
       _musicSelected = m;
