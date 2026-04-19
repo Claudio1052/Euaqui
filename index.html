@@ -22848,13 +22848,16 @@ let _seVidDragActive = false;
 
 // Abre o editor após escolher um arquivo
 async function oaEditorOpen(file, type) {
-  _seFile      = file;
-  _seType      = type;
-  _seMuteOrig  = false;
-  _seTrimStart = 0;
-  _seTrimEnd   = 0;
-  _seMusicDur  = 0;
-  _seVideoEl   = null;
+  _seFile          = file;
+  _seType          = type;
+  _seMuteOrig      = false;
+  _seTrimStart     = 0;
+  _seTrimEnd       = 0;
+  _seMusicDur      = 0;
+  _seVideoEl       = null;
+  _seVidTrimStart  = 0;
+  _seVidTrimEnd    = 0;
+  _seVidDragActive = false;
 
   // Duração máxima da música = duração do vídeo (max 30s) ou 6s p/ foto
   _seMaxTrim = (type === 'video') ? 30 : 6;
@@ -22868,14 +22871,14 @@ async function oaEditorOpen(file, type) {
     _seMediaDur = await new Promise(res => {
       const v = document.createElement('video');
       v.src = objUrl; v.muted = true; v.playsInline = true; v.preload = 'metadata';
-      v.onloadedmetadata = () => { URL.revokeObjectURL(objUrl); res(Math.min(v.duration, 30)); };
-      v.onerror = () => res(30);
-      setTimeout(() => res(30), 5000);
+      v.onloadedmetadata = () => { URL.revokeObjectURL(objUrl); res(v.duration || 0); };
+      v.onerror = () => res(0);
+      setTimeout(() => res(0), 5000);
     });
     // Re-cria com nova objectUrl
     const url2 = URL.createObjectURL(file);
     const v2 = document.createElement('video');
-    v2.src = url2; v2.muted = _seMuteOrig; v2.loop = true;
+    v2.src = url2; v2.muted = _seMuteOrig; v2.loop = false;
     v2.playsInline = true; v2.autoplay = true;
     v2.style.cssText = 'width:100%;height:100%;object-fit:contain;';
     prev.appendChild(v2);
@@ -23715,8 +23718,13 @@ function _oaInitVideoTrim() {
     document.getElementById('oa-se-vid-trim-section').style.display = 'none';
     _seVidTrimStart = 0;
     _seVidTrimEnd   = _seMediaDur;
+    // Reativa loop nativo para vídeos curtos
+    if(_seVideoEl) _seVideoEl.loop = true;
     return;
   }
+
+  // Regarante que loop nativo está off (loop é controlado pelo rAF)
+  if(_seVideoEl) _seVideoEl.loop = false;
 
   // Vídeo > 30s: mostra timeline
   document.getElementById('oa-se-vid-trim-section').style.display = 'block';
@@ -23736,6 +23744,12 @@ function _oaInitVideoTrim() {
 
   _oaUpdateVideoTrim();
   _oaInitVideoTrimDrag();
+
+  // Posiciona o vídeo no início do trim e reproduz
+  if(_seVideoEl) {
+    _seVideoEl.currentTime = _seVidTrimStart;
+    _seVideoEl.play().catch(() => {});
+  }
 }
 
 function _oaUpdateVideoTrim() {
@@ -23760,8 +23774,8 @@ function _oaUpdateVideoTrim() {
   if(elD) elD.textContent = Math.round(_seVidTrimEnd - _seVidTrimStart) + 's selecionados';
 
   // Sincroniza o vídeo de preview com o início do trim
-  if(_seVideoEl && !_seVideoEl.paused) {
-    if(_seVideoEl.currentTime < _seVidTrimStart || _seVideoEl.currentTime > _seVidTrimEnd) {
+  if(_seVideoEl) {
+    if(_seVideoEl.currentTime < _seVidTrimStart || _seVideoEl.currentTime >= _seVidTrimEnd) {
       _seVideoEl.currentTime = _seVidTrimStart;
     }
   }
@@ -23864,15 +23878,17 @@ async function _oaTrimVideo(file, startSec, endSec) {
   return new Promise((resolve, reject) => {
     const objUrl = URL.createObjectURL(file);
     const video  = document.createElement('video');
-    video.src    = objUrl;
-    video.muted  = false;
+    video.src     = objUrl;
+    video.muted   = false;
     video.preload = 'auto';
+    video.playsInline = true;
 
-    video.onloadedmetadata = () => {
-      video.currentTime = startSec; // salta para o início do trim
-    };
+    let _started = false;
 
-    video.onseeked = () => {
+    function startRecording() {
+      if(_started) return;
+      _started = true;
+
       // Canvas para capturar frames
       const w = video.videoWidth  || 720;
       const h = video.videoHeight || 1280;
@@ -23928,6 +23944,17 @@ async function _oaTrimVideo(file, startSec, endSec) {
       setTimeout(() => {
         if(rec.state !== 'inactive') { try { rec.stop(); } catch(_) {} }
       }, (dur + 5) * 1000);
+    }
+
+    video.onloadedmetadata = () => {
+      video.currentTime = startSec; // salta para o início do trim
+    };
+
+    video.onseeked = startRecording;
+
+    // Fallback: se onseeked não disparar em 4s após metadata, tenta mesmo assim
+    video.oncanplaythrough = () => {
+      if(!_started && Math.abs(video.currentTime - startSec) < 1) startRecording();
     };
 
     video.onerror = () => { URL.revokeObjectURL(objUrl); reject(new Error('vídeo inválido')); };
