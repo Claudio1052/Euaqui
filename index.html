@@ -383,6 +383,42 @@ a{text-decoration:none;}
 }
 .oa-se-add-music:hover{ background:rgba(0,255,204,.10); }
 
+
+/* ── Music Picker: aba de histórico ─────────────────── */
+.music-tab-row{
+  display:flex;gap:0;
+  border-bottom:1px solid var(--border-glow);
+  margin-bottom:8px;
+}
+.music-tab-btn{
+  flex:1;padding:8px;
+  background:transparent;border:none;
+  font-family:'Space Mono',monospace;font-size:10px;
+  color:var(--text-muted);cursor:pointer;
+  border-bottom:2px solid transparent;
+  transition:all .15s;
+}
+.music-tab-btn.active{
+  color:var(--neon-cyan);
+  border-bottom-color:var(--neon-cyan);
+}
+/* Barra de tempo abaixo da waveform */
+.oa-se-timebar{
+  display:flex;align-items:center;gap:6px;
+  font-family:'VT323',monospace;font-size:14px;
+  color:var(--text-muted);
+}
+.oa-se-timebar-track{
+  flex:1;height:6px;border-radius:3px;
+  background:rgba(255,255,255,.08);
+  position:relative;cursor:pointer;
+}
+.oa-se-timebar-fill{
+  height:100%;border-radius:3px;
+  background:linear-gradient(90deg,var(--neon-cyan),var(--neon-pink));
+  pointer-events:none;
+}
+
 /* LOADING */
 #loading-screen{position:fixed;inset:0;background:var(--bg-deep);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;transition:opacity .4s;}
 .boot-logo{font-family:'VT323',monospace;font-size:80px;color:var(--neon-cyan);text-shadow:0 0 20px var(--neon-cyan),0 0 40px rgba(0,255,204,.5);}
@@ -21484,8 +21520,12 @@ async function oaPublish(){
         const parts = status.split(':');
         const pct = parseInt(parts[1]||'0',10);
         const label = parts.slice(2).join(':') || '';
-        fill.style.width = pct+'%';
-        txt.textContent = pct+'% ' + label;
+        if(window._oaEditorProgressCb){
+          window._oaEditorProgressCb(pct/100, label);
+        } else {
+          if(fill) fill.style.width = pct+'%';
+          if(txt)  txt.textContent = pct+'% ' + label;
+        }
       }
     });
 
@@ -21500,10 +21540,13 @@ async function oaPublish(){
       try{
         const _ma = window._musicAttached;
         if(_ma._trimmedFile){
-          // Trecho já cortado — sobe direto via presign (pipeline não suporta audio)
-          window._oaUploadContext = 'musicas_catalog';
-          const _trimUrl = await _uploadAudioDirectR2(_ma._trimmedFile);
-          window._oaUploadContext = null;
+          // Usa URL já subida pelo editor (evita duplo upload)
+          const _trimUrl = _ma._preUploadedUrl || await (async()=>{
+            window._oaUploadContext = 'musicas_catalog';
+            const u = await _uploadAudioDirectR2(_ma._trimmedFile);
+            window._oaUploadContext = null;
+            return u;
+          })();
           _oaMusicData = {
             external_id:    _ma.external_id + '_' + Math.round(_ma._trimStart) + '_' + Math.round(_ma._trimEnd),
             titulo:         _ma.titulo,
@@ -21545,6 +21588,11 @@ async function oaPublish(){
     // Reset flags de negócio e música
     window._oaPublishIsBiz = false;
     window._oaBizContext = null;
+    // Salva a música no histórico antes de limpar
+    if(window._musicAttached) {
+      const _dur = window._musicAttached._trimDuration || _seMaxTrim || 6;
+      _saveMusicToHistory(window._musicAttached, _dur);
+    }
     window._musicAttached = null; window._musicMuteVideo = false;
     _clearMusicPill('story');
     _oaPickedFile = null; _oaPickedType = null;
@@ -21557,7 +21605,7 @@ async function oaPublish(){
   }finally{
     // Garante que a flag de contexto OA seja limpa sempre
     window._oaUploadContext = null;
-    btn.disabled = false; btn.textContent = '🚀 PUBLICAR';
+    if(btn){ btn.disabled = false; btn.textContent = '🚀 PUBLICAR'; }
   }
 }
 window.oaPublish = oaPublish;
@@ -21755,23 +21803,40 @@ function oaRenderItem(){
     try{
       const _sm = typeof it.music_data==='string' ? JSON.parse(it.music_data) : it.music_data;
       const _src = _sm?.url_audio_opus || _sm?.audio_mp3 || '';
-      if(_src && !oaViewer._storyMusicPlayer){
-        oaViewer._storyMusicPlayer = new Audio(_src);
-        oaViewer._storyMusicPlayer.loop = true;
-        oaViewer._storyMusicPlayer.volume = 0.7;
-      } else if(_src && oaViewer._storyMusicPlayer){
+      if(_src){
+        // Para e recria sempre — garante que começa do início com a URL correta
+        if(oaViewer._storyMusicPlayer){
+          try{ oaViewer._storyMusicPlayer.pause(); }catch(e){}
+        }
+        oaViewer._storyMusicPlayer = new Audio();
+        oaViewer._storyMusicPlayer.preload = 'auto';
+        oaViewer._storyMusicPlayer.loop    = true;
+        oaViewer._storyMusicPlayer.volume  = 0.75;
         oaViewer._storyMusicPlayer.src = _src;
+        // Play após carregar metadados (evita falha em mobile)
+        oaViewer._storyMusicPlayer.addEventListener('canplaythrough', ()=>{
+          oaViewer._storyMusicPlayer?.play().catch(()=>{});
+        }, { once:true });
+        // Fallback: tenta tocar direto após 800ms
+        setTimeout(()=>{
+          if(oaViewer._storyMusicPlayer?.paused){
+            oaViewer._storyMusicPlayer.play().catch(()=>{});
+          }
+        }, 800);
+        // Mostra mini player no head do viewer com ícone pulsante
+        const _mname = document.getElementById('oa-v-time');
+        if(_mname) _mname.innerHTML = `<span style="animation:oa-dot-blink .8s step-start infinite;display:inline-block;">🎵</span> ${_oaEscape(_sm.titulo||'')} <span style="color:var(--text-muted);font-size:10px;">· ${_oaTimeAgo(it.created_at)}</span>`;
       }
-      if(oaViewer._storyMusicPlayer && _src){
-        oaViewer._storyMusicPlayer.play().catch(()=>{});
-      }
-      // Mostra mini player no head do viewer
-      const _mname = document.getElementById('oa-v-time');
-      if(_mname) _mname.innerHTML = `🎵 ${_oaEscape(_sm.titulo||'')} <span style="color:var(--text-muted);">· ${_oaTimeAgo(it.created_at)}</span>`;
-    }catch(e){}
+    }catch(e){ console.warn('[story-music]', e); }
   } else {
     // Para música se story não tem
-    if(oaViewer._storyMusicPlayer){ oaViewer._storyMusicPlayer.pause(); }
+    if(oaViewer._storyMusicPlayer){
+      try{ oaViewer._storyMusicPlayer.pause(); }catch(e){}
+      oaViewer._storyMusicPlayer = null;
+    }
+    // Restaura o tempo normal no header
+    const _mname = document.getElementById('oa-v-time');
+    if(_mname) _mname.textContent = _oaTimeAgo(it.created_at);
   }
 
   // Pré-carrega a próxima mídia (UX mais suave)
@@ -22612,7 +22677,9 @@ function _oaEditorShowMusic(m) {
   _sePlayer.addEventListener('loadedmetadata', () => {
     _seMusicDur  = _sePlayer.duration || 60;
     _seTrimStart = 0;
-    _seTrimEnd   = Math.min(_seMaxTrim, _seMusicDur);
+    // Se vem do histórico com trim pré-definido, usa ele
+    const prefill = m._prefillTrim || 0;
+    _seTrimEnd   = Math.min(prefill > 0 ? prefill : _seMaxTrim, _seMusicDur);
     _oaEditorDrawWave();
     _oaEditorUpdateTrimLabels();
   }, { once: true });
@@ -22819,41 +22886,73 @@ async function oaEditorPublish() {
 
   _oaEditorStopPreview();
 
-  // Salva configs no contexto global
+  // Desabilita botão de publicar no editor
+  const pubBtn = document.querySelector('.oa-se-publish-btn');
+  if(pubBtn){ pubBtn.disabled = true; pubBtn.textContent = '⏳ Processando...'; }
+
+  // Fecha editor, abre modal de progresso
+  document.getElementById('oa-story-editor').classList.remove('on');
+  document.getElementById('oa-create-modal').classList.add('on');
+  document.getElementById('oa-c-actions').style.display  = 'none';
+  document.getElementById('oa-c-confirm').style.display  = 'none';
+
+  // Prepara barra de progresso com 3 etapas: mídia / música / publicando
+  const prog = document.getElementById('oa-c-progress');
+  const fill = document.getElementById('oa-c-progress-fill');
+  const txt  = document.getElementById('oa-c-progress-text');
+  if(prog) prog.style.display = 'block';
+
+  function setEditorProgress(pct, label) {
+    if(fill) fill.style.width = pct + '%';
+    if(txt)  txt.textContent  = pct + '% ' + label;
+  }
+
   window._musicMuteVideo = _seMuteOrig;
 
-  // Se tem música, corta o trecho selecionado
+  // ─ ETAPA 1: Cortar música (0–30%) ─────────────────────────────
   if(window._musicAttached && _seMusicDur > 0) {
-    showToast('✂️ Cortando trecho da música...','success');
+    setEditorProgress(5, '✂️ Cortando música...');
     try {
       const trimmedFile = await _oaEditorTrimAudio(
         window._musicAttached.audio_mp3 || window._musicAttached.url_audio_opus,
         _seTrimStart,
         _seTrimEnd
       );
-      // Substitui o arquivo de áudio pelo trecho cortado
       window._musicAttached._trimmedFile  = trimmedFile;
       window._musicAttached._trimStart    = _seTrimStart;
       window._musicAttached._trimEnd      = _seTrimEnd;
       window._musicAttached._trimDuration = _seTrimEnd - _seTrimStart;
+      setEditorProgress(25, '✂️ Música cortada!');
+
+      // ─ ETAPA 2: Upload da música (25–50%) ──────────────────────
+      setEditorProgress(30, '🎵 Enviando música...');
+      window._oaUploadContext = 'musicas_catalog';
+      const _trimUrl = await _uploadAudioDirectR2(trimmedFile);
+      window._oaUploadContext = null;
+      setEditorProgress(50, '🎵 Música enviada!');
+
+      // Prepara música data para usar no payload
+      window._musicAttached._preUploadedUrl = _trimUrl;
+
     } catch(e) {
-      console.warn('[editor] trim falhou, usa MP3 completo:', e.message);
+      console.warn('[editor] trim/upload falhou:', e.message);
+      window._oaUploadContext = null;
+      setEditorProgress(50, '⚠️ Música: usando original');
     }
   }
 
-  // Seta o arquivo e tipo para o oaPublish existente
+  // ─ ETAPA 3: Upload da mídia (50–95%) via oaPublish ────────────
   _oaPickedFile = _seFile;
   _oaPickedType = _seType;
 
-  // Fecha o editor e abre o progresso no modal original
-  document.getElementById('oa-story-editor').classList.remove('on');
-  document.getElementById('oa-create-modal').classList.add('on');
-  document.getElementById('oa-c-actions').style.display  = 'none';
-  document.getElementById('oa-c-confirm').style.display  = 'none';
-  document.getElementById('oa-c-progress').style.display = 'block';
+  // Injeta callback de progresso na etapa de mídia (mapeia 0-100% → 50-95%)
+  window._oaEditorProgressCb = (pct, label) => setEditorProgress(50 + Math.round(pct * 0.45), label);
 
-  // Publica usando o pipeline existente
+  setEditorProgress(50, '📤 Enviando mídia...');
   await oaPublish();
+
+  window._oaEditorProgressCb = null;
+  if(pubBtn){ pubBtn.disabled = false; pubBtn.textContent = '🚀 PUBLICAR STORY'; }
 }
 window.oaEditorPublish = oaEditorPublish;
 
@@ -22932,6 +23031,90 @@ async function _uploadAudioDirectR2(audioFile) {
     throw e;
   }
 }
+
+
+// ── Abas do Music Picker ──────────────────────────────────────────
+function switchMusicTab(tab) {
+  document.getElementById('mtab-search').classList.toggle('active', tab==='search');
+  document.getElementById('mtab-history').classList.toggle('active', tab==='history');
+  document.getElementById('music-panel-search').style.display  = tab==='search'  ? 'block' : 'none';
+  document.getElementById('music-panel-history').style.display = tab==='history' ? 'block' : 'none';
+  if(tab === 'history') _renderMusicHistory();
+}
+window.switchMusicTab = switchMusicTab;
+
+// ── Histórico de músicas usadas (localStorage, separado por duração) ──
+const MUSIC_HISTORY_KEY = 'euaqui_music_history';
+
+function _getMusicHistory() {
+  try { return JSON.parse(localStorage.getItem(MUSIC_HISTORY_KEY) || '[]'); }
+  catch(e) { return []; }
+}
+
+function _saveMusicToHistory(m, trimDuration) {
+  const hist  = _getMusicHistory();
+  const entry = { ...m, _savedDur: Math.round(trimDuration||0), _savedAt: Date.now() };
+  // Remove duplicata pelo external_id + duração
+  const filtered = hist.filter(h => !(h.external_id === m.external_id && h._savedDur === entry._savedDur));
+  filtered.unshift(entry);
+  // Máximo 30 entradas
+  const trimmed = filtered.slice(0, 30);
+  try { localStorage.setItem(MUSIC_HISTORY_KEY, JSON.stringify(trimmed)); } catch(e) {}
+}
+
+function _renderMusicHistory() {
+  const list = document.getElementById('music-history-list');
+  if(!list) return;
+  const hist = _getMusicHistory();
+  const maxDur = _seMaxTrim || 6;
+
+  // Filtra por duração compatível (6s ou 30s)
+  const compatible = hist.filter(h => {
+    if(maxDur <= 6)  return h._savedDur <= 6;
+    if(maxDur <= 30) return h._savedDur <= 30;
+    return true;
+  });
+
+  if(!compatible.length) {
+    list.innerHTML = `<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:11px;">
+      Nenhuma música de até ${maxDur}s usada ainda
+    </div>`;
+    return;
+  }
+
+  list.innerHTML = '';
+  compatible.forEach(m => {
+    const item = document.createElement('div');
+    item.className = 'music-result-item';
+    if(_musicSelected?.external_id === m.external_id) item.classList.add('selected');
+    item.innerHTML = `
+      <img class="music-capa" src="${m.capa_url||''}" alt="" onerror="this.style.display='none'">
+      <div class="music-info">
+        <div class="music-titulo">${xss(m.titulo)}</div>
+        <div class="music-artista">${xss(m.artista)} <span style="color:var(--neon-yellow);font-size:9px;">· ${m._savedDur}s</span></div>
+      </div>
+      <button class="music-play-mini" onclick="event.stopPropagation();toggleMusicPreview('${m.audio_mp3||''}','hist_${m.external_id}',this)">▶</button>`;
+    item.onclick = () => {
+      // Pré-configura o trim para o mesmo usado antes
+      _musicSelected = m;
+      _musicSelected._prefillTrim = m._savedDur;
+      document.querySelectorAll('#music-history-list .music-result-item').forEach(el=>el.classList.remove('selected'));
+      item.classList.add('selected');
+      _renderSelectedPreview(m);
+    };
+    list.appendChild(item);
+  });
+}
+
+// Salva no histórico após confirmar
+const _origConfirmMusicPicker = window.confirmMusicPicker;
+window.confirmMusicPicker = function() {
+  if(_musicSelected) {
+    const dur = Math.round(_seTrimEnd - _seTrimStart) || _seMaxTrim;
+    _saveMusicToHistory(_musicSelected, dur);
+  }
+  if(_origConfirmMusicPicker) _origConfirmMusicPicker();
+};
 
 window.oaLoadRail = oaLoadRail;
 
@@ -23212,9 +23395,23 @@ export default {
       🎵 Escolher Música
       <button onclick="closeMusicPicker()" style="margin-left:auto;background:none;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;">✕</button>
     </div>
-    <div class="music-search-row">
-      <input class="music-search-input" id="music-search-input" placeholder="Buscar música ou artista..." onkeydown="if(event.key==='Enter')searchMusic()">
-      <button class="music-search-btn" onclick="searchMusic()">🔍 Buscar</button>
+    <!-- Abas: Buscar / Usadas -->
+    <div class="music-tab-row">
+      <button class="music-tab-btn active" id="mtab-search" onclick="switchMusicTab('search')">🔍 Buscar</button>
+      <button class="music-tab-btn" id="mtab-history" onclick="switchMusicTab('history')">🕐 Usadas recentemente</button>
+    </div>
+    <!-- Painel buscar -->
+    <div id="music-panel-search">
+      <div class="music-search-row">
+        <input class="music-search-input" id="music-search-input" placeholder="Buscar música ou artista..." onkeydown="if(event.key==='Enter')searchMusic()">
+        <button class="music-search-btn" onclick="searchMusic()">🔍 Buscar</button>
+      </div>
+    </div>
+    <!-- Painel histórico -->
+    <div id="music-panel-history" style="display:none;">
+      <div class="music-results" id="music-history-list" style="max-height:200px;">
+        <div style="text-align:center;padding:20px;color:var(--text-muted);font-size:11px;">Nenhuma música usada ainda</div>
+      </div>
     </div>
     <!-- Opção de mudo para vídeo -->
     <div id="music-mute-option" style="display:none;align-items:center;gap:8px;padding:6px 10px;background:rgba(255,204,0,.06);border:1px solid rgba(255,204,0,.2);border-radius:10px;">
