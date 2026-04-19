@@ -8562,7 +8562,7 @@ async function compressVideo(file, onProgress){
   try{
     if(typeof MediaRecorder === 'undefined'){
       console.warn('[MediaRecorder] não suportado, enviando original');
-      if(onProgress) onProgress(1);
+      if(onProgress) onProgress(1); // ✅ avança barra
       return file;
     }
     const url = URL.createObjectURL(file);
@@ -8626,7 +8626,7 @@ async function compressVideo(file, onProgress){
       console.warn('[compress] nenhum MIME suportado, enviando original');
       URL.revokeObjectURL(url);
       if(_actx) _actx.close().catch(()=>{});
-      if(onProgress) onProgress(1);
+      if(onProgress) onProgress(1); // ✅ avança barra
       return file;
     }
     console.log('[compress] MIME:', mimeType);
@@ -8651,6 +8651,7 @@ async function compressVideo(file, onProgress){
         const name = file.name.replace(/\.[^.]+$/, '') + ext;
         const out  = new File([blob], name, { type: outType });
         console.log(`[compress] saída: ${(out.size/1024/1024).toFixed(1)}MB (${Math.round(out.size/file.size*100)}% do original)`);
+        if(onProgress) onProgress(1); // ✅ garante que a barra chegue a 100% da fase de compressão
         resolve(out);
       };
       rec.onerror = e=>{ stop(); reject(e.error||new Error('MediaRecorder erro')); };
@@ -23295,7 +23296,7 @@ async function oaEditorPublish() {
   // Pipeline interno emite: 2(verif) → 5(compress) → 80(compress) → 82(presign) → 88(upload) → 100(pronto)
   // Mapeamos 0-100 do pipeline → 55-95% na barra do editor
   window._oaEditorProgressCb = (pct, label) => {
-    const p = 55 + Math.round(pct * 0.40);
+    const p = 55 + Math.round(pct * 40);
     // Traduz labels internos para português claro
     let lbl = label;
     if(label.toLowerCase().includes('verif'))    lbl = '🔍 Verificando conteúdo...';
