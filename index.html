@@ -23203,61 +23203,41 @@ async function oaEditorPublish() {
   document.getElementById('oa-c-actions').style.display  = 'none';
   document.getElementById('oa-c-confirm').style.display  = 'none';
 
-  // Prepara barra de progresso com 3 etapas: mídia / música / publicando
+  // Prepara barra de progresso
   const prog = document.getElementById('oa-c-progress');
   const fill = document.getElementById('oa-c-progress-fill');
   const txt  = document.getElementById('oa-c-progress-text');
   if(prog) prog.style.display = 'block';
-
-  // ── Ticker de progresso suave ────────────────────────────────────────
-  // Anima a barra suavemente entre etapas sem depender de callbacks internos
-  let _targetPct = 2;
-  let _currentPct = 0;
-  let _targetLabel = '🚀 Iniciando...';
-  let _tickerRunning = true;
+  // CSS transition garante animação suave sem ticker
+  if(fill) fill.style.transition = 'width 0.4s ease';
 
   function setEditorProgress(pct, label) {
-    _targetPct   = pct;
-    _targetLabel = label;
     if(fill) fill.style.width = pct + '%';
     if(txt)  txt.textContent  = pct + '% ' + label;
   }
 
-  // Ticker que avança lentamente até _targetPct (garante movimento visual constante)
-  function _runTicker() {
-    if(!_tickerRunning) return;
-    if(fill && txt && _currentPct < _targetPct - 0.5) {
-      _currentPct += Math.max(0.05, (_targetPct - _currentPct) * 0.04);
-      const display = Math.floor(_currentPct);
-      fill.style.width = display + '%';
-      txt.textContent  = display + '% ' + _targetLabel;
-    }
-    requestAnimationFrame(_runTicker);
-  }
-  requestAnimationFrame(_runTicker);
-
   window._musicMuteVideo = _seMuteOrig;
 
   // ─── MAPA DE PROGRESSO ──────────────────────────────────────────────
-  // 0-5%   → iniciando
-  // 5-20%  → cortando música
-  // 20-25% → enviando música ao R2
-  // 25-50% → cortando vídeo (em tempo real)
-  // 50-55% → preparando envio
-  // 55-90% → comprimindo + enviando ao R2
-  // 90-98% → salvando no banco
-  // 100%   → publicado!
+  // 2%    → iniciando
+  // 5-18% → cortando música
+  // 20-25%→ enviando música
+  // 25-50%→ cortando vídeo (em tempo real)
+  // 50%   → vídeo cortado / preparando
+  // 55%   → comprimindo vídeo (pipeline interno emite 55→88%)
+  // 88%   → enviando ao R2
+  // 95%   → gravando no banco
+  // 100%  → publicado!
   // ────────────────────────────────────────────────────────────────────
 
   setEditorProgress(2, '🚀 Iniciando...');
 
-  // ─ ETAPA 1 e 2: Cortar e subir música (pula se já está no R2) ──────
+  // ─ ETAPA 1 e 2: Música ──────────────────────────────────────────────
   if(window._musicAttached) {
     const _ma = window._musicAttached;
 
     if(_ma._fromHistory && _ma._preUploadedUrl) {
       setEditorProgress(20, '🎵 Música já no R2...');
-      console.log('[editor] música do histórico — usando URL do R2:', _ma._preUploadedUrl);
 
     } else if(_seMusicDur > 0) {
       setEditorProgress(5, '✂️ Cortando música...');
@@ -23294,7 +23274,6 @@ async function oaEditorPublish() {
       _finalFile = await _oaTrimVideo(
         _seFile, _seVidTrimStart, _seVidTrimEnd,
         (frac) => {
-          // frac: 0→1 durante o corte → mapeia para 25%→50%
           const p = 25 + Math.round(frac * 25);
           setEditorProgress(p, `✂️ Cortando vídeo... ${Math.round(frac*100)}%`);
         }
@@ -23312,10 +23291,19 @@ async function oaEditorPublish() {
   _oaPickedFile = _finalFile;
   _oaPickedType = _seType;
 
-  // Injeta callback de progresso na etapa de mídia (mapeia 0-100% → 55-90%)
+  // Injeta callback de progresso na etapa de mídia
+  // Pipeline interno emite: 2(verif) → 5(compress) → 80(compress) → 82(presign) → 88(upload) → 100(pronto)
+  // Mapeamos 0-100 do pipeline → 55-95% na barra do editor
   window._oaEditorProgressCb = (pct, label) => {
-    const p = 55 + Math.round(pct * 0.35);
-    setEditorProgress(p, label);
+    const p = 55 + Math.round(pct * 0.40);
+    // Traduz labels internos para português claro
+    let lbl = label;
+    if(label.toLowerCase().includes('verif'))    lbl = '🔍 Verificando conteúdo...';
+    if(label.toLowerCase().includes('compress'))  lbl = '🗜️ Comprimindo vídeo...';
+    if(label.toLowerCase().includes('envi'))      lbl = '📤 Enviando para o servidor...';
+    if(label.toLowerCase().includes('otimiz'))    lbl = '⚡ Otimizando vídeo...';
+    if(label.toLowerCase().includes('pronto'))    lbl = '✅ Vídeo enviado!';
+    setEditorProgress(Math.min(p, 95), lbl);
   };
 
   // Bloqueia o oaCloseCreate durante o publish para controlar o fechamento nós mesmos
@@ -23323,19 +23311,18 @@ async function oaEditorPublish() {
   let _closePending = false;
   window.oaCloseCreate = () => { _closePending = true; };
 
-  setEditorProgress(55, '📤 Comprimindo e enviando...');
+  setEditorProgress(55, '🔍 Verificando conteúdo...');
   await oaPublish();
 
   // Restaura o close original
   window.oaCloseCreate = _origClose;
   window._oaEditorProgressCb = null;
 
-  // Para o ticker, anima manualmente até 100%
-  _tickerRunning = false;
-  setEditorProgress(98, '💾 Salvando OlheAqui...');
+  // Etapa final — banco de dados e fechamento
+  setEditorProgress(95, '💾 Salvando OlheAqui...');
   await new Promise(r => setTimeout(r, 400));
   setEditorProgress(100, '✅ Publicado!');
-  await new Promise(r => setTimeout(r, 700));
+  await new Promise(r => setTimeout(r, 800));
   if(_closePending) _origClose();
 
   if(pubBtn){ pubBtn.disabled = false; pubBtn.textContent = '🚀 PUBLICAR STORY'; }
