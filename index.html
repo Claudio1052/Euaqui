@@ -304,9 +304,12 @@ a{text-decoration:none;}
   display:flex;justify-content:space-between;
 }
 .oa-se-waveform{
-  position:relative;height:36px;border-radius:6px;
-  background:rgba(0,255,204,.06);border:1px solid rgba(0,255,204,.15);
-  overflow:hidden;cursor:pointer;
+  position:relative;height:52px;border-radius:8px; /* maior = mais fácil de tocar */
+  background:rgba(0,255,204,.06);border:1px solid rgba(0,255,204,.2);
+  overflow:visible; /* handles podem sair da área */
+  cursor:pointer;
+  touch-action:none;
+  user-select:none;
 }
 /* Barras fake de waveform */
 .oa-se-wave-bars{
@@ -326,17 +329,18 @@ a{text-decoration:none;}
 }
 /* Handle esquerdo e direito */
 .oa-se-handle{
-  position:absolute;top:0;bottom:0;width:16px;
+  position:absolute;top:-4px;bottom:-4px;width:28px; /* maior área de toque */
   display:flex;align-items:center;justify-content:center;
-  cursor:ew-resize;z-index:2;
+  cursor:ew-resize;z-index:4;
+  touch-action:none;
 }
 .oa-se-handle::after{
-  content:'';width:4px;height:22px;
-  background:var(--neon-cyan);border-radius:2px;
-  box-shadow:0 0 6px var(--neon-cyan);
+  content:'';width:5px;height:28px;
+  background:var(--neon-cyan);border-radius:3px;
+  box-shadow:0 0 8px var(--neon-cyan), 0 0 16px rgba(0,255,204,.4);
 }
-#oa-se-handle-l{ left:-8px; }
-#oa-se-handle-r{ right:-8px; }
+#oa-se-handle-l{ left:-14px; }
+#oa-se-handle-r{ right:-14px; }
 /* Barra de tempo atual */
 .oa-se-playhead{
   position:absolute;top:0;bottom:0;width:2px;
@@ -21461,12 +21465,12 @@ async function oaPublish(){
   if(!CU){ showToast('Faça login','error'); return; }
 
   const btn = document.getElementById('oa-c-publish');
-  btn.disabled = true; btn.textContent = '⏳ Enviando...';
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Enviando...'; }
 
   const prog = document.getElementById('oa-c-progress');
   const fill = document.getElementById('oa-c-progress-fill');
   const txt  = document.getElementById('oa-c-progress-text');
-  prog.style.display = 'block';
+  if(prog) prog.style.display = 'block';
 
   try{
     // Sinaliza para o r2GetPresign que este upload é de "Olha Aqui"
@@ -21496,9 +21500,9 @@ async function oaPublish(){
       try{
         const _ma = window._musicAttached;
         if(_ma._trimmedFile){
-          // Trecho já cortado pelo editor — sobe direto para R2
+          // Trecho já cortado — sobe direto via presign (pipeline não suporta audio)
           window._oaUploadContext = 'musicas_catalog';
-          const _trimUrl = await uploadWithPipeline(_ma._trimmedFile, 'audio', ()=>{});
+          const _trimUrl = await _uploadAudioDirectR2(_ma._trimmedFile);
           window._oaUploadContext = null;
           _oaMusicData = {
             external_id:    _ma.external_id + '_' + Math.round(_ma._trimStart) + '_' + Math.round(_ma._trimEnd),
@@ -22429,7 +22433,7 @@ async function _ensureMusicCatalog(m, onProgress) {
 
     // 3) Sobe o Opus para R2 usando o pipeline existente
     window._oaUploadContext = 'musicas_catalog';
-    const uploadedAudioUrl = await uploadWithPipeline(opusFile, 'audio', ()=>{});
+    const uploadedAudioUrl = await _uploadAudioDirectR2(opusFile);
     window._oaUploadContext = null;
     urlAudio = uploadedAudioUrl;
     if(onProgress) onProgress(0.9);
@@ -22680,58 +22684,75 @@ function _oaEditorUpdateTrimLabels() {
   document.getElementById('oa-se-dur-lbl').textContent   = 'duração: ' + dur + 's';
 }
 
-// ── Drag dos handles de trim ─────────────────────────────────────────
+// ── Drag dos handles de trim (Pointer Events API — mouse + touch + stylus) ──
 function _oaEditorInitTrimDrag() {
   const wave    = document.getElementById('oa-se-waveform');
   const handleL = document.getElementById('oa-se-handle-l');
   const handleR = document.getElementById('oa-se-handle-r');
   if(!wave || !handleL || !handleR) return;
 
-  function pctFromEvent(e) {
+  function xToTime(clientX) {
     const rect = wave.getBoundingClientRect();
-    const x    = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
-    return Math.max(0, Math.min(1, x / rect.width));
-  }
-  function timeFromPct(p) { return p * _seMusicDur; }
-
-  // Handle esquerdo
-  function onDragL(e) {
-    e.preventDefault();
-    const t = timeFromPct(pctFromEvent(e));
-    _seTrimStart = Math.max(0, Math.min(t, _seTrimEnd - 1));
-    // Garante que a seleção não excede _seMaxTrim
-    if((_seTrimEnd - _seTrimStart) > _seMaxTrim) _seTrimStart = _seTrimEnd - _seMaxTrim;
-    _oaEditorUpdateRegion();
-    _oaEditorUpdateTrimLabels();
-  }
-  function onDragR(e) {
-    e.preventDefault();
-    const t = timeFromPct(pctFromEvent(e));
-    _seTrimEnd = Math.min(_seMusicDur, Math.max(t, _seTrimStart + 1));
-    // Garante que não excede _seMaxTrim
-    if((_seTrimEnd - _seTrimStart) > _seMaxTrim) _seTrimEnd = _seTrimStart + _seMaxTrim;
-    _oaEditorUpdateRegion();
-    _oaEditorUpdateTrimLabels();
+    const pct  = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    return pct * _seMusicDur;
   }
 
-  ['mousedown','touchstart'].forEach(ev => {
-    handleL.addEventListener(ev, e => {
-      e.stopPropagation();
-      const move = ev === 'mousedown' ? 'mousemove' : 'touchmove';
-      const up   = ev === 'mousedown' ? 'mouseup'   : 'touchend';
-      const onM  = onDragL;
-      document.addEventListener(move, onM, { passive:false });
-      document.addEventListener(up, () => document.removeEventListener(move, onM), { once:true });
-    }, { passive:false });
-    handleR.addEventListener(ev, e => {
-      e.stopPropagation();
-      const move = ev === 'mousedown' ? 'mousemove' : 'touchmove';
-      const up   = ev === 'mousedown' ? 'mouseup'   : 'touchend';
-      const onM  = onDragR;
-      document.addEventListener(move, onM, { passive:false });
-      document.addEventListener(up, () => document.removeEventListener(move, onM), { once:true });
-    }, { passive:false });
-  });
+  function startDrag(handle, isLeft) {
+    handle.setPointerCapture && handle.setPointerCapture(handle._pid);
+    const onMove = e => {
+      e.preventDefault();
+      const t = xToTime(e.clientX);
+      if(isLeft) {
+        _seTrimStart = Math.max(0, Math.min(t, _seTrimEnd - 0.5));
+        if((_seTrimEnd - _seTrimStart) > _seMaxTrim) _seTrimStart = _seTrimEnd - _seMaxTrim;
+      } else {
+        _seTrimEnd = Math.min(_seMusicDur, Math.max(t, _seTrimStart + 0.5));
+        if((_seTrimEnd - _seTrimStart) > _seMaxTrim) _seTrimEnd = _seTrimStart + _seMaxTrim;
+      }
+      _oaEditorUpdateRegion();
+      _oaEditorUpdateTrimLabels();
+    };
+    const onUp = () => {
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+      handle.removeEventListener('pointercancel', onUp);
+    };
+    handle.addEventListener('pointermove', onMove, { passive:false });
+    handle.addEventListener('pointerup',   onUp,   { once:true });
+    handle.addEventListener('pointercancel', onUp, { once:true });
+  }
+
+  handleL.addEventListener('pointerdown', e => {
+    e.preventDefault(); e.stopPropagation();
+    handleL._pid = e.pointerId;
+    try{ handleL.setPointerCapture(e.pointerId); }catch(_){}
+    startDrag(handleL, true);
+  }, { passive:false });
+
+  handleR.addEventListener('pointerdown', e => {
+    e.preventDefault(); e.stopPropagation();
+    handleR._pid = e.pointerId;
+    try{ handleR.setPointerCapture(e.pointerId); }catch(_){}
+    startDrag(handleR, false);
+  }, { passive:false });
+
+  // Clique na waveform move o handle mais próximo
+  wave.addEventListener('pointerdown', e => {
+    if(e.target === handleL || e.target === handleR) return;
+    const t    = xToTime(e.clientX);
+    const dL   = Math.abs(t - _seTrimStart);
+    const dR   = Math.abs(t - _seTrimEnd);
+    const isL  = dL <= dR;
+    if(isL) {
+      _seTrimStart = Math.max(0, Math.min(t, _seTrimEnd - 0.5));
+      if((_seTrimEnd - _seTrimStart) > _seMaxTrim) _seTrimStart = _seTrimEnd - _seMaxTrim;
+    } else {
+      _seTrimEnd = Math.min(_seMusicDur, Math.max(t, _seTrimStart + 0.5));
+      if((_seTrimEnd - _seTrimStart) > _seMaxTrim) _seTrimEnd = _seTrimStart + _seMaxTrim;
+    }
+    _oaEditorUpdateRegion();
+    _oaEditorUpdateTrimLabels();
+  }, { passive:true });
 }
 
 // ── Preview da música no trecho selecionado ──────────────────────────
@@ -22890,6 +22911,26 @@ async function _oaEditorTrimAudio(mp3Url, startSec, endSec) {
   const file = new File([blob], 'music_trim_' + dur + 's' + ext, { type: opusMime });
   console.log(`[editor] trim ${startSec.toFixed(1)}s–${endSec.toFixed(1)}s → ${(file.size/1024).toFixed(0)}KB Opus`);
   return file;
+}
+
+
+// Upload direto de arquivo de áudio para R2 via presign (sem pipeline de moderação)
+async function _uploadAudioDirectR2(audioFile) {
+  try {
+    // Obtém presign do Worker
+    const pres = await r2GetPresign(audioFile);
+    // PUT direto no R2
+    const r = await fetch(pres.uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': audioFile.type || 'audio/webm' },
+      body: audioFile
+    });
+    if(!r.ok) throw new Error('R2 audio PUT ' + r.status);
+    return pres.publicUrl;
+  } catch(e) {
+    console.error('[audio-upload]', e);
+    throw e;
+  }
 }
 
 window.oaLoadRail = oaLoadRail;
@@ -23152,7 +23193,6 @@ export default {
     <div class="oa-c-actions" id="oa-c-actions">
       <button class="oa-c-btn" onclick="oaPickMedia('image/*')">&#128247; Escolher Foto</button>
       <button class="oa-c-btn sec" onclick="oaPickMedia('video/*')">&#127916; Escolher Video (max 30s)</button>
-      <button class="oa-c-btn" onclick="openMusicPicker('story')" style="background:linear-gradient(135deg,rgba(255,51,102,.2),rgba(191,95,255,.2));border-color:var(--neon-pink);">&#127925; Adicionar Música</button>
       <button class="oa-c-btn cancel" onclick="oaCloseCreate()">Cancelar</button>
     </div>
     <div id="oa-music-pill-wrap" style="display:none;margin-top:6px;"></div>
