@@ -8718,9 +8718,8 @@ async function compressVideo(file, onProgress){
     }
     const url = URL.createObjectURL(file);
     const video = document.createElement('video');
-    // NÃO mutar aqui — o AudioContext precisa do áudio do elemento para capturar.
-    // O vídeo não é exibido, então não importa se o som vaza (está off-screen).
-    video.src = url; video.muted = false; video.playsInline = true; video.volume = 0.001;
+    // crossOrigin não necessário para blob URL
+    video.src = url; video.muted = true; video.playsInline = true; video.volume = 0;
     video.preload = 'auto';
     await new Promise((res,rej)=>{
       video.onloadedmetadata = ()=>res();
@@ -8755,8 +8754,7 @@ async function compressVideo(file, onProgress){
       const src  = _actx.createMediaElementSource(video);
       const dest = _actx.createMediaStreamDestination();
       src.connect(dest);
-      // NÃO conectar ao _actx.destination — evita vazar som pelo alto-falante.
-      // O áudio vai apenas para o MediaStream de gravação.
+      src.connect(_actx.destination); // mantém o áudio audível (ou mudo se video.muted)
       audioTracks = dest.stream.getAudioTracks();
       console.log('[compress] áudio via WebAudio OK, tracks:', audioTracks.length);
     } catch(e) {
@@ -8936,12 +8934,7 @@ async function uploadWithPipeline(file, type, setStatus){
   let compressed, thumbFile = null;
   try{
     if(type==='video'){
-      // ── Stories (olha_aqui): NÃO recomprime via canvas para preservar áudio original ──
-      // A recodificação via Canvas+WebAudio perde o áudio em muitos browsers mobile.
-      // Stories são sempre ≤30s e geralmente pequenos — envia o original direto.
-      const _isStoryCtx = (window._oaUploadContext === 'olha_aqui');
-
-      // Verificar duração antes de comprimir
+      // Vídeo: verificar duração antes de comprimir
       const _dur = await new Promise(res=>{
         const _v=document.createElement('video');
         _v.preload='metadata'; _v.src=URL.createObjectURL(file);
@@ -8954,15 +8947,7 @@ async function uploadWithPipeline(file, type, setStatus){
         err.userMessage=`🚫 Vídeo muito longo (${Math.round(_dur)}s). Máximo permitido: ${R2_MAX_VIDEO_DURATION_S}s (${Math.round(R2_MAX_VIDEO_DURATION_S/60)} min).`;
         throw err;
       }
-
-      if(_isStoryCtx){
-        // Story: usa original para não perder áudio
-        console.log('[pipeline] story context — enviando original sem recodificar (áudio preservado)');
-        compressed = file;
-        progress(80, 'Preparando envio');
-      } else {
-        compressed = await compressVideo(file, p=>progress(5+Math.round(p*75),'Comprimindo vídeo'));
-      }
+      compressed = await compressVideo(file, p=>progress(5+Math.round(p*75),'Comprimindo vídeo'));
     } else {
       // Imagem: gera feed + miniatura
       // compressImage retorna {feed: File, thumb: File}
@@ -22112,19 +22097,38 @@ function oaRenderItem(){
     wrap.appendChild(v);
 
     // Pré-verifica music_data para mutar ANTES de dar play
+    // ✅ FIX: só muta se mute_video=true. Se for falsy, mantém o áudio original do vídeo.
+    let _oaShouldMuteVideo = false;
     try {
       if(it.music_data) {
         const _preSm = typeof it.music_data==='string' ? JSON.parse(it.music_data) : it.music_data;
-        if(_preSm?.mute_video) {
-          v.muted  = true;
-          v.volume = 0;
-        }
+        _oaShouldMuteVideo = !!_preSm?.mute_video;
       }
     } catch(e) {}
+    if(_oaShouldMuteVideo) {
+      v.muted  = true;
+      v.volume = 0;
+    } else {
+      v.muted  = false;
+      v.volume = 1;
+    }
 
-    // Alguns browsers podem bloquear autoplay com som — tentamos dar play explicitamente
+    // Alguns browsers podem bloquear autoplay com som — tentamos dar play explicitamente.
+    // ✅ FIX: se o autoplay com som falhar, mutamos TEMPORARIAMENTE só para destravar,
+    // e re-ativamos o som ao primeiro toque do usuário (quando o vídeo não está marcado como mute).
     v.play().catch(()=>{
-      v.muted = true; v.play().catch(()=>{});
+      v.muted = true;
+      v.play().catch(()=>{});
+      if(!_oaShouldMuteVideo){
+        const _stage = document.getElementById('oa-v-stage');
+        if(_stage){
+          const _unlockVid = () => {
+            try { v.muted = false; v.volume = 1; } catch(e){}
+            _stage.removeEventListener('pointerdown', _unlockVid);
+          };
+          _stage.addEventListener('pointerdown', _unlockVid, { once:true, passive:true });
+        }
+      }
     });
   } else {
     // Imagem
@@ -22146,10 +22150,17 @@ function oaRenderItem(){
       const _sm = typeof it.music_data==='string' ? JSON.parse(it.music_data) : it.music_data;
       const _src = _sm?.url_audio_opus || _sm?.audio_mp3 || '';
 
-      // ✅ FIX: Silenciar vídeo original se mute_video=true
-      if(_sm?.mute_video && oaViewer.videoEl) {
-        oaViewer.videoEl.muted  = true;
-        oaViewer.videoEl.volume = 0;
+      // ✅ FIX: Silenciar vídeo original APENAS se mute_video=true.
+      //        Se mute_video for falsy, REAFIRMA que o vídeo deve tocar com áudio original
+      //        (evita que uma política de autoplay tenha deixado o vídeo mudo).
+      if(oaViewer.videoEl) {
+        if(_sm?.mute_video) {
+          oaViewer.videoEl.muted  = true;
+          oaViewer.videoEl.volume = 0;
+        } else {
+          oaViewer.videoEl.muted  = false;
+          oaViewer.videoEl.volume = 1;
+        }
       }
 
       if(_src){
@@ -24282,9 +24293,9 @@ function _oaInitVideoTrimDrag() {
 }
 
 
-// ── Corta trecho do vídeo usando MediaRecorder + WebAudio ──────────────
+// ── Corta trecho do vídeo usando MediaRecorder ─────────────────────
 // startSec: início do trecho | endSec: fim do trecho
-// Usa WebAudio (createMediaElementSource) — mais compatível com mobile que captureStream()
+// Não precisa de FFmpeg — usa a API nativa do browser
 async function _oaTrimVideo(file, startSec, endSec, onProgress) {
   const dur = endSec - startSec;
   if(dur <= 0 || dur > 30) throw new Error('trim inválido');
@@ -24292,73 +24303,54 @@ async function _oaTrimVideo(file, startSec, endSec, onProgress) {
   return new Promise((resolve, reject) => {
     const objUrl = URL.createObjectURL(file);
     const video  = document.createElement('video');
-    // NÃO mutar — WebAudio precisa do elemento não-muto para capturar áudio
-    video.src        = objUrl;
-    video.muted      = false;
-    video.volume     = 0.001; // quase inaudível (off-screen)
-    video.preload    = 'auto';
+    video.src     = objUrl;
+    video.muted   = true;   // sem áudio durante o corte (evita vazamento de som)
+    video.preload = 'auto';
     video.playsInline = true;
 
     let _started = false;
     let _progRaf = null;
-    let _actx    = null;
 
     function startRecording() {
       if(_started) return;
       _started = true;
 
-      // Canvas para capturar frames de vídeo
+      // Canvas para capturar frames
       const w = video.videoWidth  || 720;
       const h = video.videoHeight || 1280;
       const canvas = document.createElement('canvas');
       canvas.width = w; canvas.height = h;
       const ctx = canvas.getContext('2d');
+
+      // Stream do canvas + áudio do vídeo
       const vStream = canvas.captureStream(30);
-
-      // Áudio via WebAudio — mais confiável que captureStream() no mobile
-      let audioTracks = [];
+      let aStream;
       try {
-        _actx = new (window.AudioContext || window.webkitAudioContext)();
-        const src  = _actx.createMediaElementSource(video);
-        const dest = _actx.createMediaStreamDestination();
-        src.connect(dest); // NÃO conecta ao destination para não vazar som
-        audioTracks = dest.stream.getAudioTracks();
-        console.log('[vid-trim] áudio WebAudio OK, tracks:', audioTracks.length);
-      } catch(e) {
-        console.warn('[vid-trim] WebAudio falhou, tentando captureStream:', e.message);
-        // Fallback: captureStream direto do elemento
-        try {
-          const cs = video.captureStream ? video.captureStream() : (video.mozCaptureStream ? video.mozCaptureStream() : null);
-          if(cs) audioTracks = cs.getAudioTracks();
-        } catch(e2) { console.warn('[vid-trim] captureStream também falhou:', e2.message); }
-      }
+        aStream = video.captureStream ? video.captureStream() : (video.mozCaptureStream ? video.mozCaptureStream() : null);
+      } catch(e) { aStream = null; }
 
-      const tracks = [...vStream.getVideoTracks(), ...audioTracks];
+      const tracks = [...vStream.getVideoTracks()];
+      if(aStream) aStream.getAudioTracks().forEach(t => tracks.push(t));
       const combined = new MediaStream(tracks);
 
       // Mime preferido
-      const mimes = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
+      const mimes = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm'];
       const mime  = mimes.find(m => { try{ return MediaRecorder.isTypeSupported(m); }catch(e){ return false; }}) || 'video/webm';
 
       const chunks = [];
-      const rec = new MediaRecorder(combined, { mimeType: mime, videoBitsPerSecond: 2_500_000, audioBitsPerSecond: 128_000 });
-      rec.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
+      const rec = new MediaRecorder(combined, { mimeType: mime, videoBitsPerSecond: 2_000_000 });
+      rec.ondataavailable = e => { if(e.data.size) chunks.push(e.data); };
       rec.onstop = () => {
         if(_progRaf) cancelAnimationFrame(_progRaf);
-        if(_actx) _actx.close().catch(()=>{});
         URL.revokeObjectURL(objUrl);
         const blob = new Blob(chunks, { type: mime });
         const ext  = mime.includes('mp4') ? '.mp4' : '.webm';
         const out  = new File([blob], 'video_trim_'+Math.round(dur)+'s'+ext, { type: mime });
-        console.log(`[vid-trim] ${startSec.toFixed(1)}s→${endSec.toFixed(1)}s | ${(out.size/1024/1024).toFixed(1)}MB | audio tracks: ${audioTracks.length}`);
+        console.log(`[vid-trim] ${startSec.toFixed(1)}s→${endSec.toFixed(1)}s | ${(out.size/1024/1024).toFixed(1)}MB`);
         if(onProgress) onProgress(1);
         resolve(out);
       };
-      rec.onerror = e => {
-        if(_actx) _actx.close().catch(()=>{});
-        URL.revokeObjectURL(objUrl);
-        reject(e.error || e);
-      };
+      rec.onerror = e => { URL.revokeObjectURL(objUrl); reject(e.error || e); };
 
       // Grava por dur segundos
       rec.start(200);
@@ -24367,6 +24359,7 @@ async function _oaTrimVideo(file, startSec, endSec, onProgress) {
       const drawFrame = () => {
         if(video.paused || video.ended) return;
         ctx.drawImage(video, 0, 0, w, h);
+        // Emite progresso baseado no tempo atual dentro do trecho
         if(onProgress && dur > 0) {
           const elapsed = Math.max(0, video.currentTime - startSec);
           onProgress(Math.min(elapsed / dur, 0.98));
@@ -24377,25 +24370,27 @@ async function _oaTrimVideo(file, startSec, endSec, onProgress) {
 
       // Para após a duração do trim
       setTimeout(() => {
-        try { video.pause(); if(rec.state !== 'inactive') rec.stop(); } catch(e) {}
-      }, dur * 1000 + 400);
+        try { video.pause(); rec.stop(); } catch(e) {}
+      }, dur * 1000 + 300);
 
-      // Timeout de segurança
+      // Segurança: timeout máximo
       setTimeout(() => {
         if(rec.state !== 'inactive') { try { rec.stop(); } catch(_) {} }
-      }, (dur + 6) * 1000);
+      }, (dur + 5) * 1000);
     }
 
-    video.onloadedmetadata = () => { video.currentTime = startSec; };
+    video.onloadedmetadata = () => {
+      video.currentTime = startSec; // salta para o início do trim
+    };
+
     video.onseeked = startRecording;
+
+    // Fallback: se onseeked não disparar em 4s após metadata, tenta mesmo assim
     video.oncanplaythrough = () => {
       if(!_started && Math.abs(video.currentTime - startSec) < 1) startRecording();
     };
-    video.onerror = () => {
-      if(_actx) _actx.close().catch(()=>{});
-      URL.revokeObjectURL(objUrl);
-      reject(new Error('vídeo inválido'));
-    };
+
+    video.onerror = () => { URL.revokeObjectURL(objUrl); reject(new Error('vídeo inválido')); };
   });
 }
 
