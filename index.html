@@ -12183,6 +12183,10 @@ function setupRealtime(){
   // Polling fallback every 60s — Realtime já cobre msgs e notifs em tempo real
   clearInterval(_msgPollInterval);
   _msgPollInterval = setInterval(()=>{ pollNewMessages(); loadUnreadMsgCount(); loadNotifCount(); pollTickUpdates(); }, 120000); // 120s (era 60s) — economiza PostgREST egress
+
+  // ✅ Atualiza o rail do OlhaAqui a cada 3 minutos (stories expiram em 24h, não precisa ser mais frequente)
+  clearInterval(window._oaRailInterval);
+  window._oaRailInterval = setInterval(()=>{ if(typeof oaLoadRail==='function') oaLoadRail(); }, 180000);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -14607,7 +14611,6 @@ async function handleNotifNavigation(n){
 
     // ── OLHA AQUI! — stories ────────────────────────────────────
     case 'olha_aqui_new':
-    case 'olha_aqui_reaction':
     case 'olha_aqui_comm':
     case 'olha_aqui_biz':{
       // Navega para o feed principal onde fica o rail de stories
@@ -14626,7 +14629,7 @@ async function loadNotifTab(tabId){
   const typeMap={
     'nt-all':null,
     'nt-mentions':'mention',
-    'nt-social':['follow','like','comment','friend_request','friend_accept','call_missed','olha_aqui_reaction'],
+    'nt-social':['follow','like','comment','friend_request','friend_accept','call_missed'],
     'nt-system':['message','community_invite','community_post','community_live','olha_aqui_new','olha_aqui_comm','olha_aqui_biz']
   };
   const filter=typeMap[tabId];
@@ -14684,13 +14687,12 @@ async function loadNotifTab(tabId){
     biz_promo:'🏪',mention:'@',call_missed:'📞',share:'🔁',
     // ✅ Tipos de notificação do OlhaAqui
     olha_aqui_new:'👁️',
-    olha_aqui_reaction:'🎉',
     olha_aqui_comm:'🏘️',
     olha_aqui_biz:'🏪'
   };
 
   // Tipos OA que usam avatar especial
-  const OA_TYPES = new Set(['olha_aqui_new','olha_aqui_reaction','olha_aqui_comm','olha_aqui_biz']);
+  const OA_TYPES = new Set(['olha_aqui_new','olha_aqui_comm','olha_aqui_biz']);
 
   // ── Formata o texto exibido da notificação ──────────────────────
   // ATENÇÃO: apenas os tipos de comunidade têm texto personalizado.
@@ -14776,11 +14778,6 @@ async function loadNotifTab(tabId){
       const actor = meta.actor_username ? `<strong>@${xss(meta.actor_username)}</strong>` : `<strong>Alguém</strong>`;
       return `${actor} acabou de postar no <strong>Olha Aqui!</strong> 👁️`;
     }
-    if(n.type === 'olha_aqui_reaction'){
-      const actor = meta.actor_username ? `<strong>@${xss(meta.actor_username)}</strong>` : `<strong>Alguém</strong>`;
-      const emoji = xss(meta.emoji || '❤️');
-      return `${actor} reagiu ${emoji} à sua postagem no <strong>Olha Aqui!</strong>`;
-    }
     if(n.type === 'olha_aqui_comm'){
       const name = meta.comm_name ? `<strong>${xss(meta.comm_name)}</strong>` : `<strong>uma comunidade</strong>`;
       return `A comunidade ${name} acabou de postar no <strong>Olha Aqui!</strong> 🏘️`;
@@ -14856,7 +14853,7 @@ async function loadNotifTab(tabId){
     // ── Ícones OlhaAqui ──
     const isOaNotif = OA_TYPES.has(n.type);
     let oaAvatar = '';
-    if(n.type === 'olha_aqui_new' || n.type === 'olha_aqui_reaction'){
+    if(n.type === 'olha_aqui_new'){
       oaAvatar = (n.actor_id && _oaAvatarCache['actor_'+n.actor_id]) || '';
     } else if(n.type === 'olha_aqui_comm'){
       oaAvatar = (n.community_id && _oaAvatarCache['comm_'+n.community_id]) || '';
@@ -22666,24 +22663,6 @@ async function oaReact(emoji, btn){
       btn.classList.add('selected');
       // Dispara emojis subindo continuamente
       _oaStartFloatLoop(emoji);
-      // ✅ Notifica o dono do story (não notifica a si mesmo)
-      if(it.user_id && it.user_id !== CU.id){
-        try{
-          await db.from('notifications').insert({
-            user_id:   it.user_id,
-            actor_id:  CU.id,
-            type:      'olha_aqui_reaction',
-            content:   `@${CP?.username||'alguém'} reagiu ${emoji} ao seu Olha Aqui!`,
-            read:      false,
-            metadata:  {
-              actor_username: CP?.username || '',
-              actor_avatar:   CP?.avatar_url || '',
-              emoji:          emoji,
-              story_id:       it.id
-            }
-          });
-        }catch(e){ console.warn('[OA-notif-react]', e.message); }
-      }
     }
     // Atualiza badges de contagem
     const { data: rxData } = await db.from('olha_aqui_reactions')
