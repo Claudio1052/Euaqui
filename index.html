@@ -22304,6 +22304,9 @@ window.oaHoldEnd = oaHoldEnd;
 // Teclas (desktop)
 document.addEventListener('keydown', (e)=>{
   if(!oaViewer.open) return;
+  // Ignora atalhos de teclado quando o foco está num campo de texto
+  const _tag = document.activeElement?.tagName;
+  if(_tag === 'INPUT' || _tag === 'TEXTAREA') return;
   if(e.key === 'Escape'){ oaCloseViewer(); }
   else if(e.key === 'ArrowRight'){ oaNext(); }
   else if(e.key === 'ArrowLeft'){ oaPrev(); }
