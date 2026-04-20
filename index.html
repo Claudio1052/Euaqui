@@ -12848,42 +12848,42 @@ async function loadHomeAlerts(){
         (acts||[]).forEach(a=>{ _HA_oaCache['actor_'+a.id]=a.avatar_url||''; });
       }catch(e){}
     }
-    // Busca logos de lojas (olha_aqui_biz) — também usa metadata como fallback
-    const _haBizIds=[...new Set(_haOaNotifs.filter(n=>n.type==='olha_aqui_biz').map(n=>{
+    // LOJAS: prioridade 1 = logo embutida no content JSON, prioridade 2 = banco
+    const _haBizNotifs = _haOaNotifs.filter(n=>n.type==='olha_aqui_biz');
+    _haBizNotifs.forEach(n=>{
       const _d=_HA_parseOa(n);
-      return n.business_id||_d.biz_id||'';
-    }).filter(Boolean))];
+      if(_d.biz_logo && _d.biz_logo.startsWith('http')){
+        const bid=n.business_id||_d.biz_id||'';
+        if(bid) _HA_oaCache['biz_'+bid]=_d.biz_logo;
+        else    n._oaAv=_d.biz_logo;
+      }
+      if(!n.business_id && _d.biz_id) n.business_id=_d.biz_id;
+    });
+    const _haBizIds=[...new Set(_haBizNotifs.map(n=>n.business_id||'').filter(Boolean))];
     if(_haBizIds.length){
       try{
         const{data:bizs}=await db.from('businesses').select('id,logo_url').in('id',_haBizIds);
-        (bizs||[]).forEach(b=>{ _HA_oaCache['biz_'+b.id]=b.logo_url||''; });
+        (bizs||[]).forEach(b=>{ if(b.logo_url) _HA_oaCache['biz_'+b.id]=b.logo_url; });
       }catch(e){}
     }
-    // Fallback: logo do content prefixado ou metadata
-    _haOaNotifs.filter(n=>n.type==='olha_aqui_biz').forEach(n=>{
+    // COMUNIDADES: prioridade 1 = avatar embutido no content JSON, prioridade 2 = banco
+    const _haCommNotifs = _haOaNotifs.filter(n=>n.type==='olha_aqui_comm');
+    _haCommNotifs.forEach(n=>{
       const _d=_HA_parseOa(n);
-      const bid=n.business_id||_d.biz_id||'';
-      if(bid&&!_HA_oaCache['biz_'+bid]&&_d.biz_logo&&_d.biz_logo.startsWith('http')){_HA_oaCache['biz_'+bid]=_d.biz_logo;}
-      else if(!bid&&_d.biz_logo&&_d.biz_logo.startsWith('http')){ n._oaAv=_d.biz_logo; }
+      if(_d.comm_avatar && _d.comm_avatar.startsWith('http')){
+        const cid=n.community_id||_d.comm_id||'';
+        if(cid) _HA_oaCache['comm_'+cid]=_d.comm_avatar;
+        else    n._oaAv=_d.comm_avatar;
+      }
+      if(!n.community_id && _d.comm_id) n.community_id=_d.comm_id;
     });
-    // Busca avatares de comunidades (olha_aqui_comm) — também usa metadata
-    const _haCommIds=[...new Set(_haOaNotifs.filter(n=>n.type==='olha_aqui_comm').map(n=>{
-      const _d=_HA_parseOa(n);
-      return n.community_id||_d.comm_id||'';
-    }).filter(Boolean))];
+    const _haCommIds=[...new Set(_haCommNotifs.map(n=>n.community_id||'').filter(Boolean))];
     if(_haCommIds.length){
       try{
         const{data:comms}=await db.from('communities').select('id,avatar_url').in('id',_haCommIds);
-        (comms||[]).forEach(c=>{ _HA_oaCache['comm_'+c.id]=c.avatar_url||''; });
+        (comms||[]).forEach(c=>{ if(c.avatar_url) _HA_oaCache['comm_'+c.id]=c.avatar_url; });
       }catch(e){}
     }
-    // Fallback: avatar do content prefixado ou metadata
-    _haOaNotifs.filter(n=>n.type==='olha_aqui_comm').forEach(n=>{
-      const _d=_HA_parseOa(n);
-      const cid=n.community_id||_d.comm_id||'';
-      if(cid&&!_HA_oaCache['comm_'+cid]&&_d.comm_avatar&&_d.comm_avatar.startsWith('http')){_HA_oaCache['comm_'+cid]=_d.comm_avatar;}
-      else if(!cid&&_d.comm_avatar&&_d.comm_avatar.startsWith('http')){ n._oaAv=_d.comm_avatar; }
-    });
   }
   // Helper para resolver avatar OA no HA
   function _HA_oaAvatar(n){
@@ -15018,54 +15018,61 @@ async function loadNotifTab(tabId){
     return xss(n.content || 'Nova notificação');
   }
 
-  // ✅ Pré-carrega avatares para notificações OlhaAqui
+  // Pré-carrega avatares para notificações OlhaAqui
   const oaNotifs = data.filter(n => OA_TYPES.has(n.type));
   const _oaAvatarCache = {};
   if(oaNotifs.length){
-    const _oaActorIds = [...new Set(oaNotifs.filter(n=>n.actor_id).map(n=>n.actor_id))];
+    // Avatares de pessoas (olha_aqui_new) — apenas para tipo pessoal
+    const _oaActorIds = [...new Set(oaNotifs.filter(n=>n.type==='olha_aqui_new'&&n.actor_id).map(n=>n.actor_id))];
     if(_oaActorIds.length){
       try{
         const{data:actors}=await db.from('profiles').select('id,username,avatar_url').in('id',_oaActorIds);
         (actors||[]).forEach(a=>{ _oaAvatarCache['actor_'+a.id] = a.avatar_url || ''; });
       }catch(e){}
     }
-    // Coleta business_id do content prefixado OU campo direto OU metadata
-    const _oaBizIds=[...new Set(oaNotifs.filter(n=>n.type==='olha_aqui_biz').map(n=>{
-      const _d=_parseOaContent(n);
-      return n.business_id||_d.biz_id||'';
-    }).filter(Boolean))];
+
+    // LOJAS: prioridade 1 = logo embutida no content JSON, prioridade 2 = banco
+    const _bizOaNotifs = oaNotifs.filter(n=>n.type==='olha_aqui_biz');
+    _bizOaNotifs.forEach(n=>{
+      const _d = _parseOaContent(n);
+      // Aplica logo do content JSON imediatamente (vem embutida na notificacao)
+      if(_d.biz_logo && _d.biz_logo.startsWith('http')){
+        const bid = n.business_id || _d.biz_id || '';
+        if(bid) _oaAvatarCache['biz_'+bid] = _d.biz_logo;
+        else    n._oaAvatarDirect = _d.biz_logo;
+      }
+      // Garante que business_id fica populado mesmo vindo do content
+      if(!n.business_id && _d.biz_id) n.business_id = _d.biz_id;
+    });
+    // Busca logo atualizada no banco (pode ser mais recente que a embutida)
+    const _oaBizIds=[...new Set(_bizOaNotifs.map(n=>n.business_id||'').filter(Boolean))];
     if(_oaBizIds.length){
       try{
         const{data:bizs}=await db.from('businesses').select('id,name,logo_url').in('id',_oaBizIds);
-        (bizs||[]).forEach(b=>{ _oaAvatarCache['biz_'+b.id]=b.logo_url||''; _bizLogoCache[b.id]=b.logo_url||''; });
+        (bizs||[]).forEach(b=>{
+          if(b.logo_url){ _oaAvatarCache['biz_'+b.id]=b.logo_url; _bizLogoCache[b.id]=b.logo_url; }
+        });
       }catch(e){}
     }
-    // Fallback: logo do content prefixado ou metadata
-    oaNotifs.filter(n=>n.type==='olha_aqui_biz').forEach(n=>{
-      const _d=_parseOaContent(n);
-      const bid=n.business_id||_d.biz_id||'';
-      if(bid&&!_oaAvatarCache['biz_'+bid]&&_d.biz_logo&&_d.biz_logo.startsWith('http')){_oaAvatarCache['biz_'+bid]=_d.biz_logo;}
-      // Sem bid mas logo disponível: cacheia com chave do id da notificação
-      else if(!bid&&_d.biz_logo&&_d.biz_logo.startsWith('http')){ n._oaAvatarDirect=_d.biz_logo; }
+
+    // COMUNIDADES: prioridade 1 = avatar embutido no content JSON, prioridade 2 = banco
+    const _commOaNotifs = oaNotifs.filter(n=>n.type==='olha_aqui_comm');
+    _commOaNotifs.forEach(n=>{
+      const _d = _parseOaContent(n);
+      if(_d.comm_avatar && _d.comm_avatar.startsWith('http')){
+        const cid = n.community_id || _d.comm_id || '';
+        if(cid) _oaAvatarCache['comm_'+cid] = _d.comm_avatar;
+        else    n._oaAvatarDirect = _d.comm_avatar;
+      }
+      if(!n.community_id && _d.comm_id) n.community_id = _d.comm_id;
     });
-    // Coleta community_id do content prefixado OU campo direto OU metadata
-    const _oaCommIds=[...new Set(oaNotifs.filter(n=>n.type==='olha_aqui_comm').map(n=>{
-      const _d=_parseOaContent(n);
-      return n.community_id||_d.comm_id||'';
-    }).filter(Boolean))];
+    const _oaCommIds=[...new Set(_commOaNotifs.map(n=>n.community_id||'').filter(Boolean))];
     if(_oaCommIds.length){
       try{
         const{data:comms}=await db.from('communities').select('id,name,avatar_url').in('id',_oaCommIds);
-        (comms||[]).forEach(c=>{ _oaAvatarCache['comm_'+c.id]=c.avatar_url||''; });
+        (comms||[]).forEach(c=>{ if(c.avatar_url) _oaAvatarCache['comm_'+c.id]=c.avatar_url; });
       }catch(e){}
     }
-    // Fallback: avatar do content prefixado ou metadata
-    oaNotifs.filter(n=>n.type==='olha_aqui_comm').forEach(n=>{
-      const _d=_parseOaContent(n);
-      const cid=n.community_id||_d.comm_id||'';
-      if(cid&&!_oaAvatarCache['comm_'+cid]&&_d.comm_avatar&&_d.comm_avatar.startsWith('http')){_oaAvatarCache['comm_'+cid]=_d.comm_avatar;}
-      else if(!cid&&_d.comm_avatar&&_d.comm_avatar.startsWith('http')){ n._oaAvatarDirect=_d.comm_avatar; }
-    });
   }
 
   el.innerHTML=data.map(n=>{
@@ -22056,7 +22063,12 @@ async function oaUseBizImage(imgUrl){
       user_id:CU.id, media_url:imgUrl, media_type:'image', expires_at:expiresAt, metadata:meta });
     if(error) throw error;
     showToast('✅ Story publicado! Expira em 24h.','success');
+
+    // ✅ Captura contexto ANTES de resetar e dispara notificações para seguidores da loja
+    const _pubBizCtx = window._oaBizContext;
     window._oaBizContext = null;
+    _oaSendPublishNotifs(null, _pubBizCtx).catch(e => console.warn('[OA-notif-biz-img]', e));
+
     await oaLoadRail();
   }catch(e){ showToast('❌ Erro: '+(e.message||'falha'),'error'); }
 }
@@ -24905,15 +24917,34 @@ window.oaLoadRail = oaLoadRail;
 window._oaCommContext = null; // { commId, commName, commAvatar, ownerId }
 
 // ── Abre file picker → editor → publica como story da comunidade ────
-function commOaOpenCreate(commId) {
+async function commOaOpenCreate(commId) {
   if(!CU){ showToast('Faça login','error'); return; }
   const ownerId = window._commOwnerCache?.[commId];
   if(ownerId && CU.id !== ownerId){ showToast('Apenas o dono pode publicar Stories','error'); return; }
 
+  // ✅ Garante que nome e avatar da comunidade estão carregados (busca no banco se cache vazio)
+  let _commName   = window._commNameCache?.[commId]   || '';
+  let _commAvatar = window._commAvatarCache?.[commId] || '';
+  if(!_commName || !_commAvatar){
+    try{
+      const { data: _c } = await db.from('communities').select('name,avatar_url,owner_id').eq('id', commId).maybeSingle();
+      if(_c){
+        _commName   = _c.name       || _commName   || 'Comunidade';
+        _commAvatar = _c.avatar_url || _commAvatar || '';
+        if(!window._commNameCache)   window._commNameCache   = {};
+        if(!window._commAvatarCache) window._commAvatarCache = {};
+        if(!window._commOwnerCache)  window._commOwnerCache  = {};
+        window._commNameCache[commId]   = _commName;
+        window._commAvatarCache[commId] = _commAvatar;
+        window._commOwnerCache[commId]  = _c.owner_id || '';
+      }
+    }catch(e){ console.warn('[commOa] fetch comm info:', e.message); }
+  }
+
   window._oaCommContext = {
     commId,
-    commName:   window._commNameCache?.[commId]   || 'Comunidade',
-    commAvatar: window._commAvatarCache?.[commId] || '',
+    commName:   _commName   || 'Comunidade',
+    commAvatar: _commAvatar || '',
     ownerId:    ownerId || CU.id
   };
 
