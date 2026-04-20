@@ -21485,9 +21485,11 @@ async function oaLoadRail(){
   let items = [];
   try{
     const cutoff = new Date(Date.now() - OA_TTL_HOURS*3600*1000).toISOString();
+    // ✅ OTIMIZAÇÃO EGRESS: rail carrega apenas campos necessários para montar as bolhas.
+    // media_url e music_data (potencialmente grandes) são carregados só ao abrir o story.
     const resp = await db
       .from('olha_aqui')
-      .select('id, user_id, media_url, media_type, created_at, expires_at, metadata, music_data')
+      .select('id, user_id, media_type, created_at, expires_at, metadata')
       .gte('created_at', cutoff)
       .order('created_at', { ascending:false })
       .limit(200);
@@ -22173,6 +22175,36 @@ function oaRenderItem(){
   oaSeenSet.add(it.id);
   g.seen = g.items.every(x=> oaSeenSet.has(x.id));
 
+  // ✅ OTIMIZAÇÃO EGRESS: media_url e music_data não são mais baixados no rail.
+  // Se o item ainda não tem media_url (foi carregado com o select mínimo),
+  // faz fetch completo agora — só ao clicar, sob demanda.
+  if(!it.media_url){
+    const load = document.getElementById('oa-v-load');
+    if(load) load.style.display = 'flex';
+    db.from('olha_aqui')
+      .select('media_url, music_data')
+      .eq('id', it.id)
+      .maybeSingle()
+      .then(({data})=>{
+        if(data){
+          it.media_url  = data.media_url;
+          it.music_data = data.music_data;
+        }
+        _oaRenderItemMedia(it, g);
+      })
+      .catch(()=>{ _oaRenderItemMedia(it, g); });
+    // Parseia metadata já disponível e configura UI (não depende de media_url)
+    _oaRenderItemUI(it, g);
+    return;
+  }
+
+  _oaRenderItemUI(it, g);
+  _oaRenderItemMedia(it, g);
+}
+
+// UI do viewer (header, barras, meta) — não depende de media_url
+function _oaRenderItemUI(it, g){
+
   // Parseia metadata do item (pode ser JSON ou null)
   let _itMeta = {};
   try{ if(it.metadata) _itMeta = typeof it.metadata==='string' ? JSON.parse(it.metadata) : it.metadata; }catch(e){}
@@ -22255,10 +22287,13 @@ function oaRenderItem(){
     const cls = i < oaViewer.itemIdx ? 'oa-v-bar done' : 'oa-v-bar';
     return `<div class="${cls}"><i></i></div>`;
   }).join('');
+}
 
+// ✅ OTIMIZAÇÃO EGRESS: renderiza a mídia do story (chamada após lazy fetch de media_url se necessário)
+function _oaRenderItemMedia(it, g){
   // Loader
   const load = document.getElementById('oa-v-load');
-  load.style.display = 'flex';
+  if(load) load.style.display = 'flex';
 
   // Render de mídia
   const wrap = document.getElementById('oa-v-media-wrap');
@@ -22271,13 +22306,13 @@ function oaRenderItem(){
     v.muted = false;
     v.preload = 'auto';
     v.onloadedmetadata = ()=>{
-      load.style.display = 'none';
+      if(load) load.style.display = 'none';
       // Duração do story = min(vídeo real, 30s)
       const realMs = Math.min((v.duration||0)*1000, OA_VIDEO_MAX_MS);
       oaViewer.duration = realMs || OA_VIDEO_MAX_MS;
       _oaStartTimer();
     };
-    v.onerror = ()=>{ load.innerHTML = '<div>⚠ FALHA AO CARREGAR</div>'; setTimeout(oaNext, 1500); };
+    v.onerror = ()=>{ if(load) load.innerHTML = '<div>⚠ FALHA AO CARREGAR</div>'; setTimeout(oaNext, 1500); };
     v.onended = oaNext;
     // Evita que o vídeo passe de 30s
     v.ontimeupdate = ()=>{
@@ -22325,12 +22360,12 @@ function oaRenderItem(){
     const img = new Image();
     img.className = 'oa-v-media';
     img.onload = ()=>{
-      load.style.display = 'none';
+      if(load) load.style.display = 'none';
       oaViewer.duration = OA_IMAGE_DURATION_MS;
       wrap.appendChild(img);
       _oaStartTimer();
     };
-    img.onerror = ()=>{ load.innerHTML = '<div>⚠ FALHA AO CARREGAR</div>'; setTimeout(oaNext, 1500); };
+    img.onerror = ()=>{ if(load) load.innerHTML = '<div>⚠ FALHA AO CARREGAR</div>'; setTimeout(oaNext, 1500); };
     img.src = it.media_url;
   }
 
@@ -22404,22 +22439,9 @@ function oaRenderItem(){
     if(_mname) _mname.textContent = _oaTimeAgo(it.created_at);
   }
 
-  // Pré-carrega a próxima mídia (UX mais suave)
-  const nextItem = g.items[oaViewer.itemIdx+1] ||
-                   oaGroups[oaViewer.groupIdx+1]?.items?.[0];
-  if(nextItem){
-    if(nextItem.media_type==='video'){
-      // Hint: cria preload link
-      try{
-        const link = document.createElement('link');
-        link.rel='prefetch'; link.as='video'; link.href=nextItem.media_url;
-        document.head.appendChild(link);
-        setTimeout(()=>{ try{link.remove();}catch(e){} }, 10000);
-      }catch(e){}
-    }else{
-      const pre = new Image(); pre.src = nextItem.media_url;
-    }
-  }
+  // ✅ OTIMIZAÇÃO EGRESS: removido prefetch automático do story seguinte.
+  // O media_url do próximo story nem está em memória (lazy select no rail).
+  // O browser só carregará a mídia quando o utilizador navegar para o próximo.
 }
 
 function _oaStartTimer(){
@@ -22590,19 +22612,20 @@ async function _oaLoadStoryMeta(storyId, isOwner){
     }catch(e){ if(vEl) vEl.innerHTML = '👁 0'; }
   }
 
-  // 3) Conta reações agrupadas
+  // 3) Conta reações agrupadas — só o dono precisa ver os números detalhados
   try{
-    const { data: rxData } = await db.from('olha_aqui_reactions')
-      .select('reaction')
-      .eq('story_id', storyId);
-    const rxCount = {};
-    (rxData||[]).forEach(r=>{ rxCount[r.reaction]=(rxCount[r.reaction]||0)+1; });
-
-    // Badges de quantidade: só o dono vê os números
     if(isOwner){
+      // ✅ OTIMIZAÇÃO EGRESS: só baixa reações quando o dono está a ver (não para outros usuários).
+      // Limita a 500 linhas; em produção substituir por uma RPC agregada no Postgres.
+      const { data: rxData } = await db.from('olha_aqui_reactions')
+        .select('reaction')
+        .eq('story_id', storyId)
+        .limit(500);
+      const rxCount = {};
+      (rxData||[]).forEach(r=>{ rxCount[r.reaction]=(rxCount[r.reaction]||0)+1; });
       _oaUpdateReactionBadges(rxCount);
     } else {
-      // Outros: zera todos os badges (não veem quantidade)
+      // Outros usuários: zera badges (não veem contagem)
       document.querySelectorAll('.oa-v-reaction-btn[data-r]').forEach(b=>{
         b.setAttribute('data-count','0');
       });
