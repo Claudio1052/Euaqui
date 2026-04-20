@@ -22340,10 +22340,10 @@ async function oaPublish(){
     if(error) throw error;
 
     showToast('✅ Olha Aqui publicado! Expira em 24h.','success');
-    oaCloseCreate();
-    // Captura contextos ANTES de resetar as flags
+    // ✅ CRÍTICO: captura contextos ANTES de oaCloseCreate() que zera _oaCommContext e _oaBizContext
     const _pubCommCtx = window._oaCommContext;
     const _pubBizCtx  = window._oaBizContext;
+    oaCloseCreate();
     // Reset flags de negócio e música
     window._oaPublishIsBiz = false;
     window._oaBizContext = null;
@@ -25008,9 +25008,24 @@ async function _oaSendPublishNotifs(commCtx, bizCtx) {
       });
       const contentStr = `[OA_COMM]${_payload}`;
 
-      const rows = (members || [])
-        .map(m => m.user_id)
-        .filter(uid => uid && uid !== CU.id)
+      // Coleta também seguidores da comunidade via follows gerais (se tabela existir)
+      let extraFollowers = [];
+      try{
+        const { data: commFollows } = await db
+          .from('community_follows')
+          .select('user_id')
+          .eq('community_id', commCtx.commId);
+        extraFollowers = (commFollows||[]).map(f=>f.user_id);
+      }catch(e){ /* tabela pode não existir */ }
+
+      const _allUids = new Set([
+        ...((members||[]).map(m=>m.user_id)),
+        ...extraFollowers
+      ]);
+      _allUids.delete(CU.id); // não notifica o próprio publicador
+
+      const rows = [..._allUids]
+        .filter(uid => uid)
         .map(uid => _mkRow(uid, 'olha_aqui_comm', contentStr, {
           community_id: commCtx.commId,
           metadata: { comm_name: _commNameFinal, comm_avatar: _commAvatarFinal, community_id: commCtx.commId }
