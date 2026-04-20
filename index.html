@@ -8755,6 +8755,11 @@ async function compressVideo(file, onProgress){
     let _actx = null;
     try {
       _actx = new (window.AudioContext || window.webkitAudioContext)();
+      // ✅ FIX: resume() obrigatório em browsers com política de autoplay —
+      // senão o contexto fica 'suspended' e nenhum áudio flui para o MediaRecorder.
+      if(_actx.state === 'suspended'){
+        try { await _actx.resume(); } catch(e){ console.warn('[compress] actx.resume:', e.message); }
+      }
       const src  = _actx.createMediaElementSource(video);
       const dest = _actx.createMediaStreamDestination();
       src.connect(dest);
@@ -8762,9 +8767,26 @@ async function compressVideo(file, onProgress){
       // MediaRecorder mas NÃO fica audível para o usuário durante a compressão.
       // (Antes: src.connect(_actx.destination) + video.muted=true → capturava silêncio)
       audioTracks = dest.stream.getAudioTracks();
-      console.log('[compress] áudio via WebAudio OK, tracks:', audioTracks.length);
+      console.log('[compress] áudio via WebAudio OK, tracks:', audioTracks.length, 'state:', _actx.state);
     } catch(e) {
-      console.warn('[compress] WebAudio falhou, vídeo sem áudio:', e.message);
+      console.warn('[compress] WebAudio falhou:', e.message);
+    }
+
+    // ✅ FIX: fallback para captureStream() do próprio <video> se o WebAudio
+    // não trouxe tracks (pode acontecer em alguns browsers/codecs). Vídeos curtos
+    // costumam expor esse caminho porque o actx nem teve tempo de ficar 'running'.
+    if(audioTracks.length === 0){
+      try{
+        const vcap = video.captureStream ? video.captureStream()
+                   : (video.mozCaptureStream ? video.mozCaptureStream() : null);
+        if(vcap){
+          const _vaT = vcap.getAudioTracks();
+          if(_vaT.length){
+            audioTracks = _vaT;
+            console.log('[compress] áudio via captureStream fallback, tracks:', audioTracks.length);
+          }
+        }
+      }catch(e){ console.warn('[compress] captureStream fallback falhou:', e.message); }
     }
 
     const combined = new MediaStream([...vStream.getVideoTracks(), ...audioTracks]);
@@ -8824,9 +8846,17 @@ async function compressVideo(file, onProgress){
         requestAnimationFrame(draw);
       };
 
-      rec.start(1000);
+      // ✅ FIX: esperar 'playing' antes de iniciar a gravação garante que o
+      // MediaRecorder capte áudio desde o primeiro frame — crítico para vídeos
+      // curtos (<30s), que podem terminar antes do pipeline de áudio estabilizar.
+      const _onPlaying = () => {
+        video.removeEventListener('playing', _onPlaying);
+        try { rec.start(1000); } catch(err){ stop(); reject(err); return; }
+        requestAnimationFrame(draw);
+      };
+      video.addEventListener('playing', _onPlaying, { once:true });
+
       video.play()
-        .then(()=>requestAnimationFrame(draw))
         .catch(err=>{ stop(); reject(err); });
 
       // Timeout: duração real + 30s de margem
