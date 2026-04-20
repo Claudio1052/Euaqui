@@ -8718,8 +8718,9 @@ async function compressVideo(file, onProgress){
     }
     const url = URL.createObjectURL(file);
     const video = document.createElement('video');
-    // crossOrigin não necessário para blob URL
-    video.src = url; video.muted = true; video.playsInline = true; video.volume = 0;
+    // NÃO mutar aqui — o AudioContext precisa do áudio do elemento para capturar.
+    // O vídeo não é exibido, então não importa se o som vaza (está off-screen).
+    video.src = url; video.muted = false; video.playsInline = true; video.volume = 0.001;
     video.preload = 'auto';
     await new Promise((res,rej)=>{
       video.onloadedmetadata = ()=>res();
@@ -8754,7 +8755,8 @@ async function compressVideo(file, onProgress){
       const src  = _actx.createMediaElementSource(video);
       const dest = _actx.createMediaStreamDestination();
       src.connect(dest);
-      src.connect(_actx.destination); // mantém o áudio audível (ou mudo se video.muted)
+      // NÃO conectar ao _actx.destination — evita vazar som pelo alto-falante.
+      // O áudio vai apenas para o MediaStream de gravação.
       audioTracks = dest.stream.getAudioTracks();
       console.log('[compress] áudio via WebAudio OK, tracks:', audioTracks.length);
     } catch(e) {
@@ -24278,7 +24280,8 @@ async function _oaTrimVideo(file, startSec, endSec, onProgress) {
     const objUrl = URL.createObjectURL(file);
     const video  = document.createElement('video');
     video.src     = objUrl;
-    video.muted   = true;   // sem áudio durante o corte (evita vazamento de som)
+    video.muted   = false;   // NÃO mutar — captureStream() só captura áudio se não estiver muto
+    video.volume  = 0.001;   // Volume quase zero para não vazar som (elemento off-screen)
     video.preload = 'auto';
     video.playsInline = true;
 
