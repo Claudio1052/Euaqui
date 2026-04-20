@@ -14883,20 +14883,40 @@ async function loadNotifTab(tabId){
         (actors||[]).forEach(a=>{ _oaAvatarCache['actor_'+a.id] = a.avatar_url || ''; });
       }catch(e){}
     }
-    const _oaBizIds=[...new Set(oaNotifs.filter(n=>n.type==='olha_aqui_biz'&&n.business_id).map(n=>n.business_id))];
+    // Coleta business_id do campo direto OU do metadata (notificacoes antigas nao tinham campo direto)
+    const _oaBizIds=[...new Set(oaNotifs.filter(n=>n.type==='olha_aqui_biz').map(n=>{
+      const m=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
+      return n.business_id||m.business_id||'';
+    }).filter(Boolean))];
     if(_oaBizIds.length){
       try{
         const{data:bizs}=await db.from('businesses').select('id,name,logo_url').in('id',_oaBizIds);
         (bizs||[]).forEach(b=>{ _oaAvatarCache['biz_'+b.id]=b.logo_url||''; _bizLogoCache[b.id]=b.logo_url||''; });
       }catch(e){}
     }
-    const _oaCommIds=[...new Set(oaNotifs.filter(n=>n.type==='olha_aqui_comm'&&n.community_id).map(n=>n.community_id))];
+    // Fallback: logo ja salva no metadata — usa sem precisar de query extra
+    oaNotifs.filter(n=>n.type==='olha_aqui_biz').forEach(n=>{
+      const m=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
+      const bid=n.business_id||m.business_id||'';
+      if(bid&&!_oaAvatarCache['biz_'+bid]&&m.biz_logo&&m.biz_logo.startsWith('http')){_oaAvatarCache['biz_'+bid]=m.biz_logo;}
+    });
+    // Coleta community_id do campo direto OU do metadata
+    const _oaCommIds=[...new Set(oaNotifs.filter(n=>n.type==='olha_aqui_comm').map(n=>{
+      const m=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
+      return n.community_id||m.community_id||'';
+    }).filter(Boolean))];
     if(_oaCommIds.length){
       try{
         const{data:comms}=await db.from('communities').select('id,name,avatar_url').in('id',_oaCommIds);
         (comms||[]).forEach(c=>{ _oaAvatarCache['comm_'+c.id]=c.avatar_url||''; });
       }catch(e){}
     }
+    // Fallback: avatar de comunidade salvo no metadata
+    oaNotifs.filter(n=>n.type==='olha_aqui_comm').forEach(n=>{
+      const m=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
+      const cid=n.community_id||m.community_id||'';
+      if(cid&&!_oaAvatarCache['comm_'+cid]&&m.comm_avatar&&m.comm_avatar.startsWith('http')){_oaAvatarCache['comm_'+cid]=m.comm_avatar;}
+    });
   }
 
   el.innerHTML=data.map(n=>{
@@ -14922,12 +14942,21 @@ async function loadNotifTab(tabId){
     // ── Ícones OlhaAqui ──
     const isOaNotif = OA_TYPES.has(n.type);
     let oaAvatar = '';
+    const _oaMeta = (n.metadata && typeof n.metadata === 'object') ? n.metadata : {};
     if(n.type === 'olha_aqui_new'){
-      oaAvatar = (n.actor_id && _oaAvatarCache['actor_'+n.actor_id]) || '';
+      // Tenta avatar do cache (banco) ou diretamente do metadata
+      oaAvatar = (n.actor_id && _oaAvatarCache['actor_'+n.actor_id])
+        || _oaMeta.actor_avatar || '';
     } else if(n.type === 'olha_aqui_comm'){
-      oaAvatar = (n.community_id && _oaAvatarCache['comm_'+n.community_id]) || '';
+      // community_id pode estar no campo direto ou no metadata
+      const _effCommId = n.community_id || _oaMeta.community_id || '';
+      oaAvatar = (_effCommId && _oaAvatarCache['comm_'+_effCommId])
+        || _oaMeta.comm_avatar || '';
     } else if(n.type === 'olha_aqui_biz'){
-      oaAvatar = (n.business_id && _oaAvatarCache['biz_'+n.business_id]) || '';
+      // business_id pode estar no campo direto ou no metadata
+      const _effBizId = n.business_id || _oaMeta.business_id || '';
+      oaAvatar = (_effBizId && _oaAvatarCache['biz_'+_effBizId])
+        || _oaMeta.biz_logo || '';
     }
     const hasOaImg = isOaNotif && oaAvatar && oaAvatar.startsWith('http');
 
@@ -14936,9 +14965,16 @@ async function loadNotifTab(tabId){
     let niIconHtml = iconDisp;
 
     if(hasOaImg){
-      // Avatar real (pessoa, logo loja, avatar comunidade) + badge 👁️
+      // Avatar real: pessoa=círculo, loja/comunidade=quadrado arredondado + badge respectivo
       niIconStyle = 'style="background:transparent;padding:0;position:relative;"';
-      niIconHtml = `<img src="${oaAvatar}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid rgba(0,255,204,.5);display:block;" onerror="this.parentElement.innerHTML='<span style=\\'font-size:20px\\'>👁️</span>'"><span style="position:absolute;bottom:-3px;right:-3px;font-size:13px;line-height:1;">👁️</span>`;
+      const _oaIsPersonal = n.type==='olha_aqui_new';
+      const _oaIsBiz = n.type==='olha_aqui_biz';
+      const _oaIsComm = n.type==='olha_aqui_comm';
+      const _oaRadius = _oaIsPersonal ? '50%' : '10px';
+      const _oaBorderColor = _oaIsBiz ? 'rgba(255,204,0,.5)' : _oaIsComm ? 'rgba(0,255,204,.5)' : 'rgba(0,255,204,.5)';
+      const _oaBadge = _oaIsBiz ? '🏪' : _oaIsComm ? '🏘️' : '👁️';
+      const _oaErrIcon = _oaIsBiz ? '🏪' : _oaIsComm ? '🏘️' : '👁️';
+      niIconHtml = `<img src="${oaAvatar}" style="width:36px;height:36px;border-radius:${_oaRadius};object-fit:cover;border:2px solid ${_oaBorderColor};display:block;" onerror="this.parentElement.innerHTML='<span style=\\'font-size:20px\\'>${_oaErrIcon}</span>'"><span style="position:absolute;bottom:-3px;right:-3px;font-size:13px;line-height:1;">${_oaBadge}</span>`;
     } else if(isOaNotif){
       niIconHtml = `<span style="font-size:20px">👁️</span>`;
     } else if(hasBizImg){
