@@ -21946,6 +21946,7 @@ window.oaOpenViewer = oaOpenViewer;
 
 function oaCloseViewer(){
   oaViewer.open = false;
+  oaViewer._pausedForComment = false;  // reset flag de pausa por comentário
   _oaStopFloatLoop();
   _oaStopTimer();
   // Para música do story
@@ -22466,6 +22467,39 @@ async function oaReact(emoji, btn){
 window.oaReact = oaReact;
 
 // Enviar comentário como DM para o dono do story
+// ── Pausa o story enquanto o usuário digita no campo de comentário ───────
+function oaCommentFocus(){
+  // Pausa apenas se o story estiver rodando (não dupla-pausa)
+  if(oaViewer.open && !oaViewer.paused){
+    oaViewer._pausedForComment = true;
+    oaViewer.paused = true;
+    // Para timers e vídeo
+    _oaStopTimer();
+    const _vEl = oaViewer.videoEl;
+    if(_vEl) try{ _vEl.pause(); }catch(e){}
+    // Ícone do botão pausa → play
+    const pauseBtn = document.getElementById('oa-v-pause');
+    if(pauseBtn) pauseBtn.innerHTML = '&#9654;';
+  }
+}
+window.oaCommentFocus = oaCommentFocus;
+
+function oaCommentBlur(){
+  // Retoma apenas se foi pausado POR causa do comentário
+  if(oaViewer.open && oaViewer._pausedForComment){
+    oaViewer._pausedForComment = false;
+    oaViewer.paused = false;
+    // Retoma timers e vídeo
+    _oaStartTimer();
+    const _vEl = oaViewer.videoEl;
+    if(_vEl) try{ _vEl.play(); }catch(e){}
+    // Ícone do botão play → pausa
+    const pauseBtn = document.getElementById('oa-v-pause');
+    if(pauseBtn) pauseBtn.innerHTML = '&#9208;';
+  }
+}
+window.oaCommentBlur = oaCommentBlur;
+
 async function oaSendComment(){
   if(!CU){ showToast('Faça login para comentar','error'); return; }
   const input = document.getElementById('oa-v-comment-input');
@@ -22486,6 +22520,8 @@ async function oaSendComment(){
     });
     input.value = '';
     showToast('✅ Mensagem enviada para @'+g.username,'success');
+    // Tira o foco do input → dispara onblur → story retoma automaticamente
+    input.blur();
   }catch(e){ showToast('Erro ao enviar mensagem','error'); }
 }
 window.oaSendComment = oaSendComment;
@@ -24569,7 +24605,9 @@ export default {
       <div class="oa-v-comment-row" id="oa-v-comment-row">
         <input class="oa-v-comment-input" id="oa-v-comment-input"
                placeholder="Responder no chat privado..."
-               onkeydown="if(event.key==='Enter')oaSendComment()">
+               onfocus="oaCommentFocus()"
+               onblur="oaCommentBlur()"
+               onkeydown="if(event.key==='Enter')oaSendComment();else if(event.key==='Escape'){this.blur();}">
         <button class="oa-v-comment-send" onclick="oaSendComment()" title="Enviar">➤</button>
       </div>
     </div>
