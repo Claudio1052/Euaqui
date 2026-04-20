@@ -845,6 +845,7 @@ body.day-mode .repost-embed-card:hover{
 
 /* TOAST */
 .tst-wrap{position:fixed;bottom:20px;right:20px;z-index:9000;display:flex;flex-direction:column;gap:7px;pointer-events:none;}
+@media(min-width:768px){.tst-wrap{right:50%;transform:translateX(50%);bottom:32px;align-items:center;}}
 .tst{background:var(--bg-mid);border:1px solid var(--border-glow);border-radius:10px;padding:10px 16px;font-size:12px;color:var(--text-light);backdrop-filter:blur(20px);box-shadow:0 8px 24px rgba(0,0,0,.4);display:flex;align-items:center;gap:8px;animation:stir .3s ease,fade-out .3s ease 2.7s forwards;pointer-events:auto;max-width:280px;}
 .tst.success{border-color:rgba(0,255,204,.3);}
 .tst.error{border-color:rgba(255,51,102,.3);}
@@ -6054,6 +6055,7 @@ const db = createClient(SB_URL, SB_KEY, {
    -- Tabela de visualizações de stories
    -- Adicione a coluna metadata à tabela existente (se ainda não tiver):
    -- ALTER TABLE olha_aqui ADD COLUMN IF NOT EXISTS metadata jsonb;
+   -- ALTER TABLE olha_aqui ADD COLUMN IF NOT EXISTS community_id uuid REFERENCES communities(id) ON DELETE CASCADE;
 
    CREATE TABLE IF NOT EXISTS olha_aqui_views (
      id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -10896,6 +10898,11 @@ async function openCommDetail(commId){
         <button class="comm-tab" onclick="switchCommInnerTab('${commId}','ct-xp',this)">🏆 Ranking</button>
       </div>
       <div id="ct-posts-${commId}">
+        <!-- ✅ OLHA AQUI! — Rail de Stories da Comunidade -->
+        <div id="comm-oa-wrap-${commId}" class="oa-rail-wrap" style="margin-bottom:14px;display:none;">
+          <div class="oa-rail-label"><span style="color:var(--neon-cyan);text-shadow:0 0 8px var(--neon-cyan);">Olha</span> <span style="color:var(--neon-pink);text-shadow:0 0 8px var(--neon-pink);">Aqui!</span></div>
+          <div class="oa-rail" id="comm-oa-rail-${commId}"></div>
+        </div>
         ${isBanned?`<div style="background:rgba(255,51,102,.1);border:1px solid rgba(255,51,102,.3);border-radius:10px;padding:14px;margin-bottom:14px;text-align:center;font-size:12px;color:var(--neon-pink);">🚫 Banido até ${bannedUntil?.toLocaleDateString('pt-BR')}</div>`:''}
         ${isOwner?`<div style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:12px;padding:14px;margin-bottom:14px;box-sizing:border-box;width:100%;">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;min-width:0;">
@@ -10934,6 +10941,11 @@ async function openCommDetail(commId){
   // Guardar avatar da comunidade no cache para renderPost
   if(!window._commAvatarCache) window._commAvatarCache={};
   window._commAvatarCache[commId] = comm.avatar_url||'';
+  // ✅ Cache de nome e dono para o sistema de stories da comunidade
+  if(!window._commNameCache)  window._commNameCache={};
+  if(!window._commOwnerCache) window._commOwnerCache={};
+  window._commNameCache[commId]  = comm.name||'Comunidade';
+  window._commOwnerCache[commId] = comm.owner_id||'';
   loadCommPostsV2(commId,isMember,isMod);
   loadCommChat(commId);
   loadCommMembersPanel(commId,isMod,isOwner);
@@ -10942,6 +10954,8 @@ async function openCommDetail(commId){
   refreshCommMemberCount(commId);
   // Carrega config de cooldown do chat (fallback 30s se coluna não existir)
   loadCommChatCooldown(commId);
+  // ✅ Carrega o rail de Stories da comunidade
+  commOaLoadRail(commId, comm);
 }
 async function postInComm(commId){
   if(!CU)return;
@@ -21795,8 +21809,9 @@ window.oaOpenCreate = oaOpenCreate;
 function oaCloseCreate(){
   document.getElementById('oa-create-modal').classList.remove('on');
   _oaPickedFile = null; _oaPickedType = null;
-  // Limpa flags de negócio se o usuário cancelar (sem ter publicado)
+  // Limpa flags de negócio/comunidade se o usuário cancelar (sem ter publicado)
   if(window._oaPublishIsBiz){ window._oaPublishIsBiz = false; }
+  if(window._oaCommContext){ window._oaCommContext = null; }
 }
 window.oaCloseCreate = oaCloseCreate;
 
@@ -21925,6 +21940,18 @@ async function oaPublish(){
         cta_type:    window._oaBizContext.cta_type || ((window._oaBizContext.category==='servico'||window._oaBizContext.category==='serviço')?'book':'buy')
       };
     }
+    // ✅ Story de comunidade: inclui community_id se publicado de dentro de uma comunidade
+    if(window._oaCommContext) {
+      _oaPayload.community_id = window._oaCommContext.commId;
+      if(!_oaPayload.metadata) {
+        _oaPayload.metadata = {
+          type:         'community',
+          community_id: window._oaCommContext.commId,
+          comm_name:    window._oaCommContext.commName,
+          comm_avatar:  window._oaCommContext.commAvatar
+        };
+      }
+    }
     const { data, error } = await db.from('olha_aqui').insert(_oaPayload).select().single();
 
     if(error) throw error;
@@ -21946,7 +21973,14 @@ async function oaPublish(){
     window._musicAttached = null; window._musicMuteVideo = false;
     _clearMusicPill('story');
     _oaPickedFile = null; _oaPickedType = null;
-    await oaLoadRail();
+    // ✅ Se publicado de comunidade, recarrega o rail da comunidade; senão o rail global
+    const _pubCommCtx = window._oaCommContext;
+    window._oaCommContext = null;
+    if(_pubCommCtx) {
+      await commOaLoadRail(_pubCommCtx.commId, { name: _pubCommCtx.commName, avatar_url: _pubCommCtx.commAvatar });
+    } else {
+      await oaLoadRail();
+    }
 
   }catch(e){
     console.error('[OA] publish error:', e);
@@ -23288,6 +23322,9 @@ function oaEditorClose() {
   if(window._oaPublishIsBiz){
     window._oaPublishIsBiz = false;
     // Não reabre nada — usuário pode usar o botão Divulgar novamente
+  } else if(window._oaCommContext) {
+    window._oaCommContext = null;
+    // Não reabre modal — contexto de comunidade
   } else {
     document.getElementById('oa-create-modal').classList.add('on');
   }
@@ -24461,6 +24498,197 @@ async function _oaTrimVideo(file, startSec, endSec, onProgress) {
 }
 
 window.oaLoadRail = oaLoadRail;
+
+// =========================================================================
+// OLHA AQUI! — STORIES DE COMUNIDADE
+// =========================================================================
+// Reutiliza toda a infraestrutura do OA (editor, viewer, música, upload).
+// Diferenças: filtrado por community_id, avatar/nome da comunidade,
+// sem botões de compra/serviço, somente o dono pode publicar.
+// =========================================================================
+
+window._oaCommContext = null; // { commId, commName, commAvatar }
+
+// ── Carrega e renderiza o rail de stories de uma comunidade ─────────
+async function commOaLoadRail(commId, comm) {
+  const rail = document.getElementById('comm-oa-rail-' + commId);
+  if(!rail) return;
+
+  let items = [];
+  try {
+    const cutoff = new Date(Date.now() - OA_TTL_HOURS * 3600 * 1000).toISOString();
+    const resp = await db
+      .from('olha_aqui')
+      .select('id, user_id, media_url, media_type, created_at, expires_at, metadata, music_data')
+      .gte('created_at', cutoff)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    let _hasErr = false;
+    try { _hasErr = !!(resp && resp.error); } catch(_) { _hasErr = true; }
+    if(_hasErr) { rail.innerHTML = ''; return; }
+
+    const all = (resp && resp.data) || [];
+    // Filtra apenas os stories desta comunidade
+    items = all.filter(it => {
+      if(it.community_id === commId) return true;
+      try {
+        const m = typeof it.metadata === 'string' ? JSON.parse(it.metadata) : it.metadata;
+        return m?.community_id === commId || m?.type === 'community' && m?.community_id === commId;
+      } catch(_) { return false; }
+    });
+  } catch(e) {
+    console.warn('[commOA] erro ao carregar stories:', e.message);
+    rail.innerHTML = '';
+    return;
+  }
+
+  // Constrói um único grupo com o avatar/nome da comunidade
+  const commAvatar = comm.avatar_url || '';
+  const commName   = comm.name || 'Comunidade';
+  const isImgAv    = commAvatar && commAvatar.startsWith('http');
+
+  // Bubble "+ Publicar" (só dono vê)
+  const isOwner = CU && comm.owner_id === CU.id;
+  const seenAll = items.length > 0 && items.every(it => oaSeenSet.has(it.id));
+
+  let html = '';
+
+  if(isOwner) {
+    html += `
+      <div class="oa-bubble" onclick="commOaOpenCreate('${commId}',event)" title="Publicar Story da Comunidade">
+        <div class="oa-ring me" style="position:relative;">
+          ${isImgAv
+            ? `<img src="${_oaEscape(commAvatar)}" alt="${_oaEscape(commName)}" style="border-radius:50%;width:100%;height:100%;object-fit:cover;">`
+            : `<div style="font-size:22px;display:flex;align-items:center;justify-content:center;width:100%;height:100%;">${commAvatar||'🏘'}</div>`
+          }
+          <div class="oa-plus" style="position:absolute;bottom:0;right:0;">+</div>
+        </div>
+        <div class="oa-name">Story</div>
+      </div>`;
+  }
+
+  if(items.length > 0) {
+    const ringClass = 'oa-ring' + (seenAll ? ' seen' : '');
+    html += `
+      <div class="oa-bubble" onclick="commOaOpenViewer('${commId}',${JSON.stringify(items.map(i=>i.id)).replace(/"/g,'&quot;')},${JSON.stringify(commName).replace(/"/g,'&quot;')},${JSON.stringify(commAvatar).replace(/"/g,'&quot;')})">
+        <div class="${ringClass}">
+          ${isImgAv
+            ? `<img src="${_oaEscape(commAvatar)}" alt="${_oaEscape(commName)}" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${_oaEscape(commId)}'">`
+            : `<div style="font-size:22px;display:flex;align-items:center;justify-content:center;width:100%;height:100%;">${commAvatar||'🏘'}</div>`
+          }
+        </div>
+        <div class="oa-name">${_oaEscape(commName)}</div>
+      </div>`;
+  }
+
+  if(!html) {
+    rail.innerHTML = isOwner
+      ? '<div class="oa-empty" style="font-size:10px;">✨ Publique o primeiro Story da comunidade!</div>'
+      : '';
+    // Esconde o wrapper se não há nada para não-donos
+    const wrap = document.getElementById('comm-oa-wrap-' + commId);
+    if(wrap) wrap.style.display = (isOwner || items.length > 0) ? '' : 'none';
+    return;
+  }
+
+  rail.innerHTML = html;
+  const wrap = document.getElementById('comm-oa-wrap-' + commId);
+  if(wrap) wrap.style.display = '';
+}
+window.commOaLoadRail = commOaLoadRail;
+
+// ── Abre o editor para publicar story da comunidade ─────────────────
+function commOaOpenCreate(commId, e) {
+  if(e) e.stopPropagation();
+  if(!CU) { showToast('Faça login','error'); return; }
+
+  // Pega dados da comunidade do cache
+  const commAvatar = window._commAvatarCache?.[commId] || '';
+  const commName   = window._commNameCache?.[commId] || 'Comunidade';
+  const ownerId    = window._commOwnerCache?.[commId];
+  if(ownerId && CU.id !== ownerId) { showToast('Apenas o dono pode publicar Stories','error'); return; }
+
+  // Seta contexto de comunidade (lido por oaPublish ao montar o payload)
+  window._oaCommContext = { commId, commName, commAvatar };
+
+  // Abre o file picker diretamente (sem modal de escolha)
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = 'image/*,video/*';
+  inp.style.display = 'none';
+  document.body.appendChild(inp);
+  inp.onchange = async () => {
+    const f = inp.files && inp.files[0];
+    document.body.removeChild(inp);
+    if(!f) { window._oaCommContext = null; return; }
+    const isVid = f.type.startsWith('video/');
+    await oaEditorOpen(f, isVid ? 'video' : 'image');
+  };
+  inp.click();
+}
+window.commOaOpenCreate = commOaOpenCreate;
+
+// ── Abre o viewer global com os stories da comunidade ───────────────
+async function commOaOpenViewer(commId, itemIds, commName, commAvatar) {
+  // Busca os items completos
+  let items = [];
+  try {
+    const cutoff = new Date(Date.now() - OA_TTL_HOURS * 3600 * 1000).toISOString();
+    const resp = await db
+      .from('olha_aqui')
+      .select('id, user_id, media_url, media_type, created_at, expires_at, metadata, music_data')
+      .gte('created_at', cutoff)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    let _hasErr = false;
+    try { _hasErr = !!(resp && resp.error); } catch(_) { _hasErr = true; }
+    if(!_hasErr) {
+      const all = (resp && resp.data) || [];
+      items = all.filter(it => {
+        if(it.community_id === commId) return true;
+        try {
+          const m = typeof it.metadata === 'string' ? JSON.parse(it.metadata) : it.metadata;
+          return m?.community_id === commId;
+        } catch(_) { return false; }
+      });
+      items.sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+    }
+  } catch(e) {}
+
+  if(!items.length) { showToast('Story expirado','error'); return; }
+
+  const isImgAv = commAvatar && commAvatar.startsWith('http');
+  // Injeta temporariamente como grupo único no oaGroups
+  const commGroup = {
+    userId:     items[0].user_id,
+    groupKey:   'comm_' + commId,
+    isBiz:      false,
+    isComm:     true,
+    commId,
+    username:   commName,
+    fullName:   commName,
+    avatar_url: commAvatar,
+    items,
+    seen:       items.every(it => oaSeenSet.has(it.id))
+  };
+
+  // Guarda grupos originais, injeta o grupo de comunidade e abre
+  const _origGroups = oaGroups;
+  oaGroups = [commGroup];
+  oaOpenViewer(0, 0);
+
+  // Quando o viewer fechar, restaura os grupos originais
+  const _checkClose = setInterval(() => {
+    if(!oaViewer.open) {
+      clearInterval(_checkClose);
+      oaGroups = _origGroups;
+    }
+  }, 300);
+}
+window.commOaOpenViewer = commOaOpenViewer;
+
 
 // Chama após DOM pronto
 if(document.readyState === 'loading'){
