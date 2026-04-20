@@ -8719,7 +8719,11 @@ async function compressVideo(file, onProgress){
     const url = URL.createObjectURL(file);
     const video = document.createElement('video');
     // crossOrigin não necessário para blob URL
-    video.src = url; video.muted = true; video.playsInline = true; video.volume = 0;
+    // ✅ FIX: NÃO mutar o elemento — senão o MediaElementSource capta silêncio e o
+    // vídeo final sobe sem áudio. Para evitar monitoramento audível durante a
+    // compressão, NÃO conectamos o source ao actx.destination (ver abaixo).
+    video.src = url; video.playsInline = true;
+    video.muted = false; video.volume = 1;
     video.preload = 'auto';
     await new Promise((res,rej)=>{
       video.onloadedmetadata = ()=>res();
@@ -8754,7 +8758,9 @@ async function compressVideo(file, onProgress){
       const src  = _actx.createMediaElementSource(video);
       const dest = _actx.createMediaStreamDestination();
       src.connect(dest);
-      src.connect(_actx.destination); // mantém o áudio audível (ou mudo se video.muted)
+      // ✅ FIX: NÃO conectar ao actx.destination — assim o áudio é captado para o
+      // MediaRecorder mas NÃO fica audível para o usuário durante a compressão.
+      // (Antes: src.connect(_actx.destination) + video.muted=true → capturava silêncio)
       audioTracks = dest.stream.getAudioTracks();
       console.log('[compress] áudio via WebAudio OK, tracks:', audioTracks.length);
     } catch(e) {
@@ -24304,7 +24310,12 @@ async function _oaTrimVideo(file, startSec, endSec, onProgress) {
     const objUrl = URL.createObjectURL(file);
     const video  = document.createElement('video');
     video.src     = objUrl;
-    video.muted   = true;   // sem áudio durante o corte (evita vazamento de som)
+    // ✅ FIX: NÃO mutar — senão captureStream() devolve áudio silencioso em alguns
+    // browsers e o trim final fica mudo. Em vez disso, mantemos volume=0 no
+    // elemento (que afeta apenas a saída para os alto-falantes do usuário durante
+    // o processamento, não o que vai para o MediaRecorder via captureStream).
+    video.muted   = false;
+    video.volume  = 0;   // silencioso para o usuário, mas áudio continua no stream
     video.preload = 'auto';
     video.playsInline = true;
 
@@ -24324,13 +24335,37 @@ async function _oaTrimVideo(file, startSec, endSec, onProgress) {
 
       // Stream do canvas + áudio do vídeo
       const vStream = canvas.captureStream(30);
-      let aStream;
+      let aStream = null;
+      let _actxTrim = null;
+      // ✅ FIX: tenta captureStream primeiro; se não devolver audioTracks,
+      // faz fallback para WebAudio (MediaElementSource → MediaStreamDestination).
       try {
         aStream = video.captureStream ? video.captureStream() : (video.mozCaptureStream ? video.mozCaptureStream() : null);
       } catch(e) { aStream = null; }
 
       const tracks = [...vStream.getVideoTracks()];
-      if(aStream) aStream.getAudioTracks().forEach(t => tracks.push(t));
+      let _gotAudio = false;
+      if(aStream) {
+        const _aT = aStream.getAudioTracks();
+        if(_aT.length){
+          _aT.forEach(t => tracks.push(t));
+          _gotAudio = true;
+        }
+      }
+      // Fallback WebAudio se captureStream não trouxe áudio
+      if(!_gotAudio){
+        try {
+          _actxTrim = new (window.AudioContext || window.webkitAudioContext)();
+          const _src  = _actxTrim.createMediaElementSource(video);
+          const _dest = _actxTrim.createMediaStreamDestination();
+          _src.connect(_dest);
+          // NÃO conectamos ao actxTrim.destination → silencioso para o usuário
+          _dest.stream.getAudioTracks().forEach(t => tracks.push(t));
+          console.log('[vid-trim] áudio via WebAudio fallback');
+        } catch(e){
+          console.warn('[vid-trim] WebAudio fallback falhou:', e.message);
+        }
+      }
       const combined = new MediaStream(tracks);
 
       // Mime preferido
@@ -24343,6 +24378,7 @@ async function _oaTrimVideo(file, startSec, endSec, onProgress) {
       rec.onstop = () => {
         if(_progRaf) cancelAnimationFrame(_progRaf);
         URL.revokeObjectURL(objUrl);
+        if(_actxTrim){ try{ _actxTrim.close(); }catch(_){} }
         const blob = new Blob(chunks, { type: mime });
         const ext  = mime.includes('mp4') ? '.mp4' : '.webm';
         const out  = new File([blob], 'video_trim_'+Math.round(dur)+'s'+ext, { type: mime });
@@ -24350,7 +24386,7 @@ async function _oaTrimVideo(file, startSec, endSec, onProgress) {
         if(onProgress) onProgress(1);
         resolve(out);
       };
-      rec.onerror = e => { URL.revokeObjectURL(objUrl); reject(e.error || e); };
+      rec.onerror = e => { URL.revokeObjectURL(objUrl); if(_actxTrim){ try{ _actxTrim.close(); }catch(_){} } reject(e.error || e); };
 
       // Grava por dur segundos
       rec.start(200);
