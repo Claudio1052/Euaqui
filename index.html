@@ -6819,19 +6819,18 @@ async function loadFeed(force=false){
     if(feedEnd) feedEnd.style.display='none';
   }
 
-  // ✅ OTIMIZAÇÃO EGRESS (Ponto 2 — Client-Side Cache de Navegação):
-  // Se o feed já tem conteúdo E foi carregado há menos de 2 minutos,
-  // não refaz nenhuma query — apenas mantém o DOM atual.
-  // O utilizador navega para o Perfil e volta: zero egress.
+  // ✅ OTIMIZAÇÃO EGRESS: evita recarregar o feed ao voltar do Perfil/outra página.
+  // Só aplica se for a primeira página (feedPage===0) e o feed já tiver conteúdo recente.
+  // NÃO bloqueia o scroll infinito (que avança feedPage normalmente).
   const _FEED_STALE_MS = 120000; // 2 minutos
-  if(!force && feed.children.length > 0 && feedPage > 0
+  if(!force && feedPage === 0 && feed.children.length > 0
      && lastFeedLoad > 0 && (Date.now() - lastFeedLoad) < _FEED_STALE_MS){
-    return; // feed ainda fresco, não refaz query
+    return; // feed ainda fresco, não refaz query da página inicial
   }
 
   if(feedLoading || !feedHasMore) return;
   feedLoading = true;
-  lastFeedLoad = Date.now();
+  if(feedPage === 0) lastFeedLoad = Date.now(); // só marca tempo na 1ª página
 
   // Monta contexto de prioridade uma vez por sessão
   // Cache do contexto do feed por 5 minutos
@@ -6854,11 +6853,14 @@ async function loadFeed(force=false){
   // Query de busca — mantém comportamento das abas, mas com paginação real
   // Cache local: se os posts desta página já foram carregados, não refaz a query
   const _cacheKey = feedTab+'_p'+feedPage;
-  if(window._feedPageCache && window._feedPageCache[_cacheKey] && !reset){
+  if(window._feedPageCache && window._feedPageCache[_cacheKey] && !force){
     // Usa cache — zero egress
     const cached = window._feedPageCache[_cacheKey];
-    renderFeedPosts(cached, feed, feedPage===0);
+    // Adiciona ao cachedPostIds para não duplicar
+    (cached||[]).forEach(p=>{ if(p?.id) cachedPostIds.add(p.id); });
     feedPage++; feedLoading=false;
+    // Tenta próxima página pois esta já foi renderizada
+    if(feedHasMore) loadFeed(false);
     return;
   }
   const from = feedPage * FEED_PAGE_SIZE;
@@ -7048,6 +7050,22 @@ async function loadFeed(force=false){
 
   // Ativa observer de scroll infinito (primeira vez)
   _initInfiniteScroll();
+
+  // Re-verifica se o sentinel ainda está visível após renderizar os novos posts
+  // (o IntersectionObserver pode não re-disparar se o elemento já estava no viewport)
+  if(feedHasMore){
+    setTimeout(()=>{
+      if(!feedLoading && feedHasMore){
+        const sentinel = document.getElementById('feed-end');
+        if(sentinel){
+          const r = sentinel.getBoundingClientRect();
+          if(r.top < window.innerHeight + 600){
+            loadFeed(false);
+          }
+        }
+      }
+    }, 300);
+  }
 }
 
 // ═════════════ SCROLL INFINITO via IntersectionObserver ═════════════════════
