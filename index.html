@@ -6945,10 +6945,13 @@ async function loadFeed(force=false){
   }
 
   // Busca reações para os posts desta página
+  // ✅ OTIMIZAÇÃO EGRESS: limit() evita baixar centenas de linhas em posts muito populares.
+  // O breakdown de reações (❤️/😂) já usa likes_count da tabela; aqui só precisamos
+  // do tipo por post para o mapa de cores. Cap de 30 reações por post é mais que suficiente.
   const postIds=filteredPosts.map(p=>p.id);
   const[rxRes,myRxRes]=await Promise.all([
-    db.from('likes').select('post_id,reaction_type').in('post_id',postIds),
-    CU?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id):{data:[]}
+    db.from('likes').select('post_id,reaction_type').in('post_id',postIds).limit(postIds.length*30),
+    CU?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id).limit(postIds.length):{data:[]}
   ]);
   const rxMap={};
   (rxRes.data||[]).forEach(r=>{
@@ -7033,22 +7036,30 @@ function _initInfiniteScroll(){
 async function updateCommentCounts(postIds){
   if(!postIds?.length) return;
   try{
-    // Try with deleted filter first, fallback without it
-    let data=null;
-    const r1=await db.from('comments').select('post_id').in('post_id',postIds).eq('deleted',false);
-    if(r1.error){
-      // deleted column doesn't exist — count all
-      const r2=await db.from('comments').select('post_id').in('post_id',postIds);
-      data=r2.data;
-    } else {
-      data=r1.data;
-    }
-    const counts={};
-    (data||[]).forEach(r=>{counts[r.post_id]=(counts[r.post_id]||0)+1;});
-    postIds.forEach(id=>{
-      const n=counts[id]||0;
+    // ✅ OTIMIZAÇÃO EGRESS: busca contagens por post em paralelo usando {head:true}
+    // Cada query retorna apenas o número no header — zero bytes de dados no body.
+    const results = await Promise.all(
+      postIds.map(async id => {
+        try{
+          // Tenta com filtro de deleted primeiro
+          const r = await db.from('comments')
+            .select('id', {count:'exact', head:true})
+            .eq('post_id', id)
+            .eq('deleted', false);
+          if(r.error && /deleted|column|schema/i.test(r.error.message||'')){
+            // Fallback sem coluna deleted
+            const r2 = await db.from('comments')
+              .select('id', {count:'exact', head:true})
+              .eq('post_id', id);
+            return { id, count: r2.count ?? 0 };
+          }
+          return { id, count: r.count ?? 0 };
+        }catch(_){ return { id, count: 0 }; }
+      })
+    );
+    results.forEach(({id, count})=>{
       document.querySelectorAll('[id="cmtcnt-'+id+'"]').forEach(el=>{
-        el.textContent=n;
+        el.textContent = count;
       });
     });
   }catch(e){ console.log('updateCommentCounts:',e.message); }
@@ -10426,8 +10437,8 @@ async function loadExploreFeed(){
   if(expErr){feed.innerHTML='<div style="color:var(--neon-pink);padding:20px;font-size:12px;">Erro: '+expErr.message+'</div>';return;}
   const postIds=(posts||[]).map(p=>p.id);
   const[rxData,myLikesData]=await Promise.all([
-    postIds.length?db.from('likes').select('post_id,reaction_type').in('post_id',postIds):{data:[]},
-    CU&&postIds.length?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id):{data:[]}
+    postIds.length?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).limit(postIds.length*30):{data:[]},
+    CU&&postIds.length?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id).limit(postIds.length):{data:[]}
   ]);
   const rxMap={};(rxData.data||[]).forEach(r=>{if(!rxMap[r.post_id])rxMap[r.post_id]={};rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1;});
   const myRxMap={};(myLikesData.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
@@ -10461,8 +10472,8 @@ async function doSearch(){
     html+='<div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--neon-yellow);margin:14px 0 8px;letter-spacing:1px;">📝 POSTS ('+posts.length+')</div>';
     const postIds=posts.map(p=>p.id);
     const[{data:rxData},{data:myRxData}]=await Promise.all([
-      db.from('likes').select('post_id,reaction_type').in('post_id',postIds),
-      CU?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id):{data:[]}
+      db.from('likes').select('post_id,reaction_type').in('post_id',postIds).limit(postIds.length*30),
+      CU?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id).limit(postIds.length):{data:[]}
     ]);
     const rxMap={};(rxData||[]).forEach(r=>{if(!rxMap[r.post_id])rxMap[r.post_id]={};rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1;});
     const myRxMap={};(myRxData||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
@@ -11267,8 +11278,8 @@ async function loadProfilePage(userId){
         }
 
         const[rxRes,myRxRes]=await Promise.all([
-          db.from('likes').select('post_id,reaction_type').in('post_id',postIds),
-          CU?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id):{data:[]}
+          db.from('likes').select('post_id,reaction_type').in('post_id',postIds).limit(postIds.length*30),
+          CU?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id).limit(postIds.length):{data:[]}
         ]);
         const rxMap={};(rxRes.data||[]).forEach(r=>{if(!rxMap[r.post_id])rxMap[r.post_id]={};rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1;});
         const myRxMap={};(myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
@@ -13053,8 +13064,8 @@ async function _goToOriginalPost(postId){
     if(!p){ showToast('Post original não encontrado','error'); return; }
 
     const[rxRes, myRxRes] = await Promise.all([
-      db.from('likes').select('post_id,reaction_type').eq('post_id',postId),
-      CU ? db.from('likes').select('post_id,reaction_type').eq('post_id',postId).eq('user_id',CU.id) : {data:[]}
+      db.from('likes').select('post_id,reaction_type').eq('post_id',postId).limit(200),
+      CU ? db.from('likes').select('post_id,reaction_type').eq('post_id',postId).eq('user_id',CU.id).limit(1) : {data:[]}
     ]);
     const rxMap={};
     (rxRes.data||[]).forEach(r=>{ if(!rxMap[r.post_id])rxMap[r.post_id]={}; rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1; });
@@ -14450,8 +14461,8 @@ async function loadCommPosts(commId){
   // Load reactions
   const postIds = posts.map(p=>p.id);
   const[rxRes,myRxRes]=await Promise.all([
-    postIds.length?db.from('likes').select('post_id,reaction_type').in('post_id',postIds):{data:[]},
-    CU&&postIds.length?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id):{data:[]}
+    postIds.length?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).limit(postIds.length*30):{data:[]},
+    CU&&postIds.length?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id).limit(postIds.length):{data:[]}
   ]);
   const rxMap={};(rxRes.data||[]).forEach(r=>{if(!rxMap[r.post_id])rxMap[r.post_id]={};rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1;});
   const myRxMap={};(myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
@@ -18693,8 +18704,8 @@ async function loadCommPostsV2(commId,isMember,isMod){
   posts.forEach(p=>{ window._postCache[p.id]=p; });
   const postIds=posts.map(p=>p.id);
   const[rxRes,myRxRes]=await Promise.all([
-    db.from('likes').select('post_id,reaction_type').in('post_id',postIds),
-    CU?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id):{data:[]}
+    db.from('likes').select('post_id,reaction_type').in('post_id',postIds).limit(postIds.length*30),
+    CU?db.from('likes').select('post_id,reaction_type').in('post_id',postIds).eq('user_id',CU.id).limit(postIds.length):{data:[]}
   ]);
   const rxMap={};(rxRes.data||[]).forEach(r=>{if(!rxMap[r.post_id])rxMap[r.post_id]={};rxMap[r.post_id][r.reaction_type]=(rxMap[r.post_id][r.reaction_type]||0)+1;});
   const myRxMap={};(myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
@@ -20366,7 +20377,7 @@ async function copyCommInvite(commId, name){
   try{
     const[{data:cd}, {count:mc}] = await Promise.all([
       db.from('communities').select('id,name,avatar_url,banner_url,description').eq('id',commId).maybeSingle(),
-      db.from('community_members').select('*',{count:'exact',head:true}).eq('community_id',commId)
+      db.from('community_members').select('id',{count:'exact',head:true}).eq('community_id',commId)
     ]);
     commData = cd;
     realMemberCount = mc || 0;
