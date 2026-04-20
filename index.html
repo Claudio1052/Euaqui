@@ -12816,8 +12816,77 @@ async function loadHomeAlerts(){
     return xss(n.content||'Nova notificação');
   }
 
-  const icons={follow:'👤',like:'❤️',comment:'💬',friend_request:'👥',friend_accept:'🎉',message:'💬',community_invite:'🏘️',community_post:'🏘️',community_mention:'🏘️',biz_promo:'🏪',mention:'@',call_missed:'📞',share:'🔁'};
+  const icons={follow:'👤',like:'❤️',comment:'💬',friend_request:'👥',friend_accept:'🎉',message:'💬',community_invite:'🏘️',community_post:'🏘️',community_mention:'🏘️',biz_promo:'🏪',mention:'@',call_missed:'📞',share:'🔁',olha_aqui_new:'👁️',olha_aqui_comm:'🏘️',olha_aqui_biz:'🏪'};
+
+  // ── Pré-carrega logos para tipos OA ─────────────────────────────
+  const _HA_OA_TYPES = new Set(['olha_aqui_new','olha_aqui_comm','olha_aqui_biz']);
+  const _HA_oaCache = {}; // 'actor_'+id, 'biz_'+id, 'comm_'+id
+  const _haOaNotifs = data.filter(n=>_HA_OA_TYPES.has(n.type));
+  if(_haOaNotifs.length){
+    // Busca avatares de pessoas (olha_aqui_new)
+    const _haActIds=[...new Set(_haOaNotifs.filter(n=>n.type==='olha_aqui_new'&&n.actor_id).map(n=>n.actor_id))];
+    if(_haActIds.length){
+      try{
+        const{data:acts}=await db.from('profiles').select('id,avatar_url').in('id',_haActIds);
+        (acts||[]).forEach(a=>{ _HA_oaCache['actor_'+a.id]=a.avatar_url||''; });
+      }catch(e){}
+    }
+    // Busca logos de lojas (olha_aqui_biz) — também usa metadata como fallback
+    const _haBizIds=[...new Set(_haOaNotifs.filter(n=>n.type==='olha_aqui_biz').map(n=>{
+      const m=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
+      return n.business_id||m.business_id||'';
+    }).filter(Boolean))];
+    if(_haBizIds.length){
+      try{
+        const{data:bizs}=await db.from('businesses').select('id,logo_url').in('id',_haBizIds);
+        (bizs||[]).forEach(b=>{ _HA_oaCache['biz_'+b.id]=b.logo_url||''; });
+      }catch(e){}
+    }
+    // Fallback metadata biz_logo
+    _haOaNotifs.filter(n=>n.type==='olha_aqui_biz').forEach(n=>{
+      const m=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
+      const bid=n.business_id||m.business_id||'';
+      if(bid&&!_HA_oaCache['biz_'+bid]&&m.biz_logo&&m.biz_logo.startsWith('http')){_HA_oaCache['biz_'+bid]=m.biz_logo;}
+    });
+    // Busca avatares de comunidades (olha_aqui_comm) — também usa metadata
+    const _haCommIds=[...new Set(_haOaNotifs.filter(n=>n.type==='olha_aqui_comm').map(n=>{
+      const m=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
+      return n.community_id||m.community_id||'';
+    }).filter(Boolean))];
+    if(_haCommIds.length){
+      try{
+        const{data:comms}=await db.from('communities').select('id,avatar_url').in('id',_haCommIds);
+        (comms||[]).forEach(c=>{ _HA_oaCache['comm_'+c.id]=c.avatar_url||''; });
+      }catch(e){}
+    }
+    // Fallback metadata comm_avatar
+    _haOaNotifs.filter(n=>n.type==='olha_aqui_comm').forEach(n=>{
+      const m=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
+      const cid=n.community_id||m.community_id||'';
+      if(cid&&!_HA_oaCache['comm_'+cid]&&m.comm_avatar&&m.comm_avatar.startsWith('http')){_HA_oaCache['comm_'+cid]=m.comm_avatar;}
+    });
+  }
+  // Helper para resolver avatar OA no HA
+  function _HA_oaAvatar(n){
+    const m=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
+    if(n.type==='olha_aqui_new') return (n.actor_id&&_HA_oaCache['actor_'+n.actor_id])||m.actor_avatar||'';
+    if(n.type==='olha_aqui_biz'){const bid=n.business_id||m.business_id||'';return (bid&&_HA_oaCache['biz_'+bid])||m.biz_logo||'';}
+    if(n.type==='olha_aqui_comm'){const cid=n.community_id||m.community_id||'';return (cid&&_HA_oaCache['comm_'+cid])||m.comm_avatar||'';}
+    return '';
+  }
+  // Helper texto OA no HA
+  function _HA_oaText(n){
+    const m=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
+    if(n.type==='olha_aqui_new'){const u=m.actor_username?`<strong>@${m.actor_username}</strong>`:`<strong>Alguém</strong>`;return `${u} acabou de postar no <strong>Olha Aqui!</strong> 👁️`;}
+    if(n.type==='olha_aqui_biz'){const nm=m.biz_name||'uma loja';return `<strong>${nm}</strong> acabou de postar no <strong>Olha Aqui!</strong> 🏪`;}
+    if(n.type==='olha_aqui_comm'){const nm=m.comm_name||'uma comunidade';return `A comunidade <strong>${nm}</strong> acabou de postar no <strong>Olha Aqui!</strong> 🏘️`;}
+    return '';
+  }
+
   data.forEach(n=>{
+    // Garante que metadata é sempre objeto
+    if(typeof n.metadata === 'string'){ try{ n.metadata = JSON.parse(n.metadata); }catch(e){ n.metadata = {}; } }
+    if(!n.metadata || typeof n.metadata !== 'object') n.metadata = {};
     const div=document.createElement('div');
     div.className='ni'+(n.read?'':' unrd');
     div.id='ni-'+n.id;
@@ -12847,6 +12916,30 @@ async function loadHomeAlerts(){
         iconEl.textContent = (av && !av.startsWith('http')) ? av : '🏘️';
         iconEl.style.fontSize='20px';
       }
+    } else if(_HA_OA_TYPES.has(n.type)){
+      // Ícone OA: logo da loja / avatar da comunidade / avatar do usuário
+      const _oaAv = _HA_oaAvatar(n);
+      const _oaIsPersonal = n.type==='olha_aqui_new';
+      const _oaIsBiz = n.type==='olha_aqui_biz';
+      const _oaIsComm = n.type==='olha_aqui_comm';
+      const _oaBadge = _oaIsBiz?'🏪':_oaIsComm?'🏘️':'👁️';
+      const _oaRadius = _oaIsPersonal?'50%':'10px';
+      const _oaBorder = _oaIsBiz?'rgba(255,204,0,.5)':'rgba(0,255,204,.5)';
+      if(_oaAv && _oaAv.startsWith('http')){
+        iconEl.style.cssText='background:transparent;padding:0;position:relative;width:36px;height:36px;flex-shrink:0;';
+        const _img=document.createElement('img');
+        _img.src=_oaAv;
+        _img.style.cssText=`width:36px;height:36px;border-radius:${_oaRadius};object-fit:cover;border:2px solid ${_oaBorder};display:block;`;
+        _img.onerror=function(){iconEl.innerHTML=`<span style="font-size:20px">${_oaBadge}</span>`;iconEl.style.cssText='';};
+        const _bdg=document.createElement('span');
+        _bdg.style.cssText='position:absolute;bottom:-3px;right:-3px;font-size:13px;line-height:1;';
+        _bdg.textContent=_oaBadge;
+        iconEl.innerHTML='';
+        iconEl.appendChild(_img);
+        iconEl.appendChild(_bdg);
+      } else {
+        iconEl.innerHTML=`<span style="font-size:20px">${_oaBadge}</span>`;
+      }
     } else {
       iconEl.textContent=icons[n.type]||'🔔';
     }
@@ -12854,8 +12947,9 @@ async function loadHomeAlerts(){
     // Corpo clicável → navega para o contexto
     const body=document.createElement('div');
     body.className='ni-clickable-body';
+    const _bodyText = _HA_OA_TYPES.has(n.type) ? _HA_oaText(n) : _HA_displayText(n);
     body.innerHTML=
-      '<div class="ni-txt">'+_HA_displayText(n)+'</div>'+
+      '<div class="ni-txt">'+_bodyText+'</div>'+
       '<div class="ni-time">'+timeAgo(n.created_at)+'</div>'+
       (n.type==='friend_request'&&!n.read
         ?'<div class="ni-actions">'+
@@ -14920,6 +15014,9 @@ async function loadNotifTab(tabId){
   }
 
   el.innerHTML=data.map(n=>{
+    // Garante que metadata é sempre objeto (Supabase às vezes retorna string JSON)
+    if(typeof n.metadata === 'string'){ try{ n.metadata = JSON.parse(n.metadata); }catch(e){ n.metadata = {}; } }
+    if(!n.metadata || typeof n.metadata !== 'object') n.metadata = {};
     const nJson=JSON.stringify(n).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
     const iconVal = icons[n.type];
     const iconDisp = typeof iconVal === 'function' ? iconVal(n) : (iconVal || '🔔');
@@ -14976,7 +15073,9 @@ async function loadNotifTab(tabId){
       const _oaErrIcon = _oaIsBiz ? '🏪' : _oaIsComm ? '🏘️' : '👁️';
       niIconHtml = `<img src="${oaAvatar}" style="width:36px;height:36px;border-radius:${_oaRadius};object-fit:cover;border:2px solid ${_oaBorderColor};display:block;" onerror="this.parentElement.innerHTML='<span style=\\'font-size:20px\\'>${_oaErrIcon}</span>'"><span style="position:absolute;bottom:-3px;right:-3px;font-size:13px;line-height:1;">${_oaBadge}</span>`;
     } else if(isOaNotif){
-      niIconHtml = `<span style="font-size:20px">👁️</span>`;
+      // Fallback sem imagem: emoji correto por tipo
+      const _fbBadge = n.type==='olha_aqui_biz'?'🏪':n.type==='olha_aqui_comm'?'🏘️':'👁️';
+      niIconHtml = `<span style="font-size:20px">${_fbBadge}</span>`;
     } else if(hasBizImg){
       niIconStyle = 'style="background:transparent;padding:0;"';
       niIconHtml = `<img src="${bizLogo}" style="width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid rgba(255,204,0,.4);" onerror="this.src='';this.parentElement.textContent='🏪'">`;
