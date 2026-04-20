@@ -6650,11 +6650,12 @@ function toggleDrawer(){
 //             4° Interesses/Preferências  5° Tendências
 // Limite por página: 20  |  Scroll infinito via IntersectionObserver
 // ═══════════════════════════════════════════════════════════════════════════
-const FEED_PAGE_SIZE = 10; // Reduzido de 20→10 para economizar PostgREST egress
+const FEED_PAGE_SIZE = 20; // Aumentado para reduzir páginas filtradas vazias
 let feedPage = 0;
 let feedHasMore = true;
 let feedLoading = false;
 let feedScrollObserver = null;
+let _feedEmptyRetries = 0; // guarda recursoes consecutivas de pagina vazia
 // Contexto de prioridade (cacheado por sessão de carregamento)
 let _feedCtx = null;
 
@@ -6809,6 +6810,7 @@ async function loadFeed(force=false){
     feedPage = 0;
     feedHasMore = true;
     feedLoading = false;
+    _feedEmptyRetries = 0;
     cachedPostIds.clear();
     cachedPosts={};
     _feedCtx = null;
@@ -6884,6 +6886,11 @@ async function loadFeed(force=false){
     console.error('Feed error:',fetchErr.message);
     if(feed.children.length===0)feed.innerHTML='<div style="text-align:center;padding:30px;color:var(--neon-pink);font-size:12px;">Erro ao carregar feed.<br>'+fetchErr.message+'</div>';
     feedLoading=false;
+    // Restaura o sentinel para não ficar preso em "carregando..."
+    if(feedEnd){
+      feedEnd.style.display='block';
+      feedEnd.innerHTML='<span style="font-family:Space Mono,monospace;font-size:10px;color:var(--text-muted);cursor:pointer;" onclick="loadFeed(false)">↻ Tentar novamente</span>';
+    }
     return;
   }
 
@@ -6955,17 +6962,22 @@ async function loadFeed(force=false){
     if(feedPage===0 && feed.children.length===0){
       feed.innerHTML='<div style="text-align:center;padding:40px;color:var(--text-muted);font-family:\'VT323\',monospace;font-size:20px;">SEM POSTS AINDA ✨<br><span style="font-size:14px;font-family:\'Space Mono\',monospace;">Seja o primeiro!</span></div>';
     }
-    // Tenta próxima página se ainda houver; senão encerra
     feedPage++;
     feedLoading=false;
-    if(feedHasMore){
+    _feedEmptyRetries++;
+    // Evita recursão infinita: máximo 5 páginas consecutivas vazias
+    if(feedHasMore && _feedEmptyRetries <= 5){
       return loadFeed(false);
-    } else if(feedEnd){
+    }
+    _feedEmptyRetries = 0;
+    feedHasMore = false;
+    if(feedEnd){
       feedEnd.style.display='block';
-      feedEnd.textContent='— FIM DO FEED —';
+      feedEnd.innerHTML='<span style="font-family:VT323,monospace;font-size:16px;color:var(--text-muted);">— FIM DO FEED —</span>';
     }
     return;
   }
+  _feedEmptyRetries = 0; // reset quando encontra posts válidos
 
   // Busca reações para os posts desta página
   // ✅ OTIMIZAÇÃO EGRESS: limit() evita baixar centenas de linhas em posts muito populares.
@@ -7047,13 +7059,24 @@ function _initInfiniteScroll(){
     entries.forEach(e=>{
       if(e.isIntersecting && feedHasMore && !feedLoading){
         // Mostra indicador de carregando
-        sentinel.innerHTML = '<span style="font-family:VT323,monospace;font-size:16px;color:var(--neon-cyan);animation:oa-dot-blink 0.8s step-start infinite;">⟳</span> <span style="font-family:Space Mono,monospace;font-size:11px;color:var(--text-muted);">carregando mais 10...</span>';
+        sentinel.innerHTML = '<span style="font-family:VT323,monospace;font-size:16px;color:var(--neon-cyan);">⟳</span> <span style="font-family:Space Mono,monospace;font-size:11px;color:var(--text-muted);">carregando mais...</span>';
         sentinel.style.display='block';
         loadFeed(false);
       }
     });
-  }, { rootMargin: '200px 0px', threshold: 0 }); // dispara 200px antes do fim
+  }, { rootMargin: '600px 0px', threshold: 0 }); // dispara 600px antes do fim
   feedScrollObserver.observe(sentinel);
+
+  // Fallback: se o sentinel já está visível imediatamente (poucos posts na tela),
+  // força o carregamento após um pequeno delay
+  setTimeout(()=>{
+    if(feedHasMore && !feedLoading){
+      const r = sentinel.getBoundingClientRect();
+      if(r.top < window.innerHeight + 600){
+        loadFeed(false);
+      }
+    }
+  }, 400);
 }
 
 async function updateCommentCounts(postIds){
