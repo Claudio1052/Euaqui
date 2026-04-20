@@ -12052,8 +12052,8 @@ async function loadNotifCount(force=false){
     .select('id,type')
     .eq('user_id',CU.id).eq('read',false).limit(100);
   const all=notifs||[];
-  const BIZ_TYPES=['biz_promo'];
-  const COMM_TYPES=['community_invite','community_post','community_mention'];
+  const BIZ_TYPES=['biz_promo','olha_aqui_biz'];
+  const COMM_TYPES=['community_invite','community_post','community_mention','community_comment','community_live','olha_aqui_comm'];
   _notifCache={count:all.length,hasBiz:all.some(n=>BIZ_TYPES.includes(n.type)),hasComm:all.some(n=>COMM_TYPES.includes(n.type))};
   _notifCacheAt=Date.now();
   _applyNotifCache(_notifCache);
@@ -24956,34 +24956,44 @@ async function _oaSendPublishNotifs(commCtx, bizCtx) {
   // ── CASO 1: Story de COMUNIDADE → notifica todos os membros ─────────
   if(commCtx && commCtx.commId) {
     try{
-      const { data: members } = await db
+      const { data: members, error: commMembErr } = await db
         .from('community_members')
         .select('user_id')
         .eq('community_id', commCtx.commId);
+
+      if(commMembErr) console.warn('[OA-notif-comm] Erro ao buscar membros:', commMembErr.message);
+
+      const _commAvatarFinal = commCtx.commAvatar || commCtx.comm_avatar || commCtx.avatar_url || '';
+      const _commNameFinal   = commCtx.commName   || commCtx.comm_name   || commCtx.name || 'Comunidade';
 
       // Embute dados no content como JSON para garantir que chegam ao destinatário
       // mesmo que o banco não tenha coluna metadata
       const _payload = JSON.stringify({
         _oa: 'comm',
         comm_id:     commCtx.commId,
-        comm_name:   commCtx.commName,
-        comm_avatar: commCtx.commAvatar || '',
+        comm_name:   _commNameFinal,
+        comm_avatar: _commAvatarFinal,
         actor:       _actor
       });
       const contentStr = `[OA_COMM]${_payload}`;
 
       const rows = (members || [])
         .map(m => m.user_id)
-        .filter(uid => uid !== CU.id)
+        .filter(uid => uid && uid !== CU.id)
         .map(uid => _mkRow(uid, 'olha_aqui_comm', contentStr, {
           community_id: commCtx.commId,
-          metadata: { comm_name: commCtx.commName, comm_avatar: commCtx.commAvatar||'', community_id: commCtx.commId }
+          metadata: { comm_name: _commNameFinal, comm_avatar: _commAvatarFinal, community_id: commCtx.commId }
         }));
 
-      for(let i = 0; i < rows.length; i += 50){
-        await db.from('notifications').insert(rows.slice(i, i+50));
+      if(rows.length === 0){
+        console.log('[OA-notif] story de comunidade → nenhum membro para notificar (community_id:', commCtx.commId, ')');
+      } else {
+        for(let i = 0; i < rows.length; i += 50){
+          const { error: insErr } = await db.from('notifications').insert(rows.slice(i, i+50));
+          if(insErr) console.warn('[OA-notif-comm] insert error:', insErr.message);
+        }
+        console.log(`[OA-notif] story de comunidade → ${rows.length} notificações enviadas`);
       }
-      console.log(`[OA-notif] story de comunidade → ${rows.length} notificações`);
     }catch(e){ console.warn('[OA-notif-comm]', e.message); }
     return;
   }
@@ -24991,32 +25001,43 @@ async function _oaSendPublishNotifs(commCtx, bizCtx) {
   // ── CASO 2: Story de LOJA/SERVIÇO → notifica seguidores da loja ─────
   if(bizCtx && bizCtx.bizId) {
     try{
-      const { data: followers } = await db
-        .from('business_follows')
+      // ✅ Tabela correta: business_followers (não business_follows)
+      const { data: followers, error: bizFollowErr } = await db
+        .from('business_followers')
         .select('user_id')
         .eq('business_id', bizCtx.bizId);
+
+      if(bizFollowErr) console.warn('[OA-notif-biz] Erro ao buscar seguidores:', bizFollowErr.message);
+
+      const _bizLogoFinal = bizCtx.logoUrl || bizCtx.logo_url || bizCtx.biz_logo || '';
+      const _bizNameFinal = bizCtx.bizName || bizCtx.biz_name || bizCtx.name || 'Loja';
 
       const _payload = JSON.stringify({
         _oa: 'biz',
         biz_id:   bizCtx.bizId,
-        biz_name: bizCtx.bizName,
-        biz_logo: bizCtx.logoUrl || '',
+        biz_name: _bizNameFinal,
+        biz_logo: _bizLogoFinal,
         actor:    _actor
       });
       const contentStr = `[OA_BIZ]${_payload}`;
 
       const rows = (followers || [])
         .map(f => f.user_id)
-        .filter(uid => uid !== CU.id)
+        .filter(uid => uid && uid !== CU.id)
         .map(uid => _mkRow(uid, 'olha_aqui_biz', contentStr, {
           business_id: bizCtx.bizId,
-          metadata: { biz_name: bizCtx.bizName, biz_logo: bizCtx.logoUrl||'', business_id: bizCtx.bizId }
+          metadata: { biz_name: _bizNameFinal, biz_logo: _bizLogoFinal, business_id: bizCtx.bizId }
         }));
 
-      for(let i = 0; i < rows.length; i += 50){
-        await db.from('notifications').insert(rows.slice(i, i+50));
+      if(rows.length === 0){
+        console.log('[OA-notif] story de loja → nenhum seguidor para notificar (business_id:', bizCtx.bizId, ')');
+      } else {
+        for(let i = 0; i < rows.length; i += 50){
+          const { error: insErr } = await db.from('notifications').insert(rows.slice(i, i+50));
+          if(insErr) console.warn('[OA-notif-biz] insert error:', insErr.message);
+        }
+        console.log(`[OA-notif] story de loja → ${rows.length} notificações enviadas`);
       }
-      console.log(`[OA-notif] story de loja → ${rows.length} notificações`);
     }catch(e){ console.warn('[OA-notif-biz]', e.message); }
     return;
   }
