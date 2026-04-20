@@ -12818,6 +12818,23 @@ async function loadHomeAlerts(){
 
   const icons={follow:'👤',like:'❤️',comment:'💬',friend_request:'👥',friend_accept:'🎉',message:'💬',community_invite:'🏘️',community_post:'🏘️',community_mention:'🏘️',biz_promo:'🏪',mention:'@',call_missed:'📞',share:'🔁',olha_aqui_new:'👁️',olha_aqui_comm:'🏘️',olha_aqui_biz:'🏪'};
 
+
+  // ── Helper OA para Home Alerts: extrai dados do content prefixado ──
+  function _HA_parseOa(n){
+    const c = n.content || '';
+    const m = (n.metadata && typeof n.metadata === 'object') ? n.metadata : {};
+    if(c.startsWith('[OA_BIZ]')){
+      try{ const d=JSON.parse(c.slice(8)); return {biz_name:d.biz_name||m.biz_name||'',biz_logo:d.biz_logo||m.biz_logo||'',biz_id:d.biz_id||n.business_id||m.business_id||''}; }catch(e){}
+    }
+    if(c.startsWith('[OA_COMM]')){
+      try{ const d=JSON.parse(c.slice(9)); return {comm_name:d.comm_name||m.comm_name||'',comm_avatar:d.comm_avatar||m.comm_avatar||'',comm_id:d.comm_id||n.community_id||m.community_id||''}; }catch(e){}
+    }
+    if(c.startsWith('[OA_NEW]')){
+      try{ const d=JSON.parse(c.slice(8)); return {actor_username:d.actor_username||m.actor_username||'',actor_avatar:d.actor_avatar||m.actor_avatar||''}; }catch(e){}
+    }
+    return m;
+  }
+
   // ── Pré-carrega logos para tipos OA ─────────────────────────────
   const _HA_OA_TYPES = new Set(['olha_aqui_new','olha_aqui_comm','olha_aqui_biz']);
   const _HA_oaCache = {}; // 'actor_'+id, 'biz_'+id, 'comm_'+id
@@ -12833,8 +12850,8 @@ async function loadHomeAlerts(){
     }
     // Busca logos de lojas (olha_aqui_biz) — também usa metadata como fallback
     const _haBizIds=[...new Set(_haOaNotifs.filter(n=>n.type==='olha_aqui_biz').map(n=>{
-      const m=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
-      return n.business_id||m.business_id||'';
+      const _d=_HA_parseOa(n);
+      return n.business_id||_d.biz_id||'';
     }).filter(Boolean))];
     if(_haBizIds.length){
       try{
@@ -12842,16 +12859,17 @@ async function loadHomeAlerts(){
         (bizs||[]).forEach(b=>{ _HA_oaCache['biz_'+b.id]=b.logo_url||''; });
       }catch(e){}
     }
-    // Fallback metadata biz_logo
+    // Fallback: logo do content prefixado ou metadata
     _haOaNotifs.filter(n=>n.type==='olha_aqui_biz').forEach(n=>{
-      const m=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
-      const bid=n.business_id||m.business_id||'';
-      if(bid&&!_HA_oaCache['biz_'+bid]&&m.biz_logo&&m.biz_logo.startsWith('http')){_HA_oaCache['biz_'+bid]=m.biz_logo;}
+      const _d=_HA_parseOa(n);
+      const bid=n.business_id||_d.biz_id||'';
+      if(bid&&!_HA_oaCache['biz_'+bid]&&_d.biz_logo&&_d.biz_logo.startsWith('http')){_HA_oaCache['biz_'+bid]=_d.biz_logo;}
+      else if(!bid&&_d.biz_logo&&_d.biz_logo.startsWith('http')){ n._oaAv=_d.biz_logo; }
     });
     // Busca avatares de comunidades (olha_aqui_comm) — também usa metadata
     const _haCommIds=[...new Set(_haOaNotifs.filter(n=>n.type==='olha_aqui_comm').map(n=>{
-      const m=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
-      return n.community_id||m.community_id||'';
+      const _d=_HA_parseOa(n);
+      return n.community_id||_d.comm_id||'';
     }).filter(Boolean))];
     if(_haCommIds.length){
       try{
@@ -12859,27 +12877,28 @@ async function loadHomeAlerts(){
         (comms||[]).forEach(c=>{ _HA_oaCache['comm_'+c.id]=c.avatar_url||''; });
       }catch(e){}
     }
-    // Fallback metadata comm_avatar
+    // Fallback: avatar do content prefixado ou metadata
     _haOaNotifs.filter(n=>n.type==='olha_aqui_comm').forEach(n=>{
-      const m=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
-      const cid=n.community_id||m.community_id||'';
-      if(cid&&!_HA_oaCache['comm_'+cid]&&m.comm_avatar&&m.comm_avatar.startsWith('http')){_HA_oaCache['comm_'+cid]=m.comm_avatar;}
+      const _d=_HA_parseOa(n);
+      const cid=n.community_id||_d.comm_id||'';
+      if(cid&&!_HA_oaCache['comm_'+cid]&&_d.comm_avatar&&_d.comm_avatar.startsWith('http')){_HA_oaCache['comm_'+cid]=_d.comm_avatar;}
+      else if(!cid&&_d.comm_avatar&&_d.comm_avatar.startsWith('http')){ n._oaAv=_d.comm_avatar; }
     });
   }
   // Helper para resolver avatar OA no HA
   function _HA_oaAvatar(n){
-    const m=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
-    if(n.type==='olha_aqui_new') return (n.actor_id&&_HA_oaCache['actor_'+n.actor_id])||m.actor_avatar||'';
-    if(n.type==='olha_aqui_biz'){const bid=n.business_id||m.business_id||'';return (bid&&_HA_oaCache['biz_'+bid])||m.biz_logo||'';}
-    if(n.type==='olha_aqui_comm'){const cid=n.community_id||m.community_id||'';return (cid&&_HA_oaCache['comm_'+cid])||m.comm_avatar||'';}
+    const _d=_HA_parseOa(n);
+    if(n.type==='olha_aqui_new') return (n.actor_id&&_HA_oaCache['actor_'+n.actor_id])||_d.actor_avatar||'';
+    if(n.type==='olha_aqui_biz'){const bid=n.business_id||_d.biz_id||'';return (bid&&_HA_oaCache['biz_'+bid])||n._oaAv||_d.biz_logo||'';}
+    if(n.type==='olha_aqui_comm'){const cid=n.community_id||_d.comm_id||'';return (cid&&_HA_oaCache['comm_'+cid])||n._oaAv||_d.comm_avatar||'';}
     return '';
   }
-  // Helper texto OA no HA
+  // Helper texto OA no HA — usa _HA_parseOa para extrair do content prefixado
   function _HA_oaText(n){
-    const m=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
-    if(n.type==='olha_aqui_new'){const u=m.actor_username?`<strong>@${m.actor_username}</strong>`:`<strong>Alguém</strong>`;return `${u} acabou de postar no <strong>Olha Aqui!</strong> 👁️`;}
-    if(n.type==='olha_aqui_biz'){const nm=m.biz_name||'uma loja';return `<strong>${nm}</strong> acabou de postar no <strong>Olha Aqui!</strong> 🏪`;}
-    if(n.type==='olha_aqui_comm'){const nm=m.comm_name||'uma comunidade';return `A comunidade <strong>${nm}</strong> acabou de postar no <strong>Olha Aqui!</strong> 🏘️`;}
+    const _d=_HA_parseOa(n);
+    if(n.type==='olha_aqui_new'){const u=_d.actor_username?`<strong>@${_d.actor_username}</strong>`:`<strong>Alguém</strong>`;return `${u} acabou de postar no <strong>Olha Aqui!</strong> 👁️`;}
+    if(n.type==='olha_aqui_biz'){const nm=_d.biz_name||'uma loja';return `<strong>${nm}</strong> acabou de postar no <strong>Olha Aqui!</strong> 🏪`;}
+    if(n.type==='olha_aqui_comm'){const nm=_d.comm_name||'uma comunidade';return `A comunidade <strong>${nm}</strong> acabou de postar no <strong>Olha Aqui!</strong> 🏘️`;}
     return '';
   }
 
@@ -14932,21 +14951,54 @@ async function loadNotifTab(tabId){
     }catch(e){}
   }
 
+
+  // ── Helper: extrai dados OA do campo content (JSON prefixado) ──────────
+  // Suporta: [OA_BIZ]{...}, [OA_COMM]{...}, [OA_NEW]{...}
+  // Também suporta metadata como objeto (colunas diretas do banco)
+  function _parseOaContent(n){
+    const c = n.content || '';
+    // Já tem metadata como objeto? usa direto
+    const m = (n.metadata && typeof n.metadata === 'object') ? n.metadata : {};
+    if(c.startsWith('[OA_BIZ]')){
+      try{
+        const d = JSON.parse(c.slice(8));
+        return { biz_name: d.biz_name||m.biz_name||'', biz_logo: d.biz_logo||m.biz_logo||'', biz_id: d.biz_id||n.business_id||m.business_id||'' };
+      }catch(e){}
+    }
+    if(c.startsWith('[OA_COMM]')){
+      try{
+        const d = JSON.parse(c.slice(9));
+        return { comm_name: d.comm_name||m.comm_name||'', comm_avatar: d.comm_avatar||m.comm_avatar||'', comm_id: d.comm_id||n.community_id||m.community_id||'' };
+      }catch(e){}
+    }
+    if(c.startsWith('[OA_NEW]')){
+      try{
+        const d = JSON.parse(c.slice(8));
+        return { actor_username: d.actor_username||m.actor_username||'', actor_avatar: d.actor_avatar||m.actor_avatar||'' };
+      }catch(e){}
+    }
+    // Fallback: usa metadata diretamente
+    return m;
+  }
+
   // ── Gera o texto de exibição ──────────────────────────────────
   // community_name já vem do JOIN da view notifications_enriched
   function getNotifDisplayText(n){
     const meta = (n.metadata && typeof n.metadata === 'object') ? n.metadata : {};
-    // ✅ Textos OlhaAqui
+    // ✅ Textos OlhaAqui — usa _parseOaContent que extrai do content prefixado E do metadata
     if(n.type === 'olha_aqui_new'){
-      const actor = meta.actor_username ? `<strong>@${xss(meta.actor_username)}</strong>` : `<strong>Alguém</strong>`;
+      const _d = _parseOaContent(n);
+      const actor = _d.actor_username ? `<strong>@${xss(_d.actor_username)}</strong>` : `<strong>Alguém</strong>`;
       return `${actor} acabou de postar no <strong>Olha Aqui!</strong> 👁️`;
     }
     if(n.type === 'olha_aqui_comm'){
-      const name = meta.comm_name ? `<strong>${xss(meta.comm_name)}</strong>` : `<strong>uma comunidade</strong>`;
+      const _d = _parseOaContent(n);
+      const name = _d.comm_name ? `<strong>${xss(_d.comm_name)}</strong>` : `<strong>uma comunidade</strong>`;
       return `A comunidade ${name} acabou de postar no <strong>Olha Aqui!</strong> 🏘️`;
     }
     if(n.type === 'olha_aqui_biz'){
-      const name = meta.biz_name ? `<strong>${xss(meta.biz_name)}</strong>` : `<strong>uma loja</strong>`;
+      const _d = _parseOaContent(n);
+      const name = _d.biz_name ? `<strong>${xss(_d.biz_name)}</strong>` : `<strong>uma loja</strong>`;
       return `${name} acabou de postar no <strong>Olha Aqui!</strong> 🏪`;
     }
     if(COMM_TYPES_SET.has(n.type)){
@@ -14977,10 +15029,10 @@ async function loadNotifTab(tabId){
         (actors||[]).forEach(a=>{ _oaAvatarCache['actor_'+a.id] = a.avatar_url || ''; });
       }catch(e){}
     }
-    // Coleta business_id do campo direto OU do metadata (notificacoes antigas nao tinham campo direto)
+    // Coleta business_id do content prefixado OU campo direto OU metadata
     const _oaBizIds=[...new Set(oaNotifs.filter(n=>n.type==='olha_aqui_biz').map(n=>{
-      const m=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
-      return n.business_id||m.business_id||'';
+      const _d=_parseOaContent(n);
+      return n.business_id||_d.biz_id||'';
     }).filter(Boolean))];
     if(_oaBizIds.length){
       try{
@@ -14988,16 +15040,18 @@ async function loadNotifTab(tabId){
         (bizs||[]).forEach(b=>{ _oaAvatarCache['biz_'+b.id]=b.logo_url||''; _bizLogoCache[b.id]=b.logo_url||''; });
       }catch(e){}
     }
-    // Fallback: logo ja salva no metadata — usa sem precisar de query extra
+    // Fallback: logo do content prefixado ou metadata
     oaNotifs.filter(n=>n.type==='olha_aqui_biz').forEach(n=>{
-      const m=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
-      const bid=n.business_id||m.business_id||'';
-      if(bid&&!_oaAvatarCache['biz_'+bid]&&m.biz_logo&&m.biz_logo.startsWith('http')){_oaAvatarCache['biz_'+bid]=m.biz_logo;}
+      const _d=_parseOaContent(n);
+      const bid=n.business_id||_d.biz_id||'';
+      if(bid&&!_oaAvatarCache['biz_'+bid]&&_d.biz_logo&&_d.biz_logo.startsWith('http')){_oaAvatarCache['biz_'+bid]=_d.biz_logo;}
+      // Sem bid mas logo disponível: cacheia com chave do id da notificação
+      else if(!bid&&_d.biz_logo&&_d.biz_logo.startsWith('http')){ n._oaAvatarDirect=_d.biz_logo; }
     });
-    // Coleta community_id do campo direto OU do metadata
+    // Coleta community_id do content prefixado OU campo direto OU metadata
     const _oaCommIds=[...new Set(oaNotifs.filter(n=>n.type==='olha_aqui_comm').map(n=>{
-      const m=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
-      return n.community_id||m.community_id||'';
+      const _d=_parseOaContent(n);
+      return n.community_id||_d.comm_id||'';
     }).filter(Boolean))];
     if(_oaCommIds.length){
       try{
@@ -15005,11 +15059,12 @@ async function loadNotifTab(tabId){
         (comms||[]).forEach(c=>{ _oaAvatarCache['comm_'+c.id]=c.avatar_url||''; });
       }catch(e){}
     }
-    // Fallback: avatar de comunidade salvo no metadata
+    // Fallback: avatar do content prefixado ou metadata
     oaNotifs.filter(n=>n.type==='olha_aqui_comm').forEach(n=>{
-      const m=(n.metadata&&typeof n.metadata==='object')?n.metadata:{};
-      const cid=n.community_id||m.community_id||'';
-      if(cid&&!_oaAvatarCache['comm_'+cid]&&m.comm_avatar&&m.comm_avatar.startsWith('http')){_oaAvatarCache['comm_'+cid]=m.comm_avatar;}
+      const _d=_parseOaContent(n);
+      const cid=n.community_id||_d.comm_id||'';
+      if(cid&&!_oaAvatarCache['comm_'+cid]&&_d.comm_avatar&&_d.comm_avatar.startsWith('http')){_oaAvatarCache['comm_'+cid]=_d.comm_avatar;}
+      else if(!cid&&_d.comm_avatar&&_d.comm_avatar.startsWith('http')){ n._oaAvatarDirect=_d.comm_avatar; }
     });
   }
 
@@ -15039,21 +15094,19 @@ async function loadNotifTab(tabId){
     // ── Ícones OlhaAqui ──
     const isOaNotif = OA_TYPES.has(n.type);
     let oaAvatar = '';
-    const _oaMeta = (n.metadata && typeof n.metadata === 'object') ? n.metadata : {};
+    // Extrai dados do content prefixado OU do metadata — garante compatibilidade com qualquer schema
+    const _oaD = _parseOaContent(n);
     if(n.type === 'olha_aqui_new'){
-      // Tenta avatar do cache (banco) ou diretamente do metadata
       oaAvatar = (n.actor_id && _oaAvatarCache['actor_'+n.actor_id])
-        || _oaMeta.actor_avatar || '';
+        || _oaD.actor_avatar || '';
     } else if(n.type === 'olha_aqui_comm'){
-      // community_id pode estar no campo direto ou no metadata
-      const _effCommId = n.community_id || _oaMeta.community_id || '';
+      const _effCommId = n.community_id || _oaD.comm_id || '';
       oaAvatar = (_effCommId && _oaAvatarCache['comm_'+_effCommId])
-        || _oaMeta.comm_avatar || '';
+        || n._oaAvatarDirect || _oaD.comm_avatar || '';
     } else if(n.type === 'olha_aqui_biz'){
-      // business_id pode estar no campo direto ou no metadata
-      const _effBizId = n.business_id || _oaMeta.business_id || '';
+      const _effBizId = n.business_id || _oaD.biz_id || '';
       oaAvatar = (_effBizId && _oaAvatarCache['biz_'+_effBizId])
-        || _oaMeta.biz_logo || '';
+        || n._oaAvatarDirect || _oaD.biz_logo || '';
     }
     const hasOaImg = isOaNotif && oaAvatar && oaAvatar.startsWith('http');
 
@@ -24889,6 +24942,17 @@ async function _oaSendPublishNotifs(commCtx, bizCtx) {
   const _actor   = CP.username || 'alguém';
   const _actorAv = CP.avatar_url || '';
 
+  // Helper: monta payload base — embute dados no content (JSON prefixado) E em campos diretos
+  // Isso garante compatibilidade mesmo que o banco não tenha colunas metadata/business_id/community_id
+  function _mkRow(uid, type, contentStr, extra){
+    const base = { user_id: uid, actor_id: CU.id, type, content: contentStr, read: false };
+    // Tenta adicionar campos opcionais — Supabase ignora silenciosamente se não existirem
+    if(extra.business_id)   base.business_id   = extra.business_id;
+    if(extra.community_id)  base.community_id  = extra.community_id;
+    try{ base.metadata = extra.metadata || extra; }catch(e){}
+    return base;
+  }
+
   // ── CASO 1: Story de COMUNIDADE → notifica todos os membros ─────────
   if(commCtx && commCtx.commId) {
     try{
@@ -24897,21 +24961,23 @@ async function _oaSendPublishNotifs(commCtx, bizCtx) {
         .select('user_id')
         .eq('community_id', commCtx.commId);
 
+      // Embute dados no content como JSON para garantir que chegam ao destinatário
+      // mesmo que o banco não tenha coluna metadata
+      const _payload = JSON.stringify({
+        _oa: 'comm',
+        comm_id:     commCtx.commId,
+        comm_name:   commCtx.commName,
+        comm_avatar: commCtx.commAvatar || '',
+        actor:       _actor
+      });
+      const contentStr = `[OA_COMM]${_payload}`;
+
       const rows = (members || [])
         .map(m => m.user_id)
         .filter(uid => uid !== CU.id)
-        .map(uid => ({
-          user_id:  uid,
-          actor_id: CU.id,
-          type:     'olha_aqui_comm',
-          content:  `A comunidade "${commCtx.commName}" acabou de postar no Olha Aqui!`,
-          read:     false,
+        .map(uid => _mkRow(uid, 'olha_aqui_comm', contentStr, {
           community_id: commCtx.commId,
-          metadata: {
-            comm_name:    commCtx.commName,
-            comm_avatar:  commCtx.commAvatar,
-            community_id: commCtx.commId
-          }
+          metadata: { comm_name: commCtx.commName, comm_avatar: commCtx.commAvatar||'', community_id: commCtx.commId }
         }));
 
       for(let i = 0; i < rows.length; i += 50){
@@ -24930,21 +24996,21 @@ async function _oaSendPublishNotifs(commCtx, bizCtx) {
         .select('user_id')
         .eq('business_id', bizCtx.bizId);
 
+      const _payload = JSON.stringify({
+        _oa: 'biz',
+        biz_id:   bizCtx.bizId,
+        biz_name: bizCtx.bizName,
+        biz_logo: bizCtx.logoUrl || '',
+        actor:    _actor
+      });
+      const contentStr = `[OA_BIZ]${_payload}`;
+
       const rows = (followers || [])
         .map(f => f.user_id)
         .filter(uid => uid !== CU.id)
-        .map(uid => ({
-          user_id:     uid,
-          actor_id:    CU.id,
-          type:        'olha_aqui_biz',
-          content:     `${bizCtx.bizName} acabou de postar no Olha Aqui!`,
-          read:        false,
+        .map(uid => _mkRow(uid, 'olha_aqui_biz', contentStr, {
           business_id: bizCtx.bizId,
-          metadata: {
-            biz_name:    bizCtx.bizName,
-            biz_logo:    bizCtx.logoUrl || '',
-            business_id: bizCtx.bizId
-          }
+          metadata: { biz_name: bizCtx.bizName, biz_logo: bizCtx.logoUrl||'', business_id: bizCtx.bizId }
         }));
 
       for(let i = 0; i < rows.length; i += 50){
@@ -24957,7 +25023,6 @@ async function _oaSendPublishNotifs(commCtx, bizCtx) {
 
   // ── CASO 3: Story PESSOAL → notifica seguidores e amigos ────────────
   try{
-    // Busca seguidores e amigos em paralelo
     const [followRes, friendRes] = await Promise.all([
       db.from('follows').select('follower_id').eq('following_id', CU.id),
       db.from('friends').select('friend_id').eq('user_id', CU.id)
@@ -24967,18 +25032,17 @@ async function _oaSendPublishNotifs(commCtx, bizCtx) {
       ...((followRes.data||[]).map(f => f.follower_id)),
       ...((friendRes.data||[]).map(f => f.friend_id))
     ]);
-    _uids.delete(CU.id); // nunca notifica a si mesmo
+    _uids.delete(CU.id);
 
-    const rows = [..._uids].map(uid => ({
-      user_id:  uid,
-      actor_id: CU.id,
-      type:     'olha_aqui_new',
-      content:  `@${_actor} acabou de postar no Olha Aqui!`,
-      read:     false,
-      metadata: {
-        actor_username: _actor,
-        actor_avatar:   _actorAv
-      }
+    const _payload = JSON.stringify({
+      _oa: 'new',
+      actor_username: _actor,
+      actor_avatar:   _actorAv
+    });
+    const contentStr = `[OA_NEW]${_payload}`;
+
+    const rows = [..._uids].map(uid => _mkRow(uid, 'olha_aqui_new', contentStr, {
+      metadata: { actor_username: _actor, actor_avatar: _actorAv }
     }));
 
     for(let i = 0; i < rows.length; i += 50){
