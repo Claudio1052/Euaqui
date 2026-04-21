@@ -9379,7 +9379,7 @@ function _euConfirm(msg, icon){
 async function deletePost(postId){
   if(!await _euConfirm('Deseja excluir este post?<br>Esta ação não pode ser desfeita.','🗑️')) return;
 
-  // Busca as URLs de mídia antes de deletar (para limpeza no R2)
+  // Busca as URLs de mídia antes de deletar
   let mediaUrlsToDelete = [];
   try {
     const { data: postData } = await db.from('posts')
@@ -9390,11 +9390,17 @@ async function deletePost(postId){
     if(postData?.media_urls && Array.isArray(postData.media_urls)) {
       mediaUrlsToDelete = postData.media_urls.filter(Boolean);
     }
-  } catch(e) { /* silencioso — o trigger SQL cobre este caso */ }
+  } catch(e) {}
 
-  // Exclui post + todos os registros filhos do banco em paralelo
+  // Exclui post no banco — verifica erro
+  const { error: delErr } = await db.from('posts').delete().eq('id', postId).eq('user_id', CU.id);
+  if(delErr){
+    showToast('Erro ao excluir: ' + (delErr.message || 'tente novamente'), 'error');
+    return;
+  }
+
+  // Exclui registros filhos em paralelo
   await Promise.allSettled([
-    db.from('posts').delete().eq('id',postId).eq('user_id',CU.id),
     db.from('likes').delete().eq('post_id',postId),
     db.from('comments').delete().eq('post_id',postId),
     db.from('community_posts').delete().eq('post_id',postId),
@@ -9402,25 +9408,29 @@ async function deletePost(postId){
     db.from('notifications').delete().eq('post_id',postId),
   ]);
 
-  // Limpeza de arquivos no R2 (client-side fallback — o trigger SQL já cobre via r2_delete_queue,
-  // mas chamamos silenciosamente aqui também como caminho direto se o backend estiver disponível)
+  // Limpeza R2
   if(window.R2_BACKEND_URL && mediaUrlsToDelete.length) {
     mediaUrlsToDelete.forEach(url => {
       try {
         const key = _oaExtractKey(url);
-        if(key) {
-          fetch(window.R2_BACKEND_URL + '/api/r2/object?key=' + encodeURIComponent(key), {
-            method: 'DELETE',
-            headers: { 'Authorization': 'Bearer ' + (CU?.id || '') }
-          }).catch(() => {});
-        }
+        if(key) fetch(window.R2_BACKEND_URL + '/api/r2/object?key=' + encodeURIComponent(key), {
+          method: 'DELETE', headers: { 'Authorization': 'Bearer ' + (CU?.id || '') }
+        }).catch(()=>{});
       } catch(e) {}
     });
   }
 
+  // Remove card do DOM
   document.getElementById('post-'+postId)?.remove();
-  cachedPostIds.delete(postId);cachedPosts={};
-  showToast('Post excluído','success');
+  cachedPostIds.delete(postId); cachedPosts={};
+  showToast('Post excluído ✓','success');
+
+  // Recarrega perfil se estiver na página de perfil
+  const profilePage = document.getElementById('page-profile');
+  if(profilePage && profilePage.classList.contains('active')){
+    const uid = document.getElementById('profile-cover-bar')?.dataset?.profileUid || CU?.id;
+    if(uid) setTimeout(()=>{ loadProfilePage(uid); }, 400);
+  }
 }
 
 // ===== POST CONTROLS =====
@@ -10162,12 +10172,17 @@ function _lbDist(t){ return Math.hypot(t[0].clientX-t[1].clientX, t[0].clientY-t
 function closeProdLightbox(){
   const lb = document.getElementById('m-lightbox');
   if(!lb) return;
-  // Apenas esconde — NÃO remove, NÃO navega, NÃO faz nada além de esconder
+  // Para vídeo se estiver tocando
+  const vid = document.getElementById('lb-vid-player');
+  if(vid){ vid.pause(); vid.src=''; vid.style.display='none'; }
+  // Mostra img de volta
+  const img = document.getElementById('lb-img');
+  if(img){ img.style.display='block'; img.style.transform='scale(1) translate(0px,0px)'; }
   lb.style.display = 'none';
   document.body.style.overflow = '';
   _lb.scale=1; _lb.tx=0; _lb.ty=0; _lb.dragging=false; _lb.pinching=false; _lb.transitioning=false;
-  const img = document.getElementById('lb-img');
-  if(img) img.style.transform = 'scale(1) translate(0px,0px)';
+  // Reset onclick para evitar handler duplicado na próxima abertura
+  lb.onclick = null;
 }
 
 function _lbApply(animate){
@@ -10518,10 +10533,13 @@ function ppPlayVideo(url, viewKey, gridIdx){
   lb.onclick=(e)=>{
     if(e.target===lb||e.target.id==='m-lightbox'){
       vid.pause(); vid.src=''; vid.style.display='none'; lbImg.style.display='block';
-      closeM('m-lightbox');
+      closeProdLightbox();
     }
   };
-  openM('m-lightbox');
+  // Abre o lightbox diretamente via display (não usa openM que usa classe .open)
+  if(lb.parentNode !== document.body) document.body.appendChild(lb);
+  lb.style.cssText = (lb.style.cssText||'').replace(/display:[^;]+;?/g,'') + ';display:block!important;z-index:1000000!important;';
+  document.body.style.overflow='hidden';
 }
 
 async function saveSettings(){
@@ -11399,15 +11417,17 @@ async function loadProfilePage(userId){
       if(isEmoji){
         const avDiv = document.createElement('div');
         avDiv.className = 'pbav';
-        avDiv.style.cssText = 'width:72px;height:72px;display:flex;align-items:center;justify-content:center;font-size:38px;background:rgba(255,255,255,.06);border-radius:50%;border:2px solid var(--neon-cyan);margin:0;';
+        avDiv.style.cssText = 'width:72px;height:72px;display:flex;align-items:center;justify-content:center;font-size:38px;background:rgba(255,255,255,.06);border-radius:50%;border:2px solid var(--neon-cyan);margin:0;cursor:default;';
         avDiv.textContent = av;
         avWrapEl.appendChild(avDiv);
       } else {
         const img = document.createElement('img');
         img.className = 'pbav';
-        img.style.cssText = 'width:72px;height:72px;border-radius:50%;object-fit:cover;border:2px solid var(--neon-cyan);display:block;margin:0;';
+        img.style.cssText = 'width:72px;height:72px;border-radius:50%;object-fit:cover;border:2px solid var(--neon-cyan);display:block;margin:0;cursor:zoom-in;';
         img.src = av; img.alt = profile.username||'';
         img.onerror = function(){ this.src = fallbackSeed; };
+        // Clique na foto de perfil abre o lightbox
+        img.onclick = function(){ if(this.src && !this.src.includes('dicebear')) openLightbox(this.src); };
         avWrapEl.appendChild(img);
       }
       pbar.appendChild(avWrapEl);
@@ -11525,7 +11545,7 @@ async function loadProfilePage(userId){
       // [FIX #1] Visitantes não veem posts privados — só o próprio dono vê os seus privados
       let postsQuery = db.from('posts')
         .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url)')
-        .eq('user_id',userId).order('created_at',{ascending:false}).limit(10);
+        .eq('user_id',userId).order('created_at',{ascending:false}).limit(50);
       if(!isOwn) {
         // Usuário logado diferente do dono do perfil: excluir posts privados
         postsQuery = postsQuery.neq('visibility','private');
@@ -14270,21 +14290,22 @@ function linkify(t){
 function searchUser(u){nav('explore');document.getElementById('exp-search').value=u;doSearch();}
 function timeAgo(d){if(!d)return'';const s=Math.floor((Date.now()-new Date(d))/1000);if(s<60)return'agora';const m=Math.floor(s/60);if(m<60)return m+'min';const h=Math.floor(m/60);if(h<24)return h+'h';const dy=Math.floor(h/24);if(dy<7)return dy+'d';return new Date(d).toLocaleDateString('pt-BR');}
 function skeletons(n,h=''){return Array.from({length:n},()=>`<div class="post-card"><div style="display:flex;gap:10px;margin-bottom:12px;"><div class="sk" style="width:42px;height:${h||'42px'};border-radius:50%;flex-shrink:0;"></div><div style="flex:1;"><div class="sk" style="height:11px;width:130px;margin-bottom:6px;"></div><div class="sk" style="height:9px;width:70px;"></div></div></div><div class="sk" style="height:12px;margin-bottom:6px;"></div><div class="sk" style="height:12px;width:70%;"></div></div>`).join('');}
-function openLightbox(url){document.getElementById('lb-img').src=url;openM('m-lightbox');}
-function openM(id){document.getElementById(id).classList.add('open');}
+/* openLightbox: usa ppOpenFotoCarousel para abrir o lightbox corretamente */
+/* (a definição real está em linha ~10346 e usa ppOpenFotoCarousel) */
+function openM(id){
+  const el=document.getElementById(id);
+  if(!el) return;
+  if(id==='m-lightbox'){
+    // Lightbox usa display:block diretamente (não classe .open)
+    el.style.display='block';
+    document.body.style.overflow='hidden';
+  } else {
+    el.classList.add('open');
+  }
+}
 function closeM(id){
   if(id==='m-lightbox'){ closeProdLightbox(); return; }
-  // Se for o lightbox, para o vídeo antes de fechar
-  if(id==='m-lightbox'){
-    const vid=document.getElementById('lb-vid-player');
-    if(vid){ vid.pause(); vid.src=''; vid.style.display='none'; }
-    const lbImg=document.getElementById('lb-img');
-    if(lbImg) lbImg.style.display='block';
-    // Remove botões de navegação do carrossel
-    const lb=document.getElementById('m-lightbox');
-    if(lb) ['lb-prev-btn','lb-next-btn','lb-carousel-ctr'].forEach(bid=>lb.querySelector('#'+bid)?.remove());
-  }
-  document.getElementById(id).classList.remove('open');
+  document.getElementById(id)?.classList.remove('open');
 }
 function showToast(msg,type='success'){const w=document.getElementById('tst-wrap');const t=document.createElement('div');t.className=`tst ${type}`;t.innerHTML=`<span>${type==='success'?'✓':'⚠'}</span> ${msg}`;w.appendChild(t);setTimeout(()=>t.remove(),3200);}
 
