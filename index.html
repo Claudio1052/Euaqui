@@ -6002,6 +6002,28 @@ let avatarFile=null,retroIconSelected=null;
 let cachedPosts={},cachedPostIds=new Set(),lastFeedLoad=0;
 // Cache de dados de comunidade (id -> {name, avatar_url}) para hidratar avatares de posts COMM_POST
 let _commCache={};
+// ✅ OTIMIZAÇÃO EGRESS (Ponto 2 — Cache global de perfis):
+// Armazena perfis já baixados em memória durante a sessão.
+// Se "Arlan" fez 5 posts no feed, o perfil dele é buscado UMA vez e reutilizado.
+// Forma de usar: await _getProfiles([id1, id2, ...]) → Map de id -> perfil
+let _profCache = {};
+async function _getProfiles(ids){
+  if(!ids||!ids.length) return {};
+  const need = [...new Set(ids)].filter(id => id && !_profCache[id]);
+  if(need.length){
+    try{
+      const {data} = await db.from('profiles')
+        .select('id,username,full_name,avatar_url')
+        .in('id', need);
+      (data||[]).forEach(p => { _profCache[p.id] = p; });
+    }catch(_){}
+  }
+  const result = {};
+  ids.forEach(id => { if(_profCache[id]) result[id] = _profCache[id]; });
+  return result;
+}
+// Limpa cache de perfis no logout (evita dados obsoletos entre sessões)
+function _clearProfCache(){ _profCache = {}; }
 async function _hydrateCommAvatars(commIds){
   const need=[...new Set(commIds)].filter(id=>id&&!_commCache[id]);
   if(need.length){
@@ -6218,6 +6240,9 @@ const db = createClient(SB_URL, SB_KEY, {
    -- ─────────────────────────────────────────────────────────────────────
    CREATE INDEX IF NOT EXISTS idx_r2_delete_queue_done ON r2_delete_queue(done) WHERE done = false;
    CREATE INDEX IF NOT EXISTS idx_olha_aqui_expires ON olha_aqui(expires_at);
+   -- ✅ ÍNDICES CRÍTICOS DE PERFORMANCE: aplique também o ficheiro euaqui_indexes.sql
+   -- no Supabase Dashboard → SQL Editor para cobrir posts, follows, likes,
+   -- community_members, notifications, messages e comments.
 
    ══════════════════════════════════════════════════════════════════════════
    COMO CONSUMIR A FILA r2_delete_queue NO SEU BACKEND JAVA:
@@ -6446,6 +6471,7 @@ async function handleLogout(){
     CU = null; CP = null;
     sessionStorage.removeItem('_cp_cache_at');
     sessionStorage.removeItem('_fctx_cache_at');
+    _clearProfCache(); // ✅ limpa cache de perfis entre sessões
     // Fechar canais realtime ativos
     try{ if(window._callListenCh){ db.removeChannel(window._callListenCh); window._callListenCh=null; } }catch(e){}
     try{ clearInterval(window._msgPollInterval); }catch(e){}
@@ -6650,7 +6676,7 @@ function toggleDrawer(){
 //             4° Interesses/Preferências  5° Tendências
 // Limite por página: 20  |  Scroll infinito via IntersectionObserver
 // ═══════════════════════════════════════════════════════════════════════════
-const FEED_PAGE_SIZE = 20; // Aumentado para reduzir páginas filtradas vazias
+const FEED_PAGE_SIZE = 10; // ✅ OTIMIZAÇÃO: 10 posts por página reduz egress no scroll inicial
 let feedPage = 0;
 let feedHasMore = true;
 let feedLoading = false;
@@ -20249,17 +20275,13 @@ async function loadCommChat(commId){
     return;
   }
   const rawList=(msgs||[]).reverse();
-  // ── Hidratar profiles separadamente (sem depender de FK no schema) ──
+  // ── Hidratar profiles — usa cache global (zero query para membros já vistos) ──
   let list = rawList;
   if(rawList.length){
     const uniqueUserIds = [...new Set(rawList.map(m=>m.user_id).filter(Boolean))];
     if(uniqueUserIds.length){
       try{
-        const{data:profs}=await db.from('profiles')
-          .select('id,username,avatar_url,full_name')
-          .in('id',uniqueUserIds);
-        const profMap={};
-        (profs||[]).forEach(p=>{profMap[p.id]=p;});
+        const profMap = await _getProfiles(uniqueUserIds);
         list = rawList.map(m=>({...m, profiles: profMap[m.user_id]||null}));
       }catch(e){
         console.warn('[comm chat] Erro ao hidratar profiles:',e?.message);
@@ -21825,31 +21847,13 @@ async function oaLoadRail(){
 
   if(!items.length){ oaGroups=[]; renderOaRail([]); return; }
 
-  // 2) BUSCA os profiles (isolado — se falhar, usamos placeholders)
+  // 2) BUSCA os profiles — usa cache global _profCache (zero query se já visitados)
   const userIds = [...new Set(items.map(x=>x.user_id).filter(Boolean))];
   let profMap = {};
-  if(userIds.length && !_oaProfilesBad){
+  if(userIds.length){
     try{
-      const resp2 = await db
-        .from('profiles')
-        .select('id, username, full_name, avatar_url')
-        .in('id', userIds);
-      let _hasErr2 = false;
-      try{ _hasErr2 = !!(resp2 && resp2.error); }catch(_){ _hasErr2 = true; }
-      if(_hasErr2){
-        let info2 = { message:'(erro)', code:'' };
-        try{ info2 = _oaErrInfo(resp2.error); }catch(_){}
-        console.warn('[OA] erro lendo profiles:', info2.message, '(code:', info2.code||'?', ') — usando fallback');
-        _oaProfilesBad = true;
-      } else {
-        (resp2?.data || []).forEach(p => { profMap[p.id] = p; });
-      }
-    }catch(e){
-      let _em = '(erro)';
-      try{ _em = _oaErrInfo(e).message; }catch(_){}
-      console.warn('[OA] excecao lendo profiles:', _em, '— usando fallback');
-      _oaProfilesBad = true;
-    }
+      profMap = await _getProfiles(userIds);
+    }catch(_){}
   }
 
   // 3) AGRUPAR e RENDERIZAR
