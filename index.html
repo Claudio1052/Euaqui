@@ -1044,6 +1044,86 @@ body.day-mode .repost-embed-card:hover{
 .pp-media-stack-badge{position:absolute;top:5px;right:5px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;font-family:'Space Mono',monospace;padding:2px 7px;border-radius:8px;backdrop-filter:blur(3px);}
 .pp-media-count{text-align:center;padding:10px 0 4px;font-family:'VT323',monospace;font-size:16px;color:var(--text-muted);letter-spacing:1px;}
 .pp-empty{text-align:center;padding:48px 20px;color:var(--text-muted);font-size:12px;font-family:'Space Mono',monospace;}
+/* Delete button on media items (only visible for owner) */
+.pp-delete-btn{
+  position:absolute;top:5px;left:5px;
+  width:24px;height:24px;
+  border-radius:50%;
+  background:rgba(255,51,102,.85);
+  border:1.5px solid rgba(255,51,102,1);
+  color:#fff;
+  font-size:13px;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;
+  z-index:10;
+  opacity:0;
+  transition:opacity .18s, transform .15s;
+  backdrop-filter:blur(4px);
+  box-shadow:0 2px 8px rgba(0,0,0,.4);
+  line-height:1;
+  padding:0;
+}
+.pp-media-item:hover .pp-delete-btn{ opacity:1; transform:scale(1.05); }
+.pp-delete-btn:hover{ background:rgba(255,51,102,1)!important; transform:scale(1.15)!important; }
+/* Confirm delete modal */
+#pp-delete-confirm-overlay{
+  position:fixed;inset:0;
+  background:rgba(0,0,0,.78);
+  backdrop-filter:blur(10px);
+  z-index:1000010;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:16px;
+}
+#pp-delete-confirm-overlay.on{ display:flex; }
+#pp-delete-confirm-box{
+  background:var(--bg-card);
+  border:1px solid rgba(255,51,102,.4);
+  border-radius:18px;
+  padding:28px 24px;
+  max-width:360px;
+  width:100%;
+  box-shadow:0 20px 60px rgba(255,51,102,.15);
+  animation:ppDelIn .2s ease;
+  text-align:center;
+}
+@keyframes ppDelIn{from{opacity:0;transform:scale(.93) translateY(12px)}to{opacity:1;transform:scale(1) translateY(0)}}
+#pp-delete-confirm-box .pp-del-icon{ font-size:44px; margin-bottom:10px; }
+#pp-delete-confirm-box .pp-del-title{
+  font-family:'Silkscreen',monospace;
+  font-size:13px;
+  color:var(--neon-pink);
+  margin-bottom:8px;
+  letter-spacing:1px;
+}
+#pp-delete-confirm-box .pp-del-desc{
+  font-size:11px;
+  color:var(--text-muted);
+  font-family:'Space Mono',monospace;
+  line-height:1.6;
+  margin-bottom:20px;
+}
+.pp-del-btns{ display:flex; gap:10px; }
+.pp-del-btn-cancel{
+  flex:1;background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:10px;padding:11px;
+  color:var(--text-light);
+  font-family:'Silkscreen',monospace;font-size:10px;
+  cursor:pointer;transition:all .15s;
+}
+.pp-del-btn-cancel:hover{ background:rgba(255,255,255,.1); }
+.pp-del-btn-confirm{
+  flex:1;background:linear-gradient(135deg,var(--neon-pink),#c00055);
+  border:none;border-radius:10px;padding:11px;
+  color:#fff;
+  font-family:'Silkscreen',monospace;font-size:10px;
+  cursor:pointer;transition:all .15s;
+  box-shadow:0 4px 16px rgba(255,51,102,.3);
+}
+.pp-del-btn-confirm:hover{ transform:translateY(-1px);box-shadow:0 6px 20px rgba(255,51,102,.5); }
+.pp-del-btn-confirm:disabled{ opacity:.5;transform:none; }
 /* Contador de views no feed */
 .feed-vid-views{display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--text-muted);font-family:'Space Mono',monospace;}
 .profile-tab-panel{display:none;}
@@ -10322,7 +10402,11 @@ async function loadProfileFotos(userId){
           const clickAttr = p.imgs.length > 1
             ? `data-gkey="${groupKey}" data-gi="${gi}" onclick="ppOpenFotoCarousel(window._ppFotoGroups[this.dataset.gkey][this.dataset.gi],0)"`
             : `onclick="openLightbox('${first}')"`;
-          return`<div class="pp-media-item" ${clickAttr}>
+          const deleteBtn = isOwn
+            ? `<button class="pp-delete-btn" title="Excluir foto" onclick="event.stopPropagation();ppConfirmDelete('foto','${p.postId}',${gi},'fotos')">✕</button>`
+            : '';
+          return`<div class="pp-media-item" ${clickAttr} data-post-id="${p.postId}">
+            ${deleteBtn}
             <img src="${first}" loading="lazy" class="img-safe" alt="foto" style="pointer-events:none;">
             ${extra?`<span class="pp-media-stack-badge">⧉ ${extra}</span>`:''}
             <div class="pp-media-badge">👍 ${p.likes}</div>
@@ -10590,13 +10674,18 @@ async function loadProfileVideos(userId){
     panel.innerHTML =
       '<div class="pp-media-count">🎬 '+videos.length+' vídeo'+(videos.length!==1?'s':'')+'</div>'+
       '<div class="pp-media-grid" id="pp-vid-grid">'+
-        videos.map((v,gi)=>`
-          <div class="pp-media-item" id="ppv-${gi}" onclick="ppPlayVideo('${xss(v.url)}','${v.postId}_${v.idx}',${gi})">
+        videos.map((v,gi)=>{
+          const deleteBtn = isOwn
+            ? `<button class="pp-delete-btn" title="Excluir vídeo" onclick="event.stopPropagation();ppConfirmDelete('video','${v.postId}',${gi},'videos')">✕</button>`
+            : '';
+          return`
+          <div class="pp-media-item" id="ppv-${gi}" onclick="ppPlayVideo('${xss(v.url)}','${v.postId}_${v.idx}',${gi})" data-post-id="${v.postId}">
+            ${deleteBtn}
             <canvas id="ppv-canvas-${gi}" style="width:100%;height:100%;object-fit:cover;display:block;background:#111;"></canvas>
             <span class="pp-media-vid-icon">▶</span>
             <div class="pp-media-badge">👁 ${_fmtViews(v.views)} · 👍 ${v.likes}</div>
-          </div>`
-        ).join('')+
+          </div>`;
+        }).join('')+
       '</div>';
 
     // Gerar thumbnails via canvas (lazy, um de cada vez, sem baixar vídeo inteiro)
@@ -10605,6 +10694,95 @@ async function loadProfileVideos(userId){
   }catch(e){
     panel.innerHTML = '<div class="pp-empty">⚠ Erro ao carregar vídeos</div>';
     console.warn('[pp-videos]',e.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// DELETE FOTO / VÍDEO DO PERFIL — apenas o dono pode excluir
+// ══════════════════════════════════════════════════════════════
+window._ppDeleteState = { type:null, postId:null, gridIdx:null, tab:null };
+
+function ppConfirmDelete(type, postId, gridIdx, tab){
+  if(!CU?.id) return; // só logado
+  const state = window._ppDeleteState;
+  state.type    = type;
+  state.postId  = postId;
+  state.gridIdx = gridIdx;
+  state.tab     = tab; // 'fotos' ou 'videos'
+
+  const icon  = document.getElementById('pp-del-icon');
+  const title = document.getElementById('pp-del-title');
+  const desc  = document.getElementById('pp-del-desc');
+  const btn   = document.getElementById('pp-del-btn-confirm');
+
+  if(icon)  icon.textContent  = type==='video' ? '🎬' : '📷';
+  if(title) title.textContent = type==='video' ? 'EXCLUIR VÍDEO?' : 'EXCLUIR FOTO?';
+  if(desc)  desc.innerHTML    = 'Esta ação não pode ser desfeita.<br>O post original será excluído permanentemente.';
+  if(btn)   btn.disabled      = false;
+
+  const ov = document.getElementById('pp-delete-confirm-overlay');
+  if(ov) ov.classList.add('on');
+}
+
+function ppDeleteCancel(){
+  const ov = document.getElementById('pp-delete-confirm-overlay');
+  if(ov) ov.classList.remove('on');
+  window._ppDeleteState = { type:null, postId:null, gridIdx:null, tab:null };
+}
+
+async function ppDeleteConfirm(){
+  const s = window._ppDeleteState;
+  if(!s.postId || !CU?.id) return;
+
+  const btn = document.getElementById('pp-del-btn-confirm');
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Excluindo...'; }
+
+  try{
+    // Deleta o post inteiro — cascateia as mídias no banco
+    const { error } = await db.from('posts').delete().eq('id', s.postId).eq('user_id', CU.id);
+    if(error) throw error;
+
+    // Remove o item do grid visualmente
+    const panelId = s.tab === 'fotos' ? 'profile-fotos' : 'profile-videos';
+    const panel   = document.getElementById(panelId);
+    const el = panel?.querySelector(`[data-post-id="${s.postId}"]`);
+    if(el){
+      el.style.transition = 'opacity .25s, transform .25s';
+      el.style.opacity    = '0';
+      el.style.transform  = 'scale(.85)';
+      setTimeout(()=>{ el.remove(); _ppUpdateMediaCount(panelId, s.tab); }, 260);
+    }
+
+    ppDeleteCancel();
+
+    // Toast de sucesso
+    if(typeof showToast === 'function') showToast(s.tab==='fotos'?'📷 Foto excluída':'🎬 Vídeo excluído','success');
+    else alert(s.tab==='fotos'?'Foto excluída!':'Vídeo excluído!');
+
+  }catch(err){
+    if(btn){ btn.disabled=false; btn.textContent='🗑 Excluir'; }
+    if(typeof showToast === 'function') showToast('❌ Erro ao excluir: '+(err.message||err),'error');
+    else alert('Erro ao excluir: '+(err.message||err));
+    console.error('[pp-delete]', err);
+  }
+}
+
+// Atualiza contador de mídias após deleção
+function _ppUpdateMediaCount(panelId, tab){
+  const panel = document.getElementById(panelId);
+  if(!panel) return;
+  const items = panel.querySelectorAll('.pp-media-item');
+  const n = items.length;
+  const countEl = panel.querySelector('.pp-media-count');
+  if(!countEl) return;
+  if(n === 0){
+    panel.innerHTML = '<div class="pp-empty">'+(tab==='fotos'?'📷 Nenhuma foto ainda':'🎬 Nenhum vídeo ainda')+'</div>';
+    return;
+  }
+  if(tab === 'fotos'){
+    countEl.textContent = '📷 '+n+' foto'+(n!==1?'s':'');
+  } else {
+    countEl.textContent = '🎬 '+n+' vídeo'+(n!==1?'s':'');
   }
 }
 
@@ -26283,6 +26461,19 @@ export default {
 
 <!-- Player de preview oculto -->
 <audio id="music-preview-player" style="display:none;" preload="none"></audio>
+
+<!-- ══ MODAL CONFIRMAR EXCLUSÃO DE FOTO/VÍDEO ═══════════════════════ -->
+<div id="pp-delete-confirm-overlay" onclick="if(event.target===this)ppDeleteCancel()">
+  <div id="pp-delete-confirm-box">
+    <div class="pp-del-icon" id="pp-del-icon">🗑️</div>
+    <div class="pp-del-title" id="pp-del-title">EXCLUIR MÍDIA?</div>
+    <div class="pp-del-desc" id="pp-del-desc">Esta ação não pode ser desfeita.<br>O post original será excluído permanentemente.</div>
+    <div class="pp-del-btns">
+      <button class="pp-del-btn-cancel" onclick="ppDeleteCancel()">✕ Cancelar</button>
+      <button class="pp-del-btn-confirm" id="pp-del-btn-confirm" onclick="ppDeleteConfirm()">🗑 Excluir</button>
+    </div>
+  </div>
+</div>
 
 
 <!-- ══ STORY EDITOR ═══════════════════════════════════════════ -->
