@@ -21085,7 +21085,45 @@ async function copyCommInvite(commId, name){
       </div>
 
       <!-- Botão Postar no Feed -->
-      <button onclick="postCommInviteToFeed('${commId}','${xss(name.replace(/'/g,''))}','${url}')" style="width:100%;background:linear-gradient(135deg,var(--neon-pink),var(--neon-purple));border:none;color:#fff;padding:10px;border-radius:8px;cursor:pointer;font-family:Silkscreen,monospace;font-size:10px;letter-spacing:1px;margin-bottom:4px;">📢 POSTAR NO MEU FEED</button>
+      <div id="comm-feed-invite-box-${commId}" style="margin-bottom:4px;">
+        <!-- Toggle de modo -->
+        <div style="display:flex;gap:6px;margin-bottom:8px;">
+          <button onclick="commFeedSetMode('${commId}','pre')" id="comm-feed-tab-pre-${commId}"
+            style="flex:1;padding:7px 4px;border-radius:8px;border:1px solid var(--neon-pink);background:linear-gradient(135deg,var(--neon-pink),var(--neon-purple));color:#fff;font-family:Silkscreen,monospace;font-size:9px;cursor:pointer;letter-spacing:.5px;">
+            ✏️ PRÉ-DEFINIDA
+          </button>
+          <button onclick="commFeedSetMode('${commId}','custom')" id="comm-feed-tab-custom-${commId}"
+            style="flex:1;padding:7px 4px;border-radius:8px;border:1px solid rgba(191,95,255,.4);background:rgba(191,95,255,.08);color:var(--neon-purple);font-family:Silkscreen,monospace;font-size:9px;cursor:pointer;letter-spacing:.5px;">
+            🎨 PERSONALIZADA
+          </button>
+        </div>
+
+        <!-- Painel Pré-definida -->
+        <div id="comm-feed-panel-pre-${commId}">
+          <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,51,102,.18);border-radius:8px;padding:10px 12px;margin-bottom:8px;font-size:10px;color:var(--text-muted);font-family:'Space Mono',monospace;line-height:1.6;">
+            🏘 Junte-se a mim na comunidade <span style="color:var(--neon-cyan);">${xss(name.replace(/'/g,''))}</span>!<br>👉 <span style="color:var(--neon-pink);">[Seja Membro]</span>
+          </div>
+          <button onclick="postCommInviteToFeed('${commId}','${xss(name.replace(/'/g,''))}','${url}','pre')"
+            style="width:100%;background:linear-gradient(135deg,var(--neon-pink),var(--neon-purple));border:none;color:#fff;padding:10px;border-radius:8px;cursor:pointer;font-family:Silkscreen,monospace;font-size:10px;letter-spacing:1px;">
+            📢 POSTAR NO MEU FEED
+          </button>
+        </div>
+
+        <!-- Painel Personalizada -->
+        <div id="comm-feed-panel-custom-${commId}" style="display:none;">
+          <textarea id="comm-feed-custom-text-${commId}" maxlength="280" placeholder="Escreva seu convite... O botão &#34;Seja Membro&#34; será adicionado automaticamente 🔗"
+            style="width:100%;min-height:80px;background:rgba(255,255,255,.04);border:1px solid rgba(191,95,255,.3);border-radius:8px;padding:10px 12px;color:var(--text-light);font-family:'Space Mono',monospace;font-size:11px;resize:vertical;outline:none;margin-bottom:6px;line-height:1.5;"
+            oninput="document.getElementById('comm-feed-charcount-${commId}').textContent=this.value.length+'/280'"></textarea>
+          <div style="text-align:right;font-size:9px;color:var(--text-muted);margin-bottom:8px;font-family:'Space Mono',monospace;" id="comm-feed-charcount-${commId}">0/280</div>
+          <div style="background:rgba(255,255,255,.03);border:1px solid rgba(191,95,255,.15);border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:9px;color:var(--text-muted);font-family:'Space Mono',monospace;">
+            💡 O link <span style="color:var(--neon-cyan);">[Seja Membro]</span> será incluído automaticamente no final do post.
+          </div>
+          <button onclick="postCommInviteToFeed('${commId}','${xss(name.replace(/'/g,''))}','${url}','custom')"
+            style="width:100%;background:linear-gradient(135deg,var(--neon-purple),var(--neon-pink));border:none;color:#fff;padding:10px;border-radius:8px;cursor:pointer;font-family:Silkscreen,monospace;font-size:10px;letter-spacing:1px;">
+            📢 POSTAR NO MEU FEED
+          </button>
+        </div>
+      </div>
 
       <!-- Enviar para amigos -->
       ${friendsHtml}
@@ -21097,9 +21135,50 @@ async function copyCommInvite(commId, name){
   document.body.appendChild(overlay);
 }
 
+// Alternar entre abas pré-definida / personalizada no painel de postar no feed
+function commFeedSetMode(commId, mode){
+  const panelPre    = document.getElementById('comm-feed-panel-pre-'+commId);
+  const panelCustom = document.getElementById('comm-feed-panel-custom-'+commId);
+  const tabPre      = document.getElementById('comm-feed-tab-pre-'+commId);
+  const tabCustom   = document.getElementById('comm-feed-tab-custom-'+commId);
+  if(!panelPre || !panelCustom) return;
+
+  if(mode==='pre'){
+    panelPre.style.display='block';
+    panelCustom.style.display='none';
+    tabPre.style.background='linear-gradient(135deg,var(--neon-pink),var(--neon-purple))';
+    tabPre.style.color='#fff';
+    tabPre.style.borderColor='var(--neon-pink)';
+    tabCustom.style.background='rgba(191,95,255,.08)';
+    tabCustom.style.color='var(--neon-purple)';
+    tabCustom.style.borderColor='rgba(191,95,255,.4)';
+  } else {
+    panelPre.style.display='none';
+    panelCustom.style.display='block';
+    tabCustom.style.background='linear-gradient(135deg,var(--neon-purple),var(--neon-pink))';
+    tabCustom.style.color='#fff';
+    tabCustom.style.borderColor='var(--neon-purple)';
+    tabPre.style.background='rgba(255,51,102,.08)';
+    tabPre.style.color='var(--neon-pink)';
+    tabPre.style.borderColor='rgba(255,51,102,.4)';
+  }
+}
+
 // Postar convite da comunidade no feed pessoal
-async function postCommInviteToFeed(commId, commName, url){
+async function postCommInviteToFeed(commId, commName, url, mode){
   if(!CU){ showToast('Faça login','error'); return; }
+
+  // Se modo personalizado, pegar texto do textarea
+  let customText = '';
+  if(mode === 'custom'){
+    const ta = document.getElementById('comm-feed-custom-text-'+commId);
+    customText = ta ? ta.value.trim() : '';
+    if(!customText){
+      showToast('Escreva seu convite antes de postar 😉','error');
+      return;
+    }
+  }
+
   try{
     // Buscar banner/avatar da comunidade para incluir como imagem no post
     let imgUrl = null;
@@ -21112,8 +21191,16 @@ async function postCommInviteToFeed(commId, commName, url){
       }catch(e){}
     }
 
-    // Conteúdo com link oculto dentro do texto âncora (o link real fica no texto mas exibido como "Seja Membro")
-    const content = `🏘 Junte-se a mim na comunidade **${commName}**!\n\n👉 [Seja Membro](${url})`;
+    // Montar conteúdo conforme modo
+    let content;
+    if(mode === 'custom'){
+      // Mensagem personalizada + botão Seja Membro no final
+      content = `${customText}\n\n👉 [Seja Membro](${url})`;
+    } else {
+      // Mensagem pré-definida padrão
+      content = `🏘 Junte-se a mim na comunidade **${commName}**!\n\n👉 [Seja Membro](${url})`;
+    }
+
     const postData = {
       user_id: CU.id,
       content,
