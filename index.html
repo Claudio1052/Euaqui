@@ -9919,57 +9919,38 @@ const EA_FONTS = [
   },
 ];
 
-function applyFont(fontId){
+function _applyFontCSS(fontId){
+  // Aplica apenas o CSS/link da fonte — sem abrir modal nem toast
   const font = EA_FONTS.find(f => f.id === fontId) || EA_FONTS[0];
-  localStorage.setItem('ea_font', fontId);
-
-  // Load Google Font if needed
   const fontLink = document.getElementById('ea-custom-font-link');
-  if(font.googleUrl){
-    fontLink.href = font.googleUrl;
-  } else {
-    fontLink.href = '';
-  }
-
-  // Apply override CSS to all elements
+  if(font.googleUrl){ fontLink.href = font.googleUrl; } else { fontLink.href = ''; }
   const overrideStyle = document.getElementById('ea-font-override');
   if(font.id === 'default'){
     overrideStyle.textContent = '';
   } else {
-    overrideStyle.textContent = `
-      body, input, textarea, select, button {
-        font-family: ${font.bodyFont} !important;
-      }
-      .nav-logo, .boot-logo, .stn, .pbar-wrap, .boot-sub {
-        font-family: ${font.accentFont} !important;
-      }
-      .umn, .pun, .music-titulo, .music-picker-title,
-      .post-music-titulo, .oa-se-title, .oa-se-music-titulo,
-      .oavm-name, .music-search-btn, .post-btn,
-      [style*="Silkscreen"], [style*="Space Mono"], [style*="VT323"] {
-        font-family: ${font.headingFont} !important;
-      }
-      * { font-family: ${font.bodyFont} !important; }
-      .nav-logo, .boot-logo {
-        font-family: ${font.accentFont} !important;
-        letter-spacing: 1px !important;
-      }
-    `;
+    overrideStyle.textContent =
+      'body,input,textarea,select,button{font-family:'+font.bodyFont+' !important;}'
+      +'*{font-family:'+font.bodyFont+' !important;}'
+      +'.nav-logo,.boot-logo{font-family:'+font.accentFont+' !important;letter-spacing:1px !important;}';
   }
+}
 
+function applyFont(fontId){
+  // Chamado pelo usuário via settings — aplica CSS + salva + atualiza modal
+  localStorage.setItem('ea_font', fontId);
+  _applyFontCSS(fontId);
+  const font = EA_FONTS.find(f => f.id === fontId) || EA_FONTS[0];
   showToast('🔤 Fonte aplicada: ' + font.label, 'success');
-
-  // Re-render settings with updated selection
   document.getElementById('settings-modal-overlay')?.remove();
   showSettings();
   switchSettingsTab('fonte');
 }
 
 function _initFont(){
+  // Chamado apenas no boot — aplica CSS sem abrir modal
   const saved = localStorage.getItem('ea_font');
-  if(saved && saved !== 'default') applyFont(saved);
+  if(saved && saved !== 'default') _applyFontCSS(saved);
 }
-// Init on load
 
 async function _loadBlockedList(){
   if(!CU) return;
