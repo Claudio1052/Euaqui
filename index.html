@@ -6410,12 +6410,31 @@ function showApp(){
   try{ document.getElementById('auth-screen').style.display='none'; }catch(e){}
   try{ document.getElementById('app').style.display='block'; }catch(e){}
   try{ refreshUI(); }catch(e){ console.warn('refreshUI:',e); }
-  // Show nav-home-tabs on startup (app starts on home)
+
+  // ── Restaurar página pela URL ou iniciar em home ──────────────────
+  try{
+    const urlPage = _eaGetPageFromPath(location.pathname);
+    const startPage = urlPage || 'home';
+    _eaLastPushedPage = startPage;
+    if(startPage !== 'home'){
+      // Coloca a home como base da pilha, depois a página atual
+      history.replaceState({eaPage:'home'}, '', '/');
+      history.pushState({eaPage: startPage}, '', _EA_ROUTES[startPage] || '/');
+    } else {
+      history.replaceState({eaPage:'home'}, '', '/');
+    }
+    _navBase(startPage);
+  }catch(e){ console.warn('[EA-History] showApp init:', e); }
+
+  // Show nav-home-tabs on startup
   try{
     const navTabsRow = document.getElementById('nav-home-tabs');
     const mainLayout = document.getElementById('main-layout');
-    if(navTabsRow) navTabsRow.classList.add('visible');
-    if(mainLayout) mainLayout.style.paddingTop = 'var(--nav-h)';
+    const curPage = (history.state && history.state.eaPage) || 'home';
+    if(curPage === 'home'){
+      if(navTabsRow) navTabsRow.classList.add('visible');
+      if(mainLayout) mainLayout.style.paddingTop = 'var(--nav-h)';
+    }
   }catch(e){}
   // Load page data — each wrapped so one failure doesn't block the rest
   setTimeout(()=>{ try{ cachedPostIds.clear();cachedPosts={};loadFeed(true); }catch(e){ console.warn('loadFeed:',e); } }, 0);
@@ -6466,7 +6485,7 @@ document.addEventListener('DOMContentLoaded', async()=>{
         const {data, error} = await db.auth.setSession({access_token, refresh_token});
         if(!error && data?.session){
           // Limpar hash da URL sem recarregar
-          history.replaceState(null,'',window.location.pathname+window.location.search);
+          history.replaceState({eaPage:'home'},'','/'); // OAuth: retorna à home
           CU = data.session.user;
           try{ await loadProfile(); }catch(e){}
           try{ showApp(); }catch(e){ showAuth(); }
@@ -6749,6 +6768,79 @@ async function loadUserStats(){
 }
 
 // ===== NAVIGATION =====
+// ═══════════════════════════════════════════════════════════════════
+// SISTEMA DE MEMÓRIA DE NAVEGAÇÃO (History API)
+// URL amigável: / → home | /perfil → profile | /explorar → explore ...
+// Botão voltar (celular e PC) retorna à página anterior corretamente.
+// ═══════════════════════════════════════════════════════════════════
+const _EA_ROUTES = {
+  'home':          '/',
+  'explore':       '/explorar',
+  'profile':       '/perfil',
+  'friends':       '/amigos',
+  'communities':   '/comunidades',
+  'businesses':    '/lojas',
+  'messages':      '/mensagens',
+  'notifications': '/notificacoes',
+  'capsules':      '/capsulas',
+};
+const _EA_ROUTES_REVERSE = Object.fromEntries(Object.entries(_EA_ROUTES).map(([k,v])=>[v,k]));
+
+function _eaGetPageFromPath(path){
+  // normaliza: remove trailing slash exceto raiz
+  const p = path.replace(/\/+$/,'') || '/';
+  return _EA_ROUTES_REVERSE[p] || _EA_ROUTES_REVERSE[path] || null;
+}
+
+// Empurra entrada na history apenas quando a página muda
+let _eaLastPushedPage = null;
+function _eaPushState(page){
+  const url = _EA_ROUTES[page] || '/';
+  if(_eaLastPushedPage === page) return; // evita duplicatas consecutivas
+  _eaLastPushedPage = page;
+  try{
+    history.pushState({eaPage: page}, '', url);
+  }catch(e){ console.warn('[EA-History] pushState:', e); }
+}
+
+// Listener do botão voltar (popstate)
+window.addEventListener('popstate', function(e){
+  try{
+    let page = null;
+    if(e.state && e.state.eaPage){
+      page = e.state.eaPage;
+    } else {
+      page = _eaGetPageFromPath(location.pathname);
+    }
+    if(page){
+      _eaLastPushedPage = page; // não re-push
+      _navBase(page);
+      // Chama loaders sem pushState
+      const navTabsRow = document.getElementById('nav-home-tabs');
+      const mainLayout = document.getElementById('main-layout');
+      if(page === 'home'){
+        if(navTabsRow) navTabsRow.classList.add('visible');
+        if(mainLayout) mainLayout.style.paddingTop = 'var(--nav-h)';
+      } else {
+        if(navTabsRow) navTabsRow.classList.remove('visible');
+        if(mainLayout) mainLayout.style.paddingTop = '';
+      }
+      window.scrollTo({top:0,behavior:'instant'});
+      setTimeout(()=>{
+        if(page==='home')             { cachedPostIds.clear();cachedPosts={};loadFeed(true); }
+        else if(page==='explore')        loadExploreFeed();
+        else if(page==='friends')        loadFriendsList('friends');
+        else if(page==='communities')    { loadCommGrid('all'); setTimeout(buildCommIconGrid,200); }
+        else if(page==='businesses')     initBusinessPage();
+        else if(page==='messages')       loadConversations();
+        else if(page==='notifications')  loadNotifTab('nt-all');
+        else if(page==='capsules')       loadCapsules();
+        else if(page==='profile')        loadProfilePage(CU?.id);
+      },0);
+    }
+  }catch(err){ console.warn('[EA-History] popstate:', err); }
+});
+
 function _navBase(page){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   ['home','explore','friends','communities','businesses','messages','notifications','capsules','profile','comm-detail'].forEach(p=>{
@@ -6773,6 +6865,7 @@ function _navBase(page){
   }catch(e){}
 }
 function nav(page){
+  _eaPushState(page); // ← registra na history antes de qualquer coisa
   _navBase(page);
   // Show/hide nav-home-tabs row (2nd navbar row)
   const navTabsRow = document.getElementById('nav-home-tabs');
@@ -9852,7 +9945,7 @@ async function openProfileEditor(){
   document.getElementById('settings-modal-overlay')?.remove();
   // Navega para o perfil
   if(!CP) await loadProfilePage(CU?.id);
-  else _navBase('profile');
+  else { _eaPushState('profile'); _navBase('profile'); }
   // Aguarda a aba aparecer e clica
   setTimeout(()=>{
     document.querySelectorAll('.nbtn,.slink,.bnav-btn').forEach(b=>b.classList.remove('active'));
@@ -11410,6 +11503,7 @@ async function loadProfilePage(userId){
   if(!userId) return;
 
   // Navigate (no loop - uses _navBase directly)
+  _eaPushState('profile'); // ← registra na history
   _navBase('profile');
   document.querySelectorAll('.nbtn,.slink,.bnav-btn').forEach(b=>b.classList.remove('active'));
   ['nb-profile','sl-profile','bn-profile'].forEach(id=>{document.getElementById(id)?.classList.add('active');});
