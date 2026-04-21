@@ -25462,7 +25462,7 @@ export default {
     <!-- Rodapé: views + reações + comentário + excluir -->
     <div class="oa-v-foot" id="oa-v-foot">
       <!-- Linha de views + excluir (só dono) -->
-      <div class="oa-v-meta-row">
+      <div class="oa-v-meta-row" id="oa-v-meta-row-el">
         <div class="oa-v-views" id="oa-v-views" onclick="oaOpenViewersSheet()" title="Ver quem visualizou">👁 0</div>
         <div style="flex:1"></div>
         <button class="oa-v-del" id="oa-v-del-btn" onclick="oaDeleteCurrent()" style="display:none;">&#128465; Excluir</button>
@@ -25735,7 +25735,15 @@ async function oaOpenViewersSheet(){
   const g = oaGroups[oaViewer.groupIdx];
   const it = g?.items?.[oaViewer.itemIdx];
   if(!it) return;
-  if(!(CU && g.userId === CU.id)) return; // só o dono vê
+
+  // Só o dono do story pode ver quem visualizou
+  if(!(CU && g.userId === CU.id)){
+    if(typeof showToast === 'function') showToast('Apenas o dono do story pode ver as visualizações 👁', 'info');
+    return;
+  }
+
+  // Pausa o story enquanto o painel está aberto
+  if(oaViewer && !oaViewer.paused && typeof oaTogglePause === 'function') oaTogglePause();
 
   const sheet = document.getElementById('oa-viewers-sheet');
   const list  = document.getElementById('oa-viewers-list');
@@ -25789,6 +25797,8 @@ async function oaOpenViewersSheet(){
 
 function oaCloseViewersSheet(){
   document.getElementById('oa-viewers-sheet').classList.remove('on');
+  // Retoma o story se estava pausado pelo painel
+  if(oaViewer && oaViewer.paused && typeof oaTogglePause === 'function') oaTogglePause();
 }
 
 window.oaOpenViewersSheet  = oaOpenViewersSheet;
@@ -25824,19 +25834,26 @@ function oaNavigateFromHeader(){
         .eq('id', _itMeta.business_id)
         .maybeSingle()
         .then(({ data: biz }) => {
-          if(biz) openBizDetail(biz);
-          else    nav('feed');
+          if(biz && typeof openBizDetail === 'function') openBizDetail(biz);
+          else if(g.userId) loadProfilePage(g.userId);
+          else nav('feed');
         })
-        .catch(() => nav('feed'));
+        .catch(() => {
+          if(g.userId) loadProfilePage(g.userId);
+          else nav('feed');
+        });
 
     } else if(type === 'community' && _itMeta.community_id){
       // → Comunidade: navega para a comunidade
       nav('communities');
-      setTimeout(() => openCommDetail(_itMeta.community_id), 400);
+      setTimeout(() => {
+        if(typeof openCommDetail === 'function') openCommDetail(_itMeta.community_id);
+      }, 400);
 
     } else {
-      // → Perfil pessoal (padrão)
-      loadProfilePage(g.userId);
+      // → Perfil pessoal (padrão) — sempre usa g.userId do grupo do story
+      if(g.userId && typeof loadProfilePage === 'function') loadProfilePage(g.userId);
+      else nav('feed');
     }
   }, 180);
 }
