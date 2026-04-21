@@ -25292,23 +25292,38 @@ window.oaOpenViewersSheet = async function(){
   list.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,.4);font-family:VT323,monospace;font-size:22px;">⏳ Carregando...</div>';
   if(countEl) countEl.textContent = '...';
   try{
-    const { data, error } = await db
+    // 1) Busca quem viu (sem join — FK aponta para auth.users, não profiles)
+    const { data: views, error: vErr } = await db
       .from('olha_aqui_views')
-      .select('user_id, created_at, profiles(id, username, full_name, avatar_url)')
+      .select('user_id, created_at')
       .eq('story_id', it.id)
       .order('created_at', { ascending: false })
       .limit(200);
-    if(error) throw error;
-    const total = data?.length || 0;
+    if(vErr) throw vErr;
+
+    const total = views?.length || 0;
     if(countEl) countEl.textContent = total;
+
     if(!total){
       list.innerHTML = '<div style="text-align:center;padding:48px;color:rgba(255,255,255,.35);font-family:VT323,monospace;font-size:26px;">Ninguém viu ainda 👀</div>';
       return;
     }
-    list.innerHTML = (data||[]).map(v => {
-      const p   = v.profiles || {};
-      const uid = v.user_id || '';
-      const av  = p.avatar_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+encodeURIComponent(p.username||uid||'u'));
+
+    // 2) Busca profiles separadamente pelos user_ids
+    const uids = [...new Set((views||[]).map(v=>v.user_id).filter(Boolean))];
+    let profMap = {};
+    if(uids.length){
+      const { data: profs } = await db
+        .from('profiles')
+        .select('id, username, full_name, avatar_url')
+        .in('id', uids);
+      (profs||[]).forEach(p => { profMap[p.id] = p; });
+    }
+
+    list.innerHTML = (views||[]).map(v => {
+      const p    = profMap[v.user_id] || {};
+      const uid  = v.user_id || '';
+      const av   = p.avatar_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+encodeURIComponent(p.username||uid||'u'));
       const name = p.full_name || p.username || 'Usuário';
       const user = p.username ? '@'+p.username : '';
       const time = v.created_at ? _oaTimeAgo(v.created_at) : '';
@@ -25323,8 +25338,8 @@ window.oaOpenViewersSheet = async function(){
         +`</div>`;
     }).join('');
   } catch(err){
-    console.error('[OA viewers]', err);
-    list.innerHTML = '<div style="text-align:center;padding:24px;color:#ff3366;font-size:12px;font-family:Space Mono,monospace;">Erro ao carregar.</div>';
+    console.error('[OA viewers erro]', err?.message || err);
+    list.innerHTML = '<div style="text-align:center;padding:24px;color:#ff3366;font-size:12px;font-family:Space Mono,monospace;">Erro: '+((err?.message||'').slice(0,80)||'Tente novamente')+'</div>';
   }
 };
 
