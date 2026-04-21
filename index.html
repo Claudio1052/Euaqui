@@ -25260,14 +25260,120 @@ if(document.readyState === 'loading'){
 if(typeof db !== 'undefined' && db?.auth?.onAuthStateChange){
   db.auth.onAuthStateChange(async(event, session)=>{
     if(event === 'SIGNED_IN' || event === 'INITIAL_SESSION'){
-      // Aguarda CP (perfil real) estar carregado antes de renderizar o rail
-      // para que a foto real do usuário apareça imediatamente, sem piscar
       let waited = 0;
       while(!window.CP && waited < 3000){ await new Promise(r=>setTimeout(r,100)); waited+=100; }
       if(document.getElementById('oa-rail')) oaLoadRail();
     }
   });
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODAL VISUALIZADORES — quem viu o story (dentro do IIFE = acessa tudo)
+// ═══════════════════════════════════════════════════════════════════════
+window.oaOpenViewersSheet = async function(){
+  const g  = oaGroups[oaViewer.groupIdx];
+  const it = g?.items?.[oaViewer.itemIdx];
+  if(!it) return;
+  if(!(CU && g.userId === CU.id)){
+    if(typeof showToast==='function') showToast('Apenas o dono pode ver as visualizações 👁','info');
+    return;
+  }
+  if(!oaViewer.paused){
+    oaViewer.paused = true;
+    _oaStopTimer();
+    if(oaViewer.videoEl) try{ oaViewer.videoEl.pause(); }catch(e){}
+    if(oaViewer._storyMusicPlayer) try{ oaViewer._storyMusicPlayer.pause(); }catch(e){}
+  }
+  const modal   = document.getElementById('oa-viewers-modal');
+  const list    = document.getElementById('oa-viewers-modal-list');
+  const countEl = document.getElementById('oa-viewers-modal-count');
+  if(!modal){ console.error('[OA] modal não encontrado'); return; }
+  modal.classList.add('on');
+  list.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,.4);font-family:VT323,monospace;font-size:22px;">⏳ Carregando...</div>';
+  if(countEl) countEl.textContent = '...';
+  try{
+    const { data, error } = await db
+      .from('olha_aqui_views')
+      .select('user_id, viewed_at, profiles(id, username, full_name, avatar_url)')
+      .eq('story_id', it.id)
+      .order('viewed_at', { ascending: false })
+      .limit(200);
+    if(error) throw error;
+    const total = data?.length || 0;
+    if(countEl) countEl.textContent = total;
+    if(!total){
+      list.innerHTML = '<div style="text-align:center;padding:48px;color:rgba(255,255,255,.35);font-family:VT323,monospace;font-size:26px;">Ninguém viu ainda 👀</div>';
+      return;
+    }
+    list.innerHTML = (data||[]).map(v => {
+      const p   = v.profiles || {};
+      const uid = v.user_id || '';
+      const av  = p.avatar_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+encodeURIComponent(p.username||uid||'u'));
+      const name = p.full_name || p.username || 'Usuário';
+      const user = p.username ? '@'+p.username : '';
+      const time = v.viewed_at ? _oaTimeAgo(v.viewed_at) : '';
+      return '<div class="oavm-item" onclick="window.oaViewerGoProfile(''+uid+'')">'
+        +'<img class="oavm-av" src="'+av+'" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=u'" alt="">'
+        +'<div style="flex:1;min-width:0;">'
+        +'<div class="oavm-name">'+name+'</div>'
+        +'<div class="oavm-user">'+user+'</div>'
+        +'</div>'
+        +'<div class="oavm-time">'+time+'</div>'
+        +'</div>';
+    }).join('');
+  } catch(err){
+    console.error('[OA viewers]', err);
+    list.innerHTML = '<div style="text-align:center;padding:24px;color:#ff3366;font-size:12px;font-family:Space Mono,monospace;">Erro ao carregar.</div>';
+  }
+};
+
+window.oaCloseViewersModal = function(){
+  const modal = document.getElementById('oa-viewers-modal');
+  if(modal) modal.classList.remove('on');
+  if(oaViewer.paused){
+    oaViewer.paused = false;
+    oaViewer.startedAt = Date.now();
+    oaViewer.remaining = oaViewer.duration;
+    _oaStartTimer();
+    if(oaViewer.videoEl) try{ oaViewer.videoEl.play(); }catch(e){}
+    if(oaViewer._storyMusicPlayer) try{ oaViewer._storyMusicPlayer.play(); }catch(e){}
+  }
+};
+window.oaCloseViewersSheet = window.oaCloseViewersModal;
+
+window.oaViewerGoProfile = function(uid){
+  window.oaCloseViewersModal();
+  setTimeout(()=>{ oaCloseViewer(); setTimeout(()=>loadProfilePage(uid), 200); }, 150);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// NAVEGAÇÃO foto/nome header do story
+// ═══════════════════════════════════════════════════════════════════════
+window.oaNavigateFromHeader = function(){
+  const g  = oaGroups[oaViewer.groupIdx];
+  const it = g?.items?.[oaViewer.itemIdx];
+  if(!g) return;
+  let meta = {};
+  try{ if(it?.metadata) meta = typeof it.metadata==='string' ? JSON.parse(it.metadata) : it.metadata; }catch(e){}
+  const type = meta.type || 'user';
+  oaCloseViewer();
+  setTimeout(()=>{
+    try{
+      if((type==='business'||type==='loja'||type==='servico'||type==='serviço') && meta.business_id){
+        db.from('businesses').select('*').eq('id', meta.business_id).maybeSingle()
+          .then(({data:biz,error})=>{
+            if(!error && biz && typeof openBizDetail==='function') openBizDetail(biz);
+            else loadProfilePage(g.userId);
+          }).catch(()=>loadProfilePage(g.userId));
+      } else if(type==='community' && meta.community_id){
+        nav('communities');
+        setTimeout(()=>{ if(typeof openCommDetail==='function') openCommDetail(meta.community_id); }, 400);
+      } else {
+        loadProfilePage(g.userId);
+      }
+    }catch(err){ console.error('[OA nav]', err); nav('feed'); }
+  }, 200);
+};
 
 })();
 
@@ -25716,258 +25822,53 @@ export default {
   </div>
 </div>
 
-<!-- ══ MODAL DE VISUALIZADORES — dentro do viewer, z-index superior ══ -->
+<!-- ══ MODAL DE VISUALIZADORES (z-index máximo, dentro do DOM) ════════ -->
 <style>
 #oa-viewers-modal{
-  display:none;
-  position:fixed;
-  inset:0;
-  z-index:99999;
-  align-items:flex-end;
-  justify-content:center;
-  background:rgba(0,0,0,.55);
-  backdrop-filter:blur(6px);
-  -webkit-backdrop-filter:blur(6px);
+  display:none;position:fixed;inset:0;z-index:999999;
+  align-items:flex-end;justify-content:center;
+  background:rgba(0,0,0,.6);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
 }
-#oa-viewers-modal.on{ display:flex; }
+#oa-viewers-modal.on{display:flex;}
 #oa-viewers-modal-box{
-  width:100%;
-  max-width:480px;
-  background:var(--bg-card,#0f0f3a);
+  width:100%;max-width:480px;
+  background:#0f0f3a;
   border:1px solid rgba(0,255,204,.3);
   border-radius:22px 22px 0 0;
   padding:0 0 max(20px,env(safe-area-inset-bottom,20px));
-  max-height:75vh;
-  display:flex;
-  flex-direction:column;
-  box-shadow:0 -10px 50px rgba(0,255,204,.15);
-  animation:oaSlideUp .25s ease;
+  max-height:75vh;display:flex;flex-direction:column;
+  box-shadow:0 -10px 50px rgba(0,255,204,.18);
+  animation:oaVmUp .22s ease;
 }
-@keyframes oaSlideUp{
-  from{transform:translateY(100%);}
-  to{transform:translateY(0);}
-}
-#oa-viewers-modal-handle{
-  width:38px;height:4px;
-  background:rgba(255,255,255,.18);
-  border-radius:2px;
-  margin:12px auto 0;
-  flex-shrink:0;
-}
+@keyframes oaVmUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+#oa-viewers-modal-handle{width:38px;height:4px;background:rgba(255,255,255,.18);border-radius:2px;margin:12px auto 0;flex-shrink:0;}
 #oa-viewers-modal-title{
-  font-family:'Silkscreen',monospace;
-  font-size:12px;
-  color:#00ffcc;
-  letter-spacing:1px;
-  padding:12px 16px 8px;
-  display:flex;align-items:center;justify-content:space-between;
-  border-bottom:1px solid rgba(255,255,255,.06);
-  flex-shrink:0;
+  font-family:'Silkscreen',monospace;font-size:12px;color:#00ffcc;letter-spacing:1px;
+  padding:12px 16px 8px;display:flex;align-items:center;justify-content:space-between;
+  border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0;
 }
-#oa-viewers-modal-title button{
-  background:none;border:none;color:rgba(255,255,255,.4);
-  font-size:18px;cursor:pointer;padding:0 4px;line-height:1;
-}
-#oa-viewers-modal-list{
-  flex:1;
-  overflow-y:auto;
-  padding:8px 12px 4px;
-  display:flex;flex-direction:column;gap:4px;
-}
+#oa-viewers-modal-title button{background:none;border:none;color:rgba(255,255,255,.45);font-size:20px;cursor:pointer;padding:0 4px;line-height:1;}
+#oa-viewers-modal-list{flex:1;overflow-y:auto;padding:8px 12px 4px;display:flex;flex-direction:column;gap:4px;}
 #oa-viewers-modal-list::-webkit-scrollbar{width:3px;}
 #oa-viewers-modal-list::-webkit-scrollbar-thumb{background:#00ffcc;border-radius:2px;}
-.oavm-item{
-  display:flex;align-items:center;gap:10px;
-  padding:9px 10px;
-  border-radius:12px;
-  cursor:pointer;
-  transition:background .15s;
-  border:1px solid transparent;
-}
-.oavm-item:hover,.oavm-item:active{
-  background:rgba(0,255,204,.07);
-  border-color:rgba(0,255,204,.2);
-}
-.oavm-av{
-  width:40px;height:40px;border-radius:50%;
-  object-fit:cover;flex-shrink:0;
-  border:2px solid rgba(0,255,204,.3);
-  background:#0a0a2a;
-}
-.oavm-name{
-  font-family:'Silkscreen',monospace;
-  font-size:10px;color:#e0e0ff;
-}
+.oavm-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:12px;cursor:pointer;transition:background .15s;border:1px solid transparent;}
+.oavm-item:hover,.oavm-item:active{background:rgba(0,255,204,.08);border-color:rgba(0,255,204,.22);}
+.oavm-av{width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid rgba(0,255,204,.3);background:#0a0a2a;}
+.oavm-name{font-family:'Silkscreen',monospace;font-size:10px;color:#e0e0ff;}
 .oavm-user{font-size:10px;color:#00ffcc;margin-top:2px;}
-.oavm-time{
-  font-family:'VT323',monospace;font-size:13px;
-  color:rgba(255,255,255,.35);flex-shrink:0;margin-left:auto;
-}
+.oavm-time{font-family:'VT323',monospace;font-size:13px;color:rgba(255,255,255,.35);flex-shrink:0;margin-left:auto;}
 </style>
 
-<div id="oa-viewers-modal" onclick="if(event.target===this)oaCloseViewersModal()">
+<div id="oa-viewers-modal" onclick="if(event.target===this)window.oaCloseViewersModal()">
   <div id="oa-viewers-modal-box">
     <div id="oa-viewers-modal-handle"></div>
     <div id="oa-viewers-modal-title">
       <span>👁 <span id="oa-viewers-modal-count">0</span> visualizações</span>
-      <button onclick="oaCloseViewersModal()">✕</button>
+      <button onclick="window.oaCloseViewersModal()">✕</button>
     </div>
     <div id="oa-viewers-modal-list"></div>
   </div>
 </div>
-
-<script>
-// ══════════════════════════════════════════════════════════════════════
-// MODAL DE VISUALIZADORES — quem viu o story
-// ══════════════════════════════════════════════════════════════════════
-async function oaOpenViewersSheet(){
-  const g  = oaGroups[oaViewer.groupIdx];
-  const it = g?.items?.[oaViewer.itemIdx];
-  if(!it){ if(typeof showToast==='function') showToast('Story não encontrado','info'); return; }
-
-  // Só o dono do story enxerga quem viu
-  if(!(CU && g.userId === CU.id)){
-    if(typeof showToast==='function') showToast('Apenas o dono pode ver as visualizações 👁','info');
-    return;
-  }
-
-  // Pausa o story durante o modal
-  if(oaViewer && !oaViewer.paused){ oaViewer.paused = true; _oaStopTimer(); }
-
-  const modal   = document.getElementById('oa-viewers-modal');
-  const list    = document.getElementById('oa-viewers-modal-list');
-  const countEl = document.getElementById('oa-viewers-modal-count');
-
-  if(!modal) return;
-
-  // Mostra o modal imediatamente com loading
-  modal.classList.add('on');
-  list.innerHTML = '<div style="text-align:center;padding:36px;color:rgba(255,255,255,.4);font-family:VT323,monospace;font-size:20px;">⏳ Carregando...</div>';
-  if(countEl) countEl.textContent = '...';
-
-  try{
-    const { data, error } = await db
-      .from('olha_aqui_views')
-      .select('user_id, viewed_at, profiles(id, username, full_name, avatar_url)')
-      .eq('story_id', it.id)
-      .order('viewed_at', { ascending: false })
-      .limit(200);
-
-    if(error) throw error;
-
-    const total = data?.length || 0;
-    if(countEl) countEl.textContent = total;
-
-    if(!total){
-      list.innerHTML = '<div style="text-align:center;padding:44px;color:rgba(255,255,255,.35);font-family:VT323,monospace;font-size:24px;">Ninguém viu ainda 👀</div>';
-      return;
-    }
-
-    list.innerHTML = (data||[]).map(v => {
-      const p    = v.profiles || {};
-      const uid  = v.user_id || '';
-      const av   = p.avatar_url
-        ? p.avatar_url
-        : `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(p.username||uid||'u')}`;
-      const name = p.full_name || p.username || 'Usuário';
-      const user = p.username ? '@' + p.username : '';
-      const time = v.viewed_at ? _oaTimeAgo(v.viewed_at) : '';
-      // Clique leva ao perfil de quem viu
-      return `<div class="oavm-item" onclick="oaCloseViewersModal();setTimeout(()=>{oaCloseViewer();setTimeout(()=>loadProfilePage('${uid}'),200);},120)">
-        <img class="oavm-av" src="${av}" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=u'" alt="">
-        <div style="flex:1;min-width:0;">
-          <div class="oavm-name">${name}</div>
-          <div class="oavm-user">${user}</div>
-        </div>
-        <div class="oavm-time">${time}</div>
-      </div>`;
-    }).join('');
-
-  } catch(err){
-    console.error('[OA] viewers error:', err);
-    list.innerHTML = '<div style="text-align:center;padding:24px;color:#ff3366;font-size:12px;font-family:Space Mono,monospace;">Erro ao carregar. Tente novamente.</div>';
-  }
-}
-
-function oaCloseViewersModal(){
-  const modal = document.getElementById('oa-viewers-modal');
-  if(modal) modal.classList.remove('on');
-  // Retoma o story após fechar
-  if(oaViewer && oaViewer.paused){
-    oaViewer.paused = false;
-    oaViewer.startedAt = Date.now() - (oaViewer.duration - (oaViewer.remaining||oaViewer.duration));
-    _oaStartTimer();
-  }
-}
-
-// Aliases para compatibilidade com chamadas antigas
-window.oaOpenViewersSheet  = oaOpenViewersSheet;
-window.oaCloseViewersSheet = oaCloseViewersModal;
-window.oaCloseViewersModal = oaCloseViewersModal;
-
-// ══════════════════════════════════════════════════════════════════════
-// NAVEGAÇÃO ao clicar na foto/nome do header do story
-// ══════════════════════════════════════════════════════════════════════
-function oaNavigateFromHeader(){
-  const g  = oaGroups[oaViewer.groupIdx];
-  const it = g?.items?.[oaViewer.itemIdx];
-  if(!g) return;
-
-  // Parseia metadata do story atual
-  let meta = {};
-  try{
-    if(it?.metadata){
-      meta = typeof it.metadata === 'string' ? JSON.parse(it.metadata) : it.metadata;
-    }
-  }catch(e){}
-
-  const type = meta.type || 'user';
-
-  // Fecha o viewer primeiro
-  oaCloseViewer();
-
-  setTimeout(()=>{
-    try{
-      if((type==='business'||type==='loja'||type==='servico'||type==='serviço') && meta.business_id){
-        // → Loja / Serviço
-        db.from('businesses')
-          .select('*')
-          .eq('id', meta.business_id)
-          .maybeSingle()
-          .then(({ data: biz, error }) => {
-            if(!error && biz && typeof openBizDetail === 'function'){
-              openBizDetail(biz);
-            } else {
-              // fallback: perfil do dono
-              loadProfilePage(g.userId);
-            }
-          })
-          .catch(() => loadProfilePage(g.userId));
-
-      } else if(type==='community' && meta.community_id){
-        // → Comunidade
-        if(typeof nav === 'function') nav('communities');
-        setTimeout(()=>{
-          if(typeof openCommDetail === 'function') openCommDetail(meta.community_id);
-        }, 400);
-
-      } else {
-        // → Perfil pessoal — usa sempre o userId do grupo
-        if(g.userId && typeof loadProfilePage === 'function'){
-          loadProfilePage(g.userId);
-        } else if(typeof nav === 'function'){
-          nav('feed');
-        }
-      }
-    } catch(err){
-      console.error('[OA] navigate error:', err);
-      if(typeof nav === 'function') nav('feed');
-    }
-  }, 200);
-}
-
-window.oaNavigateFromHeader = oaNavigateFromHeader;
-</script>
 
 </body>
 </html>
