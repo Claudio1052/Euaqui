@@ -7,6 +7,8 @@
 <title>EuAqui — Sua rede, seu mundo</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link href="https://fonts.googleapis.com/css2?family=VT323&family=Silkscreen:wght@400;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<link id="ea-custom-font-link" rel="stylesheet" href="">
+<style id="ea-font-override"></style>
 <style>
 :root{
   --bg-deep:#0a0a2a;--bg-mid:#0f0f3a;--bg-card:rgba(15,15,58,0.92);
@@ -6393,6 +6395,7 @@ document.addEventListener('error', function(e){
 }, true);
 
 document.addEventListener('DOMContentLoaded', async()=>{
+  _initFont();
   const minWait = new Promise(r=>setTimeout(r,1200));
 
   // Detectar retorno de OAuth via hash #access_token=...&refresh_token=...
@@ -9770,6 +9773,7 @@ function showSettings(){
     {code:'en',label:'🇺🇸 English'},
   ];
   const curLang = localStorage.getItem('ea_lang') || 'pt-BR';
+  const curFont = localStorage.getItem('ea_font') || 'default';
 
   over.innerHTML = `
   <div class="modal" style="max-width:480px;width:100%;margin:auto;">
@@ -9782,6 +9786,7 @@ function showSettings(){
     <div style="display:flex;gap:4px;margin-bottom:16px;background:rgba(255,255,255,.04);border-radius:8px;padding:3px;">
       <button id="stab-perfil" onclick="switchSettingsTab('perfil')" style="flex:1;padding:7px;border:none;border-radius:6px;font-family:Space Mono,monospace;font-size:10px;cursor:pointer;background:var(--neon-cyan);color:var(--bg-deep);transition:all .2s;">👤 Perfil</button>
       <button id="stab-idioma" onclick="switchSettingsTab('idioma')" style="flex:1;padding:7px;border:none;border-radius:6px;font-family:Space Mono,monospace;font-size:10px;cursor:pointer;background:transparent;color:var(--text-muted);transition:all .2s;">🌐 Idioma</button>
+      <button id="stab-fonte" onclick="switchSettingsTab('fonte')" style="flex:1;padding:7px;border:none;border-radius:6px;font-family:Space Mono,monospace;font-size:10px;cursor:pointer;background:transparent;color:var(--text-muted);transition:all .2s;">🔤 Fonte</button>
       <button id="stab-bloqueados" onclick="switchSettingsTab('bloqueados')" style="flex:1;padding:7px;border:none;border-radius:6px;font-family:Space Mono,monospace;font-size:10px;cursor:pointer;background:transparent;color:var(--text-muted);transition:all .2s;">🚫 Bloqueados</button>
     </div>
 
@@ -9805,6 +9810,31 @@ function showSettings(){
       <div style="font-size:10px;color:var(--text-muted);margin-top:10px;padding:8px;background:rgba(0,0,0,.3);border-radius:6px;">💡 A tradução completa da interface estará disponível em breve. Por ora, o idioma é registrado para futuras atualizações.</div>
     </div>
 
+    <!-- Aba Fonte -->
+    <div id="spanel-fonte" style="display:none;">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">Escolha a fonte da interface. A fonte será aplicada em toda a página.</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${EA_FONTS.map(function(f){
+          var isActive=f.id===curFont;
+          var border=isActive?'var(--neon-cyan)':'rgba(255,255,255,.08)';
+          var bg=isActive?'rgba(0,255,204,.07)':'rgba(255,255,255,.02)';
+          var color=isActive?'var(--neon-cyan)':'var(--text-light)';
+          var ff=f.bodyFont||'inherit';
+          var checked=isActive?'checked':'';
+          var tick=isActive?'<span style="font-size:10px;color:var(--neon-cyan);flex-shrink:0;">✓ Ativa</span>':'';
+          return '<label style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:10px;border:1px solid '+border+';background:'+bg+';cursor:pointer;transition:all .2s;" onclick="applyFont(\'' +f.id+ '\')">'
+            +'<input type="radio" name="ea-font" value="'+f.id+'" '+checked+' style="accent-color:var(--neon-cyan);flex-shrink:0;">'
+            +'<div style="flex:1;min-width:0;">'
+            +'<div style="font-size:13px;color:'+color+';font-family:'+ff+';">'+f.emoji+' '+f.label+'</div>'
+            +'<div style="font-size:10px;color:var(--text-muted);font-family:'+ff+';margin-top:2px;">Aa Bb Cc 123 — '+f.label+'</div>'
+            +'</div>'
+            +tick
+            +'</label>';
+        }).join('')}
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:10px;padding:8px;background:rgba(0,0,0,.3);border-radius:6px;">💡 A fonte é salva localmente e aplicada automaticamente ao abrir o app.</div>
+    </div>
+
     <!-- Aba Bloqueados -->
     <div id="spanel-bloqueados" style="display:none;">
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">Usuários que você bloqueou não veem seu perfil nem suas postagens.</div>
@@ -9821,7 +9851,7 @@ function showSettings(){
 }
 
 function switchSettingsTab(tab){
-  ['perfil','idioma','bloqueados'].forEach(t=>{
+  ['perfil','idioma','fonte','bloqueados'].forEach(t=>{
     const btn = document.getElementById('stab-'+t);
     const panel = document.getElementById('spanel-'+t);
     const active = t===tab;
@@ -9839,6 +9869,107 @@ function setAppLang(code){
   showSettings();
   switchSettingsTab('idioma');
 }
+
+// ===== FONT SWITCHER =====
+const EA_FONTS = [
+  {
+    id: 'default',
+    label: 'Padrão (Space Mono)',
+    emoji: '🔤',
+    googleUrl: '',
+    bodyFont: "'Space Mono', monospace",
+    headingFont: "'Silkscreen', monospace",
+    accentFont: "'VT323', monospace",
+  },
+  {
+    id: 'inter',
+    label: 'Inter',
+    emoji: '✨',
+    googleUrl: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap',
+    bodyFont: "'Inter', sans-serif",
+    headingFont: "'Inter', sans-serif",
+    accentFont: "'Inter', sans-serif",
+  },
+  {
+    id: 'montserrat',
+    label: 'Montserrat',
+    emoji: '🅼',
+    googleUrl: 'https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap',
+    bodyFont: "'Montserrat', sans-serif",
+    headingFont: "'Montserrat', sans-serif",
+    accentFont: "'Montserrat', sans-serif",
+  },
+  {
+    id: 'poppins',
+    label: 'Poppins',
+    emoji: '🅿',
+    googleUrl: 'https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap',
+    bodyFont: "'Poppins', sans-serif",
+    headingFont: "'Poppins', sans-serif",
+    accentFont: "'Poppins', sans-serif",
+  },
+  {
+    id: 'plus-jakarta',
+    label: 'Plus Jakarta Sans',
+    emoji: '🌟',
+    googleUrl: 'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap',
+    bodyFont: "'Plus Jakarta Sans', sans-serif",
+    headingFont: "'Plus Jakarta Sans', sans-serif",
+    accentFont: "'Plus Jakarta Sans', sans-serif",
+  },
+];
+
+function applyFont(fontId){
+  const font = EA_FONTS.find(f => f.id === fontId) || EA_FONTS[0];
+  localStorage.setItem('ea_font', fontId);
+
+  // Load Google Font if needed
+  const fontLink = document.getElementById('ea-custom-font-link');
+  if(font.googleUrl){
+    fontLink.href = font.googleUrl;
+  } else {
+    fontLink.href = '';
+  }
+
+  // Apply override CSS to all elements
+  const overrideStyle = document.getElementById('ea-font-override');
+  if(font.id === 'default'){
+    overrideStyle.textContent = '';
+  } else {
+    overrideStyle.textContent = `
+      body, input, textarea, select, button {
+        font-family: ${font.bodyFont} !important;
+      }
+      .nav-logo, .boot-logo, .stn, .pbar-wrap, .boot-sub {
+        font-family: ${font.accentFont} !important;
+      }
+      .umn, .pun, .music-titulo, .music-picker-title,
+      .post-music-titulo, .oa-se-title, .oa-se-music-titulo,
+      .oavm-name, .music-search-btn, .post-btn,
+      [style*="Silkscreen"], [style*="Space Mono"], [style*="VT323"] {
+        font-family: ${font.headingFont} !important;
+      }
+      * { font-family: ${font.bodyFont} !important; }
+      .nav-logo, .boot-logo {
+        font-family: ${font.accentFont} !important;
+        letter-spacing: 1px !important;
+      }
+    `;
+  }
+
+  showToast('🔤 Fonte aplicada: ' + font.label, 'success');
+
+  // Re-render settings with updated selection
+  document.getElementById('settings-modal-overlay')?.remove();
+  showSettings();
+  switchSettingsTab('fonte');
+}
+
+function _initFont(){
+  const saved = localStorage.getItem('ea_font');
+  if(saved && saved !== 'default') applyFont(saved);
+}
+// Init on load
 
 async function _loadBlockedList(){
   if(!CU) return;
