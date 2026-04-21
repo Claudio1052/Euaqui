@@ -25312,14 +25312,15 @@ window.oaOpenViewersSheet = async function(){
       const name = p.full_name || p.username || 'Usuário';
       const user = p.username ? '@'+p.username : '';
       const time = v.viewed_at ? _oaTimeAgo(v.viewed_at) : '';
-      return '<div class="oavm-item" onclick="window.oaViewerGoProfile(''+uid+'')">'
-        +'<img class="oavm-av" src="'+av+'" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=u'" alt="">'
-        +'<div style="flex:1;min-width:0;">'
-        +'<div class="oavm-name">'+name+'</div>'
-        +'<div class="oavm-user">'+user+'</div>'
-        +'</div>'
-        +'<div class="oavm-time">'+time+'</div>'
-        +'</div>';
+      const safeUid = uid.replace(/'/g, '');
+      return `<div class="oavm-item" onclick="window.oaViewerGoProfile('${safeUid}')">`
+        +`<img class="oavm-av" src="${av}" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=u'" alt="">`
+        +`<div style="flex:1;min-width:0;">`
+        +`<div class="oavm-name">${name}</div>`
+        +`<div class="oavm-user">${user}</div>`
+        +`</div>`
+        +`<div class="oavm-time">${time}</div>`
+        +`</div>`;
     }).join('');
   } catch(err){
     console.error('[OA viewers]', err);
