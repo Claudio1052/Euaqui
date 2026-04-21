@@ -16849,23 +16849,50 @@ async function submitBizReview(bizId){
   loadBizBrowse();
 }
 
-// ── Biz Chat via Realtime (sem polling de 3s) ─────────────────────
+// ── Biz Chat Realtime + Polling fallback ─────────────────────────
 let _bizRealtimeCh = null;
 let _bizListRealtimeCh = null;
+let _bizPollInterval = null;
+let _bizLastMsgCount = 0;
 
 function startBizChatPoll(){
   stopBizChatPoll();
   if(!currentBizChat||!CU) return;
-  // Fix 1: tabela correta é business_messages, filtro por chat_id
-  _bizRealtimeCh = db.channel('biz-msgs-'+currentBizChat)
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'business_messages',filter:'chat_id=eq.'+currentBizChat},async()=>{
-      await loadBizMsgs(currentBizChat);
-    }).subscribe();
-  // Atualiza sidebar (lista de atendimentos) em tempo real
-  if(!_bizListRealtimeCh && myBusiness){
-    _bizListRealtimeCh = db.channel('biz-chats-list-'+myBusiness.id)
-      .on('postgres_changes',{event:'*',schema:'public',table:'business_chats',filter:'business_id=eq.'+myBusiness.id},async()=>{
+
+  // 1) Realtime via postgres_changes — sem filter pois alguns planos Supabase
+  //    não suportam filtro em UUIDs no Realtime; filtramos no callback.
+  _bizRealtimeCh = db.channel('biz-msgs-'+currentBizChat+'-'+Date.now())
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'business_messages'},(pl)=>{
+      if(pl && pl.new && pl.new.chat_id === currentBizChat && pl.new.sender_id !== CU.id){
+        loadBizMsgs(currentBizChat);
+        loadBizChats();
+      }
+    })
+    .subscribe((status)=>{
+      console.log('[bizRealtime] status:', status);
+    });
+
+  // 2) Polling a cada 3s como fallback robusto (cobre WS instável / planos free)
+  _bizLastMsgCount = 0;
+  _bizPollInterval = setInterval(async()=>{
+    if(!currentBizChat||!CU) return;
+    try{
+      const {count} = await db.from('business_messages')
+        .select('*',{count:'exact',head:true})
+        .eq('chat_id', currentBizChat);
+      if(count !== null && count !== _bizLastMsgCount){
+        _bizLastMsgCount = count;
+        await loadBizMsgs(currentBizChat);
         await loadBizChats();
+      }
+    }catch(e){ /* ignora erros de polling */ }
+  }, 3000);
+
+  // 3) Canal da sidebar (novos chats chegando para o dono do negocio)
+  if(!_bizListRealtimeCh && myBusiness){
+    _bizListRealtimeCh = db.channel('biz-list-'+myBusiness.id+'-'+Date.now())
+      .on('postgres_changes',{event:'*',schema:'public',table:'business_chats'},(pl)=>{
+        if(pl && pl.new && pl.new.business_id === myBusiness.id) loadBizChats();
       }).subscribe();
   }
 }
@@ -16873,6 +16900,8 @@ function startBizChatPoll(){
 function stopBizChatPoll(){
   if(_bizRealtimeCh){ try{db.removeChannel(_bizRealtimeCh);}catch(e){} _bizRealtimeCh=null; }
   if(_bizListRealtimeCh){ try{db.removeChannel(_bizListRealtimeCh);}catch(e){} _bizListRealtimeCh=null; }
+  if(_bizPollInterval){ clearInterval(_bizPollInterval); _bizPollInterval=null; }
+  _bizLastMsgCount=0;
 }
 
 // ── Deal / Venda Modal (professional) ────────────────────────────
