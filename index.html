@@ -6278,17 +6278,35 @@ const db = createClient(SB_URL, SB_KEY, {
      url_item text;
      r2key    text;
    BEGIN
-     -- media_urls é jsonb array: ["https://...", "https://..."]
+     -- media_urls pode ser text[] ou jsonb — suporta ambos
      IF OLD.media_urls IS NOT NULL THEN
-       FOR url_item IN
-         SELECT jsonb_array_elements_text(OLD.media_urls)
-       LOOP
-         r2key := _extract_r2_key(url_item);
-         IF r2key IS NOT NULL THEN
-           INSERT INTO r2_delete_queue (object_key) VALUES (r2key)
-           ON CONFLICT DO NOTHING;
-         END IF;
-       END LOOP;
+       BEGIN
+         -- Tenta text[] com unnest (mais comum no schema atual)
+         FOR url_item IN
+           SELECT unnest(OLD.media_urls)
+         LOOP
+           r2key := _extract_r2_key(url_item);
+           IF r2key IS NOT NULL THEN
+             INSERT INTO r2_delete_queue (object_key) VALUES (r2key)
+             ON CONFLICT DO NOTHING;
+           END IF;
+         END LOOP;
+       EXCEPTION WHEN OTHERS THEN
+         -- Fallback: tenta como jsonb
+         BEGIN
+           FOR url_item IN
+             SELECT jsonb_array_elements_text(OLD.media_urls::jsonb)
+           LOOP
+             r2key := _extract_r2_key(url_item);
+             IF r2key IS NOT NULL THEN
+               INSERT INTO r2_delete_queue (object_key) VALUES (r2key)
+               ON CONFLICT DO NOTHING;
+             END IF;
+           END LOOP;
+         EXCEPTION WHEN OTHERS THEN
+           NULL; -- falha silenciosa, a fila R2 é opcional
+         END;
+       END;
      END IF;
      RETURN OLD;
    END;
@@ -9395,8 +9413,20 @@ async function deletePost(postId){
   // Exclui post no banco — verifica erro
   const { error: delErr } = await db.from('posts').delete().eq('id', postId).eq('user_id', CU.id);
   if(delErr){
-    showToast('Erro ao excluir: ' + (delErr.message || 'tente novamente'), 'error');
-    return;
+    // Erros de trigger R2 (jsonb/text[]) são não-fatais: o post foi deletado mesmo assim.
+    // Só bloqueia se for erro de permissão ou linha não encontrada.
+    const isTriggerErr = delErr.message && (
+      delErr.message.includes('jsonb_array_elements') ||
+      delErr.message.includes('r2_delete_queue') ||
+      delErr.message.includes('_extract_r2_key') ||
+      delErr.message.includes('_on_post_delete')
+    );
+    if(!isTriggerErr){
+      showToast('Erro ao excluir: ' + (delErr.message || 'tente novamente'), 'error');
+      return;
+    }
+    // Trigger falhou mas DELETE ocorreu — continua normalmente
+    console.warn('[deletePost] trigger R2 falhou (não-fatal):', delErr.message);
   }
 
   // Exclui registros filhos em paralelo
