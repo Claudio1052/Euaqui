@@ -4701,6 +4701,87 @@ body.day-mode::before{
   padding:3px 8px;
   border-radius:20px;
   backdrop-filter:blur(4px);
+  cursor:pointer;
+  transition:background .15s, box-shadow .15s;
+  border:1px solid transparent;
+}
+.oa-v-views:hover{
+  background:rgba(0,255,204,.12);
+  border-color:rgba(0,255,204,.35);
+  box-shadow:0 0 10px rgba(0,255,204,.2);
+}
+/* ── Painel de quem visualizou ─── */
+#oa-viewers-sheet{
+  position:fixed;
+  inset:0;
+  z-index:10070;
+  display:none;
+  align-items:flex-end;
+  justify-content:center;
+  background:rgba(0,0,0,.6);
+  backdrop-filter:blur(4px);
+}
+#oa-viewers-sheet.on{ display:flex; }
+#oa-viewers-box{
+  width:100%;
+  max-width:480px;
+  background:var(--bg-card);
+  border:1px solid var(--border-glow);
+  border-radius:20px 20px 0 0;
+  padding:0 0 max(20px,env(safe-area-inset-bottom,20px));
+  max-height:72vh;
+  display:flex;
+  flex-direction:column;
+  box-shadow:0 -8px 40px rgba(0,255,204,.1);
+}
+.oa-viewers-handle{
+  width:36px;height:4px;
+  background:rgba(255,255,255,.15);
+  border-radius:2px;
+  margin:10px auto 0;
+  flex-shrink:0;
+}
+.oa-viewers-title{
+  font-family:'Silkscreen',monospace;
+  font-size:11px;
+  color:var(--neon-cyan);
+  letter-spacing:1px;
+  padding:12px 16px 8px;
+  display:flex;align-items:center;gap:8px;
+  border-bottom:1px solid rgba(255,255,255,.06);
+  flex-shrink:0;
+}
+.oa-viewers-list{
+  flex:1;
+  overflow-y:auto;
+  padding:8px 12px;
+}
+.oa-viewers-list::-webkit-scrollbar{ width:4px; }
+.oa-viewers-list::-webkit-scrollbar-thumb{ background:var(--neon-cyan); border-radius:2px; }
+.oa-viewer-item{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:9px 6px;
+  border-radius:10px;
+  cursor:pointer;
+  transition:background .15s;
+}
+.oa-viewer-item:hover{ background:rgba(0,255,204,.06); }
+.oa-viewer-av{
+  width:36px;height:36px;border-radius:50%;
+  border:2px solid rgba(0,255,204,.25);
+  object-fit:cover;flex-shrink:0;
+}
+.oa-viewer-name{
+  font-family:'Silkscreen',monospace;
+  font-size:10px;
+  color:var(--text-light);
+}
+.oa-viewer-user{
+  font-size:9px;
+  color:var(--neon-cyan);
+  margin-top:1px;
 }
 .oa-v-del{
   background:rgba(255,51,102,.15);
@@ -25359,8 +25440,8 @@ export default {
   <div class="oa-v-stage" id="oa-v-stage">
     <div class="oa-v-bars" id="oa-v-bars"></div>
     <div class="oa-v-head">
-      <img class="oa-v-avatar" id="oa-v-avatar" src="" alt="">
-      <div class="oa-v-info">
+      <img class="oa-v-avatar" id="oa-v-avatar" src="" alt="" onclick="oaNavigateFromHeader()" style="cursor:pointer;" title="Ver perfil">
+      <div class="oa-v-info" onclick="oaNavigateFromHeader()" style="cursor:pointer;" title="Ver perfil">
         <div class="oa-v-name" id="oa-v-name">-</div>
         <div class="oa-v-time" id="oa-v-time">agora</div>
       </div>
@@ -25382,7 +25463,7 @@ export default {
     <div class="oa-v-foot" id="oa-v-foot">
       <!-- Linha de views + excluir (só dono) -->
       <div class="oa-v-meta-row">
-        <div class="oa-v-views" id="oa-v-views">👁 0</div>
+        <div class="oa-v-views" id="oa-v-views" onclick="oaOpenViewersSheet()" title="Ver quem visualizou">👁 0</div>
         <div style="flex:1"></div>
         <button class="oa-v-del" id="oa-v-del-btn" onclick="oaDeleteCurrent()" style="display:none;">&#128465; Excluir</button>
       </div>
@@ -25634,6 +25715,134 @@ export default {
     </div>
   </div>
 </div>
+
+<!-- ══ PAINEL DE VISUALIZADORES DO STORY ════════════════════════ -->
+<div id="oa-viewers-sheet" onclick="if(event.target===this)oaCloseViewersSheet()">
+  <div id="oa-viewers-box">
+    <div class="oa-viewers-handle"></div>
+    <div class="oa-viewers-title">
+      👁 <span id="oa-viewers-count">0</span> visualizações
+    </div>
+    <div class="oa-viewers-list" id="oa-viewers-list">
+      <div style="text-align:center;padding:30px;color:var(--text-muted);font-family:'VT323',monospace;font-size:18px;">⏳ Carregando...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Painel de quem visualizou o story ───────────────────────────────────────
+async function oaOpenViewersSheet(){
+  const g = oaGroups[oaViewer.groupIdx];
+  const it = g?.items?.[oaViewer.itemIdx];
+  if(!it) return;
+  if(!(CU && g.userId === CU.id)) return; // só o dono vê
+
+  const sheet = document.getElementById('oa-viewers-sheet');
+  const list  = document.getElementById('oa-viewers-list');
+  const countEl = document.getElementById('oa-viewers-count');
+
+  sheet.classList.add('on');
+  list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-muted);font-family:\'VT323\',monospace;font-size:18px;">⏳ Carregando...</div>';
+
+  try{
+    const { data, error } = await db
+      .from('olha_aqui_views')
+      .select('user_id, viewed_at, profiles(id, username, full_name, avatar_url)')
+      .eq('story_id', it.id)
+      .order('viewed_at', { ascending: false })
+      .limit(200);
+
+    if(error) throw error;
+
+    const total = data?.length || 0;
+    if(countEl) countEl.textContent = total;
+
+    if(!total){
+      list.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);font-family:\'VT323\',monospace;font-size:22px;">Ninguém viu ainda 👀</div>';
+      return;
+    }
+
+    list.innerHTML = (data || []).map(v => {
+      const p   = v.profiles || {};
+      const uid = v.user_id;
+      const av  = p.avatar_url
+        ? p.avatar_url
+        : `https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(p.username || uid)}`;
+      const name = p.full_name || p.username || 'Usuário';
+      const user = p.username ? '@' + p.username : '';
+      const time = v.viewed_at ? _oaTimeAgo(v.viewed_at) : '';
+      return `<div class="oa-viewer-item" onclick="oaCloseViewersSheet();setTimeout(()=>loadProfilePage('${uid}'),180)">
+        <img class="oa-viewer-av" src="${av}"
+             onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=u'" alt="">
+        <div style="flex:1;min-width:0;">
+          <div class="oa-viewer-name">${name}</div>
+          <div class="oa-viewer-user">${user}</div>
+        </div>
+        <div style="font-family:'VT323',monospace;font-size:12px;color:var(--text-muted);flex-shrink:0;">${time}</div>
+      </div>`;
+    }).join('');
+
+  } catch(e){
+    list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--neon-pink);font-size:12px;font-family:\'Space Mono\',monospace;">Erro ao carregar visualizações</div>';
+  }
+}
+
+function oaCloseViewersSheet(){
+  document.getElementById('oa-viewers-sheet').classList.remove('on');
+}
+
+window.oaOpenViewersSheet  = oaOpenViewersSheet;
+window.oaCloseViewersSheet = oaCloseViewersSheet;
+
+// ── Navegação a partir do header do viewer (avatar / nome) ──────────────────
+function oaNavigateFromHeader(){
+  const g  = oaGroups[oaViewer.groupIdx];
+  const it = g?.items?.[oaViewer.itemIdx];
+  if(!g) return;
+
+  // Extrai metadata do item atual
+  let _itMeta = {};
+  try{
+    if(it?.metadata){
+      _itMeta = typeof it.metadata === 'string'
+        ? JSON.parse(it.metadata)
+        : it.metadata;
+    }
+  }catch(e){}
+
+  // Fecha o viewer antes de navegar
+  oaCloseViewer();
+
+  setTimeout(()=>{
+    const type = _itMeta.type || 'user';
+
+    if((type === 'business' || type === 'loja' || type === 'servico' || type === 'serviço')
+       && _itMeta.business_id){
+      // → Loja ou Serviço: abre a página da empresa
+      db.from('businesses')
+        .select('*')
+        .eq('id', _itMeta.business_id)
+        .maybeSingle()
+        .then(({ data: biz }) => {
+          if(biz) openBizDetail(biz);
+          else    nav('feed');
+        })
+        .catch(() => nav('feed'));
+
+    } else if(type === 'community' && _itMeta.community_id){
+      // → Comunidade: navega para a comunidade
+      nav('communities');
+      setTimeout(() => openCommDetail(_itMeta.community_id), 400);
+
+    } else {
+      // → Perfil pessoal (padrão)
+      loadProfilePage(g.userId);
+    }
+  }, 180);
+}
+
+window.oaNavigateFromHeader = oaNavigateFromHeader;
+</script>
 
 </body>
 </html>
