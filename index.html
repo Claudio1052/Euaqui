@@ -15686,7 +15686,11 @@ function switchBizTab(btn){
   if(tabId==='biz-browse')    loadBizBrowse();
   if(tabId==='biz-mine')      loadMyBusiness();
   if(tabId==='biz-following') loadBizFollowing();
-  if(tabId==='biz-chats')     loadBizChats();
+  if(tabId==='biz-chats'){
+    // Só recarrega a lista; se já há um chat aberto, mantém o poll ativo
+    loadBizChats();
+    if(currentBizChat && !_bizPollInterval) startBizChatPoll();
+  }
   if(tabId==='biz-dashboard') loadBizDashboard();
 }
 
@@ -16371,6 +16375,12 @@ async function loadBizMsgs(chatId){
   const {data}=await db.from('business_messages')
     .select('*').eq('chat_id',chatId).order('created_at',{ascending:true});
   if(!data?.length){ area.innerHTML='<div class="chat-empty-txt">Início do atendimento</div>'; return; }
+  // Atualiza o timestamp de referência do poll com a mensagem mais recente
+  if(data.length > 0 && data[data.length-1].created_at){
+    const lastTs = data[data.length-1].created_at;
+    if(!_bizLastMsgTs || lastTs > _bizLastMsgTs) _bizLastMsgTs = lastTs;
+  }
+  const wasAtBottom = area.scrollHeight - area.scrollTop - area.clientHeight < 60;
   area.innerHTML='';
   data.forEach(m=>{
     const isMine=m.sender_id===CU.id;
@@ -16394,9 +16404,10 @@ async function loadBizMsgs(chatId){
     div.innerHTML=`<div class="mb-bubble">${mediaHtml || linkify(m.content)}</div><div class="mb-time">${time}</div>`;
     area.appendChild(div);
   });
-  area.scrollTop=area.scrollHeight;
-  // Garante scroll em iOS
-  setTimeout(()=>{ area.scrollTop=area.scrollHeight; }, 80);
+  if(wasAtBottom || area.scrollHeight===area.clientHeight){
+    area.scrollTop=area.scrollHeight;
+    setTimeout(()=>{ area.scrollTop=area.scrollHeight; }, 80);
+  }
 }
 
 let _bizMsgSending = false; // Fix 3: evita múltiplos cliques enviando a mesma mensagem
@@ -16853,55 +16864,60 @@ async function submitBizReview(bizId){
 let _bizRealtimeCh = null;
 let _bizListRealtimeCh = null;
 let _bizPollInterval = null;
-let _bizLastMsgCount = 0;
+let _bizLastMsgTs = null; // timestamp da última mensagem vista
 
 function startBizChatPoll(){
   stopBizChatPoll();
   if(!currentBizChat||!CU) return;
 
-  // 1) Realtime via postgres_changes — sem filter pois alguns planos Supabase
-  //    não suportam filtro em UUIDs no Realtime; filtramos no callback.
-  _bizRealtimeCh = db.channel('biz-msgs-'+currentBizChat+'-'+Date.now())
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'business_messages'},(pl)=>{
-      if(pl && pl.new && pl.new.chat_id === currentBizChat && pl.new.sender_id !== CU.id){
-        loadBizMsgs(currentBizChat);
-        loadBizChats();
-      }
-    })
-    .subscribe((status)=>{
-      console.log('[bizRealtime] status:', status);
-    });
+  // Captura o timestamp atual como referência — só msgs DEPOIS disso são "novas"
+  _bizLastMsgTs = new Date().toISOString();
 
-  // 2) Polling a cada 3s como fallback robusto (cobre WS instável / planos free)
-  _bizLastMsgCount = 0;
+  // 1) Polling a cada 2s — busca mensagens mais novas que o último timestamp visto
   _bizPollInterval = setInterval(async()=>{
     if(!currentBizChat||!CU) return;
     try{
-      const {count} = await db.from('business_messages')
-        .select('*',{count:'exact',head:true})
-        .eq('chat_id', currentBizChat);
-      if(count !== null && count !== _bizLastMsgCount){
-        _bizLastMsgCount = count;
+      const {data} = await db.from('business_messages')
+        .select('id,created_at,sender_id')
+        .eq('chat_id', currentBizChat)
+        .gt('created_at', _bizLastMsgTs)
+        .order('created_at',{ascending:false})
+        .limit(1);
+      if(data && data.length > 0){
+        _bizLastMsgTs = data[0].created_at;
         await loadBizMsgs(currentBizChat);
-        await loadBizChats();
+        // Atualiza sidebar só se a mensagem não é minha
+        if(data[0].sender_id !== CU.id) loadBizChats();
       }
-    }catch(e){ /* ignora erros de polling */ }
-  }, 3000);
+    }catch(e){ /* ignora erros de rede */ }
+  }, 2000);
+
+  // 2) Realtime como bônus (quando funcionar, é instantâneo)
+  _bizRealtimeCh = db.channel('biz-rt-'+currentBizChat+'-'+Date.now())
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'business_messages'},(pl)=>{
+      if(!pl?.new) return;
+      if(pl.new.chat_id !== currentBizChat) return;
+      if(pl.new.sender_id === CU.id) return; // própria msg já foi inserida
+      _bizLastMsgTs = pl.new.created_at || new Date().toISOString();
+      loadBizMsgs(currentBizChat);
+      loadBizChats();
+    })
+    .subscribe();
 
   // 3) Canal da sidebar (novos chats chegando para o dono do negocio)
   if(!_bizListRealtimeCh && myBusiness){
     _bizListRealtimeCh = db.channel('biz-list-'+myBusiness.id+'-'+Date.now())
       .on('postgres_changes',{event:'*',schema:'public',table:'business_chats'},(pl)=>{
-        if(pl && pl.new && pl.new.business_id === myBusiness.id) loadBizChats();
+        if(pl?.new?.business_id === myBusiness.id) loadBizChats();
       }).subscribe();
   }
 }
 
 function stopBizChatPoll(){
+  if(_bizPollInterval){ clearInterval(_bizPollInterval); _bizPollInterval=null; }
   if(_bizRealtimeCh){ try{db.removeChannel(_bizRealtimeCh);}catch(e){} _bizRealtimeCh=null; }
   if(_bizListRealtimeCh){ try{db.removeChannel(_bizListRealtimeCh);}catch(e){} _bizListRealtimeCh=null; }
-  if(_bizPollInterval){ clearInterval(_bizPollInterval); _bizPollInterval=null; }
-  _bizLastMsgCount=0;
+  _bizLastMsgTs=null;
 }
 
 // ── Deal / Venda Modal (professional) ────────────────────────────
