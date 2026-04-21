@@ -1044,27 +1044,109 @@ body.day-mode .repost-embed-card:hover{
 .pp-media-stack-badge{position:absolute;top:5px;right:5px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;font-family:'Space Mono',monospace;padding:2px 7px;border-radius:8px;backdrop-filter:blur(3px);}
 .pp-media-count{text-align:center;padding:10px 0 4px;font-family:'VT323',monospace;font-size:16px;color:var(--text-muted);letter-spacing:1px;}
 .pp-empty{text-align:center;padding:48px 20px;color:var(--text-muted);font-size:12px;font-family:'Space Mono',monospace;}
-/* Delete button on media items (only visible for owner) */
+
+/* ── DELETE MEDIA — desktop trash icon hover + mobile long-press select ── */
+/* Desktop: lixeira aparece no hover */
 .pp-delete-btn{
-  position:absolute;top:5px;left:5px;
-  width:24px;height:24px;
-  border-radius:50%;
-  background:rgba(255,51,102,.85);
-  border:1.5px solid rgba(255,51,102,1);
-  color:#fff;
-  font-size:13px;
+  position:absolute;top:6px;left:6px;
+  width:28px;height:28px;
+  border-radius:8px;
+  background:rgba(0,0,0,.72);
+  border:1.5px solid rgba(255,51,102,.7);
+  color:var(--neon-pink);
+  font-size:15px;
   display:flex;align-items:center;justify-content:center;
   cursor:pointer;
   z-index:10;
   opacity:0;
-  transition:opacity .18s, transform .15s;
-  backdrop-filter:blur(4px);
-  box-shadow:0 2px 8px rgba(0,0,0,.4);
-  line-height:1;
-  padding:0;
+  transition:opacity .18s, background .15s, transform .15s;
+  backdrop-filter:blur(6px);
+  box-shadow:0 2px 10px rgba(0,0,0,.5);
+  line-height:1;padding:0;
 }
-.pp-media-item:hover .pp-delete-btn{ opacity:1; transform:scale(1.05); }
-.pp-delete-btn:hover{ background:rgba(255,51,102,1)!important; transform:scale(1.15)!important; }
+@media(hover:hover){
+  .pp-media-item:hover .pp-delete-btn{ opacity:1; }
+  .pp-delete-btn:hover{ background:rgba(255,51,102,.9)!important; color:#fff!important; transform:scale(1.1)!important; }
+}
+/* Mobile: seleção */
+.pp-media-item.pp-selected::after{
+  content:'';
+  position:absolute;inset:0;
+  border:3px solid var(--neon-pink);
+  border-radius:2px;
+  pointer-events:none;
+  z-index:5;
+}
+.pp-media-item.pp-selected .pp-sel-check{
+  opacity:1!important;transform:scale(1)!important;
+}
+.pp-sel-check{
+  position:absolute;top:6px;right:6px;
+  width:22px;height:22px;
+  border-radius:50%;
+  background:var(--neon-pink);
+  border:2px solid #fff;
+  display:flex;align-items:center;justify-content:center;
+  font-size:12px;color:#fff;
+  z-index:11;
+  opacity:0;
+  transform:scale(.5);
+  transition:opacity .18s,transform .18s;
+  pointer-events:none;
+}
+/* Modo seleção ativo — escurece itens não selecionados */
+.pp-grid-select-mode .pp-media-item:not(.pp-selected) img,
+.pp-grid-select-mode .pp-media-item:not(.pp-selected) canvas{
+  opacity:.45;
+}
+.pp-grid-select-mode .pp-media-item:not(.pp-selected){ cursor:pointer; }
+/* Barra flutuante de seleção (topo) */
+#pp-select-bar{
+  position:sticky;
+  top:0;
+  z-index:500;
+  display:none;
+  align-items:center;
+  gap:10px;
+  padding:10px 14px;
+  background:rgba(10,10,42,.97);
+  border-bottom:1px solid rgba(255,51,102,.3);
+  backdrop-filter:blur(12px);
+  animation:ppBarIn .2s ease;
+}
+@keyframes ppBarIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+#pp-select-bar.on{ display:flex; }
+#pp-sel-count{
+  flex:1;
+  font-family:'Silkscreen',monospace;
+  font-size:11px;
+  color:var(--neon-pink);
+  letter-spacing:.5px;
+}
+#pp-sel-cancel-btn{
+  background:rgba(255,255,255,.07);
+  border:1px solid rgba(255,255,255,.15);
+  border-radius:8px;padding:7px 12px;
+  color:var(--text-light);font-family:'Silkscreen',monospace;font-size:10px;
+  cursor:pointer;
+}
+#pp-sel-delete-btn{
+  background:linear-gradient(135deg,var(--neon-pink),#c00055);
+  border:none;border-radius:8px;padding:7px 14px;
+  color:#fff;font-family:'Silkscreen',monospace;font-size:10px;
+  cursor:pointer;display:flex;align-items:center;gap:6px;
+  box-shadow:0 3px 12px rgba(255,51,102,.35);
+  transition:all .15s;
+}
+#pp-sel-delete-btn:hover{ transform:translateY(-1px);box-shadow:0 5px 18px rgba(255,51,102,.5); }
+#pp-sel-delete-btn:disabled{ opacity:.5;transform:none; }
+/* Hint long-press (aparece uma vez) */
+.pp-longpress-hint{
+  text-align:center;padding:6px 0 8px;
+  font-size:10px;color:rgba(136,136,187,.6);
+  font-family:'Space Mono',monospace;
+  letter-spacing:.5px;
+}
 /* Confirm delete modal */
 #pp-delete-confirm-overlay{
   position:fixed;inset:0;
@@ -10390,22 +10472,30 @@ async function loadProfileFotos(userId){
     const groupKey = 'ppg_'+userId+'_'+Date.now();
     window._ppFotoGroups[groupKey] = fotoPosts.map(p=>p.imgs);
 
+    const hintHtml = isOwn
+      ? '<div class="pp-longpress-hint pp-lp-hint-fotos" id="pp-lp-hint-fotos" style="display:none;">📱 Pressione e segure para selecionar</div>'
+      : '';
     panel.innerHTML =
-      '<div class="pp-media-count">📷 '+totalFotos+' foto'+(totalFotos!==1?'s':'')+
+      (isOwn ? '<div id="pp-select-bar-fotos" class="pp-select-bar" style="display:none;align-items:center;gap:10px;padding:10px 14px;background:rgba(10,10,42,.97);border-bottom:1px solid rgba(255,51,102,.3);backdrop-filter:blur(12px);position:sticky;top:0;z-index:500;">'+
+        '<span id="pp-sel-count-fotos" style="flex:1;font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-pink);">0 selecionadas</span>'+
+        '<button onclick="ppSelCancel(\'fotos\')" style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:7px 12px;color:var(--text-light);font-family:Silkscreen,monospace;font-size:10px;cursor:pointer;">✕ Cancelar</button>'+
+        '<button id="pp-sel-del-fotos" onclick="ppSelDeleteSelected(\'fotos\')" style="background:linear-gradient(135deg,var(--neon-pink),#c00055);border:none;border-radius:8px;padding:7px 14px;color:#fff;font-family:Silkscreen,monospace;font-size:10px;cursor:pointer;display:flex;align-items:center;gap:6px;box-shadow:0 3px 12px rgba(255,51,102,.35);">🗑️ Excluir</button>'+
+      '</div>' : '')+
+      '<div class="pp-media-count" id="pp-foto-count">📷 '+totalFotos+' foto'+(totalFotos!==1?'s':'')+
         (fotoPosts.length!==totalFotos?' em '+fotoPosts.length+' post'+(fotoPosts.length!==1?'s':''):'')+
       '</div>'+
-      '<div class="pp-media-grid">'+
+      hintHtml+
+      '<div class="pp-media-grid" id="pp-fotos-grid">'+
         fotoPosts.map((p,gi)=>{
           const first = xss(p.imgs[0]);
           const extra = p.imgs.length > 1 ? p.imgs.length : 0;
-          // Usa data-gkey e data-gi para passar referência sem quebrar HTML
           const clickAttr = p.imgs.length > 1
-            ? `data-gkey="${groupKey}" data-gi="${gi}" onclick="ppOpenFotoCarousel(window._ppFotoGroups[this.dataset.gkey][this.dataset.gi],0)"`
-            : `onclick="openLightbox('${first}')"`;
+            ? `data-gkey="${groupKey}" data-gi="${gi}"`
+            : ``;
           const deleteBtn = isOwn
-            ? `<button class="pp-delete-btn" title="Excluir foto" onclick="event.stopPropagation();ppConfirmDelete('foto','${p.postId}',${gi},'fotos')">✕</button>`
+            ? `<button class="pp-delete-btn" title="Excluir foto" onclick="event.stopPropagation();ppConfirmDelete('foto','${p.postId}',${gi},'fotos')">🗑️</button><div class="pp-sel-check">✓</div>`
             : '';
-          return`<div class="pp-media-item" ${clickAttr} data-post-id="${p.postId}">
+          return`<div class="pp-media-item" ${clickAttr} data-post-id="${p.postId}" data-type="foto" data-gi="${gi}" data-gkey="${groupKey}" data-has-multi="${p.imgs.length>1?'1':'0'}">
             ${deleteBtn}
             <img src="${first}" loading="lazy" class="img-safe" alt="foto" style="pointer-events:none;">
             ${extra?`<span class="pp-media-stack-badge">⧉ ${extra}</span>`:''}
@@ -10413,6 +10503,11 @@ async function loadProfileFotos(userId){
           </div>`;
         }).join('')+
       '</div>';
+
+    // Attach click + long-press handlers after render
+    if(isOwn) _ppAttachGridHandlers('pp-fotos-grid','fotos');
+    // Show hint once per session
+    _ppMaybeShowHint('fotos');
   }catch(e){
     panel.innerHTML = '<div class="pp-empty">⚠ Erro ao carregar fotos</div>';
     console.warn('[pp-fotos]',e.message);
@@ -10671,15 +10766,24 @@ async function loadProfileVideos(userId){
       return;
     }
 
+    const hintHtmlV = isOwn
+      ? '<div class="pp-longpress-hint" id="pp-lp-hint-videos" style="display:none;">📱 Pressione e segure para selecionar</div>'
+      : '';
     panel.innerHTML =
-      '<div class="pp-media-count">🎬 '+videos.length+' vídeo'+(videos.length!==1?'s':'')+'</div>'+
-      '<div class="pp-media-grid" id="pp-vid-grid">'+
+      (isOwn ? '<div id="pp-select-bar-videos" class="pp-select-bar" style="display:none;align-items:center;gap:10px;padding:10px 14px;background:rgba(10,10,42,.97);border-bottom:1px solid rgba(255,51,102,.3);backdrop-filter:blur(12px);position:sticky;top:0;z-index:500;">'+
+        '<span id="pp-sel-count-videos" style="flex:1;font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-pink);">0 selecionados</span>'+
+        '<button onclick="ppSelCancel(\'videos\')" style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:7px 12px;color:var(--text-light);font-family:Silkscreen,monospace;font-size:10px;cursor:pointer;">✕ Cancelar</button>'+
+        '<button id="pp-sel-del-videos" onclick="ppSelDeleteSelected(\'videos\')" style="background:linear-gradient(135deg,var(--neon-pink),#c00055);border:none;border-radius:8px;padding:7px 14px;color:#fff;font-family:Silkscreen,monospace;font-size:10px;cursor:pointer;display:flex;align-items:center;gap:6px;box-shadow:0 3px 12px rgba(255,51,102,.35);">🗑️ Excluir</button>'+
+      '</div>' : '')+
+      '<div class="pp-media-count" id="pp-video-count">🎬 '+videos.length+' vídeo'+(videos.length!==1?'s':'')+'</div>'+
+      hintHtmlV+
+      '<div class="pp-media-grid" id="pp-videos-grid">'+
         videos.map((v,gi)=>{
           const deleteBtn = isOwn
-            ? `<button class="pp-delete-btn" title="Excluir vídeo" onclick="event.stopPropagation();ppConfirmDelete('video','${v.postId}',${gi},'videos')">✕</button>`
+            ? `<button class="pp-delete-btn" title="Excluir vídeo" onclick="event.stopPropagation();ppConfirmDelete('video','${v.postId}',${gi},'videos')">🗑️</button><div class="pp-sel-check">✓</div>`
             : '';
           return`
-          <div class="pp-media-item" id="ppv-${gi}" onclick="ppPlayVideo('${xss(v.url)}','${v.postId}_${v.idx}',${gi})" data-post-id="${v.postId}">
+          <div class="pp-media-item" id="ppv-${gi}" data-post-id="${v.postId}" data-type="video" data-gi="${gi}" data-url="${xss(v.url)}" data-key="${v.postId}_${v.idx}">
             ${deleteBtn}
             <canvas id="ppv-canvas-${gi}" style="width:100%;height:100%;object-fit:cover;display:block;background:#111;"></canvas>
             <span class="pp-media-vid-icon">▶</span>
@@ -10687,6 +10791,10 @@ async function loadProfileVideos(userId){
           </div>`;
         }).join('')+
       '</div>';
+
+    // Attach click + long-press handlers
+    if(isOwn) _ppAttachGridHandlers('pp-videos-grid','videos');
+    _ppMaybeShowHint('videos');
 
     // Gerar thumbnails via canvas (lazy, um de cada vez, sem baixar vídeo inteiro)
     videos.forEach((v,gi)=>{ _renderVideoThumb(v.url, 'ppv-canvas-'+gi); });
@@ -10698,28 +10806,31 @@ async function loadProfileVideos(userId){
 }
 
 // ══════════════════════════════════════════════════════════════
-// DELETE FOTO / VÍDEO DO PERFIL — apenas o dono pode excluir
+// DELETE FOTO / VÍDEO — desktop: lixeira hover | mobile: long-press select
 // ══════════════════════════════════════════════════════════════
-window._ppDeleteState = { type:null, postId:null, gridIdx:null, tab:null };
+window._ppDeleteState  = { type:null, postId:null, tab:null, postIds:[] };
+window._ppSelectMode   = { fotos:false, videos:false };
+window._ppSelected     = { fotos:new Set(), videos:new Set() };
 
+// ── Desktop: clique direto na lixeira (abre confirm para 1 item) ──
 function ppConfirmDelete(type, postId, gridIdx, tab){
-  if(!CU?.id) return; // só logado
-  const state = window._ppDeleteState;
-  state.type    = type;
-  state.postId  = postId;
-  state.gridIdx = gridIdx;
-  state.tab     = tab; // 'fotos' ou 'videos'
+  if(!CU?.id) return;
+  const s = window._ppDeleteState;
+  s.type='single'; s.postId=postId; s.tab=tab; s.postIds=[postId];
+  _ppOpenDeleteModal(type==='video'?'video':'foto', 1);
+}
 
+function _ppOpenDeleteModal(mediaType, count){
   const icon  = document.getElementById('pp-del-icon');
   const title = document.getElementById('pp-del-title');
   const desc  = document.getElementById('pp-del-desc');
   const btn   = document.getElementById('pp-del-btn-confirm');
-
-  if(icon)  icon.textContent  = type==='video' ? '🎬' : '📷';
-  if(title) title.textContent = type==='video' ? 'EXCLUIR VÍDEO?' : 'EXCLUIR FOTO?';
+  if(icon)  icon.textContent  = count>1 ? '🗑️' : (mediaType==='video'?'🎬':'📷');
+  if(title) title.textContent = count>1
+    ? 'EXCLUIR '+count+' ITENS?'
+    : (mediaType==='video'?'EXCLUIR VÍDEO?':'EXCLUIR FOTO?');
   if(desc)  desc.innerHTML    = 'Esta ação não pode ser desfeita.<br>O post original será excluído permanentemente.';
-  if(btn)   btn.disabled      = false;
-
+  if(btn){ btn.disabled=false; btn.textContent='🗑️ Sim, excluir'; }
   const ov = document.getElementById('pp-delete-confirm-overlay');
   if(ov) ov.classList.add('on');
 }
@@ -10727,63 +10838,230 @@ function ppConfirmDelete(type, postId, gridIdx, tab){
 function ppDeleteCancel(){
   const ov = document.getElementById('pp-delete-confirm-overlay');
   if(ov) ov.classList.remove('on');
-  window._ppDeleteState = { type:null, postId:null, gridIdx:null, tab:null };
+  window._ppDeleteState = { type:null, postId:null, tab:null, postIds:[] };
 }
 
 async function ppDeleteConfirm(){
   const s = window._ppDeleteState;
-  if(!s.postId || !CU?.id) return;
+  if(!s.postIds?.length || !CU?.id) return;
 
   const btn = document.getElementById('pp-del-btn-confirm');
   if(btn){ btn.disabled=true; btn.textContent='⏳ Excluindo...'; }
 
-  try{
-    // Deleta o post inteiro — cascateia as mídias no banco
-    const { error } = await db.from('posts').delete().eq('id', s.postId).eq('user_id', CU.id);
-    if(error) throw error;
-
-    // Remove o item do grid visualmente
-    const panelId = s.tab === 'fotos' ? 'profile-fotos' : 'profile-videos';
-    const panel   = document.getElementById(panelId);
-    const el = panel?.querySelector(`[data-post-id="${s.postId}"]`);
-    if(el){
-      el.style.transition = 'opacity .25s, transform .25s';
-      el.style.opacity    = '0';
-      el.style.transform  = 'scale(.85)';
-      setTimeout(()=>{ el.remove(); _ppUpdateMediaCount(panelId, s.tab); }, 260);
-    }
-
-    ppDeleteCancel();
-
-    // Toast de sucesso
-    if(typeof showToast === 'function') showToast(s.tab==='fotos'?'📷 Foto excluída':'🎬 Vídeo excluído','success');
-    else alert(s.tab==='fotos'?'Foto excluída!':'Vídeo excluído!');
-
-  }catch(err){
-    if(btn){ btn.disabled=false; btn.textContent='🗑 Excluir'; }
-    if(typeof showToast === 'function') showToast('❌ Erro ao excluir: '+(err.message||err),'error');
-    else alert('Erro ao excluir: '+(err.message||err));
-    console.error('[pp-delete]', err);
+  let deleted=0, errored=0;
+  for(const pid of s.postIds){
+    try{
+      const { error } = await db.from('posts').delete().eq('id', pid).eq('user_id', CU.id);
+      if(error) throw error;
+      deleted++;
+      // Remove visualmente
+      const panelId = s.tab==='fotos'?'profile-fotos':'profile-videos';
+      const el = document.querySelector(`#${panelId} [data-post-id="${pid}"]`);
+      if(el){
+        el.style.transition='opacity .22s,transform .22s';
+        el.style.opacity='0'; el.style.transform='scale(.82)';
+        setTimeout(()=>{ el.remove(); }, 240);
+      }
+    }catch(err){ errored++; console.error('[pp-delete]',err); }
   }
+
+  setTimeout(()=>{
+    const panelId = s.tab==='fotos'?'profile-fotos':'profile-videos';
+    _ppUpdateMediaCount(panelId, s.tab);
+  }, 300);
+
+  ppDeleteCancel();
+  if(s.tab) ppSelCancel(s.tab);  // sai do modo seleção após excluir
+
+  const msg = deleted>1 ? `🗑️ ${deleted} itens excluídos` : (s.tab==='fotos'?'📷 Foto excluída':'🎬 Vídeo excluído');
+  if(typeof showToast==='function') showToast(msg,'success');
+  else alert(msg);
 }
 
-// Atualiza contador de mídias após deleção
+// ── Atualiza contador ──
 function _ppUpdateMediaCount(panelId, tab){
   const panel = document.getElementById(panelId);
   if(!panel) return;
   const items = panel.querySelectorAll('.pp-media-item');
   const n = items.length;
-  const countEl = panel.querySelector('.pp-media-count');
-  if(!countEl) return;
-  if(n === 0){
-    panel.innerHTML = '<div class="pp-empty">'+(tab==='fotos'?'📷 Nenhuma foto ainda':'🎬 Nenhum vídeo ainda')+'</div>';
+  if(n===0){
+    const grid = panel.querySelector('.pp-media-grid');
+    if(grid) grid.remove();
+    const bar = panel.querySelector('.pp-select-bar');
+    if(bar) bar.remove();
+    const hint = panel.querySelector('.pp-longpress-hint');
+    if(hint) hint.remove();
+    const cnt = panel.querySelector('.pp-media-count');
+    if(cnt) cnt.outerHTML = '<div class="pp-empty">'+(tab==='fotos'?'📷 Nenhuma foto ainda':'🎬 Nenhum vídeo ainda')+'</div>';
     return;
   }
-  if(tab === 'fotos'){
-    countEl.textContent = '📷 '+n+' foto'+(n!==1?'s':'');
-  } else {
-    countEl.textContent = '🎬 '+n+' vídeo'+(n!==1?'s':'');
+  const countEl = panel.querySelector('.pp-media-count');
+  if(countEl){
+    if(tab==='fotos') countEl.textContent='📷 '+n+' foto'+(n!==1?'s':'');
+    else countEl.textContent='🎬 '+n+' vídeo'+(n!==1?'s':'');
   }
+}
+
+// ══════════════════════════════════════════════════════════════
+// SELEÇÃO — long press mobile, depois toque seleciona/deseleciona
+// ══════════════════════════════════════════════════════════════
+function _ppMaybeShowHint(tab){
+  // Mostra hint "pressione e segure" apenas em touch devices
+  const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints>0);
+  if(!isTouchDevice) return;
+  const hintId = tab==='fotos' ? 'pp-lp-hint-fotos' : 'pp-lp-hint-videos';
+  const hint = document.getElementById(hintId);
+  if(!hint) return;
+  const key = 'pp_hint_shown_'+tab;
+  if(!sessionStorage.getItem(key)){
+    hint.style.display='block';
+    sessionStorage.setItem(key,'1');
+    setTimeout(()=>{ hint.style.opacity='0'; hint.style.transition='opacity .5s'; setTimeout(()=>{ hint.style.display='none'; },600); },4000);
+  }
+}
+
+function ppEnterSelectMode(tab){
+  if(window._ppSelectMode[tab]) return;
+  window._ppSelectMode[tab] = true;
+  window._ppSelected[tab] = new Set();
+  const gridId = tab==='fotos' ? 'pp-fotos-grid' : 'pp-videos-grid';
+  const grid = document.getElementById(gridId);
+  if(grid) grid.classList.add('pp-grid-select-mode');
+  const barId = tab==='fotos' ? 'pp-select-bar-fotos' : 'pp-select-bar-videos';
+  const bar = document.getElementById(barId);
+  if(bar){ bar.style.display='flex'; }
+  _ppUpdateSelCount(tab);
+  // Haptic feedback
+  if(navigator.vibrate) navigator.vibrate(40);
+}
+
+function ppSelCancel(tab){
+  window._ppSelectMode[tab] = false;
+  window._ppSelected[tab] = new Set();
+  const gridId = tab==='fotos' ? 'pp-fotos-grid' : 'pp-videos-grid';
+  const grid = document.getElementById(gridId);
+  if(grid){
+    grid.classList.remove('pp-grid-select-mode');
+    grid.querySelectorAll('.pp-media-item.pp-selected').forEach(el=>el.classList.remove('pp-selected'));
+  }
+  const barId = tab==='fotos' ? 'pp-select-bar-fotos' : 'pp-select-bar-videos';
+  const bar = document.getElementById(barId);
+  if(bar) bar.style.display='none';
+}
+
+function _ppUpdateSelCount(tab){
+  const n = window._ppSelected[tab]?.size||0;
+  const countEl = document.getElementById(tab==='fotos'?'pp-sel-count-fotos':'pp-sel-count-videos');
+  const delBtn  = document.getElementById(tab==='fotos'?'pp-sel-del-fotos':'pp-sel-del-videos');
+  if(countEl) countEl.textContent = n===0 ? 'Toque para selecionar' : n+' selecionado'+(n!==1?'s':'');
+  if(delBtn)  delBtn.disabled = (n===0);
+}
+
+function ppSelDeleteSelected(tab){
+  const sel = window._ppSelected[tab];
+  if(!sel||sel.size===0) return;
+  const s = window._ppDeleteState;
+  s.tab = tab;
+  s.postIds = [...sel];
+  s.type = 'multi';
+  const mediaType = tab==='fotos'?'foto':'video';
+  _ppOpenDeleteModal(mediaType, sel.size);
+}
+
+// ── Attacha handlers de click + long-press em cada item do grid ──
+function _ppAttachGridHandlers(gridId, tab){
+  const grid = document.getElementById(gridId);
+  if(!grid) return;
+
+  grid.querySelectorAll('.pp-media-item').forEach(item=>{
+    let pressTimer = null;
+    let didLongPress = false;
+
+    // ── TOUCH long-press ──
+    item.addEventListener('touchstart', (e)=>{
+      didLongPress = false;
+      pressTimer = setTimeout(()=>{
+        didLongPress = true;
+        if(!window._ppSelectMode[tab]) ppEnterSelectMode(tab);
+        _ppToggleSelect(item, tab);
+      }, 500);
+    }, {passive:true});
+
+    item.addEventListener('touchmove', ()=>{
+      clearTimeout(pressTimer); pressTimer=null;
+    }, {passive:true});
+
+    item.addEventListener('touchend', (e)=>{
+      clearTimeout(pressTimer); pressTimer=null;
+      if(didLongPress){ e.preventDefault(); return; }
+
+      // Se em modo seleção: toque curto = seleciona/deseleciona
+      if(window._ppSelectMode[tab]){
+        e.preventDefault();
+        _ppToggleSelect(item, tab);
+        return;
+      }
+
+      // Toque normal: abre foto/vídeo (comportamento original)
+      if(tab==='fotos'){
+        const gkey = item.dataset.gkey;
+        const gi   = parseInt(item.dataset.gi);
+        const hasMulti = item.dataset.hasMulti==='1';
+        if(hasMulti && window._ppFotoGroups?.[gkey]?.[gi]){
+          ppOpenFotoCarousel(window._ppFotoGroups[gkey][gi], 0);
+        } else {
+          const img = item.querySelector('img');
+          if(img) openLightbox(img.src);
+        }
+      } else {
+        const url = item.dataset.url;
+        const key = item.dataset.key;
+        const gi  = parseInt(item.dataset.gi);
+        if(url) ppPlayVideo(url, key, gi);
+      }
+    }, {passive:false});
+
+    // ── MOUSE click (desktop) — abre normalmente, lixeira cuida do delete ──
+    item.addEventListener('click', (e)=>{
+      // Se clicou na lixeira, o onclick já trata
+      if(e.target.closest('.pp-delete-btn')) return;
+      if(window._ppSelectMode[tab]){ _ppToggleSelect(item,tab); return; }
+      if(tab==='fotos'){
+        const gkey = item.dataset.gkey;
+        const gi   = parseInt(item.dataset.gi);
+        const hasMulti = item.dataset.hasMulti==='1';
+        if(hasMulti && window._ppFotoGroups?.[gkey]?.[gi]){
+          ppOpenFotoCarousel(window._ppFotoGroups[gkey][gi], 0);
+        } else {
+          const img = item.querySelector('img');
+          if(img) openLightbox(img.src);
+        }
+      } else {
+        const url = item.dataset.url;
+        const key = item.dataset.key;
+        const gi  = parseInt(item.dataset.gi);
+        if(url) ppPlayVideo(url, key, gi);
+      }
+    });
+
+    // Evita context menu no long-press
+    item.addEventListener('contextmenu', (e)=>{ if(window._ppSelectMode[tab]||true) e.preventDefault(); });
+  });
+}
+
+function _ppToggleSelect(item, tab){
+  const postId = item.dataset.postId;
+  if(!postId) return;
+  const sel = window._ppSelected[tab];
+  if(sel.has(postId)){
+    sel.delete(postId);
+    item.classList.remove('pp-selected');
+  } else {
+    sel.add(postId);
+    item.classList.add('pp-selected');
+  }
+  _ppUpdateSelCount(tab);
+  if(navigator.vibrate) navigator.vibrate(15);
 }
 
 // ── Gera thumbnail do vídeo sem carregar o arquivo inteiro ──────────
@@ -26470,7 +26748,7 @@ export default {
     <div class="pp-del-desc" id="pp-del-desc">Esta ação não pode ser desfeita.<br>O post original será excluído permanentemente.</div>
     <div class="pp-del-btns">
       <button class="pp-del-btn-cancel" onclick="ppDeleteCancel()">✕ Cancelar</button>
-      <button class="pp-del-btn-confirm" id="pp-del-btn-confirm" onclick="ppDeleteConfirm()">🗑 Excluir</button>
+      <button class="pp-del-btn-confirm" id="pp-del-btn-confirm" onclick="ppDeleteConfirm()">🗑️ Sim, excluir</button>
     </div>
   </div>
 </div>
