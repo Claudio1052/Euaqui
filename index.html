@@ -989,6 +989,8 @@ body.day-mode .repost-embed-card:hover{
   flex-direction:column;
   gap:6px;
   z-index:10;
+  position:sticky;
+  bottom:0;
 }
 #biz-msg-in{
   max-height:80px;
@@ -16397,20 +16399,32 @@ async function loadBizMsgs(chatId){
   setTimeout(()=>{ area.scrollTop=area.scrollHeight; }, 80);
 }
 
+let _bizMsgSending = false; // Fix 3: evita múltiplos cliques enviando a mesma mensagem
 async function sendBizMsg(){
   if(!CU||!currentBizChat) return;
+  if(_bizMsgSending) return; // já está enviando, ignora clique duplicado
   const inp=document.getElementById('biz-msg-in');
   const txt=inp?.value.trim(); if(!txt) return;
+  _bizMsgSending = true;
+  const sendBtn = document.getElementById('biz-send-btn');
+  if(sendBtn){ sendBtn.disabled=true; sendBtn.style.opacity='0.5'; }
   // Moderation
   const mod=await moderateContent(txt);
-  if(!mod.allowed){showModerationError(mod.categories);return;}
+  if(!mod.allowed){
+    showModerationError(mod.categories);
+    _bizMsgSending=false;
+    if(sendBtn){ sendBtn.disabled=false; sendBtn.style.opacity=''; }
+    return;
+  }
   inp.value='';
   inp.style.height = 'auto'; // reseta o auto-grow do textarea
   const {error}=await db.from('business_messages').insert({chat_id:currentBizChat,sender_id:CU.id,content:txt});
-  if(error) return showToast('Erro ao enviar','error');
+  if(error){ showToast('Erro ao enviar','error'); _bizMsgSending=false; if(sendBtn){sendBtn.disabled=false;sendBtn.style.opacity='';} return; }
   // Update chat timestamp
   await db.from('business_chats').update({updated_at:new Date().toISOString()}).eq('id',currentBizChat);
   await loadBizMsgs(currentBizChat);
+  _bizMsgSending = false;
+  if(sendBtn){ sendBtn.disabled=false; sendBtn.style.opacity=''; }
 }
 
 // ── Áudio no chat de loja ─────────────────────────────────────────────────────
@@ -16837,18 +16851,28 @@ async function submitBizReview(bizId){
 
 // ── Biz Chat via Realtime (sem polling de 3s) ─────────────────────
 let _bizRealtimeCh = null;
+let _bizListRealtimeCh = null;
 
 function startBizChatPoll(){
   stopBizChatPoll();
   if(!currentBizChat||!CU) return;
+  // Fix 1: tabela correta é business_messages, filtro por chat_id
   _bizRealtimeCh = db.channel('biz-msgs-'+currentBizChat)
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'receiver_id=eq.'+CU.id},async()=>{
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'business_messages',filter:'chat_id=eq.'+currentBizChat},async()=>{
       await loadBizMsgs(currentBizChat);
     }).subscribe();
+  // Atualiza sidebar (lista de atendimentos) em tempo real
+  if(!_bizListRealtimeCh && myBusiness){
+    _bizListRealtimeCh = db.channel('biz-chats-list-'+myBusiness.id)
+      .on('postgres_changes',{event:'*',schema:'public',table:'business_chats',filter:'business_id=eq.'+myBusiness.id},async()=>{
+        await loadBizChats();
+      }).subscribe();
+  }
 }
 
 function stopBizChatPoll(){
   if(_bizRealtimeCh){ try{db.removeChannel(_bizRealtimeCh);}catch(e){} _bizRealtimeCh=null; }
+  if(_bizListRealtimeCh){ try{db.removeChannel(_bizListRealtimeCh);}catch(e){} _bizListRealtimeCh=null; }
 }
 
 // ── Deal / Venda Modal (professional) ────────────────────────────
