@@ -16900,27 +16900,14 @@ async function openBizChat(chatId, label){
   const hdr = document.getElementById('biz-chat-win-hdr');
   if(hdr){
     const backBtn = window.innerWidth<=768 ? '<button class="tbtn" onclick="closeBizChat()" style="padding:6px 10px;font-size:12px;">← Voltar</button>' : '';
-    // Busca dados do contato a partir do item da lista
+    // Busca avatar do contato a partir do item da lista
     const ciEl = document.getElementById('biz-ci-'+chatId);
     const ciImg = ciEl?.querySelector('img');
     const avatarSrc = ciImg?.src || '';
-    // Tenta pegar o userId do contato para navegar ao perfil
-    const profileLink = ciEl?.querySelector('[data-goto-profile]');
-    const bizLink     = ciEl?.querySelector('[data-goto-biz]');
-    const contactUid  = profileLink?.dataset.gotoProfile || null;
-    const contactBiz  = bizLink?.dataset.gotoBiz || null;
-    const avatarClick = contactUid
-      ? `onclick="loadProfilePage('${contactUid}')" style="cursor:pointer;" title="Ver perfil"`
-      : contactBiz
-        ? `onclick="openBizById('${contactBiz}')" style="cursor:pointer;" title="Ver negócio"`
-        : `style="cursor:default;"`;
     const avatarHdrHtml = avatarSrc
-      ? `<img src="${xss(avatarSrc)}" ${avatarClick} style="width:34px;height:34px;border-radius:50%;object-fit:cover;border:2px solid var(--border-glow);flex-shrink:0;margin-left:8px;" onerror="this.style.display='none'">`
+      ? `<img src="${xss(avatarSrc)}" style="width:34px;height:34px;border-radius:50%;object-fit:cover;border:2px solid var(--border-glow);flex-shrink:0;margin-left:8px;" onerror="this.style.display='none'">`
       : `<div style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.08);border:2px solid var(--border-glow);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;margin-left:8px;">👤</div>`;
-    const nameClick = contactUid
-      ? `onclick="loadProfilePage('${contactUid}')" style="cursor:pointer;"`
-      : contactBiz ? `onclick="openBizById('${contactBiz}')" style="cursor:pointer;"` : '';
-    hdr.innerHTML = backBtn + avatarHdrHtml + `<div ${nameClick} style="font-size:13px;color:var(--neon-cyan);font-family:Silkscreen,monospace;margin-left:8px;">${xss(label)}</div>`;
+    hdr.innerHTML = backBtn + avatarHdrHtml + `<div style="font-size:13px;color:var(--neon-cyan);font-family:Silkscreen,monospace;margin-left:8px;">${xss(label)}</div>`;
     if(myBusiness){
       hdr.innerHTML += `<button class="tbtn" onclick="openNewDealModal()" style="margin-left:auto;font-size:10px;color:var(--neon-cyan);">🤝 Propor Acordo</button>`;
     }
