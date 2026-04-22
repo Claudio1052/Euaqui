@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EuAqui — Redirecionando...</title>
+  <meta name="theme-color" content="#0a0a2a">
+  <style>
+    body{
+      margin:0;
+      background:#0a0a2a;
+      color:#00ffcc;
+      font-family:'Courier New',monospace;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      min-height:100vh;
+      font-size:14px;
+    }
+    .msg{ text-align:center; opacity:.7; }
+  </style>
+  <script>
+    // Salva o caminho atual (ex: /explorar) e redireciona para /
+    // O index.html vai recuperar e aplicar via history.replaceState
+    (function(){
+      var path = window.location.pathname + window.location.search + window.location.hash;
+      // Só redireciona se não for a raiz (evita loop)
+      if(path && path !== '/'){
+        try{
+          sessionStorage.setItem('__ea_redirect', path);
+        }catch(e){}
+      }
+      // Redireciona para a raiz do site
+      window.location.replace('/');
+    })();
+  </script>
+</head>
+<body>
+  <div class="msg">↩ Redirecionando...</div>
+</body>
+</html>
