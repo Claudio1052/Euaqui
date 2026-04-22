@@ -16172,12 +16172,16 @@ function switchBizTab(btn){
     const wrap = document.getElementById('appt-toggle-wrap');
     if(wrap && myBusiness){
       wrap.innerHTML=`
-        <button class="tbtn" id="appt-btn-client" onclick="loadAppointments(false);this.style.background='rgba(0,255,204,.15)';document.getElementById('appt-btn-owner').style.background=''" style="font-size:10px;background:rgba(0,255,204,.15);">👤 Meus</button>
-        <button class="tbtn" id="appt-btn-owner" onclick="loadAppointments(true);this.style.background='rgba(0,255,204,.15)';document.getElementById('appt-btn-client').style.background=''" style="font-size:10px;">🏪 Meu Negócio</button>`;
+        <button class="tbtn" id="appt-btn-client" onclick="loadAppointments(false);this.style.background='';document.getElementById('appt-btn-owner').style.background='rgba(0,255,204,.15)'" style="font-size:10px;">👤 Meus</button>
+        <button class="tbtn" id="appt-btn-owner" onclick="loadAppointments(true);this.style.background='rgba(0,255,204,.15)';document.getElementById('appt-btn-client').style.background=''" style="font-size:10px;background:rgba(0,255,204,.15);">🏪 Meu Negócio</button>`;
+      // Se tem negócio, abre direto na visão de proprietário
+      loadAppointments(true);
     } else if(wrap){
       wrap.innerHTML='';
+      loadAppointments(false);
+    } else {
+      loadAppointments(false);
     }
-    loadAppointments(false);
   }
 }
 
@@ -17207,7 +17211,7 @@ async function loadBizDashboard(){
   const b=myBusiness;
   // Load deals
   const {data:deals}=await db.from('business_deals')
-    .select('*').eq('business_id',b.id).order('created_at',{ascending:false}).limit(20);
+    .select('*').eq('business_id',b.id).eq('status','closed').order('created_at',{ascending:false}).limit(20);
   // Refresh business data
   const {data:fresh}=await db.from('businesses').select('*').eq('id',b.id).maybeSingle();
   if(fresh) myBusiness=fresh;
@@ -17224,7 +17228,7 @@ async function loadBizDashboard(){
       <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);">📋 Histórico de Negócios</div>
       <button class="tbtn" onclick="openAddDeal()" style="font-size:10px;">+ Registrar venda</button>
     </div>
-    <div id="deals-list">${!deals?.length?'<div style="color:var(--text-muted);font-size:12px;">Nenhuma venda registrada ainda.</div>':
+    <div id="deals-list">${!deals?.length?'<div style="color:var(--text-muted);font-size:12px;">Nenhum acordo fechado ainda.</div>':
       deals.map(d=>`<div style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
         <div><div style="font-size:12px;color:var(--text-light);">${xss(d.title||'Venda')}</div>
         <div style="font-size:10px;color:var(--text-muted);">${new Date(d.created_at).toLocaleDateString('pt-BR')}</div></div>
@@ -17746,7 +17750,7 @@ async function sendDealProposal(btn){
     proposed_by: CU.id
   };
   const {data:deal, error} = await db.from('business_deals').insert(dealPayload).select().single();
-  if(error){ console.error('[sendDealProposal]',error); btn.disabled=false; btn.textContent='🤝 Enviar Proposta'; return showToast('Erro ao salvar: '+error.message,'error'); }
+  if(error){ btn.disabled=false; btn.textContent='🤝 Enviar Proposta'; return showToast('Erro: '+error.message,'error'); }
 
   // Monta mensagem especial de proposta no chat
   const valorFmt = 'R$ '+Number(value).toFixed(2).replace('.',',');
@@ -17861,7 +17865,6 @@ async function acceptDealProposal(dealId, btn){
 
       if(dealUpdateErr){
         console.warn('[acceptDeal] update completo falhou, tentando fallback:', dealUpdateErr.message);
-        // Fallback: só atualiza status (para casos de coluna faltando)
         const fallback = await db.from('business_deals').update({ status:'closed' }).eq('id', dealId);
         if(fallback.error){
           console.error('[acceptDeal] fallback também falhou:', fallback.error);
@@ -17876,7 +17879,6 @@ async function acceptDealProposal(dealId, btn){
         updated_at: new Date().toISOString()
       }).eq('id', chatId);
       if(chatUpdate.error){
-        // Tenta só updated_at (status pode não existir)
         await db.from('business_chats').update({ updated_at: new Date().toISOString() }).eq('id', chatId);
       }
 
@@ -17902,7 +17904,6 @@ async function acceptDealProposal(dealId, btn){
             scheduled_date: deal.scheduled_date,
             status: 'confirmed'
           };
-          // Adiciona campos opcionais apenas se existirem no deal
           if(deal.title)           apptPayload.service_title  = deal.title;
           if(deal.value)           apptPayload.value           = deal.value;
           if(deal.payment_method)  apptPayload.payment_method  = deal.payment_method;
@@ -17948,8 +17949,6 @@ async function rejectDealProposal(dealId, btn){
     const _resetBtn = ()=>{ btn.disabled=false; btn.style.opacity=''; btn.textContent='✕ RECUSAR'; };
     try{
       const chatId = currentBizChat;
-
-      // Tenta com rejected_at, faz fallback sem ela
       let rejRes = await db.from('business_deals').update({
         status:'rejected',
         rejected_at: new Date().toISOString()
@@ -17962,7 +17961,6 @@ async function rejectDealProposal(dealId, btn){
           return showToast('Erro ao recusar: '+rejRes.error.message,'error');
         }
       }
-
       const msgRej = `━━━━━━━━━━━━━━━━━━━━━\n❌ *PROPOSTA RECUSADA*\nO cliente recusou a proposta.\n[DEAL_REJECTED:${dealId}]`;
       const msgRes = await db.from('business_messages').insert({
         chat_id: chatId,
@@ -17988,19 +17986,35 @@ async function loadAppointments(asOwner){
   if(!el||!CU) return;
   el.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;font-size:11px;">⏳ Carregando agendamentos...</div>';
 
-  let query;
   if(asOwner && myBusiness){
-    const {data} = await db.from('appointments')
-      .select('*, profiles!appointments_customer_id_fkey(username,avatar_url,full_name)')
+    // Tenta com join de profiles; se falhar, carrega sem join
+    let data = null;
+    const res = await db.from('appointments')
+      .select('*, profiles(username,avatar_url,full_name)')
       .eq('business_id', myBusiness.id)
       .order('scheduled_date',{ascending:true});
-    renderAppointmentsList(el, data||[], true);
+    if(res.error){
+      console.warn('[appointments owner] join falhou, tentando sem join:', res.error.message);
+      const res2 = await db.from('appointments')
+        .select('*')
+        .eq('business_id', myBusiness.id)
+        .order('scheduled_date',{ascending:true});
+      data = res2.data || [];
+    } else {
+      data = res.data || [];
+    }
+    renderAppointmentsList(el, data, true);
   } else {
-    const {data} = await db.from('appointments')
+    const res = await db.from('appointments')
       .select('*, businesses(id,name,logo_url)')
       .eq('customer_id', CU.id)
       .order('scheduled_date',{ascending:true});
-    renderAppointmentsList(el, data||[], false);
+    if(res.error){
+      console.warn('[appointments client] erro:', res.error.message);
+      el.innerHTML='<div style="color:var(--neon-pink);padding:20px;text-align:center;font-size:11px;">Erro ao carregar: '+res.error.message+'</div>';
+      return;
+    }
+    renderAppointmentsList(el, res.data||[], false);
   }
 }
 
