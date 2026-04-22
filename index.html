@@ -5,16 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="theme-color" content="#0a0a2a">
 <title>EuAqui — Sua rede, seu mundo</title>
-<!-- ── FIX SPA GitHub Pages: restaura rota após reload em /explorar etc. ── -->
-<script>
-(function(){
-  var redirect = sessionStorage.getItem('__ea_redirect');
-  if(redirect){
-    sessionStorage.removeItem('__ea_redirect');
-    try{ window.history.replaceState(null,'',redirect); }catch(e){}
-  }
-})();
-</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link href="https://fonts.googleapis.com/css2?family=VT323&family=Silkscreen:wght@400;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
 <link id="ea-custom-font-link" rel="stylesheet" href="">
@@ -559,9 +549,9 @@ nav{position:fixed;top:0;left:0;right:0;background:#0a0a2a;border-bottom:1px sol
 .stn{font-family:'VT323',monospace;font-size:22px;color:var(--neon-cyan);line-height:1;}
 .stl{font-size:9px;color:var(--text-muted);letter-spacing:1px;}
 .slbl{font-size:9px;letter-spacing:3px;color:var(--text-muted);text-transform:uppercase;margin:14px 0 6px 8px;}
-.slink{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:6px;color:var(--text-muted);cursor:pointer;transition:all .2s;font-size:11px;margin-bottom:2px;border:1px solid transparent;white-space:nowrap;overflow:hidden;}
+.slink{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:6px;color:var(--text-muted);cursor:pointer;transition:all .2s;font-size:11px;margin-bottom:2px;border:1px solid transparent;}
 .slink:hover,.slink.active{color:var(--neon-cyan);background:rgba(0,255,204,.05);border-color:rgba(0,255,204,.1);}
-.slink .ic{font-size:15px;width:20px;min-width:20px;text-align:center;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;}
+.slink .ic{font-size:15px;width:18px;text-align:center;}
 
 /* FEED CENTER */
 .fc{padding:16px 20px 80px;max-width:700px;margin:0 auto;width:100%;overflow-x:hidden;}
@@ -900,7 +890,7 @@ body.day-mode .repost-embed-card:hover{
 .blast-ct{font-size:11px;color:var(--text-light);line-height:1.5;margin-top:3px;}
 
 /* MOBILE DRAWER */
-.mob-drawer{position:fixed;top:0;left:0;width:280px;height:100vh;background:var(--bg-mid);border-right:1px solid var(--border-glow);z-index:1500;transform:translateX(-100%);transition:transform .3s ease;overflow-y:auto;padding:70px 16px 20px;}
+.mob-drawer{position:fixed;top:0;left:0;width:260px;height:100vh;background:var(--bg-mid);border-right:1px solid var(--border-glow);z-index:1500;transform:translateX(-100%);transition:transform .3s ease;overflow-y:auto;padding:70px 16px 20px;}
 .mob-drawer.open{transform:translateX(0);}
 .mob-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1400;display:none;}
 .mob-overlay.open{display:block;}
@@ -6598,17 +6588,6 @@ function showApp(){
       history.replaceState({eaPage:'home'}, '', '/');
     }
     _navBase(startPage);
-    // ── Carregar dados da página restaurada (fix: reload em /explorar etc.) ──
-    setTimeout(()=>{
-      if(startPage === 'explore')           { try{ loadExploreFeed(); }catch(e){} }
-      else if(startPage === 'friends')      { try{ loadFriendsList('friends'); }catch(e){} }
-      else if(startPage === 'communities')  { try{ loadCommGrid('all'); setTimeout(buildCommIconGrid,200); }catch(e){} }
-      else if(startPage === 'businesses')   { try{ initBusinessPage(); }catch(e){} }
-      else if(startPage === 'messages')     { try{ loadConversations(); }catch(e){} }
-      else if(startPage === 'notifications'){ try{ loadNotifTab('nt-all'); }catch(e){} }
-      else if(startPage === 'capsules')     { try{ loadCapsules(); }catch(e){} }
-      else if(startPage === 'profile')      { try{ loadProfilePage(CU?.id); }catch(e){} }
-    }, 300);
   }catch(e){ console.warn('[EA-History] showApp init:', e); }
 
   // Show nav-home-tabs on startup
