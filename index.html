@@ -23278,8 +23278,8 @@ async function oaCtaAction(type){
     : (itemPriceLabel || '');
 
   const autoMsg = isLoja
-    ? `🛒 Olá! Vi o anúncio no Olha Aqui: *${itemName}*. Gostaria de mais informações para comprar.`
-    : `📅 Olá! Vi o anúncio no Olha Aqui: *${itemName}*${priceDisplay?' ('+priceDisplay+')':''}. Gostaria de agendar um horário.`;
+    ? `🛒 Olá! Vi o anúncio no Olha Aqui: *${itemName}*${priceDisplay ? '. No valor de '+priceDisplay : ''}. Gostaria de mais informações para comprar.`
+    : `📅 Olá! Vi o anúncio no Olha Aqui: *${itemName}*${priceDisplay ? '. No valor de '+priceDisplay : ''}. Gostaria de agendar um horário.`;
 
   // ── MODAL RICO DE PRODUTO ───────────────────────────────────────
   const overlay = document.createElement('div');
@@ -23303,10 +23303,17 @@ async function oaCtaAction(type){
       </style>
 
       ${itemImageUrl ? `
-        <!-- Imagem do produto em destaque -->
-        <div style="position:relative;width:100%;background:#000;flex-shrink:0;">
+        <!-- Imagem do produto clicável para ampliar -->
+        <div style="position:relative;width:100%;background:#000;flex-shrink:0;cursor:zoom-in;"
+             onclick="event.stopPropagation();openLightbox&&openLightbox('${itemImageUrl}')">
           <img src="${itemImageUrl}" alt="${xss(itemName)}"
-            style="width:100%;max-height:260px;object-fit:cover;display:block;">
+            style="width:100%;max-height:260px;object-fit:cover;display:block;transition:opacity .15s;"
+            onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
+          <!-- Ícone de zoom no canto -->
+          <div style="position:absolute;bottom:10px;right:10px;
+            background:rgba(0,0,0,.55);backdrop-filter:blur(4px);
+            border:1px solid rgba(255,255,255,.2);border-radius:8px;
+            padding:4px 8px;font-size:11px;color:#fff;pointer-events:none;">🔍 Ver imagem</div>
           <!-- Badge da loja sobre a imagem -->
           <div style="position:absolute;top:12px;left:12px;display:flex;align-items:center;gap:6px;
             background:rgba(0,0,0,.65);backdrop-filter:blur(6px);
@@ -23339,21 +23346,8 @@ async function oaCtaAction(type){
             border-radius:0 8px 8px 0;padding:10px 12px;margin-bottom:14px;">${xss(itemDescription)}</div>
         ` : ''}
 
-        <!-- Preview da mensagem que será enviada -->
-        <div style="background:rgba(0,255,204,.05);border:1px solid rgba(0,255,204,.2);
-          border-radius:10px;padding:12px;margin-bottom:16px;">
-          <div style="font-family:'Silkscreen',monospace;font-size:8px;color:var(--text-muted);
-            letter-spacing:1px;margin-bottom:6px;">MENSAGEM QUE SERÁ ENVIADA:</div>
-          <div style="font-size:11px;color:var(--text-light);line-height:1.5;">${autoMsg}</div>
-          ${itemImageUrl ? `
-            <div style="font-size:9px;color:var(--neon-cyan);margin-top:6px;opacity:.7;">
-              📎 Imagem do produto será anexada automaticamente
-            </div>
-          ` : ''}
-        </div>
-
         <!-- Botões -->
-        <div style="display:flex;gap:10px;">
+        <div style="display:flex;gap:10px;margin-top:6px;">
           <button onclick="this.closest('[data-oa-confirm]').remove()"
             style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);
             color:var(--text-muted);border-radius:12px;padding:13px;
