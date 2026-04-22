@@ -6150,14 +6150,16 @@ body.day-mode::before{
 <script>
 
 // ===== FAILSAFE: garante que loading nunca trava =====
+let _appInitDone = false;
 window.addEventListener('load', ()=>{
   setTimeout(()=>{
+    if(_appInitDone) return;
     const ls=document.getElementById('loading-screen');
     if(ls&&ls.style.display!=='none'){
       ls.style.display='none';
       if(!CU) document.getElementById('auth-screen').style.display='flex';
     }
-  }, 2000); // 2s de failsafe
+  }, 5000); // 5s de failsafe — aguarda Supabase em conexões lentas
 });
 
 // ===== CONFIG =====
@@ -6307,7 +6309,7 @@ const db = createClient(SB_URL, SB_KEY, {
     storageKey: 'sb-'+SB_URL.split('.')[0].split('//')[1]+'-auth-token',
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false,
+    detectSessionInUrl: true,
     // Desabilita BroadcastChannel entre abas — evita DataCloneError causado pelo
     // Supabase v2 tentando fazer postMessage de um objeto com Headers não-clonável.
     broadcast: false,
@@ -6570,6 +6572,7 @@ function hideLS(){
   if(ls){ ls.style.opacity='0'; ls.style.transition='opacity .4s'; setTimeout(()=>ls.style.display='none',400); }
 }
 function showApp(){
+  _appInitDone = true;
   try{ hideLS(); }catch(e){}
   try{ document.getElementById('auth-screen').style.display='none'; }catch(e){}
   try{ document.getElementById('app').style.display='block'; }catch(e){}
@@ -6638,6 +6641,7 @@ function showApp(){
   setTimeout(()=>{ try{ checkCommInviteUrl(); }catch(e){} }, 1400);
 }
 function showAuth(){
+  _appInitDone = true;
   hideLS();
   document.getElementById('auth-screen').style.display='flex';
   document.getElementById('app').style.display='none';
@@ -6657,28 +6661,7 @@ document.addEventListener('error', function(e){
 
 document.addEventListener('DOMContentLoaded', async()=>{
   _initFont();
-  const minWait = new Promise(r=>setTimeout(r,1200));
-
-  // Detectar retorno de OAuth via hash #access_token=...&refresh_token=...
-  const hash = window.location.hash;
-  if(hash && hash.includes('access_token=')){
-    try{
-      const params = new URLSearchParams(hash.replace('#',''));
-      const access_token  = params.get('access_token');
-      const refresh_token = params.get('refresh_token');
-      if(access_token && refresh_token){
-        const {data, error} = await db.auth.setSession({access_token, refresh_token});
-        if(!error && data?.session){
-          // Limpar hash da URL sem recarregar
-          history.replaceState({eaPage:'home'},'','/'); // OAuth: retorna à home
-          CU = data.session.user;
-          try{ await loadProfile(); }catch(e){}
-          try{ showApp(); }catch(e){ showAuth(); }
-          return;
-        }
-      }
-    }catch(e){ console.warn('OAuth hash parse:', e); }
-  }
+  const minWait = new Promise(r=>setTimeout(r,400));
 
   try{
     const [{data:{session}}] = await Promise.all([db.auth.getSession(), minWait]);
@@ -6694,9 +6677,13 @@ document.addEventListener('DOMContentLoaded', async()=>{
     showAuth();
   }
   db.auth.onAuthStateChange(async(ev,sess)=>{
-    if(ev==='SIGNED_IN' && sess && sess.user){
+    if((ev==='SIGNED_IN' || ev==='INITIAL_SESSION') && sess && sess.user){
       if(!CU){ // Prevent double-login
         CU = sess.user;
+        // Limpa hash da URL caso seja retorno de OAuth
+        if(window.location.hash && window.location.hash.includes('access_token=')){
+          history.replaceState({eaPage:'home'},'','/');
+        }
         try{ await loadProfile(); }catch(e){ console.warn('Profile load on signin:',e); }
         try{ showApp(); }catch(e){ console.error('showApp on signin failed:',e); }
       }
@@ -16879,7 +16866,7 @@ async function loadBizMsgs(chatId){
     else if(isVideo && m.media_url) mediaHtml = '<div class="mb-media"><video src="'+m.media_url+'" controls playsinline style="width:100%;max-height:200px;display:block;border-radius:8px;"></video></div>';
     else if(isImg && m.media_url){
       const _cap = m.content ? '<div style="font-size:11px;color:var(--text-muted);margin-top:5px;padding:0 2px;line-height:1.4;">'+linkify(m.content)+'</div>' : '';
-      mediaHtml = '<div class="mb-media" onclick="openLightbox && openLightbox(''+m.media_url+'')" style="cursor:pointer;"><img src="'+m.media_url+'" style="width:100%;border-radius:8px;" class="img-safe"></div>'+_cap;
+      mediaHtml = '<div class="mb-media" onclick="openLightbox && openLightbox(this.querySelector(\'img\').src)" style="cursor:pointer;"><img src="'+m.media_url+'" style="width:100%;border-radius:8px;" class="img-safe"></div>'+_cap;
     }
     div.innerHTML=`<div class="mb-bubble">${mediaHtml || linkify(m.content)}</div><div class="mb-time">${time}</div>`;
     area.appendChild(div);
