@@ -5,7 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="theme-color" content="#0a0a2a">
 <title>EuAqui — Sua rede, seu mundo</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function(){
+  var redirect = sessionStorage.getItem('__ea_redirect');
+  if(redirect){
+    sessionStorage.removeItem('__ea_redirect');
+    try{ window.history.replaceState(null,'',redirect); }catch(e){}
+  }
+})();
+</script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link href="https://fonts.googleapis.com/css2?family=VT323&family=Silkscreen:wght@400;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
 <link id="ea-custom-font-link" rel="stylesheet" href="">
 <style id="ea-font-override"></style>
@@ -6588,6 +6597,16 @@ function showApp(){
       history.replaceState({eaPage:'home'}, '', '/');
     }
     _navBase(startPage);
+    setTimeout(()=>{
+  if(startPage === 'explore')            { try{ loadExploreFeed(); }catch(e){} }
+  else if(startPage === 'friends')       { try{ loadFriendsList('friends'); }catch(e){} }
+  else if(startPage === 'communities')   { try{ loadCommGrid('all'); ... }catch(e){} }
+  else if(startPage === 'businesses')    { try{ initBusinessPage(); }catch(e){} }
+  else if(startPage === 'messages')      { try{ loadConversations(); }catch(e){} }
+  else if(startPage === 'notifications') { try{ loadNotifTab('nt-all'); }catch(e){} }
+  else if(startPage === 'capsules')      { try{ loadCapsules(); }catch(e){} }
+  else if(startPage === 'profile')       { try{ loadProfilePage(CU?.id); }catch(e){} }
+}, 300);
   }catch(e){ console.warn('[EA-History] showApp init:', e); }
 
   // Show nav-home-tabs on startup
