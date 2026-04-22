@@ -16877,7 +16877,11 @@ async function loadBizMsgs(chatId){
     let mediaHtml = '';
     if(isAudio && audioSrc) mediaHtml = renderAudioBubble(audioSrc);
     else if(isVideo && m.media_url) mediaHtml = '<div class="mb-media"><video src="'+m.media_url+'" controls playsinline style="width:100%;max-height:200px;display:block;border-radius:8px;"></video></div>';
-    else if(isImg && m.media_url) mediaHtml = '<div class="mb-media"><img src="'+m.media_url+'" style="width:100%;border-radius:8px;" class="img-safe"></div>';
+    else if(isImg && m.media_url){
+      // Imagem com legenda (nome + valor do produto)
+      const caption = m.content ? '<div style="font-size:11px;color:var(--text-muted);margin-top:5px;padding:0 2px;line-height:1.4;">'+linkify(m.content)+'</div>' : '';
+      mediaHtml = '<div class="mb-media"><img src="'+m.media_url+'" style="width:100%;border-radius:8px;" class="img-safe" onclick="openLightbox && openLightbox(\''+m.media_url+'\')" style="cursor:pointer;"></div>'+caption;
+    }
     div.innerHTML=`<div class="mb-bubble">${mediaHtml || linkify(m.content)}</div><div class="mb-time">${time}</div>`;
     area.appendChild(div);
   });
@@ -17553,19 +17557,26 @@ async function confirmBizNegotiation(bizId, bizName, prodName, prodPrice, priceL
       ? `🛍️ Olá! Tenho interesse em comprar: *${prodName}* (${priceDisplay}). Podemos negociar?`
       : `📅 Olá! Gostaria de agendar o serviço: *${prodName}* (${priceDisplay}). Quando há disponibilidade?`;
 
-    // Send text message with product info
+    // 1. Mensagem de texto com interesse no produto/serviço
     await db.from('business_messages').insert({
-      chat_id:chat.id, sender_id:CU.id, content:initMsg,
-      metadata: imgUrl ? JSON.stringify({product_name:prodName, product_price:prodPrice>0?prodPrice:null, price_label:prodPrice>0?null:priceLabel, image_url:imgUrl, type:'product_interest'}) : null
+      chat_id:chat.id, sender_id:CU.id, content:initMsg
     });
-    // If product has image, send it as an image message so it shows in chat
+    // 2. Se tiver imagem, envia como mensagem visual (imagem + valor como legenda)
     if(imgUrl){
-      await db.from('business_messages').insert({
+      const captionMsg = (isLoja?'🛍️ ':'📅 ')+'*'+prodName+'* — '+priceDisplay;
+      const {error: imgInsErr} = await db.from('business_messages').insert({
         chat_id:chat.id, sender_id:CU.id,
-        content:priceDisplay,
-        media_url:imgUrl, media_type:'image',
-        metadata:JSON.stringify({product_name:prodName, type:'product_image'})
+        content: captionMsg,
+        media_url: imgUrl,
+        media_type: 'image'
       });
+      // fallback: se coluna media_url não existir, envia link no texto
+      if(imgInsErr){
+        await db.from('business_messages').insert({
+          chat_id:chat.id, sender_id:CU.id,
+          content: captionMsg+'\n'+imgUrl
+        });
+      }
     }
     await db.from('business_chats').update({updated_at:new Date().toISOString()}).eq('id',chat.id);
 
