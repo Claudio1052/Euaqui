@@ -6596,8 +6596,7 @@ function showApp(){
     } else {
       history.replaceState({eaPage:'home'}, '', '/');
     }
-    _navBase(startPage);
-    setTimeout(()=>{
+    _navBase(startPage)  setTimeout(()=>{
   if(startPage === 'explore')            { try{ loadExploreFeed(); }catch(e){} }
   else if(startPage === 'friends')       { try{ loadFriendsList('friends'); }catch(e){} }
   else if(startPage === 'communities')   { try{ loadCommGrid('all'); ... }catch(e){} }
@@ -6606,7 +6605,8 @@ function showApp(){
   else if(startPage === 'notifications') { try{ loadNotifTab('nt-all'); }catch(e){} }
   else if(startPage === 'capsules')      { try{ loadCapsules(); }catch(e){} }
   else if(startPage === 'profile')       { try{ loadProfilePage(CU?.id); }catch(e){} }
-}, 300);
+}, 300);;
+   
   }catch(e){ console.warn('[EA-History] showApp init:', e); }
 
   // Show nav-home-tabs on startup
