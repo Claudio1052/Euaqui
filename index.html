@@ -6575,20 +6575,26 @@ function showApp(){
   try{ document.getElementById('app').style.display='block'; }catch(e){}
   try{ refreshUI(); }catch(e){ console.warn('refreshUI:',e); }
 
-  // ── Restaurar página pela URL ou iniciar em home ──────────────────
+  // ── Restaurar página pela URL, pelo redirect 404 ou iniciar em home ──
   try{
-    const urlPage = _eaGetPageFromPath(location.pathname);
+    // 1) Verifica se veio de um redirect do 404.html (ex: /amigos → salvo no sessionStorage)
+    let redirectPath = null;
+    try{ redirectPath = sessionStorage.getItem('__ea_redirect'); sessionStorage.removeItem('__ea_redirect'); }catch(e){}
+
+    // 2) Resolve a página: redirect 404 > URL atual > home
+    const urlPage = _eaGetPageFromPath(redirectPath || location.pathname);
     const startPage = urlPage || 'home';
     _eaLastPushedPage = startPage;
+
     if(startPage !== 'home'){
-      // Coloca a home como base da pilha, depois a página atual
+      // Coloca a home como base da pilha, depois a página restaurada
       history.replaceState({eaPage:'home'}, '', '/');
       history.pushState({eaPage: startPage}, '', _EA_ROUTES[startPage] || '/');
     } else {
       history.replaceState({eaPage:'home'}, '', '/');
     }
-    _navBase(startPage)  ;
-   
+    _navBase(startPage);
+
   }catch(e){ console.warn('[EA-History] showApp init:', e); }
 
   // Show nav-home-tabs on startup
@@ -6601,8 +6607,22 @@ function showApp(){
       if(mainLayout) mainLayout.style.paddingTop = 'var(--nav-h)';
     }
   }catch(e){}
-  // Load page data — each wrapped so one failure doesn't block the rest
-  setTimeout(()=>{ try{ cachedPostIds.clear();cachedPosts={};loadFeed(true); }catch(e){ console.warn('loadFeed:',e); } }, 0);
+  // Load page data — carrega dados da página restaurada (home, amigos, explorar, etc.)
+  setTimeout(()=>{
+    try{
+      const _rp = (history.state && history.state.eaPage) || 'home';
+      if(_rp === 'home')                { cachedPostIds.clear();cachedPosts={};loadFeed(true); }
+      else if(_rp === 'explore')        loadExploreFeed();
+      else if(_rp === 'friends')        loadFriendsList('friends');
+      else if(_rp === 'communities')    { loadCommGrid('all'); setTimeout(buildCommIconGrid,200); }
+      else if(_rp === 'businesses')     initBusinessPage();
+      else if(_rp === 'messages')       loadConversations();
+      else if(_rp === 'notifications')  loadNotifTab('nt-all');
+      else if(_rp === 'capsules')       loadCapsules();
+      else if(_rp === 'profile')        loadProfilePage(CU?.id);
+      else { cachedPostIds.clear();cachedPosts={};loadFeed(true); }
+    }catch(e){ console.warn('loadFeed/page restore:',e); }
+  }, 0);
   setTimeout(()=>{ try{ loadNotifCount(); loadUnreadMsgCount(); }catch(e){} }, 0);
   setTimeout(()=>{ try{ _debugNotifRLS(); }catch(e){} }, 2000); // Diagnóstico RLS (ver console)
   setTimeout(()=>{ try{ _initCallListen(); }catch(e){} }, 500);
