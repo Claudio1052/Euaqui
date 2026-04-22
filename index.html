@@ -5635,6 +5635,7 @@ body.day-mode::before{
         <button class="ptab" data-tab="biz-following" onclick="switchBizTab(this)">❤️ Seguindo</button>
         <button class="ptab" data-tab="biz-chats" onclick="switchBizTab(this)">💬 Atendimento</button>
         <button class="ptab" id="biz-dash-tab" data-tab="biz-dashboard" onclick="switchBizTab(this)" style="display:none;">📊 Dashboard</button>
+        <button class="ptab" id="biz-appointments-tab" data-tab="biz-appointments" onclick="switchBizTab(this)" style="display:none;">📅 Agendamentos</button>
       </div>
 
       <!-- TAB: EXPLORAR LOJAS -->
@@ -5688,6 +5689,7 @@ body.day-mode::before{
               <div style="display:flex;gap:6px;align-items:center;width:100%;">
                 <button class="msg-mic-btn" id="biz-mic-btn" onclick="startBizAudioRecord()" title="Gravar áudio" style="background:rgba(0,255,204,.1);border:1px solid rgba(0,255,204,.3);color:var(--neon-cyan);width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;font-size:15px;">🎙</button>
                 <textarea class="msg-in" id="biz-msg-in" placeholder="Responda o cliente..." rows="1" style="flex:1;max-height:80px;resize:none;overflow-y:auto;" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendBizMsg()}" oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,80)+'px'"></textarea>
+                <button id="biz-deal-btn" onclick="openNewDealModal()" title="Propor Acordo" style="background:rgba(0,255,204,.12);border:1px solid rgba(0,255,204,.35);color:var(--neon-cyan);width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;font-size:17px;" title="Propor Acordo 🤝">🤝</button>
                 <button class="msg-snd" id="biz-send-btn" onclick="sendBizMsg()">➤</button>
               </div>
             </div>
@@ -5698,6 +5700,15 @@ body.day-mode::before{
       <!-- TAB: DASHBOARD -->
       <div class="tab-panel" id="biz-dashboard">
         <div id="biz-dash-content"></div>
+      </div>
+
+      <!-- TAB: AGENDAMENTOS -->
+      <div class="tab-panel" id="biz-appointments">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div style="font-family:Silkscreen,monospace;font-size:12px;color:var(--neon-cyan);">📅 Agendamentos</div>
+          <div style="display:flex;gap:6px;" id="appt-toggle-wrap"></div>
+        </div>
+        <div id="biz-appointments-content"></div>
       </div>
     </div>
 
@@ -16156,6 +16167,18 @@ function switchBizTab(btn){
     if(currentBizChat && !_bizPollInterval) startBizChatPoll();
   }
   if(tabId==='biz-dashboard') loadBizDashboard();
+  if(tabId==='biz-appointments'){
+    // Monta toggle Meus Agendamentos / Como Proprietário
+    const wrap = document.getElementById('appt-toggle-wrap');
+    if(wrap && myBusiness){
+      wrap.innerHTML=`
+        <button class="tbtn" id="appt-btn-client" onclick="loadAppointments(false);this.style.background='rgba(0,255,204,.15)';document.getElementById('appt-btn-owner').style.background=''" style="font-size:10px;background:rgba(0,255,204,.15);">👤 Meus</button>
+        <button class="tbtn" id="appt-btn-owner" onclick="loadAppointments(true);this.style.background='rgba(0,255,204,.15)';document.getElementById('appt-btn-client').style.background=''" style="font-size:10px;">🏪 Meu Negócio</button>`;
+    } else if(wrap){
+      wrap.innerHTML='';
+    }
+    loadAppointments(false);
+  }
 }
 
 // ── Geolocalização ───────────────────────────────────────────────
@@ -16357,6 +16380,10 @@ async function loadMyBusiness(){
   // Show dashboard tab
   const dashTab = document.getElementById('biz-dash-tab');
   if(dashTab) dashTab.style.display = '';
+
+  // Show appointments tab
+  const apptTab = document.getElementById('biz-appointments-tab');
+  if(apptTab) apptTab.style.display = '';
 
   // Load products
   const {data:prods} = await db.from('business_products').select('*').eq('business_id',data.id).eq('available',true);
@@ -16738,7 +16765,13 @@ async function openBizChatCustomer(bizId, bizName){
 }
 
 // ── Timestamps de leitura e contadores de não-lidos ──────────────
-const _bizReadTimestamps = {};
+// Persiste no sessionStorage para sobreviver ao F5
+const _bizReadTimestamps = (()=>{
+  try{
+    const raw = sessionStorage.getItem('_bizReadTs');
+    return raw ? JSON.parse(raw) : {};
+  }catch(e){ return {}; }
+})();
 const _bizUnreadCounts = {};
 
 async function _loadBizUnreadCounts(chatIds){
@@ -16758,6 +16791,7 @@ async function _loadBizUnreadCounts(chatIds){
 function _markBizChatRead(chatId){
   _bizReadTimestamps[chatId] = new Date().toISOString();
   _bizUnreadCounts[chatId] = 0;
+  try{ sessionStorage.setItem('_bizReadTs', JSON.stringify(_bizReadTimestamps)); }catch(e){}
   const badge = document.getElementById('biz-unread-'+chatId);
   if(badge){ badge.textContent='0'; badge.style.display='none'; }
 }
@@ -16827,7 +16861,7 @@ async function loadBizChats(){
 
     ci.innerHTML = `${avatarTag}
       <div class="ci-info" style="flex:1;min-width:0;"><div class="ci-name">${xss(label)}</div>
-      <div class="ci-last">${chat.status==='deal_closed'?'✅ Negócio fechado':'Em atendimento'}</div></div>
+      <div class="ci-last">Em atendimento</div></div>
       <span id="biz-unread-${chat.id}" style="${badgeStyle}">${unread}</span>`;
 
     ci.onclick = ()=>openBizChat(chat.id, label);
@@ -16873,7 +16907,7 @@ async function openBizChat(chatId, label){
       : `<div style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.08);border:2px solid var(--border-glow);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;margin-left:8px;">👤</div>`;
     hdr.innerHTML = backBtn + avatarHdrHtml + `<div style="font-size:13px;color:var(--neon-cyan);font-family:Silkscreen,monospace;margin-left:8px;">${xss(label)}</div>`;
     if(myBusiness){
-      hdr.innerHTML += `<button class="tbtn" onclick="openCloseDealModal('${chatId}')" style="margin-left:auto;font-size:10px;color:var(--neon-cyan);">🤝 Negócio Fechado</button>`;
+      hdr.innerHTML += `<button class="tbtn" onclick="openNewDealModal()" style="margin-left:auto;font-size:10px;color:var(--neon-cyan);">🤝 Propor Acordo</button>`;
     }
   }
   document.getElementById('biz-msg-in-area').style.display='flex';
@@ -16941,7 +16975,39 @@ async function loadBizMsgs(chatId){
       const _cap = m.content ? '<div style="font-size:11px;color:var(--text-muted);margin-top:5px;padding:0 2px;line-height:1.4;">'+linkify(m.content)+'</div>' : '';
       mediaHtml = '<div class="mb-media" onclick="openLightbox && openLightbox(this.querySelector(\'img\').src)" style="cursor:pointer;"><img src="'+m.media_url+'" style="width:100%;border-radius:8px;" class="img-safe"></div>'+_cap;
     }
-    div.innerHTML=`<div class="mb-bubble">${mediaHtml || linkify(m.content)}</div><div class="mb-time">${time}</div>`;
+    // Render especial para propostas e acordos
+    if(m.msg_type === 'deal_proposal' || (m.content && m.content.includes('[DEAL_PROPOSAL:'))){
+      const dealIdMatch = m.content.match(/\[DEAL_PROPOSAL:([^\]]+)\]/);
+      const dealId = dealIdMatch ? dealIdMatch[1] : null;
+      // Extrai linhas visíveis (remove a tag interna)
+      const lines = m.content.replace(/\[DEAL_PROPOSAL:[^\]]*\]/,'').trim().split('\n');
+      const visibleText = lines.join('<br>');
+      const isTheirProposal = !isMine; // cliente vê botões de aceitar/recusar
+      const btnsHtml = (isTheirProposal && dealId) ? `
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <button onclick="acceptDealProposal('${dealId}',this)" style="flex:1;background:linear-gradient(135deg,var(--neon-cyan),#0077cc);border:none;border-radius:8px;padding:8px;color:#fff;font-family:Silkscreen,monospace;font-size:10px;cursor:pointer;">✅ Aceitar</button>
+          <button onclick="rejectDealProposal('${dealId}',this)" style="background:rgba(255,51,102,.1);border:1px solid var(--neon-pink);border-radius:8px;padding:8px 12px;color:var(--neon-pink);font-family:Silkscreen,monospace;font-size:10px;cursor:pointer;">❌ Recusar</button>
+        </div>` : (isMine ? `<div style="font-size:9px;color:var(--text-muted);margin-top:6px;font-style:italic;">Aguardando confirmação do cliente...</div>` : '');
+      div.innerHTML=`<div class="mb-bubble" style="background:rgba(0,255,204,.08);border:1px solid rgba(0,255,204,.35);border-radius:12px;padding:12px 14px;">
+        <div style="font-size:11px;line-height:1.6;color:var(--text-light);white-space:pre-wrap;">${visibleText}</div>
+        ${btnsHtml}
+      </div><div class="mb-time">${time}</div>`;
+    } else if(m.msg_type === 'deal_closed' || (m.content && m.content.includes('[DEAL_CLOSED:'))){
+      const lines = m.content.replace(/\[DEAL_CLOSED:[^\]]*\]/,'').trim().split('\n');
+      const visibleText = lines.join('<br>');
+      div.innerHTML=`<div class="mb-bubble" style="background:rgba(0,200,80,.08);border:2px solid rgba(0,200,80,.4);border-radius:12px;padding:12px 14px;text-align:center;">
+        <div style="font-size:24px;margin-bottom:4px;">🤝</div>
+        <div style="font-size:11px;line-height:1.6;color:var(--text-light);white-space:pre-wrap;">${visibleText}</div>
+      </div><div class="mb-time">${time}</div>`;
+    } else if(m.msg_type === 'deal_rejected' || (m.content && m.content.includes('[DEAL_REJECTED:'))){
+      const lines = m.content.replace(/\[DEAL_REJECTED:[^\]]*\]/,'').trim().split('\n');
+      const visibleText = lines.join('<br>');
+      div.innerHTML=`<div class="mb-bubble" style="background:rgba(255,51,102,.06);border:1px solid rgba(255,51,102,.3);border-radius:12px;padding:12px 14px;">
+        <div style="font-size:11px;line-height:1.6;color:var(--text-light);white-space:pre-wrap;">${visibleText}</div>
+      </div><div class="mb-time">${time}</div>`;
+    } else {
+      div.innerHTML=`<div class="mb-bubble">${mediaHtml || linkify(m.content)}</div><div class="mb-time">${time}</div>`;
+    }
     area.appendChild(div);
   });
   if(wasAtBottom || area.scrollHeight===area.clientHeight){
@@ -17356,11 +17422,17 @@ async function initBusinessPage(){
   await detectBizLocation();
   loadBizBrowse();
   if(CU){
+    // Aba Agendamentos sempre visível para usuários logados
+    const apptTab=document.getElementById('biz-appointments-tab');
+    if(apptTab) apptTab.style.display='';
+
     const {data}=await db.from('businesses').select('*').eq('owner_id',CU.id).maybeSingle();
     myBusiness=data;
     if(data){
       const dashTab=document.getElementById('biz-dash-tab');
       if(dashTab) dashTab.style.display='';
+      const apptTabOwner=document.getElementById('biz-appointments-tab');
+      if(apptTabOwner) apptTabOwner.style.display='';
     }
   }
 }
@@ -17509,48 +17581,316 @@ async function confirmDeal(btn){
   loadBizDashboard();
 }
 
-// ── CloseDeal: mark chat as deal closed ──────────────────────────
-function openCloseDealModal(chatId){
-  const overlay=document.createElement('div');
-  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);z-index:3500;display:flex;align-items:center;justify-content:center;padding:16px;';
-  overlay.innerHTML=`
-    <div class="modal" style="max-width:400px;width:100%;">
-      <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);margin-bottom:16px;">🤝 Negócio Fechado</div>
-      <div class="igrp"><label class="ilbl">Produto / Serviço vendido *</label>
-        <input class="ainput" id="closedeal-title" placeholder="O que foi combinado?"></div>
-      <div class="igrp"><label class="ilbl">Valor (R$)</label>
-        <input class="ainput" id="closedeal-value" type="number" step="0.01" placeholder="0,00"></div>
-      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px;">
-        <button class="tbtn" onclick="this.closest('[style*=fixed]').remove()">Cancelar</button>
-        <button class="post-btn" onclick="confirmCloseDeal('${chatId}',this)" style="font-size:10px;background:linear-gradient(135deg,#00bfae,#0077cc);">🤝 Confirmar</button>
+// ══════════════════════════════════════════════════════════════════
+// 🤝 ACORDO FECHADO — Modal completo + fluxo bilateral
+// ══════════════════════════════════════════════════════════════════
+
+function openNewDealModal(){
+  if(!currentBizChat){ return showToast('Abra um atendimento primeiro','error'); }
+  const isServico = myBusiness?.category === 'servico';
+  const overlay = document.createElement('div');
+  overlay.id = 'deal-modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.82);backdrop-filter:blur(8px);z-index:4500;display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto;';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:440px;width:100%;max-height:90vh;overflow-y:auto;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+        <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);">🤝 Propor Acordo</div>
+        <button onclick="document.getElementById('deal-modal-overlay').remove()" style="background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;">✕</button>
+      </div>
+
+      <div class="igrp">
+        <label class="ilbl">${isServico ? 'Serviço Acordado *' : 'Produto Acordado *'}</label>
+        <input class="ainput" id="dm-title" placeholder="${isServico ? 'Descreva o serviço...' : 'Nome do produto...'}">
+      </div>
+
+      <div class="igrp">
+        <label class="ilbl">Valor Acordado (R$) *</label>
+        <input class="ainput" id="dm-value" type="number" step="0.01" min="0" placeholder="0,00">
+      </div>
+
+      <div class="igrp">
+        <label class="ilbl">Forma de Pagamento</label>
+        <select class="ainput" id="dm-payment">
+          <option value="">Selecione...</option>
+          <option value="Pix">💠 Pix</option>
+          <option value="Dinheiro">💵 Dinheiro</option>
+          <option value="Cartão de Crédito">💳 Cartão de Crédito</option>
+          <option value="Cartão de Débito">💳 Cartão de Débito</option>
+          <option value="Transferência">🏦 Transferência Bancária</option>
+          <option value="Boleto">📄 Boleto</option>
+          <option value="A combinar">🤝 A combinar</option>
+        </select>
+      </div>
+
+      ${isServico ? `
+      <div class="igrp">
+        <label class="ilbl">📅 Data do Agendamento *</label>
+        <input class="ainput" id="dm-date" type="date" min="${new Date().toISOString().split('T')[0]}">
+      </div>
+      <div class="igrp">
+        <label class="ilbl">⏰ Horário</label>
+        <input class="ainput" id="dm-time" type="time">
+      </div>
+      <div class="igrp">
+        <label class="ilbl">📍 Local do Serviço</label>
+        <input class="ainput" id="dm-location" placeholder="Endereço ou online...">
+      </div>
+      ` : `
+      <div class="igrp">
+        <label class="ilbl">📦 Forma de Entrega</label>
+        <select class="ainput" id="dm-delivery">
+          <option value="">Selecione...</option>
+          <option value="Retirada">🏪 Retirada no local</option>
+          <option value="Entrega">🚚 Entrega</option>
+          <option value="Online">💻 Digital/Online</option>
+        </select>
+      </div>
+      <div class="igrp">
+        <label class="ilbl">📍 Endereço de Entrega</label>
+        <input class="ainput" id="dm-delivery-addr" placeholder="Endereço completo...">
+      </div>
+      `}
+
+      <div class="igrp">
+        <label class="ilbl">📝 Observações</label>
+        <textarea class="ainput" id="dm-notes" rows="2" placeholder="Detalhes adicionais do acordo..." style="resize:none;"></textarea>
+      </div>
+
+      <div style="background:rgba(255,204,0,.07);border:1px solid rgba(255,204,0,.25);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:10px;color:var(--neon-yellow);line-height:1.5;">
+        ⚠️ A proposta será enviada ao cliente no chat. O acordo só é confirmado quando o <strong>cliente aceitar</strong>.
+      </div>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button class="tbtn" onclick="document.getElementById('deal-modal-overlay').remove()">Cancelar</button>
+        <button class="post-btn" onclick="sendDealProposal(this)" style="background:linear-gradient(135deg,var(--neon-cyan),#0077cc);font-size:11px;">🤝 Enviar Proposta</button>
       </div>
     </div>`;
-  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+  overlay.onclick = e=>{ if(e.target===overlay) overlay.remove(); };
   document.body.appendChild(overlay);
 }
 
-async function confirmCloseDeal(chatId, btn){
-  const title=document.getElementById('closedeal-title')?.value.trim();
-  if(!title) return showToast('Digite o produto/serviço','error');
-  const value=parseFloat(document.getElementById('closedeal-value')?.value||'0')||null;
-  btn.disabled=true;
-  await db.from('business_chats').update({status:'deal_closed'}).eq('id',chatId);
-  await db.from('business_deals').insert({
-    business_id:myBusiness?.id, title, value, status:'closed'
-  });
-  if(myBusiness){
-    await db.from('businesses').update({
-      deals_closed:(myBusiness.deals_closed||0)+1,
-      sales_done:(myBusiness.sales_done||0)+1
-    }).eq('id',myBusiness.id);
-    myBusiness.deals_closed=(myBusiness.deals_closed||0)+1;
-    myBusiness.sales_done=(myBusiness.sales_done||0)+1;
+async function sendDealProposal(btn){
+  const title = document.getElementById('dm-title')?.value.trim();
+  const value = parseFloat(document.getElementById('dm-value')?.value||'0')||null;
+  const payment = document.getElementById('dm-payment')?.value||'';
+  const notes = document.getElementById('dm-notes')?.value.trim()||'';
+  const isServico = myBusiness?.category === 'servico';
+
+  if(!title) return showToast('Informe o produto/serviço','error');
+  if(!value) return showToast('Informe o valor acordado','error');
+
+  const date = document.getElementById('dm-date')?.value||'';
+  const time = document.getElementById('dm-time')?.value||'';
+  const location = document.getElementById('dm-location')?.value.trim()||'';
+  const delivery = document.getElementById('dm-delivery')?.value||'';
+  const deliveryAddr = document.getElementById('dm-delivery-addr')?.value.trim()||'';
+
+  if(isServico && !date) return showToast('Informe a data do agendamento','error');
+
+  btn.disabled = true; btn.textContent = '⏳ Enviando...';
+
+  // Salva a proposta na tabela business_deals como 'pending'
+  const dealPayload = {
+    business_id: myBusiness?.id,
+    chat_id: currentBizChat,
+    title,
+    value,
+    payment_method: payment||null,
+    notes: notes||null,
+    status: 'pending',
+    is_service: isServico,
+    scheduled_date: date||null,
+    scheduled_time: time||null,
+    service_location: location||null,
+    delivery_type: delivery||null,
+    delivery_address: deliveryAddr||null,
+    proposed_by: CU.id
+  };
+  const {data:deal, error} = await db.from('business_deals').insert(dealPayload).select().single();
+  if(error){ btn.disabled=false; btn.textContent='🤝 Enviar Proposta'; return showToast('Erro: '+error.message,'error'); }
+
+  // Monta mensagem especial de proposta no chat
+  const valorFmt = 'R$ '+Number(value).toFixed(2).replace('.',',');
+  let proposalLines = [
+    `━━━━━━━━━━━━━━━━━━━━━`,
+    `🤝 *PROPOSTA DE ACORDO*`,
+    `━━━━━━━━━━━━━━━━━━━━━`,
+    `📋 ${isServico?'Serviço':'Produto'}: ${title}`,
+    `💰 Valor: ${valorFmt}`,
+  ];
+  if(payment) proposalLines.push(`💳 Pagamento: ${payment}`);
+  if(isServico){
+    if(date) proposalLines.push(`📅 Data: ${new Date(date+'T12:00:00').toLocaleDateString('pt-BR')}`);
+    if(time) proposalLines.push(`⏰ Horário: ${time}`);
+    if(location) proposalLines.push(`📍 Local: ${location}`);
+  } else {
+    if(delivery) proposalLines.push(`📦 Entrega: ${delivery}`);
+    if(deliveryAddr) proposalLines.push(`📍 Endereço: ${deliveryAddr}`);
   }
-  showToast('🤝 Negócio fechado registrado!','success');
-  btn.closest('[style*=fixed]').remove();
-  loadBizChats();
-  loadBizDashboard();
+  if(notes) proposalLines.push(`📝 Obs: ${notes}`);
+  proposalLines.push(`━━━━━━━━━━━━━━━━━━━━━`);
+  proposalLines.push(`[DEAL_PROPOSAL:${deal.id}]`); // tag interna para renderização
+
+  const msgContent = proposalLines.join('\n');
+  await db.from('business_messages').insert({chat_id:currentBizChat, sender_id:CU.id, content:msgContent, msg_type:'deal_proposal'});
+  await db.from('business_chats').update({updated_at:new Date().toISOString()}).eq('id',currentBizChat);
+
+  document.getElementById('deal-modal-overlay')?.remove();
+  showToast('✅ Proposta enviada! Aguardando confirmação do cliente.','success');
+  await loadBizMsgs(currentBizChat);
 }
+
+async function acceptDealProposal(dealId, btn){
+  if(!CU) return showToast('Faça login','error');
+  if(!confirm('Confirmar e aceitar este acordo?')) return;
+  btn.disabled = true; btn.textContent = '⏳';
+
+  // Busca deal
+  const {data:deal} = await db.from('business_deals').select('*').eq('id',dealId).maybeSingle();
+  if(!deal){ btn.disabled=false; btn.textContent='✅ Aceitar'; return showToast('Acordo não encontrado','error'); }
+
+  // Atualiza status
+  await db.from('business_deals').update({status:'closed', accepted_by:CU.id, accepted_at:new Date().toISOString()}).eq('id',dealId);
+  await db.from('business_chats').update({status:'deal_closed', updated_at:new Date().toISOString()}).eq('id',currentBizChat||deal.chat_id);
+
+  // Incrementa contadores
+  if(deal.business_id){
+    const {data:biz} = await db.from('businesses').select('deals_closed,sales_done').eq('id',deal.business_id).maybeSingle();
+    if(biz){
+      await db.from('businesses').update({
+        deals_closed:(biz.deals_closed||0)+1,
+        sales_done:(biz.sales_done||0)+1
+      }).eq('id',deal.business_id);
+    }
+  }
+
+  // Se for serviço, salva agendamento na tabela appointments
+  if(deal.is_service && deal.scheduled_date){
+    await db.from('appointments').insert({
+      business_id: deal.business_id,
+      customer_id: CU.id,
+      deal_id: dealId,
+      chat_id: deal.chat_id||currentBizChat,
+      service_title: deal.title,
+      value: deal.value,
+      payment_method: deal.payment_method,
+      scheduled_date: deal.scheduled_date,
+      scheduled_time: deal.scheduled_time||null,
+      location: deal.service_location||null,
+      notes: deal.notes||null,
+      status: 'confirmed'
+    }).catch(e=>console.warn('appointments insert:',e.message));
+  }
+
+  // Envia mensagem de acordo fechado no chat
+  const chatId = currentBizChat || deal.chat_id;
+  const valorFmt = deal.value ? 'R$ '+Number(deal.value).toFixed(2).replace('.',',') : '';
+  const msgFechado = `━━━━━━━━━━━━━━━━━━━━━\n✅ *ACORDO FECHADO!*\n━━━━━━━━━━━━━━━━━━━━━\n🤝 ${deal.title}${valorFmt?' — '+valorFmt:''}\n[DEAL_CLOSED:${dealId}]`;
+  await db.from('business_messages').insert({chat_id:chatId, sender_id:CU.id, content:msgFechado, msg_type:'deal_closed'});
+  await db.from('business_chats').update({updated_at:new Date().toISOString()}).eq('id',chatId);
+
+  showToast('🎉 Acordo confirmado e fechado!','success');
+  if(currentBizChat) await loadBizMsgs(currentBizChat);
+  loadBizChats();
+}
+
+async function rejectDealProposal(dealId, btn){
+  if(!confirm('Recusar esta proposta?')) return;
+  btn.disabled = true;
+  await db.from('business_deals').update({status:'rejected', rejected_at:new Date().toISOString()}).eq('id',dealId);
+  const msgRej = `━━━━━━━━━━━━━━━━━━━━━\n❌ *PROPOSTA RECUSADA*\nO cliente recusou a proposta.\n[DEAL_REJECTED:${dealId}]`;
+  await db.from('business_messages').insert({chat_id:currentBizChat, sender_id:CU.id, content:msgRej, msg_type:'deal_rejected'});
+  await db.from('business_chats').update({updated_at:new Date().toISOString()}).eq('id',currentBizChat);
+  showToast('Proposta recusada','info');
+  await loadBizMsgs(currentBizChat);
+}
+
+// ── Aba Agendamentos ────────────────────────────────────────────
+async function loadAppointments(asOwner){
+  const el = document.getElementById('biz-appointments-content');
+  if(!el||!CU) return;
+  el.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;font-size:11px;">⏳ Carregando agendamentos...</div>';
+
+  let query;
+  if(asOwner && myBusiness){
+    const {data} = await db.from('appointments')
+      .select('*, profiles!appointments_customer_id_fkey(username,avatar_url,full_name)')
+      .eq('business_id', myBusiness.id)
+      .order('scheduled_date',{ascending:true});
+    renderAppointmentsList(el, data||[], true);
+  } else {
+    const {data} = await db.from('appointments')
+      .select('*, businesses(id,name,logo_url)')
+      .eq('customer_id', CU.id)
+      .order('scheduled_date',{ascending:true});
+    renderAppointmentsList(el, data||[], false);
+  }
+}
+
+function renderAppointmentsList(el, list, isOwner){
+  if(!list.length){
+    el.innerHTML='<div style="color:var(--text-muted);padding:20px;text-align:center;font-size:12px;">Nenhum agendamento ainda.</div>';
+    return;
+  }
+  const now = new Date();
+  const upcoming = list.filter(a=>{ const d=new Date(a.scheduled_date+'T'+(a.scheduled_time||'00:00')); return d >= now; });
+  const past = list.filter(a=>{ const d=new Date(a.scheduled_date+'T'+(a.scheduled_time||'00:00')); return d < now; });
+
+  function renderItem(a, isPast){
+    const dateStr = new Date(a.scheduled_date+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'});
+    const timeStr = a.scheduled_time ? a.scheduled_time.substring(0,5) : '';
+    const name = isOwner
+      ? (a.profiles?.full_name||a.profiles?.username||'Cliente')
+      : (a.businesses?.name||'Negócio');
+    const avatar = isOwner
+      ? (a.profiles?.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(a.profiles?.username||'user'))
+      : (a.businesses?.logo_url||'https://api.dicebear.com/7.x/shapes/svg?seed=biz');
+    const valor = a.value ? 'R$ '+Number(a.value).toFixed(2).replace('.',',') : '';
+    const statusColor = a.status==='confirmed'?'var(--neon-cyan)':a.status==='done'?'var(--neon-purple)':'var(--neon-pink)';
+    const statusLabel = a.status==='confirmed'?'✅ Confirmado':a.status==='done'?'✔ Concluído':'⚠️ '+a.status;
+    return `<div style="background:var(--bg-card);border:1px solid ${isPast?'rgba(255,255,255,.08)':'var(--border-glow)'};border-radius:12px;padding:12px 14px;margin-bottom:10px;${isPast?'opacity:.7':''}">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <img src="${xss(avatar)}" style="width:36px;height:36px;border-radius:${isOwner?'50%':'8px'};object-fit:cover;border:2px solid var(--border-glow);flex-shrink:0;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(name)}</div>
+          <div style="font-size:10px;color:var(--neon-cyan);margin-top:2px;">${xss(a.service_title||'Serviço')}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          ${valor?`<div style="font-family:VT323,monospace;font-size:18px;color:var(--neon-yellow);">${valor}</div>`:''}
+          <div style="font-size:9px;color:${statusColor};">${statusLabel}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <span style="background:rgba(0,255,204,.1);border:1px solid rgba(0,255,204,.2);border-radius:6px;padding:3px 8px;font-size:10px;color:var(--neon-cyan);">📅 ${dateStr}${timeStr?' · ⏰ '+timeStr:''}</span>
+        ${a.location?`<span style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:3px 8px;font-size:10px;color:var(--text-muted);">📍 ${xss(a.location)}</span>`:''}
+        ${a.payment_method?`<span style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:3px 8px;font-size:10px;color:var(--text-muted);">💳 ${xss(a.payment_method)}</span>`:''}
+      </div>
+      ${a.notes?`<div style="font-size:10px;color:var(--text-muted);margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.06);">📝 ${xss(a.notes)}</div>`:''}
+      ${isOwner&&!isPast&&a.status==='confirmed'?`<div style="margin-top:8px;display:flex;gap:6px;justify-content:flex-end;"><button class="tbtn" onclick="markAppointmentDone('${a.id}',this)" style="font-size:10px;color:var(--neon-cyan);">✔ Concluir</button></div>`:''}
+    </div>`;
+  }
+
+  let html = '';
+  if(upcoming.length){
+    html += `<div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--neon-cyan);margin-bottom:8px;">📅 PRÓXIMOS (${upcoming.length})</div>`;
+    html += upcoming.map(a=>renderItem(a,false)).join('');
+  }
+  if(past.length){
+    html += `<div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--text-muted);margin:14px 0 8px;">🗂 HISTÓRICO (${past.length})</div>`;
+    html += past.map(a=>renderItem(a,true)).join('');
+  }
+  el.innerHTML = html;
+}
+
+async function markAppointmentDone(id, btn){
+  btn.disabled=true;
+  await db.from('appointments').update({status:'done'}).eq('id',id);
+  showToast('✔ Agendamento concluído!','success');
+  loadAppointments(true);
+}
+
+// ── CloseDeal legado (mantido por compatibilidade) ──────────────
+function openCloseDealModal(chatId){ openNewDealModal(); }
 
 
 // ── Seleção de produto antes de iniciar negociação ───────────────
