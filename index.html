@@ -17746,7 +17746,7 @@ async function sendDealProposal(btn){
     proposed_by: CU.id
   };
   const {data:deal, error} = await db.from('business_deals').insert(dealPayload).select().single();
-  if(error){ btn.disabled=false; btn.textContent='🤝 Enviar Proposta'; return showToast('Erro: '+error.message,'error'); }
+  if(error){ console.error('[sendDealProposal]',error); btn.disabled=false; btn.textContent='🤝 Enviar Proposta'; return showToast('Erro ao salvar: '+error.message,'error'); }
 
   // Monta mensagem especial de proposta no chat
   const valorFmt = 'R$ '+Number(value).toFixed(2).replace('.',',');
@@ -17825,76 +17825,108 @@ async function acceptDealProposal(dealId, btn){
   if(!CU) return showToast('Faça login','error');
 
   eaConfirm('Confirmar e aceitar este acordo?', async ()=>{
-    // Desabilita botão com visual de loading
     btn.disabled = true;
     btn.style.opacity = '.5';
     btn.textContent = '⏳ Confirmando...';
 
+    const _resetBtn = ()=>{ btn.disabled=false; btn.style.opacity=''; btn.textContent='✅ ACEITAR ACORDO'; };
+
     try{
-      // Busca deal com timeout implícito
+      // 1. Busca o deal
       const {data:deal, error:dealErr} = await db.from('business_deals').select('*').eq('id',dealId).maybeSingle();
-      if(dealErr || !deal){
-        btn.disabled=false; btn.style.opacity=''; btn.textContent='✅ ACEITAR ACORDO';
-        return showToast('Acordo não encontrado','error');
+      if(dealErr){
+        console.error('[acceptDeal] busca deal:', dealErr);
+        _resetBtn();
+        return showToast('Erro ao buscar acordo: '+dealErr.message,'error');
+      }
+      if(!deal){
+        _resetBtn();
+        return showToast('Acordo não encontrado no banco','error');
       }
 
       const chatId = deal.chat_id || currentBizChat;
       if(!chatId){
-        btn.disabled=false; btn.style.opacity=''; btn.textContent='✅ ACEITAR ACORDO';
+        _resetBtn();
         return showToast('Chat não identificado','error');
       }
 
-      // Atualiza deal e chat em paralelo
-      await Promise.all([
-        db.from('business_deals').update({
-          status:'closed',
-          accepted_by: CU.id,
-          accepted_at: new Date().toISOString()
-        }).eq('id', dealId),
-        db.from('business_chats').update({
-          status:'deal_closed',
-          updated_at: new Date().toISOString()
-        }).eq('id', chatId)
-      ]);
+      // 2. Atualiza o deal — tenta com colunas extras primeiro, faz fallback se falhar
+      let dealUpdateErr;
+      const fullUpdate = await db.from('business_deals').update({
+        status:'closed',
+        accepted_by: CU.id,
+        accepted_at: new Date().toISOString()
+      }).eq('id', dealId);
+      dealUpdateErr = fullUpdate.error;
 
-      // Incrementa contadores do negócio
-      if(deal.business_id){
-        const {data:biz} = await db.from('businesses').select('deals_closed,sales_done').eq('id',deal.business_id).maybeSingle();
-        if(biz){
-          await db.from('businesses').update({
-            deals_closed:(biz.deals_closed||0)+1,
-            sales_done:(biz.sales_done||0)+1
-          }).eq('id',deal.business_id);
+      if(dealUpdateErr){
+        console.warn('[acceptDeal] update completo falhou, tentando fallback:', dealUpdateErr.message);
+        // Fallback: só atualiza status (para casos de coluna faltando)
+        const fallback = await db.from('business_deals').update({ status:'closed' }).eq('id', dealId);
+        if(fallback.error){
+          console.error('[acceptDeal] fallback também falhou:', fallback.error);
+          _resetBtn();
+          return showToast('Erro ao atualizar acordo: '+fallback.error.message,'error');
         }
       }
 
-      // Se for serviço, salva agendamento
-      if(deal.is_service && deal.scheduled_date){
-        await db.from('appointments').insert({
-          business_id: deal.business_id,
-          customer_id: CU.id,
-          deal_id: dealId,
-          chat_id: chatId,
-          service_title: deal.title,
-          value: deal.value,
-          payment_method: deal.payment_method,
-          scheduled_date: deal.scheduled_date,
-          scheduled_time: deal.scheduled_time||null,
-          location: deal.service_location||null,
-          notes: deal.notes||null,
-          status: 'confirmed'
-        }).catch(e=>console.warn('appointments insert:',e.message));
+      // 3. Atualiza o chat
+      const chatUpdate = await db.from('business_chats').update({
+        status:'deal_closed',
+        updated_at: new Date().toISOString()
+      }).eq('id', chatId);
+      if(chatUpdate.error){
+        // Tenta só updated_at (status pode não existir)
+        await db.from('business_chats').update({ updated_at: new Date().toISOString() }).eq('id', chatId);
       }
 
-      // Envia mensagem de acordo fechado
+      // 4. Incrementa contadores do negócio (silencioso se falhar)
+      if(deal.business_id){
+        try{
+          const {data:biz} = await db.from('businesses').select('deals_closed,sales_done').eq('id',deal.business_id).maybeSingle();
+          if(biz){
+            await db.from('businesses').update({
+              deals_closed:(biz.deals_closed||0)+1,
+              sales_done:(biz.sales_done||0)+1
+            }).eq('id',deal.business_id);
+          }
+        } catch(e){ console.warn('[acceptDeal] counters:', e.message); }
+      }
+
+      // 5. Se for serviço, cria agendamento (silencioso se a tabela não existir)
+      if(deal.is_service && deal.scheduled_date){
+        try{
+          const apptPayload = {
+            business_id: deal.business_id,
+            customer_id: CU.id,
+            scheduled_date: deal.scheduled_date,
+            status: 'confirmed'
+          };
+          // Adiciona campos opcionais apenas se existirem no deal
+          if(deal.title)           apptPayload.service_title  = deal.title;
+          if(deal.value)           apptPayload.value           = deal.value;
+          if(deal.payment_method)  apptPayload.payment_method  = deal.payment_method;
+          if(deal.scheduled_time)  apptPayload.scheduled_time  = deal.scheduled_time;
+          if(deal.service_location)apptPayload.location        = deal.service_location;
+          if(deal.notes)           apptPayload.notes           = deal.notes;
+          if(chatId)               apptPayload.chat_id         = chatId;
+          if(dealId)               apptPayload.deal_id         = dealId;
+          const apptRes = await db.from('appointments').insert(apptPayload);
+          if(apptRes.error) console.warn('[acceptDeal] appointments insert:', apptRes.error.message);
+        } catch(e){ console.warn('[acceptDeal] appointments:', e.message); }
+      }
+
+      // 6. Mensagem de acordo fechado no chat
       const valorFmt = deal.value ? 'R$ '+Number(deal.value).toFixed(2).replace('.',',') : '';
-      const msgFechado = `━━━━━━━━━━━━━━━━━━━━━\n✅ *ACORDO FECHADO!*\n━━━━━━━━━━━━━━━━━━━━━\n🤝 ${deal.title}${valorFmt?' — '+valorFmt:''}\n[DEAL_CLOSED:${dealId}]`;
-      await db.from('business_messages').insert({
+      const msgFechado = `━━━━━━━━━━━━━━━━━━━━━\n✅ *ACORDO FECHADO!*\n━━━━━━━━━━━━━━━━━━━━━\n🤝 ${deal.title||'Acordo'}${valorFmt?' — '+valorFmt:''}\n[DEAL_CLOSED:${dealId}]`;
+      const msgRes = await db.from('business_messages').insert({
         chat_id: chatId,
         sender_id: CU.id,
         content: msgFechado,
         msg_type: 'deal_closed'
       });
+      if(msgRes.error) console.warn('[acceptDeal] msg insert:', msgRes.error.message);
+
       await db.from('business_chats').update({updated_at:new Date().toISOString()}).eq('id',chatId);
 
       showToast('🎉 Acordo confirmado e fechado!','success');
@@ -17902,35 +17934,50 @@ async function acceptDealProposal(dealId, btn){
       loadBizChats();
 
     } catch(err){
-      console.error('[acceptDeal]', err);
-      btn.disabled=false; btn.style.opacity=''; btn.textContent='✅ ACEITAR ACORDO';
-      showToast('Erro ao confirmar acordo','error');
+      console.error('[acceptDeal] erro inesperado:', err);
+      _resetBtn();
+      showToast('Erro inesperado: '+err.message,'error');
     }
   });
 }
 
 async function rejectDealProposal(dealId, btn){
+  if(!CU) return showToast('Faça login','error');
   eaConfirm('Recusar esta proposta de acordo?', async ()=>{
     btn.disabled = true; btn.style.opacity='.5'; btn.textContent='...';
+    const _resetBtn = ()=>{ btn.disabled=false; btn.style.opacity=''; btn.textContent='✕ RECUSAR'; };
     try{
       const chatId = currentBizChat;
-      await db.from('business_deals').update({
+
+      // Tenta com rejected_at, faz fallback sem ela
+      let rejRes = await db.from('business_deals').update({
         status:'rejected',
         rejected_at: new Date().toISOString()
       }).eq('id',dealId);
+      if(rejRes.error){
+        console.warn('[rejectDeal] update com rejected_at falhou:', rejRes.error.message);
+        rejRes = await db.from('business_deals').update({ status:'rejected' }).eq('id',dealId);
+        if(rejRes.error){
+          _resetBtn();
+          return showToast('Erro ao recusar: '+rejRes.error.message,'error');
+        }
+      }
+
       const msgRej = `━━━━━━━━━━━━━━━━━━━━━\n❌ *PROPOSTA RECUSADA*\nO cliente recusou a proposta.\n[DEAL_REJECTED:${dealId}]`;
-      await db.from('business_messages').insert({
+      const msgRes = await db.from('business_messages').insert({
         chat_id: chatId,
         sender_id: CU.id,
         content: msgRej,
         msg_type: 'deal_rejected'
       });
+      if(msgRes.error) console.warn('[rejectDeal] msg:', msgRes.error.message);
       await db.from('business_chats').update({updated_at:new Date().toISOString()}).eq('id',chatId);
       showToast('Proposta recusada','info');
       await loadBizMsgs(chatId);
     } catch(err){
-      btn.disabled=false; btn.style.opacity=''; btn.textContent='✕ RECUSAR';
-      showToast('Erro ao recusar','error');
+      console.error('[rejectDeal]', err);
+      _resetBtn();
+      showToast('Erro ao recusar: '+err.message,'error');
     }
   });
 }
