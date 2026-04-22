@@ -17561,12 +17561,11 @@ async function confirmBizNegotiation(bizId, bizName, prodName, prodPrice, priceL
     await db.from('business_messages').insert({
       chat_id:chat.id, sender_id:CU.id, content:initMsg
     });
-    // 2. Se tiver imagem, envia como mensagem visual (imagem + valor como legenda)
+    // 2. Se tiver imagem, envia como mensagem visual com a mesma legenda do initMsg
     if(imgUrl){
-      const captionMsg = (isLoja?'🛍️ ':'📅 ')+'*'+prodName+'* — '+priceDisplay;
       const {error: imgInsErr} = await db.from('business_messages').insert({
         chat_id:chat.id, sender_id:CU.id,
-        content: captionMsg,
+        content: initMsg,
         media_url: imgUrl,
         media_type: 'image'
       });
@@ -17574,7 +17573,7 @@ async function confirmBizNegotiation(bizId, bizName, prodName, prodPrice, priceL
       if(imgInsErr){
         await db.from('business_messages').insert({
           chat_id:chat.id, sender_id:CU.id,
-          content: captionMsg+'\n'+imgUrl
+          content: initMsg+'\n'+imgUrl
         });
       }
     }
