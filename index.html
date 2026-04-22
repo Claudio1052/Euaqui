@@ -16399,7 +16399,7 @@ async function loadMyBusiness(){
         <div class="prod-price">${p.price?'R$ '+Number(p.price).toFixed(2):xss(p.price_label||'Sob consulta')}</div>
         <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">
           <button class="tbtn" style="flex:1;font-size:9px;color:var(--neon-cyan);padding:5px;" onclick="divulgarProduto('${data.id}','${xss(p.name)}',${p.price||0},'${xss(p.image_url||'')}','${xss(p.price_label||'')}')">📢 Divulgar</button>
-          <button class="tbtn" style="flex:1;font-size:9px;color:var(--neon-pink);padding:5px;border-color:rgba(255,51,102,.4);" onclick="oaDivulgarProduto('${data.id}','${p.id}','${xss(p.name)}','${xss(p.image_url||'')}','${xss(myBusiness?.category||'loja')}','${xss(myBusiness?.logo_url||'')}','${xss(myBusiness?.name||'')}',${p.price||0},'${xss(p.price_label||'')}')">🚀 Olha Aqui</button>
+          <button class="tbtn" style="flex:1;font-size:9px;color:var(--neon-pink);padding:5px;border-color:rgba(255,51,102,.4);" onclick="oaDivulgarProduto('${data.id}','${p.id}','${xss(p.name)}','${xss(p.image_url||'')}','${xss(myBusiness?.category||'loja')}','${xss(myBusiness?.logo_url||'')}','${xss(myBusiness?.name||'')}',${p.price||0},'${xss(p.price_label||'')}','${xss(p.description||'')}')">🚀 Olha Aqui</button>
           <button class="tbtn" style="font-size:9px;color:var(--neon-yellow);padding:5px;" onclick="editProduct('${p.id}','${xss(p.name)}',${p.price||0},'${xss(p.price_label||'')}','${xss(p.description||'')}','${xss(p.image_url||'')}','${_pUrls}')">✏️</button>
           <button class="tbtn" style="font-size:9px;padding:5px;" onclick="deleteProduct('${p.id}')">🗑</button>
         </div>`;
@@ -23159,13 +23159,13 @@ let _oaPickedType = null; // 'image' | 'video'
 // =========================================================================
 window._oaBizContext = null;   // GLOBAL — lido por oaPublish e oaEditorPublish
 
-function oaDivulgarProduto(bizId, itemId, itemName, itemImgUrl, category, logoUrl, bizName, itemPrice, itemPriceLabel){
+function oaDivulgarProduto(bizId, itemId, itemName, itemImgUrl, category, logoUrl, bizName, itemPrice, itemPriceLabel, itemDescription){
   if(!CU){ showToast('Faça login','error'); return; }
 
   // CTA AUTOMÁTICO: serviço → Agendar, loja → Comprar. Sem escolha manual.
   const _isServico = (category === 'servico' || category === 'serviço');
   const defaultCta = _isServico ? 'book' : 'buy';
-  window._oaBizContext = { bizId, itemId, itemName, itemImgUrl:itemImgUrl||'', itemPrice:itemPrice||0, itemPriceLabel:itemPriceLabel||'', category, logoUrl, bizName, cta_type: defaultCta };
+  window._oaBizContext = { bizId, itemId, itemName, itemImgUrl:itemImgUrl||'', itemPrice:itemPrice||0, itemPriceLabel:itemPriceLabel||'', itemDescription:itemDescription||'', category, logoUrl, bizName, cta_type: defaultCta };
 
   const ov = document.createElement('div');
   ov.id = 'oa-biz-picker';
@@ -23231,7 +23231,7 @@ async function oaUseBizImage(imgUrl){
     const _ctaAuto = (_ctx.category==='servico'||_ctx.category==='serviço') ? 'book' : 'buy';
     const meta = { type:'business', business_id:_ctx.bizId, item_id:_ctx.itemId,
       item_name:_ctx.itemName, item_price:_ctx.itemPrice||0, item_price_label:_ctx.itemPriceLabel||'',
-      item_image_url:_ctx.itemImgUrl||'', category:_ctx.category,
+      item_image_url:_ctx.itemImgUrl||'', item_description:_ctx.itemDescription||'', category:_ctx.category,
       logo_url:_ctx.logoUrl, biz_name:_ctx.bizName,
       cta_type: _ctx.cta_type || _ctaAuto };
     const { error } = await db.from('olha_aqui').insert({
@@ -23262,91 +23262,166 @@ window.oaPickBizMedia = oaPickBizMedia;
 async function oaCtaAction(type){
   if(!CU){ showToast('Faça login para continuar','error'); return; }
   const btn = document.getElementById(type==='buy'?'oa-v-cta-buy':'oa-v-cta-book');
-  const itemName       = btn?.dataset.itemName       || 'produto/serviço';
-  const bizId          = btn?.dataset.bizId          || '';
-  const bizName        = btn?.dataset.bizName        || 'Loja';
-  const itemPrice      = parseFloat(btn?.dataset.itemPrice||0)||0;
-  const itemPriceLabel = btn?.dataset.itemPriceLabel || '';
-  const itemImageUrl   = btn?.dataset.itemImageUrl   || '';
+  const itemName        = btn?.dataset.itemName        || 'produto/serviço';
+  const bizId           = btn?.dataset.bizId           || '';
+  const bizName         = btn?.dataset.bizName         || 'Loja';
+  const itemPrice       = parseFloat(btn?.dataset.itemPrice||0)||0;
+  const itemPriceLabel  = btn?.dataset.itemPriceLabel  || '';
+  const itemImageUrl    = btn?.dataset.itemImageUrl    || '';
+  const itemDescription = btn?.dataset.itemDescription || '';
 
   if(!bizId){ showToast('Informação da loja não encontrada','error'); return; }
 
-  // Monta mensagem igual à usada no chat
+  const isLoja = type === 'buy';
   const priceDisplay = itemPrice > 0
     ? 'R$ '+Number(itemPrice).toFixed(2).replace('.',',')
     : (itemPriceLabel || '');
-  const autoMsg = type==='buy'
+
+  const autoMsg = isLoja
     ? `🛒 Olá! Vi o anúncio no Olha Aqui: *${itemName}*. Gostaria de mais informações para comprar.`
     : `📅 Olá! Vi o anúncio no Olha Aqui: *${itemName}*${priceDisplay?' ('+priceDisplay+')':''}. Gostaria de agendar um horário.`;
 
-  // Abre modal de confirmação igual ao fluxo de loja/serviço
-  const isLoja = type === 'buy';
-  const imgHtml = itemImageUrl
-    ? `<img src="${itemImageUrl}" alt="${xss(itemName)}" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;margin-bottom:12px;border:2px solid var(--border-glow);">`
-    : `<div style="font-size:48px;margin-bottom:12px;">${isLoja?'🛍️':'🔧'}</div>`;
-
+  // ── MODAL RICO DE PRODUTO ───────────────────────────────────────
   const overlay = document.createElement('div');
-  overlay.dataset.oaConfirm='1';
-  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);backdrop-filter:blur(8px);z-index:10060;display:flex;align-items:center;justify-content:center;padding:16px;';
-  overlay.innerHTML=`
-    <div class="modal" style="max-width:400px;width:100%;text-align:center;">
-      ${imgHtml}
-      <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);margin-bottom:4px;">${xss(itemName)}</div>
-      ${priceDisplay?`<div style="font-family:VT323,monospace;font-size:28px;color:var(--neon-yellow);margin-bottom:4px;">${priceDisplay}</div>`:''}
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;line-height:1.5;">${autoMsg}</div>
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:20px;">
-        <span style="color:var(--text-light);">${xss(bizName)}</span>
-      </div>
-      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
-        <button class="tbtn" onclick="this.closest('[data-oa-confirm]').remove()" style="padding:10px 20px;">Cancelar</button>
-        <button class="post-btn" id="oa-confirm-send-btn"
-          style="padding:10px 24px;font-size:11px;background:linear-gradient(135deg,var(--neon-cyan),#0077cc);">
-          ${isLoja?'🛍️ Quero comprar!':'📅 Quero agendar!'}
-        </button>
+  overlay.dataset.oaConfirm = '1';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.88);backdrop-filter:blur(10px);z-index:10060;display:flex;align-items:flex-end;justify-content:center;padding:0;';
+
+  overlay.innerHTML = `
+    <div style="
+      width:100%;max-width:480px;
+      background:var(--bg-card);
+      border:1px solid var(--border-glow);
+      border-radius:22px 22px 0 0;
+      overflow:hidden;
+      box-shadow:0 -10px 50px rgba(0,255,204,.18);
+      animation:oaCtaSlideUp .22s ease;
+      display:flex;flex-direction:column;
+      max-height:90vh;
+    ">
+      <style>
+        @keyframes oaCtaSlideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+      </style>
+
+      ${itemImageUrl ? `
+        <!-- Imagem do produto em destaque -->
+        <div style="position:relative;width:100%;background:#000;flex-shrink:0;">
+          <img src="${itemImageUrl}" alt="${xss(itemName)}"
+            style="width:100%;max-height:260px;object-fit:cover;display:block;">
+          <!-- Badge da loja sobre a imagem -->
+          <div style="position:absolute;top:12px;left:12px;display:flex;align-items:center;gap:6px;
+            background:rgba(0,0,0,.65);backdrop-filter:blur(6px);
+            border:1px solid rgba(0,255,204,.25);border-radius:20px;padding:5px 10px;">
+            <span style="font-size:14px;">${isLoja?'🏪':'🔧'}</span>
+            <span style="font-family:'Silkscreen',monospace;font-size:9px;color:var(--neon-cyan);">${xss(bizName)}</span>
+          </div>
+        </div>
+      ` : `
+        <div style="padding:28px 0 0;text-align:center;font-size:52px;flex-shrink:0;">${isLoja?'🛍️':'🔧'}</div>
+      `}
+
+      <!-- Corpo do modal -->
+      <div style="padding:18px 20px 20px;overflow-y:auto;flex:1;">
+
+        <!-- Nome do produto -->
+        <div style="font-family:'Silkscreen',monospace;font-size:14px;color:var(--neon-cyan);
+          margin-bottom:${priceDisplay?'4px':'10px'};line-height:1.4;">${xss(itemName)}</div>
+
+        <!-- Preço -->
+        ${priceDisplay ? `
+          <div style="font-family:'VT323',monospace;font-size:32px;color:var(--neon-yellow);
+            margin-bottom:10px;line-height:1;">${priceDisplay}</div>
+        ` : ''}
+
+        <!-- Descrição do produto -->
+        ${itemDescription ? `
+          <div style="font-size:12px;color:var(--text-light);line-height:1.6;
+            background:rgba(255,255,255,.04);border-left:2px solid var(--neon-cyan);
+            border-radius:0 8px 8px 0;padding:10px 12px;margin-bottom:14px;">${xss(itemDescription)}</div>
+        ` : ''}
+
+        <!-- Preview da mensagem que será enviada -->
+        <div style="background:rgba(0,255,204,.05);border:1px solid rgba(0,255,204,.2);
+          border-radius:10px;padding:12px;margin-bottom:16px;">
+          <div style="font-family:'Silkscreen',monospace;font-size:8px;color:var(--text-muted);
+            letter-spacing:1px;margin-bottom:6px;">MENSAGEM QUE SERÁ ENVIADA:</div>
+          <div style="font-size:11px;color:var(--text-light);line-height:1.5;">${autoMsg}</div>
+          ${itemImageUrl ? `
+            <div style="font-size:9px;color:var(--neon-cyan);margin-top:6px;opacity:.7;">
+              📎 Imagem do produto será anexada automaticamente
+            </div>
+          ` : ''}
+        </div>
+
+        <!-- Botões -->
+        <div style="display:flex;gap:10px;">
+          <button onclick="this.closest('[data-oa-confirm]').remove()"
+            style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);
+            color:var(--text-muted);border-radius:12px;padding:13px;
+            font-family:'Space Mono',monospace;font-size:11px;cursor:pointer;">
+            Cancelar
+          </button>
+          <button id="oa-confirm-send-btn"
+            style="flex:2;background:linear-gradient(135deg,var(--neon-cyan),#0077cc);
+            border:none;color:#fff;border-radius:12px;padding:13px;
+            font-family:'Silkscreen',monospace;font-size:11px;cursor:pointer;
+            box-shadow:0 4px 16px rgba(0,255,204,.3);">
+            ${isLoja ? '🛒 QUERO COMPRAR!' : '📅 QUERO AGENDAR!'}
+          </button>
+        </div>
+
       </div>
     </div>`;
-  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+
+  overlay.onclick = e => { if(e.target === overlay) overlay.remove(); };
   document.body.appendChild(overlay);
 
-  // Handler do botão confirmar
+  // ── HANDLER DO BOTÃO CONFIRMAR ──────────────────────────────────
   document.getElementById('oa-confirm-send-btn').onclick = async function(){
-    this.disabled=true; this.textContent='⏳ Enviando...';
+    this.disabled = true;
+    this.textContent = '⏳ Enviando...';
     try{
       const { data:biz } = await db.from('businesses').select('id,name,owner_id').eq('id',bizId).maybeSingle();
-      if(!biz){ showToast('Loja não encontrada','error'); return; }
-      if(biz.owner_id === CU.id){ showToast('Este é o seu próprio anúncio','error'); return; }
+      if(!biz){ showToast('Loja não encontrada','error'); this.disabled=false; this.textContent=isLoja?'🛒 QUERO COMPRAR!':'📅 QUERO AGENDAR!'; return; }
+      if(biz.owner_id === CU.id){ showToast('Este é o seu próprio anúncio','error'); overlay.remove(); return; }
 
+      // Cria ou recupera chat
       let { data:chat } = await db.from('business_chats')
         .select('*').eq('business_id',bizId).eq('customer_id',CU.id).maybeSingle();
       if(!chat){
-        const { data:nc } = await db.from('business_chats')
+        const { data:nc, error:ce } = await db.from('business_chats')
           .insert({ business_id:bizId, customer_id:CU.id }).select().single();
+        if(ce) throw new Error(ce.message);
         chat = nc;
       }
       if(!chat){ showToast('Erro ao abrir atendimento','error'); return; }
 
-      // 1. Mensagem de texto
-      await db.from('business_messages').insert({ chat_id:chat.id, sender_id:CU.id, content:autoMsg });
-
-      // 2. Se tiver imagem, envia mensagem visual com a mesma legenda
+      // 1. PRIMEIRO: envia a imagem do produto (com legenda = nome do item)
       if(itemImageUrl){
-        const {error:_ie} = await db.from('business_messages').insert({
+        await db.from('business_messages').insert({
           chat_id:chat.id, sender_id:CU.id,
-          content:autoMsg, media_url:itemImageUrl, media_type:'image'
+          content: itemName + (priceDisplay ? ' — ' + priceDisplay : ''),
+          media_url: itemImageUrl,
+          media_type: 'image'
         });
-        if(_ie) await db.from('business_messages').insert({ chat_id:chat.id, sender_id:CU.id, content:autoMsg+'\n'+itemImageUrl });
       }
 
-      await db.from('business_chats').update({updated_at:new Date().toISOString()}).eq('id',chat.id);
+      // 2. DEPOIS: envia a mensagem de texto com intenção de compra/agendamento
+      await db.from('business_messages').insert({
+        chat_id:chat.id, sender_id:CU.id, content: autoMsg
+      });
+
+      await db.from('business_chats').update({ updated_at: new Date().toISOString() }).eq('id', chat.id);
 
       overlay.remove();
       oaCloseViewer();
       showToast('✅ Mensagem enviada! Abrindo atendimento...','success');
-      setTimeout(()=>{ openBizChatCustomer(bizId, biz.name||bizName); }, 500);
+      setTimeout(() => { openBizChatCustomer(bizId, biz.name||bizName); }, 500);
+
     }catch(e){
-      console.error('[oaCtaAction]',e);
-      this.disabled=false; this.textContent=isLoja?'🛍️ Quero comprar!':'📅 Quero agendar!';
-      showToast('Erro: '+e.message,'error');
+      console.error('[oaCtaAction]', e);
+      this.disabled = false;
+      this.textContent = isLoja ? '🛒 QUERO COMPRAR!' : '📅 QUERO AGENDAR!';
+      showToast('Erro: '+e.message, 'error');
     }
   };
 }
@@ -23530,13 +23605,17 @@ async function oaPublish(){
     if(window._oaPublishIsBiz && window._oaBizContext){
       _oaPayload.metadata = {
         type: 'business',
-        business_id: window._oaBizContext.bizId,
-        item_id:     window._oaBizContext.itemId,
-        item_name:   window._oaBizContext.itemName,
-        category:    window._oaBizContext.category,
-        logo_url:    window._oaBizContext.logoUrl,
-        biz_name:    window._oaBizContext.bizName,
-        cta_type:    window._oaBizContext.cta_type || ((window._oaBizContext.category==='servico'||window._oaBizContext.category==='serviço')?'book':'buy')
+        business_id:      window._oaBizContext.bizId,
+        item_id:          window._oaBizContext.itemId,
+        item_name:        window._oaBizContext.itemName,
+        item_price:       window._oaBizContext.itemPrice||0,
+        item_price_label: window._oaBizContext.itemPriceLabel||'',
+        item_image_url:   window._oaBizContext.itemImgUrl||'',
+        item_description: window._oaBizContext.itemDescription||'',
+        category:         window._oaBizContext.category,
+        logo_url:         window._oaBizContext.logoUrl,
+        biz_name:         window._oaBizContext.bizName,
+        cta_type:         window._oaBizContext.cta_type || ((window._oaBizContext.category==='servico'||window._oaBizContext.category==='serviço')?'book':'buy')
       };
     }
     // ✅ Story de comunidade: inclui community_id se publicado de dentro de uma comunidade
@@ -23727,6 +23806,7 @@ function _oaRenderItemUI(it, g){
         _activBtn.dataset.itemPrice      = _itMeta.item_price||0;
         _activBtn.dataset.itemPriceLabel = _itMeta.item_price_label||'';
         _activBtn.dataset.itemImageUrl   = _itMeta.item_image_url||'';
+        _activBtn.dataset.itemDescription= _itMeta.item_description||'';
         _activBtn.dataset.bizName        = _itMeta.biz_name||g.username;
         _ctaBuy.dataset.bizUserId        = g.userId;
         _ctaBuy.dataset.bizId            = _itMeta.business_id||'';
@@ -23734,12 +23814,14 @@ function _oaRenderItemUI(it, g){
         _ctaBuy.dataset.itemPrice        = _itMeta.item_price||0;
         _ctaBuy.dataset.itemPriceLabel   = _itMeta.item_price_label||'';
         _ctaBuy.dataset.itemImageUrl     = _itMeta.item_image_url||'';
+        _ctaBuy.dataset.itemDescription  = _itMeta.item_description||'';
         _ctaBook.dataset.bizUserId       = g.userId;
         _ctaBook.dataset.bizId           = _itMeta.business_id||'';
         _ctaBook.dataset.itemName        = _itMeta.item_name||'';
         _ctaBook.dataset.itemPrice       = _itMeta.item_price||0;
         _ctaBook.dataset.itemPriceLabel  = _itMeta.item_price_label||'';
         _ctaBook.dataset.itemImageUrl    = _itMeta.item_image_url||'';
+        _ctaBook.dataset.itemDescription = _itMeta.item_description||'';
       }
     } else {
       _ctaBuy.style.display  = 'none';
