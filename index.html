@@ -16737,6 +16737,31 @@ async function openBizChatCustomer(bizId, bizName){
   }, 300);
 }
 
+// ── Timestamps de leitura e contadores de não-lidos ──────────────
+const _bizReadTimestamps = {};
+const _bizUnreadCounts = {};
+
+async function _loadBizUnreadCounts(chatIds){
+  if(!chatIds.length) return;
+  for(const chatId of chatIds){
+    try{
+      const {count} = await db.from('business_messages')
+        .select('*',{count:'exact',head:true})
+        .eq('chat_id',chatId)
+        .neq('sender_id',CU.id)
+        .gt('created_at', _bizReadTimestamps[chatId]||'1970-01-01');
+      _bizUnreadCounts[chatId] = count||0;
+    }catch(e){ _bizUnreadCounts[chatId]=0; }
+  }
+}
+
+function _markBizChatRead(chatId){
+  _bizReadTimestamps[chatId] = new Date().toISOString();
+  _bizUnreadCounts[chatId] = 0;
+  const badge = document.getElementById('biz-unread-'+chatId);
+  if(badge){ badge.textContent='0'; badge.style.display='none'; }
+}
+
 async function loadBizChats(){
   const list = document.getElementById('biz-chat-list');
   if(!list||!CU) return;
@@ -16747,7 +16772,7 @@ async function loadBizChats(){
   let chats = [];
   if(myBusiness){
     const {data} = await db.from('business_chats')
-      .select('*, profiles!business_chats_customer_id_fkey(id,username,avatar_url)')
+      .select('*, profiles!business_chats_customer_id_fkey(id,username,avatar_url,full_name)')
       .eq('business_id',myBusiness.id)
       .order('updated_at',{ascending:false});
     chats = data||[];
@@ -16763,18 +16788,58 @@ async function loadBizChats(){
     list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:11px;">Nenhum atendimento ainda</div>';
     return;
   }
+
+  // Pré-carrega contagem de não-lidos
+  await _loadBizUnreadCounts(chats.map(c=>c.id));
+
   list.innerHTML = '';
   chats.forEach(chat=>{
     const isOwner = myBusiness && chat.business_id === myBusiness.id;
     const label = isOwner
-      ? (chat.profiles?.username||'Cliente')
+      ? (chat.profiles?.username || chat.profiles?.full_name || 'Cliente')
       : (chat.businesses?.name||'Negócio');
+
+    const avatarUrl = isOwner
+      ? (chat.profiles?.avatar_url || 'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(chat.profiles?.username||'user'))
+      : (chat.businesses?.logo_url || 'https://api.dicebear.com/7.x/shapes/svg?seed='+encodeURIComponent(label));
+
+    const profileUserId = isOwner ? chat.profiles?.id : null;
+    const profilePath = isOwner && profileUserId
+      ? `javascript:void(0)" data-goto-profile="${profileUserId}`
+      : null;
+    const bizPath = !isOwner && chat.businesses?.id
+      ? `javascript:void(0)" data-goto-biz="${chat.businesses.id}`
+      : null;
+    const linkHref = profilePath || bizPath;
+
+    const unread = _bizUnreadCounts[chat.id]||0;
+    const badgeStyle = unread>0
+      ? 'background:var(--neon-pink);color:#fff;font-size:9px;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 4px;flex-shrink:0;margin-left:auto;'
+      : 'display:none;';
+
     const ci = document.createElement('div');
     ci.className = 'ci'; ci.id = 'biz-ci-'+chat.id;
-    ci.innerHTML = `<div class="ci-av">${isOwner?'👤':'🏪'}</div>
-      <div class="ci-info"><div class="ci-name">${xss(label)}</div>
-      <div class="ci-last">${chat.status==='deal_closed'?'✅ Negócio fechado':'Em atendimento'}</div></div>`;
+    ci.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;position:relative;';
+
+    const avatarTag = linkHref
+      ? `<a href="${linkHref}" onclick="event.stopPropagation();" style="flex-shrink:0;display:block;border-radius:50%;" title="Ver perfil"><img src="${xss(avatarUrl)}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid var(--border-glow);background:rgba(255,255,255,.06);display:block;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(label)}'"></a>`
+      : `<img src="${xss(avatarUrl)}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid var(--border-glow);background:rgba(255,255,255,.06);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(label)}'">`;
+
+    ci.innerHTML = `${avatarTag}
+      <div class="ci-info" style="flex:1;min-width:0;"><div class="ci-name">${xss(label)}</div>
+      <div class="ci-last">${chat.status==='deal_closed'?'✅ Negócio fechado':'Em atendimento'}</div></div>
+      <span id="biz-unread-${chat.id}" style="${badgeStyle}">${unread}</span>`;
+
     ci.onclick = ()=>openBizChat(chat.id, label);
+
+    // Rota de navegação para links de perfil/loja no avatar
+    ci.addEventListener('click', e=>{
+      const g = e.target.closest('[data-goto-profile]');
+      const b = e.target.closest('[data-goto-biz]');
+      if(g){ e.stopPropagation(); loadProfilePage(g.dataset.gotoProfile); return; }
+      if(b){ e.stopPropagation(); openBizById(b.dataset.gotoBiz); return; }
+    }, true);
+
     list.appendChild(ci);
   });
 }
@@ -16799,12 +16864,20 @@ async function openBizChat(chatId, label){
   const hdr = document.getElementById('biz-chat-win-hdr');
   if(hdr){
     const backBtn = window.innerWidth<=768 ? '<button class="tbtn" onclick="closeBizChat()" style="padding:6px 10px;font-size:12px;">← Voltar</button>' : '';
-    hdr.innerHTML = backBtn + `<div style="font-size:13px;color:var(--neon-cyan);font-family:Silkscreen,monospace;margin-left:8px;">${xss(label)}</div>`;
+    // Busca avatar do contato a partir do item da lista
+    const ciEl = document.getElementById('biz-ci-'+chatId);
+    const ciImg = ciEl?.querySelector('img');
+    const avatarSrc = ciImg?.src || '';
+    const avatarHdrHtml = avatarSrc
+      ? `<img src="${xss(avatarSrc)}" style="width:34px;height:34px;border-radius:50%;object-fit:cover;border:2px solid var(--border-glow);flex-shrink:0;margin-left:8px;" onerror="this.style.display='none'">`
+      : `<div style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.08);border:2px solid var(--border-glow);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;margin-left:8px;">👤</div>`;
+    hdr.innerHTML = backBtn + avatarHdrHtml + `<div style="font-size:13px;color:var(--neon-cyan);font-family:Silkscreen,monospace;margin-left:8px;">${xss(label)}</div>`;
     if(myBusiness){
       hdr.innerHTML += `<button class="tbtn" onclick="openCloseDealModal('${chatId}')" style="margin-left:auto;font-size:10px;color:var(--neon-cyan);">🤝 Negócio Fechado</button>`;
     }
   }
   document.getElementById('biz-msg-in-area').style.display='flex';
+  _markBizChatRead(chatId);
   await loadBizMsgs(chatId);
   startBizChatPoll();
 }
@@ -17355,6 +17428,8 @@ function startBizChatPoll(){
       if(data && data.length > 0){
         _bizLastMsgTs = data[0].created_at;
         await loadBizMsgs(currentBizChat);
+        // Marca como lido imediatamente (chat está aberto)
+        _markBizChatRead(currentBizChat);
         // Atualiza sidebar só se a mensagem não é minha
         if(data[0].sender_id !== CU.id) loadBizChats();
       }
@@ -17369,6 +17444,7 @@ function startBizChatPoll(){
       if(pl.new.sender_id === CU.id) return; // própria msg já foi inserida
       _bizLastMsgTs = pl.new.created_at || new Date().toISOString();
       loadBizMsgs(currentBizChat);
+      _markBizChatRead(currentBizChat);
       loadBizChats();
     })
     .subscribe();
@@ -17543,23 +17619,23 @@ async function confirmBizNegotiation(bizId, bizName, prodName, prodPrice, priceL
       ? `🛍️ Olá! Tenho interesse em comprar: *${prodName}* (${priceDisplay}). Podemos negociar?`
       : `📅 Olá! Gostaria de agendar o serviço: *${prodName}* (${priceDisplay}). Quando há disponibilidade?`;
 
-    // 1. Mensagem de texto
-    await db.from('business_messages').insert({
-      chat_id:chat.id, sender_id:CU.id, content:initMsg
-    });
-    // 2. Se produto tiver imagem, envia como mensagem visual com a mesma legenda
+    // 1. Se produto tiver imagem, envia como mensagem visual com APENAS o nome do produto como legenda
     if(imgUrl){
       const {error:_imgErr} = await db.from('business_messages').insert({
         chat_id:chat.id, sender_id:CU.id,
-        content:initMsg, media_url:imgUrl, media_type:'image'
+        content:prodName, media_url:imgUrl, media_type:'image'
       });
       if(_imgErr){
         // fallback: insere link no texto se coluna não existir
         await db.from('business_messages').insert({
-          chat_id:chat.id, sender_id:CU.id, content:initMsg+'\n'+imgUrl
+          chat_id:chat.id, sender_id:CU.id, content:prodName+'\n'+imgUrl
         });
       }
     }
+    // 2. Mensagem de texto padrão (separada, sem duplicar a imagem)
+    await db.from('business_messages').insert({
+      chat_id:chat.id, sender_id:CU.id, content:initMsg
+    });
     await db.from('business_chats').update({updated_at:new Date().toISOString()}).eq('id',chat.id);
 
     // Close ALL overlays (product select + biz detail)
