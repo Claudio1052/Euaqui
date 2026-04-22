@@ -17243,6 +17243,8 @@ async function openBizDetail(biz){
                 data-price="${p.price||0}"
                 data-pricelabel="${(p.price_label||'').replace(/"/g,'&quot;')}"
                 data-category="${biz.category}"
+                data-imgurl="${(()=>{let _i=[];try{_i=p.image_urls?JSON.parse(p.image_urls):[];}catch(_){_i=[];}if(!_i.length&&p.image_url)_i=[p.image_url];return (_i[0]||'').replace(/"/g,'&quot;');})()||''}"
+                data-description="${(p.description||'').replace(/"/g,'&quot;')}"
                 onclick="selectBizProductEl(this)">🛒 SELECIONAR</button>
             </div>`).join('')}
         </div>`;
@@ -17486,26 +17488,33 @@ async function confirmCloseDeal(chatId, btn){
 
 
 // ── Seleção de produto antes de iniciar negociação ───────────────
-function selectBizProduct(bizId, bizName, prodName, prodPrice, priceLabel, category){
+function selectBizProduct(bizId, bizName, prodName, prodPrice, priceLabel, category, imgUrl, description){
   const isLoja = category === 'loja';
   const priceDisplay = prodPrice > 0
     ? 'R$ '+Number(prodPrice).toFixed(2).replace('.',',')
     : (priceLabel || 'Sob consulta');
+  const imgHtml = imgUrl
+    ? `<img src="${imgUrl}" alt="${xss(prodName)}" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;margin-bottom:12px;border:2px solid var(--border-glow);">`
+    : `<div style="font-size:48px;margin-bottom:12px;">${isLoja?'🛍️':'🔧'}</div>`;
+  const descHtml = description
+    ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;margin-bottom:8px;line-height:1.4;">${xss(description)}</div>`
+    : '';
   const overlay = document.createElement('div');
   overlay.dataset.bizSelect='1';
   overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);backdrop-filter:blur(8px);z-index:4000;display:flex;align-items:center;justify-content:center;padding:16px;';
   overlay.innerHTML=`
     <div class="modal" style="max-width:400px;width:100%;text-align:center;">
-      <div style="font-size:40px;margin-bottom:12px;">${isLoja?'🛍️':'🔧'}</div>
-      <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);margin-bottom:6px;">${xss(prodName)}</div>
-      <div style="font-family:VT323,monospace;font-size:28px;color:var(--neon-yellow);margin-bottom:6px;">${priceDisplay}</div>
+      ${imgHtml}
+      <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);margin-bottom:4px;">${xss(prodName)}</div>
+      <div style="font-family:VT323,monospace;font-size:28px;color:var(--neon-yellow);margin-bottom:4px;">${priceDisplay}</div>
+      ${descHtml}
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:20px;">
         ${isLoja?'Você deseja comprar este produto?':'Você deseja agendar este serviço?'}<br>
         <span style="color:var(--text-light);">${xss(bizName)}</span>
       </div>
       <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
         <button class="tbtn" onclick="this.closest('[style*=fixed]').remove()" style="padding:10px 20px;">Cancelar</button>
-        <button class="post-btn" onclick="confirmBizNegotiation('${bizId}','${xss(bizName)}','${xss(prodName)}',${prodPrice},'${xss(priceLabel||'')}','${category}',this)" 
+        <button class="post-btn" onclick="confirmBizNegotiation('${bizId}','${xss(bizName)}','${xss(prodName)}',${prodPrice},'${xss(priceLabel||'')}','${category}','${imgUrl||''}',this)" 
           style="padding:10px 24px;font-size:11px;background:linear-gradient(135deg,var(--neon-cyan),#0077cc);">
           ${isLoja?'🛍️ Quero comprar!':'📅 Quero agendar!'}
         </button>
@@ -17515,7 +17524,7 @@ function selectBizProduct(bizId, bizName, prodName, prodPrice, priceLabel, categ
   document.body.appendChild(overlay);
 }
 
-async function confirmBizNegotiation(bizId, bizName, prodName, prodPrice, priceLabel, category, btn){
+async function confirmBizNegotiation(bizId, bizName, prodName, prodPrice, priceLabel, category, imgUrl, btn){
   if(!CU){
     // Close the select overlay first (btn's parent)
     btn.closest('[style*="position:fixed"]')?.remove();
@@ -17544,9 +17553,20 @@ async function confirmBizNegotiation(bizId, bizName, prodName, prodPrice, priceL
       ? `🛍️ Olá! Tenho interesse em comprar: *${prodName}* (${priceDisplay}). Podemos negociar?`
       : `📅 Olá! Gostaria de agendar o serviço: *${prodName}* (${priceDisplay}). Quando há disponibilidade?`;
 
+    // Send text message with product info
     await db.from('business_messages').insert({
-      chat_id:chat.id, sender_id:CU.id, content:initMsg
+      chat_id:chat.id, sender_id:CU.id, content:initMsg,
+      metadata: imgUrl ? JSON.stringify({product_name:prodName, product_price:prodPrice>0?prodPrice:null, price_label:prodPrice>0?null:priceLabel, image_url:imgUrl, type:'product_interest'}) : null
     });
+    // If product has image, send it as an image message so it shows in chat
+    if(imgUrl){
+      await db.from('business_messages').insert({
+        chat_id:chat.id, sender_id:CU.id,
+        content:priceDisplay,
+        media_url:imgUrl, media_type:'image',
+        metadata:JSON.stringify({product_name:prodName, type:'product_image'})
+      });
+    }
     await db.from('business_chats').update({updated_at:new Date().toISOString()}).eq('id',chat.id);
 
     // Close ALL overlays (product select + biz detail)
@@ -18096,7 +18116,9 @@ function selectBizProductEl(el){
   const price     = parseFloat(el.dataset.price)||0;
   const priceLabel= el.dataset.pricelabel||'';
   const category  = el.dataset.category;
-  selectBizProduct(bizId, bizName, prodName, price, priceLabel, category);
+  const imgUrl    = el.dataset.imgurl||'';
+  const description = el.dataset.description||'';
+  selectBizProduct(bizId, bizName, prodName, price, priceLabel, category, imgUrl, description);
 }
 
 // ===== CHAT EXTRAS: ÁUDIO + MINI GAMES MULTIPLAYER =====
