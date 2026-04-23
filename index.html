@@ -18193,13 +18193,6 @@ function renderAppointmentsList(el, list, isOwner){
     const statusColor = a.status==='confirmed'?'var(--neon-cyan)':a.status==='done'?'var(--neon-purple)':'var(--neon-pink)';
     const statusLabel = a.status==='confirmed'?'✅ Confirmado':a.status==='done'?'✔ Concluído':'⚠️ '+a.status;
 
-    // Badge com nome do cliente (só visível para o dono do negócio)
-    const clientBadge = isOwner && prof ? `
-      <div style="display:flex;align-items:center;gap:6px;margin-top:6px;padding:5px 8px;background:rgba(0,255,204,.06);border:1px solid rgba(0,255,204,.15);border-radius:8px;">
-        <img src="${xss(avatar)}" style="width:22px;height:22px;border-radius:50%;object-fit:cover;border:1px solid var(--border-glow);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=user'">
-        <span style="font-size:10px;color:var(--neon-cyan);font-family:'Silkscreen',monospace;">👤 ${xss(prof.full_name||prof.username||'Cliente')}</span>
-      </div>` : '';
-
     return `<div style="background:var(--bg-card);border:1px solid ${isPast?'rgba(255,255,255,.08)':'var(--border-glow)'};border-radius:12px;padding:12px 14px;margin-bottom:10px;${isPast?'opacity:.7':''}">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
         <img src="${xss(avatar)}" style="width:40px;height:40px;border-radius:${isOwner?'50%':'8px'};object-fit:cover;border:2px solid var(--border-glow);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=user'">
@@ -18212,8 +18205,7 @@ function renderAppointmentsList(el, list, isOwner){
           <div style="font-size:9px;color:${statusColor};">${statusLabel}</div>
         </div>
       </div>
-      ${clientBadge}
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <span style="background:rgba(0,255,204,.1);border:1px solid rgba(0,255,204,.2);border-radius:6px;padding:3px 8px;font-size:10px;color:var(--neon-cyan);">📅 ${dateStr}${timeStr?' · ⏰ '+timeStr:''}</span>
         ${a.location?`<span style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:3px 8px;font-size:10px;color:var(--text-muted);">📍 ${xss(a.location)}</span>`:''}
         ${a.payment_method?`<span style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:3px 8px;font-size:10px;color:var(--text-muted);">💳 ${xss(a.payment_method)}</span>`:''}
