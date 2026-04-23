@@ -6650,6 +6650,7 @@ function showApp(){
   setTimeout(()=>{ try{ initTheme(); }catch(e){} }, 50);
   setTimeout(()=>{ try{ checkBizInviteUrl(); }catch(e){} }, 1200);
   setTimeout(()=>{ try{ checkCommInviteUrl(); }catch(e){} }, 1400);
+  setTimeout(()=>{ try{ checkAppointmentDayNotifications(); }catch(e){} }, 3000);
 }
 function showAuth(){
   _appInitDone = true;
@@ -18180,7 +18181,6 @@ function renderAppointmentsList(el, list, isOwner){
     const dateStr = new Date(a.scheduled_date+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'});
     const timeStr = a.scheduled_time ? a.scheduled_time.substring(0,5) : '';
 
-    // Suporte a campo 'customer' (novo) ou 'profiles' (legado)
     const prof = a.customer || a.profiles || null;
     const name = isOwner
       ? (prof?.full_name || prof?.username || 'Cliente')
@@ -18190,10 +18190,25 @@ function renderAppointmentsList(el, list, isOwner){
       : (a.businesses?.logo_url || 'https://api.dicebear.com/7.x/shapes/svg?seed=biz');
 
     const valor = a.value ? 'R$ '+Number(a.value).toFixed(2).replace('.',',') : '';
-    const statusColor = a.status==='confirmed'?'var(--neon-cyan)':a.status==='done'?'var(--neon-purple)':'var(--neon-pink)';
-    const statusLabel = a.status==='confirmed'?'✅ Confirmado':a.status==='done'?'✔ Concluído':'⚠️ '+a.status;
+    const isCancelled = a.status === 'cancelled';
+    const statusColor = a.status==='confirmed'?'var(--neon-cyan)':a.status==='done'?'var(--neon-purple)':isCancelled?'var(--neon-pink)':'var(--neon-pink)';
+    const statusLabel = a.status==='confirmed'?'✅ Confirmado':a.status==='done'?'✔ Concluído':isCancelled?'❌ Cancelado':'⚠️ '+a.status;
 
-    return `<div style="background:var(--bg-card);border:1px solid ${isPast?'rgba(255,255,255,.08)':'var(--border-glow)'};border-radius:12px;padding:12px 14px;margin-bottom:10px;${isPast?'opacity:.7':''}">
+    // Botões do cliente (Meus agendamentos)
+    const clientBtns = !isOwner && !isPast && !isCancelled ? `
+      <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="tbtn" onclick="cancelAppointmentClient('${a.id}','${xss((a.businesses?.name||'Negócio').replace(/'/g,"\\x27"))}','${a.customer_id||CU?.id||''}')" style="font-size:10px;color:var(--neon-pink);border-color:rgba(255,51,102,.4);">✕ Cancelar</button>
+        <button class="tbtn" onclick="rescheduleAppointmentClient('${a.id}','${xss((a.businesses?.id||'').replace(/'/g,"\\x27"))}','${xss((a.businesses?.name||'Negócio').replace(/'/g,"\\x27"))}')" style="font-size:10px;color:var(--neon-yellow);border-color:rgba(255,204,0,.4);">📅 Reagendar</button>
+      </div>` : '';
+
+    // Botões do proprietário (Meu Negócio)
+    const ownerBtns = isOwner && !isPast && !isCancelled ? `
+      <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
+        <button class="tbtn" onclick="ownerRescheduleAppointment('${a.id}','${a.customer_id||''}','${xss((prof?.full_name||prof?.username||'Cliente').replace(/'/g,"\\x27"))}')" style="font-size:10px;color:var(--neon-yellow);border-color:rgba(255,204,0,.4);">📅 Reagendar</button>
+        <button class="tbtn" onclick="markAppointmentDone('${a.id}',this)" style="font-size:10px;color:var(--neon-cyan);">✔ Concluir</button>
+      </div>` : '';
+
+    return `<div style="background:var(--bg-card);border:1px solid ${isPast||isCancelled?'rgba(255,255,255,.08)':'var(--border-glow)'};border-radius:12px;padding:12px 14px;margin-bottom:10px;${isPast||isCancelled?'opacity:.7':''}">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
         <img src="${xss(avatar)}" style="width:40px;height:40px;border-radius:${isOwner?'50%':'8px'};object-fit:cover;border:2px solid var(--border-glow);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=user'">
         <div style="flex:1;min-width:0;">
@@ -18211,7 +18226,9 @@ function renderAppointmentsList(el, list, isOwner){
         ${a.payment_method?`<span style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:3px 8px;font-size:10px;color:var(--text-muted);">💳 ${xss(a.payment_method)}</span>`:''}
       </div>
       ${a.notes?`<div style="font-size:10px;color:var(--text-muted);margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.06);">📝 ${xss(a.notes)}</div>`:''}
-      ${isOwner&&!isPast&&a.status==='confirmed'?`<div style="margin-top:8px;display:flex;gap:6px;justify-content:flex-end;"><button class="tbtn" onclick="markAppointmentDone('${a.id}',this)" style="font-size:10px;color:var(--neon-cyan);">✔ Concluir</button></div>`:''}
+      ${a.cancel_reason?`<div style="font-size:10px;color:var(--neon-pink);margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,51,102,.15);">❌ Motivo: ${xss(a.cancel_reason)}</div>`:''}
+      ${clientBtns}
+      ${ownerBtns}
     </div>`;
   }
 
@@ -18232,6 +18249,175 @@ async function markAppointmentDone(id, btn){
   await db.from('appointments').update({status:'done'}).eq('id',id);
   showToast('✔ Agendamento concluído!','success');
   loadAppointments(true);
+}
+
+// ── CANCELAR AGENDAMENTO (Cliente) ──────────────────────────────
+function cancelAppointmentClient(apptId, bizName, ownerId){
+  const overlay = document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(10px);z-index:6000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.innerHTML=`
+    <div class="modal" style="max-width:400px;width:100%;padding:24px;">
+      <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-pink);margin-bottom:6px;">❌ CANCELAR AGENDAMENTO</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;">Tem certeza que deseja cancelar o serviço em <strong style="color:var(--text-light);">${xss(bizName)}</strong>?</div>
+      <textarea id="_cancel-reason-input" placeholder="Motivo do cancelamento (opcional)..." style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:11px;resize:vertical;min-height:80px;outline:none;"></textarea>
+      <div style="display:flex;gap:10px;margin-top:14px;">
+        <button class="tbtn" onclick="this.closest('[style*=fixed]').remove()" style="flex:1;padding:11px;">Voltar</button>
+        <button class="post-btn" id="_cancel-confirm-btn" onclick="confirmCancelAppointment('${apptId}','${ownerId}',this)" style="flex:1;padding:11px;background:linear-gradient(135deg,var(--neon-pink),#cc0033);font-size:11px;">❌ Confirmar Cancelamento</button>
+      </div>
+    </div>`;
+  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+  document.body.appendChild(overlay);
+}
+
+async function confirmCancelAppointment(apptId, ownerId, btn){
+  btn.disabled=true; btn.textContent='⏳ Cancelando...';
+  const reason = document.getElementById('_cancel-reason-input')?.value.trim() || '';
+  try{
+    await db.from('appointments').update({status:'cancelled', cancel_reason: reason||null}).eq('id',apptId);
+    // Notifica o dono do negócio
+    if(ownerId && CU){
+      const userName = CP?.full_name || CP?.username || 'Um usuário';
+      await db.from('notifications').insert({
+        user_id: ownerId,
+        actor_id: CU.id,
+        type: 'system',
+        content: `❌ ${userName} cancelou o agendamento.${reason?' Motivo: '+reason:''}`,
+        read: false
+      }).catch(()=>{});
+    }
+    btn.closest('[style*=fixed]')?.remove();
+    showToast('Agendamento cancelado.','');
+    loadAppointments(false);
+  }catch(err){
+    btn.disabled=false; btn.textContent='❌ Confirmar Cancelamento';
+    showToast('Erro ao cancelar: '+err.message,'error');
+  }
+}
+
+// ── REAGENDAR (Cliente → abre chat com texto padrão) ────────────
+async function rescheduleAppointmentClient(apptId, bizId, bizName){
+  if(!CU) return showToast('Faça login para continuar','error');
+  if(!bizId){ showToast('Negócio não identificado','error'); return; }
+  showToast('📅 Abrindo chat para reagendamento...','');
+  // Cria ou obtém chat existente
+  let {data:chat} = await db.from('business_chats')
+    .select('*').eq('business_id',bizId).eq('customer_id',CU.id).maybeSingle();
+  if(!chat){
+    const {data:nc} = await db.from('business_chats')
+      .insert({business_id:bizId,customer_id:CU.id}).select().single();
+    chat = nc;
+  }
+  if(!chat){ showToast('Não foi possível abrir o chat','error'); return; }
+
+  // Navega para a aba de chats e abre o chat com texto pré-preenchido
+  nav('businesses');
+  setTimeout(async ()=>{
+    const chatsTab = document.querySelector('#biz-page-tabs .ptab[data-tab="biz-chats"]');
+    if(chatsTab) switchBizTab(chatsTab);
+    setTimeout(async ()=>{
+      await openBizChat(chat.id, bizName);
+      // Preenche o input com texto padrão
+      setTimeout(()=>{
+        const inp = document.getElementById('biz-msg-input');
+        if(inp){ inp.value='Olá! Gostaria de reagendar meu serviço. Qual a disponibilidade?'; inp.focus(); }
+      }, 600);
+    }, 400);
+  }, 300);
+}
+
+// ── REAGENDAR (Proprietário → escolhe nova data e notifica cliente) ─
+function ownerRescheduleAppointment(apptId, customerId, customerName){
+  const overlay = document.createElement('div');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(10px);z-index:6000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  const today = new Date().toISOString().split('T')[0];
+  overlay.innerHTML=`
+    <div class="modal" style="max-width:380px;width:100%;padding:24px;">
+      <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-yellow);margin-bottom:6px;">📅 REAGENDAR SERVIÇO</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;">Escolha a nova data para <strong style="color:var(--text-light);">${xss(customerName)}</strong>:</div>
+      <label style="font-family:Silkscreen,monospace;font-size:9px;color:var(--neon-cyan);display:block;margin-bottom:4px;">📅 Nova Data</label>
+      <input type="date" id="_reschedule-date" min="${today}" style="width:100%;background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:12px;margin-bottom:10px;">
+      <label style="font-family:Silkscreen,monospace;font-size:9px;color:var(--neon-cyan);display:block;margin-bottom:4px;">⏰ Novo Horário (opcional)</label>
+      <input type="time" id="_reschedule-time" style="width:100%;background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:12px;margin-bottom:14px;">
+      <div style="display:flex;gap:10px;">
+        <button class="tbtn" onclick="this.closest('[style*=fixed]').remove()" style="flex:1;padding:11px;">Cancelar</button>
+        <button class="post-btn" id="_reschedule-confirm-btn" onclick="confirmOwnerReschedule('${apptId}','${customerId}',this)" style="flex:1;padding:11px;background:linear-gradient(135deg,var(--neon-yellow),#cc8800);color:#000;font-size:11px;">📅 Confirmar Nova Data</button>
+      </div>
+    </div>`;
+  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+  document.body.appendChild(overlay);
+}
+
+async function confirmOwnerReschedule(apptId, customerId, btn){
+  const newDate = document.getElementById('_reschedule-date')?.value;
+  const newTime = document.getElementById('_reschedule-time')?.value;
+  if(!newDate){ showToast('Selecione a nova data','error'); return; }
+  btn.disabled=true; btn.textContent='⏳ Salvando...';
+  try{
+    const updates = {scheduled_date: newDate, status:'confirmed'};
+    if(newTime) updates.scheduled_time = newTime;
+    await db.from('appointments').update(updates).eq('id',apptId);
+    // Notifica o cliente
+    if(customerId && CU){
+      const bizName = myBusiness?.name || 'O serviço';
+      const dateLabel = new Date(newDate+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});
+      const timeLabel = newTime ? ' às '+newTime.substring(0,5) : '';
+      await db.from('notifications').insert({
+        user_id: customerId,
+        actor_id: CU.id,
+        type: 'system',
+        content: `📅 ${bizName} reagendou seu serviço para ${dateLabel}${timeLabel}.`,
+        read: false
+      }).catch(()=>{});
+    }
+    btn.closest('[style*=fixed]')?.remove();
+    showToast('✅ Reagendamento confirmado! Cliente notificado.','success');
+    loadAppointments(true);
+  }catch(err){
+    btn.disabled=false; btn.textContent='📅 Confirmar Nova Data';
+    showToast('Erro: '+err.message,'error');
+  }
+}
+
+// ── NOTIFICAÇÃO DO DIA DO AGENDAMENTO (1x por sessão) ────────────
+async function checkAppointmentDayNotifications(){
+  if(!CU) return;
+  const storageKey = 'ea_appt_day_notif_'+CU.id+'_'+new Date().toISOString().split('T')[0];
+  if(sessionStorage.getItem(storageKey)) return; // já enviou hoje nessa sessão
+
+  try{
+    const today = new Date().toISOString().split('T')[0];
+    const {data:appts} = await db.from('appointments')
+      .select('*, businesses(name)')
+      .eq('customer_id', CU.id)
+      .eq('scheduled_date', today)
+      .neq('status','cancelled')
+      .neq('status','done');
+
+    if(!appts || !appts.length){ sessionStorage.setItem(storageKey,'1'); return; }
+
+    // Verifica se já existe notificação de hoje para esse usuário para não duplicar
+    const {data:existing} = await db.from('notifications')
+      .select('id')
+      .eq('user_id', CU.id)
+      .eq('type','appointment_reminder')
+      .gte('created_at', today+'T00:00:00')
+      .limit(1);
+
+    if(!existing || !existing.length){
+      for(const a of appts){
+        const bizName = a.businesses?.name || 'Serviço';
+        const timeLabel = a.scheduled_time ? ' às '+a.scheduled_time.substring(0,5) : '';
+        await db.from('notifications').insert({
+          user_id: CU.id,
+          actor_id: CU.id,
+          type: 'appointment_reminder',
+          content: `⏰ Lembrete: você tem um agendamento hoje${timeLabel} com ${bizName}!`,
+          read: false
+        });
+      }
+    }
+    sessionStorage.setItem(storageKey,'1');
+  }catch(e){ console.warn('[appt day notif]',e); }
 }
 
 // ── CloseDeal legado (mantido por compatibilidade) ──────────────
