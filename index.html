@@ -16903,28 +16903,29 @@ async function openBizChat(chatId, label){
   const hdr = document.getElementById('biz-chat-win-hdr');
   if(hdr){
     const backBtn = window.innerWidth<=768 ? '<button class="tbtn" onclick="closeBizChat()" style="padding:6px 10px;font-size:12px;">← Voltar</button>' : '';
-    // Tenta pegar avatar do item da lista
-    const ciEl = document.getElementById('biz-ci-'+chatId);
-    const ciImg = ciEl?.querySelector('img');
-    let avatarSrc = ciImg?.src || '';
+    let avatarSrc = '';
     let extraLabel = label || '';
-    // Se não tem avatar na lista, busca do banco
-    if(!avatarSrc){
-      try{
-        const qChat = await db.from('business_chats').select('business_id, customer_id, businesses(name,logo_url), customer:profiles!business_chats_customer_id_fkey(username,full_name,avatar_url)').eq('id',chatId).maybeSingle();
-        if(!qChat.error && qChat.data){
-          if(myBusiness){
-            // sou o dono — mostro avatar do cliente
-            const cust = qChat.data.customer || null;
-            avatarSrc = cust?.avatar_url || '';
-            if(!extraLabel) extraLabel = cust?.full_name || cust?.username || 'Cliente';
-          } else {
-            // sou o cliente — mostro logo da loja
-            avatarSrc = qChat.data.businesses?.logo_url || '';
-            if(!extraLabel) extraLabel = qChat.data.businesses?.name || 'Negócio';
-          }
+    // Sempre busca dados frescos do banco para garantir logo/avatar correto
+    try{
+      const qChat = await db.from('business_chats').select('business_id, customer_id, businesses(name,logo_url), customer:profiles!business_chats_customer_id_fkey(username,full_name,avatar_url)').eq('id',chatId).maybeSingle();
+      if(!qChat.error && qChat.data){
+        if(myBusiness){
+          // sou o dono — mostro avatar do cliente
+          const cust = qChat.data.customer || null;
+          avatarSrc = cust?.avatar_url || '';
+          if(!extraLabel) extraLabel = cust?.full_name || cust?.username || 'Cliente';
+        } else {
+          // sou o cliente — mostro logo da loja
+          avatarSrc = qChat.data.businesses?.logo_url || '';
+          if(!extraLabel) extraLabel = qChat.data.businesses?.name || label || 'Negócio';
         }
-      }catch(_){}
+      }
+    }catch(_){}
+    // Fallback: tenta pegar do item da lista
+    if(!avatarSrc){
+      const ciEl = document.getElementById('biz-ci-'+chatId);
+      const ciImg = ciEl?.querySelector('img');
+      avatarSrc = ciImg?.src || '';
     }
     const isOwnerView = !!myBusiness;
     const avatarRadius = isOwnerView ? '50%' : '8px';
@@ -18293,11 +18294,15 @@ function cancelAppointmentClient(apptId){
 async function eaDoCancel(apptId, btn){
   btn.disabled=true; btn.textContent='⏳ Cancelando...';
   const reason=(document.getElementById('_ea_cancel_reason')?.value||'').trim();
-  // 1. Atualiza status
-  const upd=await db.from('appointments').update({status:'cancelled',cancel_reason:reason||null}).eq('id',apptId);
+  // 1. Atualiza status — tenta com cancel_reason, se falhar tenta só status
+  let upd=await db.from('appointments').update({status:'cancelled',cancel_reason:reason||null}).eq('id',apptId);
   if(upd.error){
-    btn.disabled=false; btn.textContent='❌ Confirmar Cancelamento';
-    showToast('Erro ao cancelar: '+upd.error.message,'error'); return;
+    // Coluna cancel_reason pode não existir no schema cache — tenta só status
+    upd=await db.from('appointments').update({status:'cancelled'}).eq('id',apptId);
+    if(upd.error){
+      btn.disabled=false; btn.textContent='❌ Confirmar Cancelamento';
+      showToast('Erro ao cancelar: '+upd.error.message,'error'); return;
+    }
   }
   // 2. Busca business_id e owner_id
   let ownerId=null;
@@ -18353,15 +18358,15 @@ async function rescheduleAppointmentClient(apptId, bizId, bizName, serviceTitle)
     if(chatsTab) switchBizTab(chatsTab);
     setTimeout(async ()=>{
       await openBizChat(chat.id, fBizName);
-      // Preenche input com retry
+      // Preenche input com retry — ID correto: biz-msg-in
       let tries=0;
       const fill=setInterval(()=>{
-        const inp=document.getElementById('biz-msg-input');
-        if(inp){inp.value=msgPadrao;inp.focus();clearInterval(fill);}
-        if(++tries>30) clearInterval(fill);
+        const inp=document.getElementById('biz-msg-in');
+        if(inp){inp.value=msgPadrao;inp.focus();inp.dispatchEvent(new Event('input'));clearInterval(fill);}
+        if(++tries>50) clearInterval(fill);
       },100);
-    },500);
-  },350);
+    },600);
+  },400);
 }
 
 // ── REAGENDAR (Proprietário → escolhe nova data) ────────────────
