@@ -16877,9 +16877,12 @@ async function loadBizChats(){
     ci.className = 'ci'; ci.id = 'biz-ci-'+chat.id;
     ci.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;position:relative;';
 
+    // isOwner = círculo (avatar de pessoa); cliente = quadrado arredondado (logo de loja/serviço)
+    const _ciRadius = isOwner ? '50%' : '10px';
+    const _ciBorder = isOwner ? 'rgba(0,255,204,.35)' : 'rgba(255,204,0,.35)';
     const avatarTag = linkHref
-      ? `<a href="${linkHref}" onclick="event.stopPropagation();" style="flex-shrink:0;display:block;border-radius:50%;" title="Ver perfil"><img src="${xss(avatarUrl)}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid var(--border-glow);background:rgba(255,255,255,.06);display:block;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(label)}'"></a>`
-      : `<img src="${xss(avatarUrl)}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid var(--border-glow);background:rgba(255,255,255,.06);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(label)}'">`;
+      ? `<a href="${linkHref}" onclick="event.stopPropagation();" style="flex-shrink:0;display:block;border-radius:${_ciRadius};" title="Ver perfil"><img src="${xss(avatarUrl)}" style="width:40px;height:40px;border-radius:${_ciRadius};object-fit:cover;border:2px solid ${_ciBorder};background:rgba(255,255,255,.06);display:block;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(label)}'"></a>`
+      : `<img src="${xss(avatarUrl)}" style="width:40px;height:40px;border-radius:${_ciRadius};object-fit:cover;border:2px solid ${_ciBorder};background:rgba(255,255,255,.06);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(label)}'">`;
 
     ci.innerHTML = `${avatarTag}
       <div class="ci-info" style="flex:1;min-width:0;"><div class="ci-name">${xss(label)}</div>
