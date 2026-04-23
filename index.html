@@ -5636,6 +5636,7 @@ body.day-mode::before{
         <button class="ptab" data-tab="biz-chats" onclick="switchBizTab(this)">💬 Atendimento</button>
         <button class="ptab" id="biz-dash-tab" data-tab="biz-dashboard" onclick="switchBizTab(this)" style="display:none;">📊 Dashboard</button>
         <button class="ptab" id="biz-appointments-tab" data-tab="biz-appointments" onclick="switchBizTab(this)" style="display:none;">📅 Agendamentos</button>
+        <button class="ptab" id="biz-purchases-tab" data-tab="biz-purchases" onclick="switchBizTab(this)" style="display:none;">🛒 Compras</button>
       </div>
 
       <!-- TAB: EXPLORAR LOJAS -->
@@ -5709,6 +5710,15 @@ body.day-mode::before{
           <div style="display:flex;gap:6px;" id="appt-toggle-wrap"></div>
         </div>
         <div id="biz-appointments-content"></div>
+      </div>
+
+      <!-- TAB: COMPRAS -->
+      <div class="tab-panel" id="biz-purchases">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div style="font-family:Silkscreen,monospace;font-size:12px;color:var(--neon-yellow);">🛒 Compras</div>
+          <div style="display:flex;gap:6px;" id="purch-toggle-wrap"></div>
+        </div>
+        <div id="biz-purchases-content"></div>
       </div>
     </div>
 
@@ -16223,6 +16233,24 @@ function switchBizTab(btn){
       loadAppointments(false);
     }
   }
+  if(tabId==='biz-purchases'){
+    // Monta toggle Minhas Compras / Meu Negócio (vendedor)
+    const wrap = document.getElementById('purch-toggle-wrap');
+    if(wrap && myBusiness){
+      const _pSelStyle = 'font-size:10px;background:var(--neon-yellow);color:#0a0a2a;border-color:var(--neon-yellow);font-weight:bold;';
+      const _pNormStyle = 'font-size:10px;background:transparent;color:var(--text-muted);border-color:rgba(255,255,255,.15);';
+      wrap.innerHTML=`
+        <button class="tbtn" id="purch-btn-client" style="${_pSelStyle}" onclick="loadPurchases(false);document.getElementById('purch-btn-client').style.cssText='${_pSelStyle}';document.getElementById('purch-btn-owner').style.cssText='${_pNormStyle}'">🛍️ Minhas</button>
+        <button class="tbtn" id="purch-btn-owner" style="${_pNormStyle}" onclick="loadPurchases(true);document.getElementById('purch-btn-owner').style.cssText='${_pSelStyle}';document.getElementById('purch-btn-client').style.cssText='${_pNormStyle}'">🏪 Meu Negócio</button>`;
+      // Abre em "Minhas" por padrão
+      loadPurchases(false);
+    } else if(wrap){
+      wrap.innerHTML='';
+      loadPurchases(false);
+    } else {
+      loadPurchases(false);
+    }
+  }
 }
 
 // ── Geolocalização ───────────────────────────────────────────────
@@ -17855,6 +17883,9 @@ async function initBusinessPage(){
     // Aba Agendamentos sempre visível para usuários logados
     const apptTab=document.getElementById('biz-appointments-tab');
     if(apptTab) apptTab.style.display='';
+    // Aba Compras sempre visível para usuários logados
+    const purchTab=document.getElementById('biz-purchases-tab');
+    if(purchTab) purchTab.style.display='';
 
     const {data}=await db.from('businesses').select('*').eq('owner_id',CU.id).maybeSingle();
     myBusiness=data;
@@ -17863,6 +17894,8 @@ async function initBusinessPage(){
       if(dashTab) dashTab.style.display='';
       const apptTabOwner=document.getElementById('biz-appointments-tab');
       if(apptTabOwner) apptTabOwner.style.display='';
+      const purchTabOwner=document.getElementById('biz-purchases-tab');
+      if(purchTabOwner) purchTabOwner.style.display='';
     }
   }
 }
@@ -18303,6 +18336,27 @@ async function acceptDealProposal(dealId, btn){
           const apptRes = await db.from('appointments').insert(apptPayload);
           if(apptRes.error) console.warn('[acceptDeal] appointments insert:', apptRes.error.message);
         } catch(e){ console.warn('[acceptDeal] appointments:', e.message); }
+      }
+
+      // 5b. Se for produto (loja), cria purchase (silencioso se a tabela não existir)
+      if(!deal.is_service){
+        try{
+          const purchPayload = {
+            business_id: deal.business_id,
+            customer_id: CU.id,
+            status: 'confirmed'
+          };
+          if(deal.title)           purchPayload.product_title   = deal.title;
+          if(deal.value)           purchPayload.value            = deal.value;
+          if(deal.payment_method)  purchPayload.payment_method   = deal.payment_method;
+          if(deal.delivery_type)   purchPayload.delivery_type    = deal.delivery_type;
+          if(deal.delivery_address)purchPayload.delivery_address = deal.delivery_address;
+          if(deal.notes)           purchPayload.notes            = deal.notes;
+          if(chatId)               purchPayload.chat_id          = chatId;
+          if(dealId)               purchPayload.deal_id          = dealId;
+          const purchRes = await db.from('purchases').insert(purchPayload);
+          if(purchRes.error) console.warn('[acceptDeal] purchases insert:', purchRes.error.message);
+        } catch(e){ console.warn('[acceptDeal] purchases:', e.message); }
       }
 
       // 6. Mensagem de acordo fechado no chat
@@ -18907,6 +18961,640 @@ async function checkAppointmentDayNotifications(){
     }
   }catch(e){console.warn('[appt-day-notif]',e);}
 }
+
+// ═════════════════════════════════════════════════════════════════════════
+// 🛒 SISTEMA DE COMPRAS (Produtos) — espelha o sistema de Agendamentos
+// ═════════════════════════════════════════════════════════════════════════
+// Tabela esperada: purchases
+//   id (uuid), business_id, customer_id, product_title, value, payment_method,
+//   delivery_type, delivery_address, notes, status
+//   (pending|confirmed|shipped|delivered|done|cancelled),
+//   cancel_reason, tracking_code, chat_id, deal_id, created_at, updated_at
+//
+// Status map:
+//   confirmed → acordo aceito, aguardando envio/preparo
+//   shipped   → produto enviado / saiu para entrega
+//   delivered → entregue (dono marcou)
+//   done      → cliente confirmou recebimento (venda concluída)
+//   cancelled → cancelado por cliente ou proprietário
+// ─────────────────────────────────────────────────────────────────────────
+
+let _ownerPurchList = [];
+
+async function loadPurchases(asOwner){
+  const el = document.getElementById('biz-purchases-content');
+  if(!el||!CU) return;
+  el.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;font-size:11px;">⏳ Carregando compras...</div>';
+
+  if(asOwner && myBusiness){
+    // Busca compras do negócio com join no customer_id
+    let data = [];
+    const res = await db.from('purchases')
+      .select('*, customer:profiles!purchases_customer_id_fkey(id,username,full_name,avatar_url)')
+      .eq('business_id', myBusiness.id)
+      .order('created_at',{ascending:false});
+
+    if(!res.error && res.data){
+      data = res.data;
+    } else {
+      console.warn('[purchases owner] fkey join falhou:', res.error?.message);
+      const res2 = await db.from('purchases')
+        .select('*, profiles(id,username,full_name,avatar_url)')
+        .eq('business_id', myBusiness.id)
+        .order('created_at',{ascending:false});
+
+      if(!res2.error && res2.data){
+        data = res2.data.map(p=>({...p, customer: p.profiles||null}));
+      } else {
+        console.warn('[purchases owner] join genérico falhou:', res2.error?.message);
+        const res3 = await db.from('purchases')
+          .select('*')
+          .eq('business_id', myBusiness.id)
+          .order('created_at',{ascending:false});
+        data = res3.data || [];
+        if(res3.error){
+          el.innerHTML='<div style="color:var(--neon-pink);padding:20px;text-align:center;font-size:11px;">Erro ao carregar: '+res3.error.message+'<br><span style="color:var(--text-muted);font-size:10px;">(Verifique se a tabela "purchases" existe no Supabase)</span></div>';
+          return;
+        }
+        if(data.length){
+          const ids = [...new Set(data.map(p=>p.customer_id).filter(Boolean))];
+          if(ids.length){
+            const {data:profs} = await db.from('profiles').select('id,username,full_name,avatar_url').in('id',ids);
+            if(profs){
+              const map = Object.fromEntries(profs.map(p=>[p.id,p]));
+              data = data.map(p=>({...p, customer: map[p.customer_id]||null}));
+            }
+          }
+        }
+      }
+    }
+    renderPurchasesList(el, data, true);
+    _ownerPurchList = data;
+  } else {
+    const res = await db.from('purchases')
+      .select('*, businesses(id,name,logo_url)')
+      .eq('customer_id', CU.id)
+      .order('created_at',{ascending:false});
+    if(res.error){
+      console.warn('[purchases client] erro:', res.error.message);
+      el.innerHTML='<div style="color:var(--neon-pink);padding:20px;text-align:center;font-size:11px;">Erro ao carregar: '+res.error.message+'<br><span style="color:var(--text-muted);font-size:10px;">(Verifique se a tabela "purchases" existe no Supabase)</span></div>';
+      return;
+    }
+    renderPurchasesList(el, res.data||[], false);
+  }
+}
+
+function renderPurchasesList(el, list, isOwner, purchSearch='', purchStatus='', purchSort='desc'){
+  if(isOwner) window._purchEl = el;
+
+  if(!list.length){
+    if(isOwner){
+      _buildPurchFilters(el);
+      el.insertAdjacentHTML('beforeend','<div style="color:var(--text-muted);padding:20px;text-align:center;font-size:12px;">Nenhuma compra ainda.</div>');
+    } else {
+      el.innerHTML='<div style="color:var(--text-muted);padding:20px;text-align:center;font-size:12px;">Você ainda não fez nenhuma compra.<br><span style="font-size:10px;">Explore <a onclick="nav(\'businesses\');switchBizTab(document.querySelector(\'[data-tab=biz-browse]\'))" style="color:var(--neon-cyan);cursor:pointer;">lojas</a> e comece a negociar!</span></div>';
+    }
+    return;
+  }
+
+  // Aplica filtros (apenas para owner)
+  let filtered = [...list];
+  if(isOwner){
+    if(purchStatus) filtered = filtered.filter(p=> p.status === purchStatus);
+    if(purchSearch){
+      const s = purchSearch.toLowerCase();
+      filtered = filtered.filter(p=>{
+        const prof = p.customer || p.profiles || null;
+        const name = (prof?.full_name||prof?.username||'').toLowerCase();
+        const title = (p.product_title||'').toLowerCase();
+        return name.includes(s) || title.includes(s);
+      });
+    }
+  }
+
+  // Ordena por data de criação
+  filtered.sort((a,b)=>{
+    const da = new Date(a.created_at||0);
+    const dbb = new Date(b.created_at||0);
+    return purchSort==='asc' ? da - dbb : dbb - da;
+  });
+
+  // Separa por status (abertas × finalizadas)
+  const abertas  = filtered.filter(p=> ['pending','confirmed','shipped','delivered'].includes(p.status));
+  const fechadas = filtered.filter(p=> ['done','cancelled'].includes(p.status));
+
+  function renderItem(p){
+    const dateStr = p.created_at ? new Date(p.created_at).toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'2-digit'}) : '';
+    const prof    = p.customer || p.profiles || null;
+    const name    = isOwner ? (prof?.full_name||prof?.username||'Cliente') : (p.businesses?.name||'Loja');
+    const avatar  = isOwner
+      ? (prof?.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof?.username||'user'))
+      : (p.businesses?.logo_url||'https://api.dicebear.com/7.x/shapes/svg?seed=biz');
+    const valor   = p.value ? 'R$ '+Number(p.value).toFixed(2).replace('.',',') : '';
+    const isCancelled = p.status==='cancelled';
+    const isDone = p.status==='done';
+    const isShipped = p.status==='shipped';
+    const isDelivered = p.status==='delivered';
+
+    const statusConf = {
+      'pending':   {color:'var(--neon-yellow)', label:'⏳ Pendente'},
+      'confirmed': {color:'var(--neon-cyan)',   label:'✅ Confirmado'},
+      'shipped':   {color:'var(--neon-purple)', label:'🚚 Enviado'},
+      'delivered': {color:'var(--neon-cyan)',   label:'📦 Entregue'},
+      'done':      {color:'var(--neon-purple)', label:'✔ Concluído'},
+      'cancelled': {color:'var(--neon-pink)',   label:'❌ Cancelado'}
+    };
+    const sc = statusConf[p.status] || {color:'var(--text-muted)', label:'⚠️ '+p.status};
+
+    // ids seguros
+    const safeBizId   = String(p.businesses?.id||p.business_id||'').replace(/['"]/g,'');
+    const safeBizName = String(p.businesses?.name||'Loja').replace(/'/g,"’");
+    const safeTitle   = String(p.product_title||'Produto').replace(/'/g,"’");
+    const safeCustomerId   = String(prof?.id||p.customer_id||'').replace(/['"]/g,'');
+    const safeCustomerName = String(prof?.full_name||prof?.username||'Cliente').replace(/'/g,"’");
+
+    // Botões do CLIENTE
+    let clientBtns = '';
+    if(!isOwner && !isCancelled && !isDone){
+      const btns = [];
+      // Cliente pode cancelar se ainda não enviou
+      if(p.status==='pending' || p.status==='confirmed'){
+        btns.push(`<button class="tbtn" onclick="cancelPurchaseClient('${p.id}')" style="font-size:10px;color:var(--neon-pink);border-color:rgba(255,51,102,.4);">❌ Cancelar</button>`);
+      }
+      // Cliente pode confirmar recebimento quando entregue ou enviado
+      if(p.status==='shipped' || p.status==='delivered'){
+        btns.push(`<button class="tbtn" onclick="confirmPurchaseReceived('${p.id}')" style="font-size:10px;color:var(--neon-cyan);border-color:rgba(0,255,204,.5);background:rgba(0,255,204,.08);">✅ Confirmar Recebimento</button>`);
+      }
+      // Cliente pode falar com vendedor
+      btns.push(`<button class="tbtn" onclick="openPurchaseChat('${p.id}','${safeBizId}','${safeBizName}','${safeTitle}')" style="font-size:10px;color:var(--neon-yellow);border-color:rgba(255,204,0,.4);">💬 Chat</button>`);
+      if(btns.length) clientBtns = `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">${btns.join('')}</div>`;
+    }
+
+    // Botões do PROPRIETÁRIO
+    let ownerBtns = '';
+    if(isOwner && !isCancelled && !isDone){
+      const btns = [];
+      // Marcar como enviado
+      if(p.status==='pending' || p.status==='confirmed'){
+        btns.push(`<button class="tbtn" onclick="markPurchaseShipped('${p.id}','${safeCustomerId}','${safeCustomerName}','${safeTitle}')" style="font-size:10px;color:var(--neon-purple);border-color:rgba(191,95,255,.4);">🚚 Marcar como Enviado</button>`);
+      }
+      // Marcar como entregue
+      if(p.status==='shipped'){
+        btns.push(`<button class="tbtn" onclick="markPurchaseDelivered('${p.id}','${safeCustomerId}','${safeCustomerName}','${safeTitle}')" style="font-size:10px;color:var(--neon-cyan);border-color:rgba(0,255,204,.4);">📦 Marcar Entregue</button>`);
+      }
+      // Concluir venda (pode em qualquer etapa)
+      btns.push(`<button class="tbtn" onclick="markPurchaseDone('${p.id}',this)" style="font-size:10px;color:var(--neon-cyan);">✔ Concluir Venda</button>`);
+      // Cancelar
+      btns.push(`<button class="tbtn" onclick="ownerCancelPurchase('${p.id}','${safeCustomerId}','${safeCustomerName}')" style="font-size:10px;color:var(--neon-pink);border-color:rgba(255,51,102,.4);">❌ Cancelar</button>`);
+      if(btns.length) ownerBtns = `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">${btns.join('')}</div>`;
+    }
+
+    // Tracking code (se existir)
+    const trackingHtml = p.tracking_code
+      ? `<div style="font-size:10px;color:var(--neon-purple);margin-top:6px;padding-top:6px;border-top:1px solid rgba(191,95,255,.15);">📮 Código de rastreio: <strong style="color:var(--text-light);font-family:VT323,monospace;font-size:13px;letter-spacing:1px;">${xss(p.tracking_code)}</strong></div>`
+      : '';
+
+    return `<div style="background:var(--bg-card);border:1px solid ${isCancelled||isDone?'rgba(255,255,255,.08)':'var(--border-glow)'};border-radius:12px;padding:12px 14px;margin-bottom:10px;${isCancelled||isDone?'opacity:.7':''}">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <img src="${xss(avatar)}" style="width:40px;height:40px;border-radius:${isOwner?'50%':'8px'};object-fit:cover;border:2px solid var(--border-glow);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=user'">
+        <div style="flex:1;min-width:0;">
+          <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(name)}</div>
+          <div style="font-size:10px;color:var(--neon-yellow);margin-top:2px;">🛒 ${xss(p.product_title||'Produto')}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          ${valor?`<div style="font-family:VT323,monospace;font-size:18px;color:var(--neon-yellow);">${valor}</div>`:''}
+          <div style="font-size:9px;color:${sc.color};">${sc.label}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        ${dateStr?`<span style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:3px 8px;font-size:10px;color:var(--text-muted);">📅 ${dateStr}</span>`:''}
+        ${p.delivery_type?`<span style="background:rgba(255,204,0,.08);border:1px solid rgba(255,204,0,.2);border-radius:6px;padding:3px 8px;font-size:10px;color:var(--neon-yellow);">📦 ${xss(p.delivery_type)}</span>`:''}
+        ${p.payment_method?`<span style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:3px 8px;font-size:10px;color:var(--text-muted);">💳 ${xss(p.payment_method)}</span>`:''}
+      </div>
+      ${p.delivery_address?`<div style="font-size:10px;color:var(--text-muted);margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.06);">📍 ${xss(p.delivery_address)}</div>`:''}
+      ${p.notes?`<div style="font-size:10px;color:var(--text-muted);margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.06);">📝 ${xss(p.notes)}</div>`:''}
+      ${trackingHtml}
+      ${p.cancel_reason?`<div style="font-size:10px;color:var(--neon-pink);margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,51,102,.15);">❌ Motivo: ${xss(p.cancel_reason)}</div>`:''}
+      ${clientBtns}${ownerBtns}
+    </div>`;
+  }
+
+  let html='';
+  if(abertas.length){
+    html+=`<div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--neon-yellow);margin-bottom:8px;">🛒 EM ANDAMENTO (${abertas.length})</div>`;
+    html+=abertas.map(p=>renderItem(p)).join('');
+  }
+  if(fechadas.length){
+    html+=`<div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--text-muted);margin:14px 0 8px;">HISTÓRICO (${fechadas.length})</div>`;
+    html+=fechadas.map(p=>renderItem(p)).join('');
+  }
+  if(!abertas.length && !fechadas.length){
+    html='<div style="color:var(--text-muted);padding:20px;text-align:center;font-size:12px;">Nenhum resultado para os filtros aplicados.</div>';
+  }
+
+  if(isOwner){
+    _buildPurchFilters(el);
+    const counter = document.createElement('div');
+    counter.style.cssText='font-size:10px;color:var(--text-muted);margin-bottom:8px;';
+    counter.textContent='Exibindo '+filtered.length+' de '+list.length+' compras';
+    el.appendChild(counter);
+    const listDiv = document.createElement('div');
+    listDiv.id = 'purch-owner-list';
+    listDiv.innerHTML = html;
+    el.appendChild(listDiv);
+  } else {
+    el.innerHTML=html;
+  }
+}
+
+// ── Filtros da aba Compras (proprietário) ────────────────────────
+function _buildPurchFilters(el){
+  el.innerHTML='';
+  const row = document.createElement('div');
+  row.id = 'purch-filter-row';
+  row.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;align-items:center;';
+
+  const selStyle = 'background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:7px 10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:10px;outline:none;cursor:pointer;';
+
+  const search = document.createElement('input');
+  search.id = 'purch-search';
+  search.type = 'text';
+  search.placeholder = 'Buscar cliente ou produto...';
+  search.oninput = eaPurchFilter;
+  search.style.cssText = 'flex:1;min-width:120px;' + selStyle;
+
+  const statusSel = document.createElement('select');
+  statusSel.id = 'purch-status-filter';
+  statusSel.onchange = eaPurchFilter;
+  statusSel.style.cssText = selStyle;
+  [['','Todos'],['confirmed','Confirmado'],['shipped','Enviado'],['delivered','Entregue'],['done','Concluído'],['cancelled','Cancelado']].forEach(([v,t])=>{
+    const o=document.createElement('option'); o.value=v; o.textContent=t; statusSel.appendChild(o);
+  });
+
+  const sortSel = document.createElement('select');
+  sortSel.id = 'purch-sort-filter';
+  sortSel.onchange = eaPurchFilter;
+  sortSel.style.cssText = selStyle;
+  [['desc','Mais recente'],['asc','Mais antigo']].forEach(([v,t])=>{
+    const o=document.createElement('option'); o.value=v; o.textContent=t; sortSel.appendChild(o);
+  });
+
+  row.appendChild(search);
+  row.appendChild(statusSel);
+  row.appendChild(sortSel);
+  el.appendChild(row);
+}
+
+function eaPurchFilter(){
+  const el = window._purchEl || document.getElementById('biz-purchases-content');
+  if(!el || !_ownerPurchList.length) return;
+  const search = (document.getElementById('purch-search')?.value||'').toLowerCase().trim();
+  const status = document.getElementById('purch-status-filter')?.value || '';
+  const sort   = document.getElementById('purch-sort-filter')?.value || 'desc';
+  const filterRow = document.getElementById('purch-filter-row');
+  el.innerHTML = '';
+  if(filterRow) el.appendChild(filterRow);
+  renderPurchasesList(el, _ownerPurchList, true, search, status, sort);
+  requestAnimationFrame(()=>{
+    const s=document.getElementById('purch-search'); if(s) s.value=search;
+    const st=document.getElementById('purch-status-filter'); if(st) st.value=status;
+    const so=document.getElementById('purch-sort-filter'); if(so) so.value=sort;
+  });
+}
+
+// ── MARCAR COMO ENVIADO (Proprietário) ───────────────────────────
+function markPurchaseShipped(purchId, customerId, customerName, productTitle){
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.88);backdrop-filter:blur(12px);z-index:6000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.innerHTML=`
+    <div class="modal" style="max-width:400px;width:100%;padding:24px;">
+      <div style="font-size:32px;text-align:center;margin-bottom:10px;">🚚</div>
+      <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-purple);margin-bottom:8px;text-align:center;">MARCAR COMO ENVIADO</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;text-align:center;">Produto <strong style="color:var(--text-light);">${xss(productTitle||'')}</strong> para <strong style="color:var(--text-light);">${xss(customerName||'')}</strong>:</div>
+      <label style="font-family:Silkscreen,monospace;font-size:9px;color:var(--neon-cyan);display:block;margin-bottom:4px;">📮 Código de Rastreio (opcional)</label>
+      <input type="text" id="_ea_track_code" placeholder="Ex: BR123456789BR" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:12px;margin-bottom:14px;outline:none;">
+      <div style="background:rgba(191,95,255,.07);border:1px solid rgba(191,95,255,.25);border-radius:8px;padding:10px;margin-bottom:14px;font-size:10px;color:var(--neon-purple);line-height:1.5;">
+        💡 O cliente será notificado que o produto foi enviado.
+      </div>
+      <div style="display:flex;gap:10px;">
+        <button class="tbtn" onclick="this.closest('.ea-ship-ov').remove()" style="flex:1;padding:11px;">Cancelar</button>
+        <button class="post-btn" onclick="eaDoShipPurchase('${purchId}','${customerId}','${xss(productTitle||'')}',this)" style="flex:1;padding:11px;background:linear-gradient(135deg,var(--neon-purple),#8833cc);font-size:11px;">🚚 Confirmar Envio</button>
+      </div>
+    </div>`;
+  ov.classList.add('ea-ship-ov');
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  document.body.appendChild(ov);
+}
+
+async function eaDoShipPurchase(purchId, customerId, productTitle, btn){
+  btn.disabled=true; btn.textContent='⏳ Salvando...';
+  const trackCode=(document.getElementById('_ea_track_code')?.value||'').trim();
+  const updates={status:'shipped'};
+  if(trackCode) updates.tracking_code=trackCode;
+  let upd = await db.from('purchases').update(updates).eq('id',purchId);
+  if(upd.error){
+    // Fallback se tracking_code não existir
+    upd = await db.from('purchases').update({status:'shipped'}).eq('id',purchId);
+    if(upd.error){
+      btn.disabled=false; btn.textContent='🚚 Confirmar Envio';
+      showToast('Erro: '+upd.error.message,'error'); return;
+    }
+  }
+  // Notifica cliente
+  const cid=(customerId&&customerId!=='undefined'&&customerId!=='')?customerId:null;
+  if(cid && CU && cid!==CU.id){
+    const bizName=myBusiness?.name||'A Loja';
+    const trackLine = trackCode ? ' Código de rastreio: '+trackCode : '';
+    await db.from('notifications').insert({
+      user_id:cid, actor_id:CU.id, type:'system',
+      business_id: myBusiness?.id || null,
+      content:'🚚 '+bizName+' enviou seu produto "'+(productTitle||'compra')+'"!'+trackLine,
+      read:false
+    });
+  }
+  document.querySelector('.ea-ship-ov')?.remove();
+  showToast('✅ Produto marcado como enviado! Cliente notificado.','success');
+  loadPurchases(true);
+}
+
+// ── MARCAR COMO ENTREGUE (Proprietário) ──────────────────────────
+function markPurchaseDelivered(purchId, customerId, customerName, productTitle){
+  eaConfirm(`Marcar o produto <strong>${xss(productTitle||'compra')}</strong> como entregue para <strong>${xss(customerName||'Cliente')}</strong>?`, async ()=>{
+    const upd = await db.from('purchases').update({status:'delivered'}).eq('id',purchId);
+    if(upd.error) return showToast('Erro: '+upd.error.message,'error');
+    const cid=(customerId&&customerId!=='undefined'&&customerId!=='')?customerId:null;
+    if(cid && CU && cid!==CU.id){
+      const bizName=myBusiness?.name||'A Loja';
+      await db.from('notifications').insert({
+        user_id:cid, actor_id:CU.id, type:'system',
+        business_id: myBusiness?.id || null,
+        content:'📦 '+bizName+' marcou seu pedido "'+(productTitle||'compra')+'" como entregue. Se estiver tudo certo, confirme o recebimento!',
+        read:false
+      });
+    }
+    showToast('✅ Produto marcado como entregue!','success');
+    loadPurchases(true);
+  });
+}
+
+// ── CONCLUIR VENDA (Proprietário) ────────────────────────────────
+function markPurchaseDone(id, btn){
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.88);backdrop-filter:blur(12px);z-index:6000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.innerHTML=`
+    <div class="modal" style="max-width:360px;width:100%;padding:24px;text-align:center;">
+      <div style="font-size:36px;margin-bottom:12px;">✅</div>
+      <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-cyan);margin-bottom:8px;">CONCLUIR VENDA?</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:20px;">Deseja marcar esta compra como concluída? Esta ação não pode ser desfeita.</div>
+      <div style="display:flex;gap:10px;">
+        <button class="tbtn" onclick="this.closest('.ea-purchdone-ov').remove()" style="flex:1;padding:11px;">Não</button>
+        <button class="post-btn" onclick="eaDoMarkPurchaseDone('${id}',this)" style="flex:1;padding:11px;background:linear-gradient(135deg,var(--neon-cyan),var(--neon-purple));font-size:11px;">✅ Sim, Concluir</button>
+      </div>
+    </div>`;
+  ov.classList.add('ea-purchdone-ov');
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  document.body.appendChild(ov);
+}
+
+async function eaDoMarkPurchaseDone(id, btn){
+  btn.disabled=true; btn.textContent='⏳ Salvando...';
+  const res = await db.from('purchases').update({status:'done'}).eq('id',id);
+  if(res.error){ btn.disabled=false; btn.textContent='✅ Sim, Concluir'; showToast('Erro: '+res.error.message,'error'); return; }
+  document.querySelector('.ea-purchdone-ov')?.remove();
+  showToast('✔ Venda concluída!','success');
+
+  // Notificação + convite para avaliar
+  try{
+    const {data:purch}=await db.from('purchases')
+      .select('customer_id, product_title, business_id, businesses(id,name)')
+      .eq('id',id).maybeSingle();
+    if(purch?.customer_id && CU && purch.customer_id !== CU.id){
+      const bizName = purch.businesses?.name || myBusiness?.name || 'nossa loja';
+      const bizId   = purch.businesses?.id   || myBusiness?.id  || purch.business_id || '';
+      const prodTitle= purch.product_title || 'seu produto';
+      const msg =
+        `🙏 Obrigado por comprar em *${bizName}*! ` +
+        `Esperamos que tenha gostado de *${prodTitle}*. ` +
+        `Sua opinião é muito importante — que tal deixar uma avaliação? ⭐`;
+      await db.from('notifications').insert({
+        user_id: purch.customer_id,
+        actor_id: CU.id,
+        type: 'system',
+        business_id: bizId || null,
+        content: msg,
+        read: false
+      });
+    }
+    // KPI: incrementa sales_done
+    if(myBusiness?.id){
+      const {data:bizData}=await db.from('businesses').select('sales_done').eq('id',myBusiness.id).maybeSingle();
+      const newCount=(bizData?.sales_done||0)+1;
+      await db.from('businesses').update({sales_done:newCount}).eq('id',myBusiness.id);
+      if(myBusiness) myBusiness.sales_done=newCount;
+    }
+  }catch(e){ console.warn('[markPurchaseDone] notif/kpi erro:', e); }
+
+  loadPurchases(true);
+  if(typeof loadBizDashboard === 'function') loadBizDashboard();
+}
+
+// ── CANCELAR COMPRA (Cliente) ────────────────────────────────────
+function cancelPurchaseClient(purchId){
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.88);backdrop-filter:blur(12px);z-index:6000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.innerHTML=`
+    <div class="modal" style="max-width:400px;width:100%;padding:24px;">
+      <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-pink);margin-bottom:8px;">❌ CANCELAR COMPRA</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;">Tem certeza que deseja cancelar esta compra?</div>
+      <textarea id="_ea_purch_cancel_reason" placeholder="Motivo do cancelamento (opcional)..." style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:11px;resize:vertical;min-height:80px;outline:none;"></textarea>
+      <div style="display:flex;gap:10px;margin-top:14px;">
+        <button class="tbtn" onclick="this.closest('.ea-purch-cancel-ov').remove()" style="flex:1;padding:11px;">Voltar</button>
+        <button class="post-btn" onclick="eaDoCancelPurchase('${purchId}',this)" style="flex:1;padding:11px;background:linear-gradient(135deg,var(--neon-pink),#cc0033);font-size:11px;">❌ Confirmar Cancelamento</button>
+      </div>
+    </div>`;
+  ov.classList.add('ea-purch-cancel-ov');
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  document.body.appendChild(ov);
+}
+
+async function eaDoCancelPurchase(purchId, btn){
+  btn.disabled=true; btn.textContent='⏳ Cancelando...';
+  const reason=(document.getElementById('_ea_purch_cancel_reason')?.value||'').trim();
+  let upd=await db.from('purchases').update({status:'cancelled',cancel_reason:reason||null}).eq('id',purchId);
+  if(upd.error){
+    upd=await db.from('purchases').update({status:'cancelled'}).eq('id',purchId);
+    if(upd.error){
+      btn.disabled=false; btn.textContent='❌ Confirmar Cancelamento';
+      showToast('Erro ao cancelar: '+upd.error.message,'error'); return;
+    }
+  }
+  // Notifica dono
+  let ownerId=null;
+  const q1=await db.from('purchases').select('business_id, product_title').eq('id',purchId).maybeSingle();
+  const prodT = q1.data?.product_title || 'uma compra';
+  if(!q1.error && q1.data?.business_id){
+    const q2=await db.from('businesses').select('owner_id').eq('id',q1.data.business_id).maybeSingle();
+    if(!q2.error) ownerId=q2.data?.owner_id||null;
+  }
+  if(ownerId && CU && ownerId!==CU.id){
+    const uName=CP?.full_name||CP?.username||'Um cliente';
+    await db.from('notifications').insert({
+      user_id:ownerId, actor_id:CU.id, type:'system',
+      business_id: q1.data?.business_id || null,
+      content:'❌ '+uName+' cancelou a compra de "'+prodT+'".'+(reason?' Motivo: '+reason:''),
+      read:false
+    });
+  }
+  document.querySelector('.ea-purch-cancel-ov')?.remove();
+  showToast('✔ Compra cancelada.','success');
+  loadPurchases(false);
+  if(typeof loadBizDashboard === 'function') loadBizDashboard();
+}
+
+// ── CONFIRMAR RECEBIMENTO (Cliente) ──────────────────────────────
+function confirmPurchaseReceived(purchId){
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.88);backdrop-filter:blur(12px);z-index:6000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.innerHTML=`
+    <div class="modal" style="max-width:360px;width:100%;padding:24px;text-align:center;">
+      <div style="font-size:36px;margin-bottom:12px;">📦✅</div>
+      <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-cyan);margin-bottom:8px;">CONFIRMAR RECEBIMENTO?</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:20px;">Você recebeu o produto e está tudo certo? Esta ação finaliza a compra.</div>
+      <div style="display:flex;gap:10px;">
+        <button class="tbtn" onclick="this.closest('.ea-purchreceived-ov').remove()" style="flex:1;padding:11px;">Ainda não</button>
+        <button class="post-btn" onclick="eaDoConfirmReceived('${purchId}',this)" style="flex:1;padding:11px;background:linear-gradient(135deg,var(--neon-cyan),var(--neon-purple));font-size:11px;">✅ Recebi!</button>
+      </div>
+    </div>`;
+  ov.classList.add('ea-purchreceived-ov');
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  document.body.appendChild(ov);
+}
+
+async function eaDoConfirmReceived(purchId, btn){
+  btn.disabled=true; btn.textContent='⏳ Salvando...';
+  const res = await db.from('purchases').update({status:'done'}).eq('id',purchId);
+  if(res.error){ btn.disabled=false; btn.textContent='✅ Recebi!'; showToast('Erro: '+res.error.message,'error'); return; }
+  document.querySelector('.ea-purchreceived-ov')?.remove();
+  showToast('🎉 Compra finalizada! Obrigado por confirmar.','success');
+
+  // Notifica vendedor + incrementa KPI
+  try{
+    const {data:purch}=await db.from('purchases')
+      .select('business_id, product_title, businesses(id,name,owner_id,sales_done)')
+      .eq('id',purchId).maybeSingle();
+    if(purch && CU){
+      const ownerId = purch.businesses?.owner_id;
+      const bizId   = purch.businesses?.id || purch.business_id;
+      const prodT   = purch.product_title || 'o produto';
+      if(ownerId && ownerId!==CU.id){
+        const cName = CP?.full_name || CP?.username || 'Cliente';
+        await db.from('notifications').insert({
+          user_id: ownerId,
+          actor_id: CU.id,
+          type: 'system',
+          business_id: bizId || null,
+          content: '🎉 '+cName+' confirmou o recebimento de "'+prodT+'". Venda concluída!',
+          read: false
+        });
+      }
+      // KPI sales_done
+      if(bizId){
+        const newCount = (purch.businesses?.sales_done||0)+1;
+        await db.from('businesses').update({sales_done:newCount}).eq('id',bizId);
+      }
+    }
+  }catch(e){ console.warn('[confirmReceived] notif/kpi:', e); }
+
+  loadPurchases(false);
+}
+
+// ── CANCELAR COMPRA (Proprietário) ───────────────────────────────
+function ownerCancelPurchase(purchId, customerId, customerName){
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.88);backdrop-filter:blur(12px);z-index:6000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.innerHTML=`
+    <div class="modal" style="max-width:400px;width:100%;padding:24px;">
+      <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-pink);margin-bottom:8px;">❌ CANCELAR COMPRA</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;">Tem certeza que deseja cancelar a compra de <strong style="color:var(--text-light);">${xss(customerName)}</strong>?</div>
+      <textarea id="_ea_owner_purch_cancel_reason" placeholder="Motivo do cancelamento (opcional)..." style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:11px;resize:vertical;min-height:80px;outline:none;"></textarea>
+      <div style="display:flex;gap:10px;margin-top:14px;">
+        <button class="tbtn" onclick="this.closest('.ea-owner-purch-cancel-ov').remove()" style="flex:1;padding:11px;">Voltar</button>
+        <button class="post-btn" onclick="eaDoOwnerCancelPurchase('${purchId}','${customerId}',this)" style="flex:1;padding:11px;background:linear-gradient(135deg,var(--neon-pink),#cc0033);font-size:11px;">❌ Confirmar Cancelamento</button>
+      </div>
+    </div>`;
+  ov.classList.add('ea-owner-purch-cancel-ov');
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  document.body.appendChild(ov);
+}
+
+async function eaDoOwnerCancelPurchase(purchId, customerId, btn){
+  btn.disabled=true; btn.textContent='⏳ Cancelando...';
+  const reason=(document.getElementById('_ea_owner_purch_cancel_reason')?.value||'').trim();
+  let upd=await db.from('purchases').update({status:'cancelled',cancel_reason:reason||null}).eq('id',purchId);
+  if(upd.error){
+    upd=await db.from('purchases').update({status:'cancelled'}).eq('id',purchId);
+    if(upd.error){
+      btn.disabled=false; btn.textContent='❌ Confirmar Cancelamento';
+      showToast('Erro ao cancelar: '+upd.error.message,'error'); return;
+    }
+  }
+  // Notifica cliente
+  const cid=(customerId&&customerId!=='undefined'&&customerId!=='')?customerId:null;
+  if(cid && CU && cid!==CU.id){
+    const bizName=myBusiness?.name||'A Loja';
+    await db.from('notifications').insert({
+      user_id:cid, actor_id:CU.id, type:'system',
+      business_id: myBusiness?.id||null,
+      content:'❌ '+bizName+' cancelou a sua compra.'+(reason?' Motivo: '+reason:''),
+      read:false
+    });
+  }
+  document.querySelector('.ea-owner-purch-cancel-ov')?.remove();
+  showToast('✔ Compra cancelada. Cliente notificado.','success');
+  loadPurchases(true);
+  if(typeof loadBizDashboard === 'function') loadBizDashboard();
+}
+
+// ── ABRIR CHAT COM VENDEDOR (Cliente) ────────────────────────────
+async function openPurchaseChat(purchId, bizId, bizName, productTitle){
+  if(!CU){showToast('Faça login para continuar','error');return;}
+  let fBizId   = (bizId   && bizId!=='undefined'   && bizId!=='')   ? bizId   : null;
+  let fBizName = (bizName && bizName!=='undefined') ? bizName : 'Loja';
+  let fTitle   = (productTitle && productTitle!=='undefined') ? productTitle : 'Produto';
+  if(!fBizId){
+    const q=await db.from('purchases').select('business_id, businesses(id,name)').eq('id',purchId).maybeSingle();
+    if(!q.error && q.data){
+      fBizId   = q.data.business_id || q.data.businesses?.id || null;
+      fBizName = q.data.businesses?.name || fBizName;
+    }
+  }
+  if(!fBizId){showToast('Loja não identificada','error');return;}
+  try{
+    let chat=null;
+    const qc=await db.from('business_chats').select('*').eq('business_id',fBizId).eq('customer_id',CU.id).maybeSingle();
+    if(!qc.error && qc.data){ chat=qc.data; }
+    else{
+      const ins=await db.from('business_chats').insert({business_id:fBizId,customer_id:CU.id}).select().single();
+      if(ins.error){ showToast('Erro ao abrir chat: '+ins.error.message,'error'); return; }
+      chat=ins.data;
+    }
+    // Navega para chat
+    nav('businesses');
+    await new Promise(r=>setTimeout(r,400));
+    const chatsTab=document.querySelector('#biz-page-tabs .ptab[data-tab="biz-chats"]');
+    if(chatsTab) switchBizTab(chatsTab);
+    await new Promise(r=>setTimeout(r,500));
+    await loadBizChats();
+    await new Promise(r=>setTimeout(r,200));
+    openBizChat(chat.id, fBizName);
+  }catch(e){
+    showToast('Erro: '+e.message,'error');
+  }
+}
+// ═════════════════════════════════════════════════════════════════════════
+// FIM DO SISTEMA DE COMPRAS
+// ═════════════════════════════════════════════════════════════════════════
+
 // ── CloseDeal legado (mantido por compatibilidade) ──────────────
 function openCloseDealModal(chatId){ openNewDealModal(); }
 
