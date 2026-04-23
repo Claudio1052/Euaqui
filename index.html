@@ -17280,6 +17280,9 @@ async function closeDeal(chatId){
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────
+let _dashDeals = [];
+let _dashAppts = [];
+
 async function loadBizDashboard(){
   const el=document.getElementById('biz-dash-content');
   if(!el||!myBusiness) return;
@@ -17288,12 +17291,12 @@ async function loadBizDashboard(){
   let deals = [];
   const {data:d1, error:e1} = await db.from('business_deals')
     .select('*, accepted_profile:profiles!business_deals_accepted_by_fkey(id,username,full_name,avatar_url)')
-    .eq('business_id',b.id).eq('status','closed').order('created_at',{ascending:false}).limit(20);
+    .eq('business_id',b.id).eq('status','closed').order('created_at',{ascending:false}).limit(1000);
   if(!e1 && d1){
     deals = d1;
   } else {
     const {data:d2} = await db.from('business_deals')
-      .select('*').eq('business_id',b.id).eq('status','closed').order('created_at',{ascending:false}).limit(20);
+      .select('*').eq('business_id',b.id).eq('status','closed').order('created_at',{ascending:false}).limit(1000);
     deals = d2 || [];
     if(deals.length){
       const ids = [...new Set(deals.map(d=>d.accepted_by).filter(Boolean))];
@@ -17313,14 +17316,14 @@ async function loadBizDashboard(){
       .select('*, customer:profiles!appointments_customer_id_fkey(id,username,full_name,avatar_url)')
       .eq('business_id',b.id)
       .in('status',['done','cancelled','confirmed'])
-      .order('scheduled_date',{ascending:false}).limit(30);
+      .order('scheduled_date',{ascending:false}).limit(1000);
     apptHistory = appts || [];
     // fallback sem join
     if(!apptHistory.length){
       const {data:appts2} = await db.from('appointments')
         .select('*').eq('business_id',b.id)
         .in('status',['done','cancelled','confirmed'])
-        .order('scheduled_date',{ascending:false}).limit(30);
+        .order('scheduled_date',{ascending:false}).limit(1000);
       if(appts2?.length){
         apptHistory = appts2;
         const cids=[...new Set(apptHistory.map(a=>a.customer_id).filter(Boolean))];
@@ -17331,6 +17334,9 @@ async function loadBizDashboard(){
       }
     }
   }catch(e){}
+  // Armazena globalmente para filtros sem nova consulta ao banco
+  _dashDeals = deals;
+  _dashAppts = apptHistory;
   // Refresh business data
   const {data:fresh}=await db.from('businesses').select('*').eq('id',b.id).maybeSingle();
   if(fresh) myBusiness=fresh;
@@ -17352,32 +17358,79 @@ async function loadBizDashboard(){
     <div class="dash-grid">
       <div class="dash-card"><div class="dash-num">${bd.followers_count||0}</div><div class="dash-lbl">👥 Seguidores</div></div>
       <div class="dash-card"><div class="dash-num">${bd.deals_closed||0}</div><div class="dash-lbl">${bd.category==='servico'?'📅 Agendamentos':'🤝 Neg. Fechados'}</div></div>
-      ${bd.category==='servico'?`<div class="dash-card"><div class="dash-num" style="font-size:16px;">${fmtCurrency(totalRevenue)}</div><div class="dash-lbl">💰 Faturado</div></div>`:''}
+      ${bd.category==='servico'?`<div class="dash-card"><div class="dash-num">${fmtCurrency(totalRevenue)}</div><div class="dash-lbl">💰 Faturado</div></div>`:''}
       ${bd.category==='loja'?`<div class="dash-card"><div class="dash-num">${bd.sales_done||0}</div><div class="dash-lbl">✅ Vendas</div></div>`:''}
       <div class="dash-card"><div class="dash-num">${bd.rating?Number(bd.rating).toFixed(1):'—'}</div><div class="dash-lbl">⭐ Avaliação</div></div>
     </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-      <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);">📋 Histórico de Negócios</div>
-      <button class="tbtn" onclick="openAddDeal()" style="font-size:10px;">+ Registrar venda</button>
+    <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);margin-bottom:10px;">📋 Histórico de Negócios</div>
+
+    <!-- Filtros + Busca + Paginação -->
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;align-items:center;">
+      <input id="dash-search" type="text" placeholder="🔍 Buscar por nome..." oninput="eaDashFilter()" style="flex:1;min-width:120px;background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:7px 10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:10px;outline:none;">
+      <select id="dash-status-filter" onchange="eaDashFilter()" style="background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:7px 10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:10px;outline:none;cursor:pointer;">
+        <option value="">Todos</option>
+        <option value="done">✅ Concluído</option>
+        <option value="confirmed">📅 Confirmado</option>
+        <option value="cancelled">❌ Cancelado</option>
+        <option value="closed">🤝 Fechado</option>
+      </select>
+      <select id="dash-sort-filter" onchange="eaDashFilter()" style="background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:7px 10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:10px;outline:none;cursor:pointer;">
+        <option value="desc">📅 Mais recente</option>
+        <option value="asc">📅 Mais antigo</option>
+      </select>
+      <select id="dash-limit-filter" onchange="eaDashFilter()" style="background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:7px 10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:10px;outline:none;cursor:pointer;">
+        <option value="10">10 linhas</option>
+        <option value="20">20 linhas</option>
+        <option value="100">100 linhas</option>
+        <option value="200">200 linhas</option>
+        <option value="500">500 linhas</option>
+        <option value="1000">1000 linhas</option>
+      </select>
     </div>
-    <div id="deals-list">${_renderDashHistory(deals, apptHistory)}</div>`;
+    <div id="deals-list">${_renderDashHistory(deals, apptHistory, 10, '', '', 'desc')}</div>`;
+}
+
+// ── Filtro do histórico de negócios ──────────────────────────────
+function eaDashFilter(){
+  const search  = (document.getElementById('dash-search')?.value||'').toLowerCase().trim();
+  const status  = document.getElementById('dash-status-filter')?.value || '';
+  const sort    = document.getElementById('dash-sort-filter')?.value || 'desc';
+  const limit   = parseInt(document.getElementById('dash-limit-filter')?.value||'10', 10);
+  const el      = document.getElementById('deals-list');
+  if(el) el.innerHTML = _renderDashHistory(_dashDeals, _dashAppts, limit, search, status, sort);
 }
 
 // ── Renderiza histórico combinado (deals + agendamentos) no Dashboard ──────────
-function _renderDashHistory(deals, appts){
+function _renderDashHistory(deals, appts, limit=10, search='', statusFilter='', sort='desc'){
   const fmtDate = v => { try{ return v ? new Date(v+'T12:00:00').toLocaleDateString('pt-BR') : '—'; }catch(e){return v||'—';} };
   const apptStatusColor = s => s==='done'?'var(--neon-cyan)':s==='cancelled'?'var(--neon-pink)':'var(--neon-yellow)';
   const apptStatusLabel = s => s==='done'?'✅ Concluído':s==='cancelled'?'❌ Cancelado':'📅 Confirmado';
 
   // Combina deals (acordos) e agendamentos em um único array cronológico
-  const items = [
-    ...(deals||[]).map(d=>({_type:'deal', _date: new Date(d.created_at), data:d})),
-    ...(appts||[]).map(a=>({_type:'appt', _date: new Date((a.scheduled_date||a.created_at)+'T12:00:00'), data:a}))
-  ].sort((a,b)=>b._date - a._date);
+  let items = [
+    ...(deals||[]).map(d=>({_type:'deal', _date: new Date(d.created_at), _status:'closed', _name:(d.title||'').toLowerCase(), data:d})),
+    ...(appts||[]).map(a=>({_type:'appt', _date: new Date((a.scheduled_date||a.created_at)+'T12:00:00'), _status:a.status, _name:(a.service_title||'').toLowerCase()+' '+(a.customer?.full_name||a.customer?.username||'').toLowerCase(), data:a}))
+  ];
 
-  if(!items.length) return '<div style="color:var(--text-muted);font-size:12px;">Nenhum histórico ainda.</div>';
+  // Filtro de status
+  if(statusFilter){
+    items = items.filter(i=> i._status === statusFilter);
+  }
+  // Filtro de busca por nome
+  if(search){
+    items = items.filter(i=> i._name.includes(search));
+  }
+  // Ordenação
+  items.sort((a,b)=> sort==='asc' ? a._date - b._date : b._date - a._date);
+  // Limite de linhas
+  const total = items.length;
+  items = items.slice(0, limit);
 
-  return items.map(item=>{
+  if(!items.length) return '<div style="color:var(--text-muted);font-size:12px;padding:12px 0;">Nenhum resultado encontrado.</div>';
+
+  const summary = `<div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;">Exibindo ${items.length} de ${total} registros</div>`;
+
+  return summary + items.map(item=>{
     if(item._type==='deal'){
       const d=item.data;
       return `<div onclick="openDealSummary(${JSON.stringify(d).replace(/"/g,'&quot;')})" style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:border-color .2s;" onmouseover="this.style.borderColor='var(--neon-cyan)'" onmouseout="this.style.borderColor='var(--border-glow)'">
