@@ -18371,6 +18371,9 @@ async function rejectDealProposal(dealId, btn){
 }
 
 // ── Aba Agendamentos ────────────────────────────────────────────
+// Armazena lista completa de agendamentos do proprietário para filtros sem nova consulta
+let _ownerApptList = [];
+
 async function loadAppointments(asOwner){
   const el = document.getElementById('biz-appointments-content');
   if(!el||!CU) return;
@@ -18418,6 +18421,7 @@ async function loadAppointments(asOwner){
       }
     }
     renderAppointmentsList(el, data, true);
+    _ownerApptList = data;
   } else {
     const res = await db.from('appointments')
       .select('*, businesses(id,name,logo_url)')
@@ -18432,21 +18436,47 @@ async function loadAppointments(asOwner){
   }
 }
 
-function renderAppointmentsList(el, list, isOwner){
+function renderAppointmentsList(el, list, isOwner, apptSearch='', apptStatus='', apptSort='asc'){
+  // Guarda referência ao elemento para o filtro dinâmico
+  if(isOwner) window._apptEl = el;
+
   if(!list.length){
-    el.innerHTML='<div style="color:var(--text-muted);padding:20px;text-align:center;font-size:12px;">Nenhum agendamento ainda.</div>';
+    if(isOwner){
+      // Ainda mostra barra de filtros mesmo sem resultados
+      _buildApptFilters(el);
+      el.insertAdjacentHTML('beforeend','<div style="color:var(--text-muted);padding:20px;text-align:center;font-size:12px;">Nenhum agendamento ainda.</div>');
+    } else {
+      el.innerHTML='<div style="color:var(--text-muted);padding:20px;text-align:center;font-size:12px;">Nenhum agendamento ainda.</div>';
+    }
     return;
   }
-  // Ordena por data mais recente
-  const sorted = [...list].sort((a,b)=>{
+
+  // Aplica filtros (apenas para owner)
+  let filtered = [...list];
+  if(isOwner){
+    if(apptStatus) filtered = filtered.filter(a=> a.status === apptStatus);
+    if(apptSearch){
+      const s = apptSearch.toLowerCase();
+      filtered = filtered.filter(a=>{
+        const prof = a.customer || a.profiles || null;
+        const name = (prof?.full_name||prof?.username||'').toLowerCase();
+        const title = (a.service_title||'').toLowerCase();
+        return name.includes(s) || title.includes(s);
+      });
+    }
+  }
+
+  // Ordena
+  filtered.sort((a,b)=>{
     const da=new Date(a.scheduled_date+'T'+(a.scheduled_time||'00:00'));
     const db2=new Date(b.scheduled_date+'T'+(b.scheduled_time||'00:00'));
-    return da - db2;
+    return apptSort==='desc' ? db2 - da : da - db2;
   });
-  // Separa próximos e passados (só para exibir o label, não para esconder botões)
+
+  // Separa próximos e passados (label visual apenas)
   const now = new Date();
-  const upcoming = sorted.filter(a=>{ const d=new Date(a.scheduled_date+'T'+(a.scheduled_time||'00:00')); return d >= now; });
-  const past     = sorted.filter(a=>{ const d=new Date(a.scheduled_date+'T'+(a.scheduled_time||'00:00')); return d < now; });
+  const upcoming = filtered.filter(a=>{ const d=new Date(a.scheduled_date+'T'+(a.scheduled_time||'00:00')); return d >= now; });
+  const past     = filtered.filter(a=>{ const d=new Date(a.scheduled_date+'T'+(a.scheduled_time||'00:00')); return d < now; });
 
   function renderItem(a){
     const dateStr = new Date(a.scheduled_date+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'});
@@ -18505,14 +18535,91 @@ function renderAppointmentsList(el, list, isOwner){
 
   let html='';
   if(upcoming.length){
-    html+=`<div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--neon-cyan);margin-bottom:8px;">📅 PRÓXIMOS (${upcoming.length})</div>`;
+    html+=`<div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--neon-cyan);margin-bottom:8px;">📅 PROXIMOS (${upcoming.length})</div>`;
     html+=upcoming.map(a=>renderItem(a)).join('');
   }
   if(past.length){
-    html+=`<div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--text-muted);margin:14px 0 8px;">🗂 ANTERIORES (${past.length})</div>`;
+    html+=`<div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--text-muted);margin:14px 0 8px;">ANTERIORES (${past.length})</div>`;
     html+=past.map(a=>renderItem(a)).join('');
   }
-  el.innerHTML=html;
+  if(!upcoming.length && !past.length){
+    html='<div style="color:var(--text-muted);padding:20px;text-align:center;font-size:12px;">Nenhum resultado para os filtros aplicados.</div>';
+  }
+
+  if(isOwner){
+    // Renderiza filtros via DOM + lista de resultados
+    _buildApptFilters(el);
+    // Contador
+    const counter = document.createElement('div');
+    counter.style.cssText='font-size:10px;color:var(--text-muted);margin-bottom:8px;';
+    counter.textContent='Exibindo '+filtered.length+' de '+list.length+' agendamentos';
+    el.appendChild(counter);
+    // Lista
+    const listDiv = document.createElement('div');
+    listDiv.id = 'appt-owner-list';
+    listDiv.innerHTML = html;
+    el.appendChild(listDiv);
+  } else {
+    el.innerHTML=html;
+  }
+}
+
+// ── Filtros da aba Meu Negócio > Agendamentos ─────────────────────
+function _buildApptFilters(el){
+  el.innerHTML = ''; // limpa tudo antes de montar
+  const row = document.createElement('div');
+  row.id = 'appt-filter-row';
+  row.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;align-items:center;';
+
+  const selStyle = 'background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:7px 10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:10px;outline:none;cursor:pointer;';
+
+  const search = document.createElement('input');
+  search.id = 'appt-search';
+  search.type = 'text';
+  search.placeholder = 'Buscar cliente ou servico...';
+  search.oninput = eaApptFilter;
+  search.style.cssText = 'flex:1;min-width:120px;' + selStyle;
+
+  const statusSel = document.createElement('select');
+  statusSel.id = 'appt-status-filter';
+  statusSel.onchange = eaApptFilter;
+  statusSel.style.cssText = selStyle;
+  [['','Todos'],['confirmed','Confirmado'],['done','Concluido'],['cancelled','Cancelado']].forEach(([v,t])=>{
+    const o=document.createElement('option'); o.value=v; o.textContent=t; statusSel.appendChild(o);
+  });
+
+  const sortSel = document.createElement('select');
+  sortSel.id = 'appt-sort-filter';
+  sortSel.onchange = eaApptFilter;
+  sortSel.style.cssText = selStyle;
+  [['asc','Mais antigo'],['desc','Mais recente']].forEach(([v,t])=>{
+    const o=document.createElement('option'); o.value=v; o.textContent=t; sortSel.appendChild(o);
+  });
+
+  row.appendChild(search);
+  row.appendChild(statusSel);
+  row.appendChild(sortSel);
+  el.appendChild(row);
+}
+
+function eaApptFilter(){
+  const el = window._apptEl || document.getElementById('biz-appointments-content');
+  if(!el || !_ownerApptList.length) return;
+  const search = (document.getElementById('appt-search')?.value||'').toLowerCase().trim();
+  const status = document.getElementById('appt-status-filter')?.value || '';
+  const sort   = document.getElementById('appt-sort-filter')?.value || 'asc';
+  // Remove tudo exceto a linha de filtros
+  const filterRow = document.getElementById('appt-filter-row');
+  el.innerHTML = '';
+  if(filterRow) el.appendChild(filterRow);
+  // Re-renderiza com filtros
+  renderAppointmentsList(el, _ownerApptList, true, search, status, sort);
+  // Garante que os filtros restauram os valores após o re-render
+  requestAnimationFrame(()=>{
+    const s=document.getElementById('appt-search'); if(s) s.value=search;
+    const st=document.getElementById('appt-status-filter'); if(st) st.value=status;
+    const so=document.getElementById('appt-sort-filter'); if(so) so.value=sort;
+  });
 }
 
 function markAppointmentDone(id, btn){
