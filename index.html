@@ -17243,19 +17243,25 @@ async function loadBizDashboard(){
 
 // ── Resumo de negociação fechada (Dashboard > Histórico) ──────────────────────
 function openDealSummary(d){
+  // Remove qualquer resumo já aberto
+  document.getElementById('deal-summary-overlay')?.remove();
+
   const ov = document.createElement('div');
+  ov.id = 'deal-summary-overlay';
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);backdrop-filter:blur(10px);z-index:4000;display:flex;align-items:center;justify-content:center;padding:20px;';
+
   const fmt = v => v ? 'R$ '+Number(v).toFixed(2).replace('.',',') : '—';
   const fmtDate = v => { try{ return v ? new Date(v+'T12:00:00').toLocaleDateString('pt-BR') : '—'; }catch(e){return v||'—';} };
   const row = (icon,label,val) => val ? `<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);align-items:flex-start;">
     <span style="font-size:16px;flex-shrink:0;">${icon}</span>
     <div><div style="font-size:9px;color:var(--text-muted);font-family:'Silkscreen',monospace;letter-spacing:.5px;margin-bottom:2px;">${label}</div>
     <div style="font-size:13px;color:var(--text-light);">${xss(String(val))}</div></div></div>` : '';
+
   ov.innerHTML=`
-    <div style="background:var(--bg-card);border:1px solid rgba(0,255,204,.4);border-radius:18px;padding:24px 22px;max-width:360px;width:100%;box-shadow:0 0 40px rgba(0,255,204,.12),0 20px 60px rgba(0,0,0,.6);">
+    <div style="background:var(--bg-card);border:1px solid rgba(0,255,204,.4);border-radius:18px;padding:24px 22px;max-width:360px;width:100%;box-shadow:0 0 40px rgba(0,255,204,.12),0 20px 60px rgba(0,0,0,.6);max-height:90vh;overflow-y:auto;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
         <div style="font-family:'Silkscreen',monospace;font-size:12px;color:var(--neon-cyan);letter-spacing:1px;">🤝 RESUMO DO ACORDO</div>
-        <button onclick="this.closest('[data-deal-summary]').remove()" style="background:none;border:1px solid var(--border-glow);color:var(--text-muted);width:26px;height:26px;border-radius:50%;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">✕</button>
+        <button id="deal-summary-close-btn" style="background:none;border:1px solid var(--border-glow);color:var(--text-muted);width:26px;height:26px;border-radius:50%;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">✕</button>
       </div>
       <div style="background:linear-gradient(135deg,rgba(0,255,204,.06),rgba(191,95,255,.06));border:1px solid rgba(0,255,204,.25);border-radius:12px;padding:14px;margin-bottom:14px;text-align:center;">
         <div style="font-family:VT323,monospace;font-size:36px;color:var(--neon-cyan);line-height:1;">${fmt(d.value)}</div>
@@ -17270,24 +17276,69 @@ function openDealSummary(d){
         ${row('📍', 'LOCAL', d.service_location || d.delivery_address)}
         ${row('📦', 'ENTREGA', d.delivery_type)}
         ${row('📝', 'OBSERVAÇÕES', d.notes)}
-        ${row('📆', 'DATA DO ACORDO', new Date(d.created_at).toLocaleDateString('pt-BR','pt-BR'))}
+        ${row('📆', 'DATA DO ACORDO', new Date(d.created_at).toLocaleDateString('pt-BR'))}
       </div>
-      ${d.chat_id ? `<button onclick="openBizChatById && openBizChatById('${d.chat_id}'); this.closest('[data-deal-summary]').remove();" style="margin-top:14px;width:100%;background:linear-gradient(135deg,var(--neon-cyan),var(--neon-purple));border:none;border-radius:10px;padding:10px;color:#0a0a2a;font-family:'Silkscreen',monospace;font-size:10px;font-weight:bold;cursor:pointer;letter-spacing:.5px;">💬 VER CONVERSA</button>` : ''}
+      ${d.chat_id ? `<button id="deal-summary-chat-btn" style="margin-top:14px;width:100%;background:linear-gradient(135deg,var(--neon-cyan),var(--neon-purple));border:none;border-radius:10px;padding:10px;color:#0a0a2a;font-family:'Silkscreen',monospace;font-size:10px;font-weight:bold;cursor:pointer;letter-spacing:.5px;">💬 VER CONVERSA</button>` : ''}
     </div>`;
-  ov.dataset.dealSummary='1';
-  ov.querySelector('[data-deal-summary]') || (ov.firstElementChild.dataset.dealSummary='1');
-  ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+
+  // Fecha ao clicar no backdrop
+  ov.addEventListener('click', e => { if(e.target === ov) ov.remove(); });
+
+  // Botão X — fecha e volta ao Dashboard
+  ov.querySelector('#deal-summary-close-btn')?.addEventListener('click', ()=>{
+    ov.remove();
+    // Garante que o Dashboard continua visível
+    const dashTab = document.getElementById('biz-dash-tab');
+    if(dashTab) switchBizTab(dashTab);
+  });
+
+  // Botão VER CONVERSA
+  if(d.chat_id){
+    ov.querySelector('#deal-summary-chat-btn')?.addEventListener('click', ()=>{
+      ov.remove();
+      openBizChatById(d.chat_id, d.title);
+    });
+  }
+
   document.body.appendChild(ov);
 }
 
 // ── Abre chat de negócio por ID (usado pelo resumo de deal) ───────────────────
-async function openBizChatById(chatId){
+async function openBizChatById(chatId, label){
   if(!chatId) return;
-  // Navega para a aba de atendimento e abre o chat
-  switchBizTab(document.getElementById('biz-atend-tab'));
-  await new Promise(r=>setTimeout(r,200));
-  const el = document.getElementById('biz-ci-'+chatId);
-  if(el){ el.click(); }
+
+  // 1. Navega para a aba de Atendimento
+  const chatsTab = document.querySelector('#biz-page-tabs .ptab[data-tab="biz-chats"]');
+  if(chatsTab) switchBizTab(chatsTab);
+
+  // 2. Aguarda a lista carregar (loadBizChats é chamado dentro de switchBizTab)
+  await new Promise(r => setTimeout(r, 400));
+
+  // 3. Tenta clicar no item da lista
+  const ciEl = document.getElementById('biz-ci-'+chatId);
+  if(ciEl){
+    ciEl.click();
+    return;
+  }
+
+  // 4. Fallback: busca dados do chat e abre diretamente
+  try{
+    const {data:chat} = await db.from('business_chats')
+      .select('*, profiles!business_chats_customer_id_fkey(id,username,avatar_url,full_name), businesses(id,name,logo_url)')
+      .eq('id', chatId).maybeSingle();
+    if(chat){
+      const isOwner = myBusiness && chat.business_id === myBusiness.id;
+      const chatLabel = label || (isOwner
+        ? (chat.profiles?.username || chat.profiles?.full_name || 'Cliente')
+        : (chat.businesses?.name || 'Negócio'));
+      await openBizChat(chatId, chatLabel);
+    } else {
+      showToast('Conversa não encontrada','error');
+    }
+  } catch(e){
+    console.error('[openBizChatById]', e);
+    showToast('Erro ao abrir conversa','error');
+  }
 }
 async function followBizFromNotif(bizId, notifId, btn){
   if(!CU) return;
