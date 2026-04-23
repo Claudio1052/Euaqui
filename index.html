@@ -15891,7 +15891,9 @@ async function loadNotifTab(tabId){
 
   // Pré-carrega logos das lojas para notificações biz_promo
   const bizNotifs = data.filter(n=>n.type==='biz_promo' && n.business_id);
-  const _uniqueBizIds = [...new Set(bizNotifs.map(n=>n.business_id).filter(Boolean))];
+  // ✅ Também carrega logos para notificações system com business_id (cancelamentos, reagendamentos)
+  const systemBizNotifs = data.filter(n=>n.type==='system' && n.business_id);
+  const _uniqueBizIds = [...new Set([...bizNotifs, ...systemBizNotifs].map(n=>n.business_id).filter(Boolean))];
   const _bizLogoCache = {};
   if(_uniqueBizIds.length){
     try{
@@ -16034,8 +16036,8 @@ async function loadNotifTab(tabId){
 
     // ── Logo de loja (biz_promo) ──
     const isBizNotif = n.type === 'biz_promo';
-    const bizLogo = isBizNotif ? (_bizLogoCache[n.business_id] || '') : '';
-    const hasBizImg = isBizNotif && bizLogo && bizLogo.startsWith('http');
+    const bizLogo = (isBizNotif || (n.type==='system' && n.business_id)) ? (_bizLogoCache[n.business_id] || '') : '';
+    const hasBizImg = bizLogo && bizLogo.startsWith('http');
 
     // ── Logo de comunidade ──
     const isCommunityNotif = COMM_TYPES_SET.has(n.type);
@@ -16086,8 +16088,13 @@ async function loadNotifTab(tabId){
       const _fbBadge = n.type==='olha_aqui_biz'?'🏪':n.type==='olha_aqui_comm'?'🏘️':'👁️';
       niIconHtml = `<span style="font-size:20px">${_fbBadge}</span>`;
     } else if(hasBizImg){
-      niIconStyle = 'style="background:transparent;padding:0;"';
-      niIconHtml = `<img src="${bizLogo}" style="width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid rgba(255,204,0,.4);" onerror="this.src='';this.parentElement.textContent='🏪'">`;
+      niIconStyle = 'style="background:transparent;padding:0;position:relative;"';
+      // system = logo redonda com borda cyan; biz_promo = quadrada com borda amarela
+      const _isSystemBiz = n.type === 'system';
+      const _bizRadius = _isSystemBiz ? '50%' : '10px';
+      const _bizBorder = _isSystemBiz ? 'rgba(0,255,204,.5)' : 'rgba(255,204,0,.4)';
+      const _bizBadge = _isSystemBiz ? '' : '';
+      niIconHtml = `<img src="${bizLogo}" style="width:36px;height:36px;border-radius:${_bizRadius};object-fit:cover;border:2px solid ${_bizBorder};display:block;" onerror="this.parentElement.innerHTML='<span style=\\'font-size:20px\\'>🏪</span>'">${_bizBadge?`<span style="position:absolute;bottom:-3px;right:-3px;font-size:13px;line-height:1;">${_bizBadge}</span>`:''}`;
     } else if(isBizNotif){
       niIconHtml = `<span style="font-size:20px">🏪</span>`;
     } else if(hasCommImg){
@@ -18314,8 +18321,10 @@ async function eaDoCancel(apptId, btn){
   // 3. Notifica dono
   if(ownerId && CU && ownerId!==CU.id){
     const uName=CP?.full_name||CP?.username||'Um usuário';
+    const _notifBizId = q1.data?.business_id || null;
     await db.from('notifications').insert({
       user_id:ownerId, actor_id:CU.id, type:'system',
+      business_id: _notifBizId,
       content:'❌ '+uName+' cancelou o agendamento.'+(reason?' Motivo: '+reason:''),
       read:false
     });
@@ -18358,11 +18367,22 @@ async function rescheduleAppointmentClient(apptId, bizId, bizName, serviceTitle)
     if(chatsTab) switchBizTab(chatsTab);
     setTimeout(async ()=>{
       await openBizChat(chat.id, fBizName);
-      // Preenche input com retry — ID correto: biz-msg-in
+      // Preenche input e envia automaticamente — igual ao fluxo de compra
       let tries=0;
-      const fill=setInterval(()=>{
+      const fill=setInterval(async ()=>{
         const inp=document.getElementById('biz-msg-in');
-        if(inp){inp.value=msgPadrao;inp.focus();inp.dispatchEvent(new Event('input'));clearInterval(fill);}
+        const sendBtn=document.getElementById('biz-send-btn');
+        if(inp){
+          inp.value=msgPadrao;
+          inp.style.height='auto';
+          inp.style.height=Math.min(inp.scrollHeight,80)+'px';
+          inp.dispatchEvent(new Event('input'));
+          clearInterval(fill);
+          // Aguarda um tick e envia automaticamente
+          setTimeout(async ()=>{
+            if(typeof sendBizMsg === 'function') await sendBizMsg();
+          },150);
+        }
         if(++tries>50) clearInterval(fill);
       },100);
     },600);
@@ -18412,6 +18432,7 @@ async function eaDoReschedule(apptId, customerId, btn){
     const timeLabel=newTime?' às '+newTime.substring(0,5):'';
     await db.from('notifications').insert({
       user_id:cid, actor_id:CU.id, type:'system',
+      business_id: myBusiness?.id || null,
       content:'📅 '+bizName+' reagendou seu serviço para '+dateLabel+timeLabel+'.',
       read:false
     });
