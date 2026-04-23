@@ -17365,29 +17365,53 @@ async function loadBizDashboard(){
     <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);margin-bottom:10px;">📋 Histórico de Negócios</div>
 
     <!-- Filtros + Busca + Paginação -->
-    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;align-items:center;">
-      <input id="dash-search" type="text" placeholder="🔍 Buscar por nome..." oninput="eaDashFilter()" style="flex:1;min-width:120px;background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:7px 10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:10px;outline:none;">
-      <select id="dash-status-filter" onchange="eaDashFilter()" style="background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:7px 10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:10px;outline:none;cursor:pointer;">
-        <option value="">Todos</option>
-        <option value="done">✅ Concluído</option>
-        <option value="confirmed">📅 Confirmado</option>
-        <option value="cancelled">❌ Cancelado</option>
-        <option value="closed">🤝 Fechado</option>
-      </select>
-      <select id="dash-sort-filter" onchange="eaDashFilter()" style="background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:7px 10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:10px;outline:none;cursor:pointer;">
-        <option value="desc">📅 Mais recente</option>
-        <option value="asc">📅 Mais antigo</option>
-      </select>
-      <select id="dash-limit-filter" onchange="eaDashFilter()" style="background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:7px 10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:10px;outline:none;cursor:pointer;">
-        <option value="10">10 linhas</option>
-        <option value="20">20 linhas</option>
-        <option value="100">100 linhas</option>
-        <option value="200">200 linhas</option>
-        <option value="500">500 linhas</option>
-        <option value="1000">1000 linhas</option>
-      </select>
-    </div>
-    <div id="deals-list">${_renderDashHistory(deals, apptHistory, 10, '', '', 'desc')}</div>`;
+    <div id="dash-filters-row" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;align-items:center;"></div>
+    <div id="deals-list"></div>`;
+
+  // Monta a barra de filtros via DOM (evita problemas com caracteres especiais em template literals)
+  const filtersRow = el.querySelector('#dash-filters-row');
+  if(filtersRow){
+    const selStyle = 'background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:7px 10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:10px;outline:none;cursor:pointer;';
+
+    const search = document.createElement('input');
+    search.id = 'dash-search';
+    search.type = 'text';
+    search.placeholder = 'Buscar por nome...';
+    search.oninput = eaDashFilter;
+    search.style.cssText = 'flex:1;min-width:120px;' + selStyle;
+
+    const statusSel = document.createElement('select');
+    statusSel.id = 'dash-status-filter';
+    statusSel.onchange = eaDashFilter;
+    statusSel.style.cssText = selStyle;
+    [['','Todos'],['done','Concluido'],['confirmed','Confirmado'],['cancelled','Cancelado'],['closed','Fechado']].forEach(([v,t])=>{
+      const o=document.createElement('option'); o.value=v; o.textContent=t; statusSel.appendChild(o);
+    });
+
+    const sortSel = document.createElement('select');
+    sortSel.id = 'dash-sort-filter';
+    sortSel.onchange = eaDashFilter;
+    sortSel.style.cssText = selStyle;
+    [['desc','Mais recente'],['asc','Mais antigo']].forEach(([v,t])=>{
+      const o=document.createElement('option'); o.value=v; o.textContent=t; sortSel.appendChild(o);
+    });
+
+    const limitSel = document.createElement('select');
+    limitSel.id = 'dash-limit-filter';
+    limitSel.onchange = eaDashFilter;
+    limitSel.style.cssText = selStyle;
+    ['10','20','100','200','500','1000'].forEach(v=>{
+      const o=document.createElement('option'); o.value=v; o.textContent=v+' linhas'; limitSel.appendChild(o);
+    });
+
+    filtersRow.appendChild(search);
+    filtersRow.appendChild(statusSel);
+    filtersRow.appendChild(sortSel);
+    filtersRow.appendChild(limitSel);
+  }
+  // Renderiza lista inicial com 10 linhas
+  const dealsList = el.querySelector('#deals-list');
+  if(dealsList) dealsList.innerHTML = _renderDashHistory(deals, apptHistory, 10, '', '', 'desc');
 }
 
 // ── Filtro do histórico de negócios ──────────────────────────────
