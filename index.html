@@ -17272,16 +17272,10 @@ async function loadBizDashboard(){
     .eq('business_id',b.id).eq('status','closed').order('created_at',{ascending:false}).limit(20);
   if(!e1 && d1){
     deals = d1;
-    console.log('[dashboard] deals com join:', deals.length);
   } else {
-    // Join falhou (FK com nome diferente) — busca sem join
-    console.warn('[dashboard] join falhou, fallback simples:', e1?.message);
-    const {data:d2, error:e2} = await db.from('business_deals')
-      .select('*')
-      .eq('business_id',b.id).eq('status','closed').order('created_at',{ascending:false}).limit(20);
-    console.log('[dashboard] fallback deals:', d2?.length, 'erro:', e2?.message);
+    const {data:d2} = await db.from('business_deals')
+      .select('*').eq('business_id',b.id).eq('status','closed').order('created_at',{ascending:false}).limit(20);
     deals = d2 || [];
-    // Busca nomes dos clientes separadamente via accepted_by
     if(deals.length){
       const ids = [...new Set(deals.map(d=>d.accepted_by).filter(Boolean))];
       if(ids.length){
@@ -17293,11 +17287,31 @@ async function loadBizDashboard(){
       }
     }
   }
-  // Debug: verifica se existem deals com qualquer status para este negócio
-  if(!deals.length){
-    const {data:allDeals} = await db.from('business_deals').select('id,status,title').eq('business_id',b.id).limit(10);
-    console.log('[dashboard] todos os deals do negócio (qualquer status):', JSON.stringify(allDeals));
-  }
+  // Carrega também agendamentos (para mostrar status cancelado/concluído/reagendado no histórico)
+  let apptHistory = [];
+  try{
+    const {data:appts} = await db.from('appointments')
+      .select('*, customer:profiles!appointments_customer_id_fkey(id,username,full_name,avatar_url)')
+      .eq('business_id',b.id)
+      .in('status',['done','cancelled','confirmed'])
+      .order('scheduled_date',{ascending:false}).limit(30);
+    apptHistory = appts || [];
+    // fallback sem join
+    if(!apptHistory.length){
+      const {data:appts2} = await db.from('appointments')
+        .select('*').eq('business_id',b.id)
+        .in('status',['done','cancelled','confirmed'])
+        .order('scheduled_date',{ascending:false}).limit(30);
+      if(appts2?.length){
+        apptHistory = appts2;
+        const cids=[...new Set(apptHistory.map(a=>a.customer_id).filter(Boolean))];
+        if(cids.length){
+          const {data:profs}=await db.from('profiles').select('id,username,full_name,avatar_url').in('id',cids);
+          if(profs){const map=Object.fromEntries(profs.map(p=>[p.id,p]));apptHistory=apptHistory.map(a=>({...a,customer:map[a.customer_id]||null}));}
+        }
+      }
+    }
+  }catch(e){}
   // Refresh business data
   const {data:fresh}=await db.from('businesses').select('*').eq('id',b.id).maybeSingle();
   if(fresh) myBusiness=fresh;
@@ -17314,15 +17328,53 @@ async function loadBizDashboard(){
       <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);">📋 Histórico de Negócios</div>
       <button class="tbtn" onclick="openAddDeal()" style="font-size:10px;">+ Registrar venda</button>
     </div>
-    <div id="deals-list">${!deals?.length?'<div style="color:var(--text-muted);font-size:12px;">Nenhum acordo fechado ainda.</div>':
-      deals.map(d=>`<div onclick="openDealSummary(${JSON.stringify(d).replace(/"/g,'&quot;')})" style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:border-color .2s;" onmouseover="this.style.borderColor='var(--neon-cyan)'" onmouseout="this.style.borderColor='var(--border-glow)'">
+    <div id="deals-list">${_renderDashHistory(deals, apptHistory)}</div>`;
+}
+
+// ── Renderiza histórico combinado (deals + agendamentos) no Dashboard ──────────
+function _renderDashHistory(deals, appts){
+  const fmtDate = v => { try{ return v ? new Date(v+'T12:00:00').toLocaleDateString('pt-BR') : '—'; }catch(e){return v||'—';} };
+  const apptStatusColor = s => s==='done'?'var(--neon-cyan)':s==='cancelled'?'var(--neon-pink)':'var(--neon-yellow)';
+  const apptStatusLabel = s => s==='done'?'✅ Concluído':s==='cancelled'?'❌ Cancelado':'📅 Confirmado';
+
+  // Combina deals (acordos) e agendamentos em um único array cronológico
+  const items = [
+    ...(deals||[]).map(d=>({_type:'deal', _date: new Date(d.created_at), data:d})),
+    ...(appts||[]).map(a=>({_type:'appt', _date: new Date((a.scheduled_date||a.created_at)+'T12:00:00'), data:a}))
+  ].sort((a,b)=>b._date - a._date);
+
+  if(!items.length) return '<div style="color:var(--text-muted);font-size:12px;">Nenhum histórico ainda.</div>';
+
+  return items.map(item=>{
+    if(item._type==='deal'){
+      const d=item.data;
+      return `<div onclick="openDealSummary(${JSON.stringify(d).replace(/"/g,'&quot;')})" style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:border-color .2s;" onmouseover="this.style.borderColor='var(--neon-cyan)'" onmouseout="this.style.borderColor='var(--border-glow)'">
         <div><div style="font-size:12px;color:var(--text-light);">${xss(d.title||'Venda')}</div>
         <div style="font-size:10px;color:var(--text-muted);">${new Date(d.created_at).toLocaleDateString('pt-BR')} · <span style="color:var(--neon-cyan);">🔍 ver resumo</span></div></div>
         <div style="text-align:right;">
           ${d.value?`<div style="font-family:VT323,monospace;font-size:18px;color:var(--neon-cyan);">R$ ${Number(d.value).toFixed(2)}</div>`:''}
-          <div style="font-size:10px;color:${d.status==='closed'?'var(--neon-cyan)':'var(--neon-yellow)'};">${d.status==='closed'?'✅ Fechado':'⏳ Pendente'}</div>
-        </div></div>`).join('')
-    }</div>`;
+          <div style="font-size:10px;color:var(--neon-cyan);">✅ Fechado</div>
+        </div></div>`;
+    } else {
+      const a=item.data;
+      const prof=a.customer||null;
+      const name=prof?.full_name||prof?.username||'Cliente';
+      const sc=apptStatusColor(a.status);
+      const sl=apptStatusLabel(a.status);
+      const valor=a.value?'R$ '+Number(a.value).toFixed(2).replace('.',','):'';
+      return `<div style="background:var(--bg-card);border:1px solid ${a.status==='cancelled'?'rgba(255,51,102,.25)':a.status==='done'?'rgba(0,255,204,.25)':'var(--border-glow)'};border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;${a.status==='cancelled'?'opacity:.75':''}">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(a.service_title||'Agendamento')}</div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">📅 ${fmtDate(a.scheduled_date)}${a.scheduled_time?' · ⏰ '+a.scheduled_time.substring(0,5):''}</div>
+          <div style="font-size:10px;color:var(--text-muted);">👤 ${xss(name)}</div>
+          ${a.cancel_reason?`<div style="font-size:9px;color:var(--neon-pink);margin-top:2px;">❌ ${xss(a.cancel_reason)}</div>`:''}
+        </div>
+        <div style="text-align:right;flex-shrink:0;margin-left:10px;">
+          ${valor?`<div style="font-family:VT323,monospace;font-size:18px;color:var(--neon-yellow);">${valor}</div>`:''}
+          <div style="font-size:10px;color:${sc};">${sl}</div>
+        </div></div>`;
+    }
+  }).join('');
 }
 
 // ── Resumo de negociação fechada (Dashboard > Histórico) ──────────────────────
@@ -18300,7 +18352,36 @@ async function markAppointmentDone(id, btn){
   const res = await db.from('appointments').update({status:'done'}).eq('id',id);
   if(res.error){ btn.disabled=false; showToast('Erro: '+res.error.message,'error'); return; }
   showToast('✔ Agendamento concluído!','success');
+
+  // Envia notificação de agradecimento + convite para avaliar ao cliente
+  try{
+    const {data:appt}=await db.from('appointments')
+      .select('customer_id, service_title, business_id, businesses(id,name)')
+      .eq('id',id).maybeSingle();
+    if(appt?.customer_id && CU && appt.customer_id !== CU.id){
+      const bizName = appt.businesses?.name || myBusiness?.name || 'nosso serviço';
+      const bizId   = appt.businesses?.id   || myBusiness?.id  || appt.business_id || '';
+      const svcTitle= appt.service_title || 'nosso serviço';
+      // Link direto para a página da loja (para avaliar)
+      const bizLink = bizId ? `https://euaqui.store/lojas?biz=${bizId}` : 'https://euaqui.store/lojas';
+      const msg =
+        `🙏 Obrigado por confiar em *${bizName}*! ` +
+        `Esperamos que tenha gostado do serviço *${svcTitle}*. ` +
+        `Sua opinião é muito importante para nós — que tal deixar uma avaliação? ` +
+        `⭐ Avalie nosso trabalho aqui: ${bizLink}`;
+      await db.from('notifications').insert({
+        user_id: appt.customer_id,
+        actor_id: CU.id,
+        type: 'system',
+        business_id: bizId || null,
+        content: msg,
+        read: false
+      });
+    }
+  }catch(e){ console.warn('[markAppointmentDone] notif erro:', e); }
+
   loadAppointments(true);
+  loadBizDashboard();
 }
 
 // ── CANCELAR AGENDAMENTO (Cliente) ──────────────────────────────
@@ -18356,6 +18437,8 @@ async function eaDoCancel(apptId, btn){
   document.querySelector('.ea-cancel-ov')?.remove();
   showToast('✔ Agendamento cancelado.','success');
   loadAppointments(false);
+  // Recarrega dashboard caso o proprietário esteja com a aba aberta
+  if(typeof loadBizDashboard === 'function') loadBizDashboard();
 }
 
 // ── REAGENDAR (Cliente → envia mensagem direto no banco, igual ao fluxo de compra) ────────────
@@ -18456,6 +18539,7 @@ async function eaDoReschedule(apptId, customerId, btn){
   document.querySelector('.ea-rsch-ov')?.remove();
   showToast('✅ Reagendamento confirmado! Cliente notificado.','success');
   loadAppointments(true);
+  loadBizDashboard();
 }
 
 // ── NOTIFICAÇÃO DO DIA DO AGENDAMENTO (1x por sessão) ────────────
