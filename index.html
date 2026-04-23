@@ -17211,10 +17211,35 @@ async function loadBizDashboard(){
   const el=document.getElementById('biz-dash-content');
   if(!el||!myBusiness) return;
   const b=myBusiness;
-  // Load deals com perfil de quem aceitou
-  const {data:deals}=await db.from('business_deals')
-    .select('*, accepted_profile:profiles!business_deals_accepted_by_fkey(id,username,full_name,avatar_url)')
-    .eq('business_id',b.id).eq('status','closed').order('created_at',{ascending:false}).limit(20);
+  // Load deals com fallback seguro para o join de perfil
+  let deals = [];
+  try{
+    const {data:d1} = await db.from('business_deals')
+      .select('*, accepted_profile:profiles!business_deals_accepted_by_fkey(id,username,full_name,avatar_url)')
+      .eq('business_id',b.id).eq('status','closed').order('created_at',{ascending:false}).limit(20);
+    if(d1) deals = d1;
+  } catch(e1){
+    // FK com nome diferente — tenta sem o join de perfil
+    try{
+      const {data:d2} = await db.from('business_deals')
+        .select('*')
+        .eq('business_id',b.id).eq('status','closed').order('created_at',{ascending:false}).limit(20);
+      if(d2) deals = d2;
+    } catch(e2){ console.warn('[dashboard deals]', e2); }
+  }
+  // Se accepted_by existe mas o join falhou, busca nomes separadamente
+  if(deals.length && !deals[0].accepted_profile){
+    const ids = [...new Set(deals.map(d=>d.accepted_by).filter(Boolean))];
+    if(ids.length){
+      try{
+        const {data:profs} = await db.from('profiles').select('id,username,full_name').in('id',ids);
+        if(profs){
+          const map = Object.fromEntries(profs.map(p=>[p.id,p]));
+          deals = deals.map(d=>({...d, accepted_profile: map[d.accepted_by]||null}));
+        }
+      }catch(e){ console.warn('[dashboard profiles]', e); }
+    }
+  }
   // Refresh business data
   const {data:fresh}=await db.from('businesses').select('*').eq('id',b.id).maybeSingle();
   if(fresh) myBusiness=fresh;
