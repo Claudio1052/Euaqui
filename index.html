@@ -16983,8 +16983,9 @@ async function loadBizMsgs(chatId){
     if(m.msg_type === 'deal_proposal' || (m.content && m.content.includes('[DEAL_PROPOSAL:'))){
       const dealIdMatch = m.content.match(/\[DEAL_PROPOSAL:([^\]]+)\]/);
       const dealId = dealIdMatch ? dealIdMatch[1] : null;
-      // Extrai linhas visíveis (remove a tag interna)
-      const lines = m.content.replace(/\[DEAL_PROPOSAL:[^\]]*\]/,'').trim().split('\n');
+      // Extrai linhas visíveis (remove a tag interna e linhas vazias residuais)
+      const cleanContent = m.content.replace(/\[DEAL_PROPOSAL:[^\]]*\]/g,'').trim();
+      const lines = cleanContent.split('\n').filter(l=>l.trim()!=='');
       const visibleText = lines.join('<br>');
       const isTheirProposal = !isMine; // cliente vê botões de aceitar/recusar
       const btnsHtml = (isTheirProposal && dealId) ? `
@@ -17028,7 +17029,7 @@ async function loadBizMsgs(chatId){
         ${btnsHtml}
       </div><div class="mb-time">${time}</div>`;
     } else if(m.msg_type === 'deal_closed' || (m.content && m.content.includes('[DEAL_CLOSED:'))){
-      const lines = m.content.replace(/\[DEAL_CLOSED:[^\]]*\]/,'').trim().split('\n');
+      const lines = m.content.replace(/\[DEAL_CLOSED:[^\]]*\]/g,'').trim().split('\n').filter(l=>l.trim()!=='');
       const visibleText = lines.join('<br>');
       div.innerHTML=`<div class="mb-bubble" style="
         background:linear-gradient(135deg,rgba(0,255,100,.08),rgba(0,255,204,.08));
@@ -17043,7 +17044,7 @@ async function loadBizMsgs(chatId){
         <div style="font-size:11px;line-height:1.6;color:var(--text-light);white-space:pre-wrap;">${visibleText}</div>
       </div><div class="mb-time">${time}</div>`;
     } else if(m.msg_type === 'deal_rejected' || (m.content && m.content.includes('[DEAL_REJECTED:'))){
-      const lines = m.content.replace(/\[DEAL_REJECTED:[^\]]*\]/,'').trim().split('\n');
+      const lines = m.content.replace(/\[DEAL_REJECTED:[^\]]*\]/g,'').trim().split('\n').filter(l=>l.trim()!=='');
       const visibleText = lines.join('<br>');
       div.innerHTML=`<div class="mb-bubble" style="background:rgba(255,51,102,.06);border:1px solid rgba(255,51,102,.3);border-radius:12px;padding:12px 14px;">
         <div style="font-size:11px;line-height:1.6;color:var(--text-light);white-space:pre-wrap;">${visibleText}</div>
@@ -17083,6 +17084,7 @@ async function sendBizMsg(){
   // Update chat timestamp
   await db.from('business_chats').update({updated_at:new Date().toISOString()}).eq('id',currentBizChat);
   await loadBizMsgs(currentBizChat);
+  loadBizChats(); // traz conversa ao topo da sidebar
   _bizMsgSending = false;
   if(sendBtn){ sendBtn.disabled=false; sendBtn.style.opacity=''; }
 }
@@ -17229,9 +17231,9 @@ async function loadBizDashboard(){
       <button class="tbtn" onclick="openAddDeal()" style="font-size:10px;">+ Registrar venda</button>
     </div>
     <div id="deals-list">${!deals?.length?'<div style="color:var(--text-muted);font-size:12px;">Nenhum acordo fechado ainda.</div>':
-      deals.map(d=>`<div style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+      deals.map(d=>`<div onclick="openDealSummary(${JSON.stringify(d).replace(/"/g,'&quot;')})" style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:border-color .2s;" onmouseover="this.style.borderColor='var(--neon-cyan)'" onmouseout="this.style.borderColor='var(--border-glow)'">
         <div><div style="font-size:12px;color:var(--text-light);">${xss(d.title||'Venda')}</div>
-        <div style="font-size:10px;color:var(--text-muted);">${new Date(d.created_at).toLocaleDateString('pt-BR')}</div></div>
+        <div style="font-size:10px;color:var(--text-muted);">${new Date(d.created_at).toLocaleDateString('pt-BR')} · <span style="color:var(--neon-cyan);">🔍 ver resumo</span></div></div>
         <div style="text-align:right;">
           ${d.value?`<div style="font-family:VT323,monospace;font-size:18px;color:var(--neon-cyan);">R$ ${Number(d.value).toFixed(2)}</div>`:''}
           <div style="font-size:10px;color:${d.status==='closed'?'var(--neon-cyan)':'var(--neon-yellow)'};">${d.status==='closed'?'✅ Fechado':'⏳ Pendente'}</div>
@@ -17239,9 +17241,54 @@ async function loadBizDashboard(){
     }</div>`;
 }
 
+// ── Resumo de negociação fechada (Dashboard > Histórico) ──────────────────────
+function openDealSummary(d){
+  const ov = document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);backdrop-filter:blur(10px);z-index:4000;display:flex;align-items:center;justify-content:center;padding:20px;';
+  const fmt = v => v ? 'R$ '+Number(v).toFixed(2).replace('.',',') : '—';
+  const fmtDate = v => { try{ return v ? new Date(v+'T12:00:00').toLocaleDateString('pt-BR') : '—'; }catch(e){return v||'—';} };
+  const row = (icon,label,val) => val ? `<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);align-items:flex-start;">
+    <span style="font-size:16px;flex-shrink:0;">${icon}</span>
+    <div><div style="font-size:9px;color:var(--text-muted);font-family:'Silkscreen',monospace;letter-spacing:.5px;margin-bottom:2px;">${label}</div>
+    <div style="font-size:13px;color:var(--text-light);">${xss(String(val))}</div></div></div>` : '';
+  ov.innerHTML=`
+    <div style="background:var(--bg-card);border:1px solid rgba(0,255,204,.4);border-radius:18px;padding:24px 22px;max-width:360px;width:100%;box-shadow:0 0 40px rgba(0,255,204,.12),0 20px 60px rgba(0,0,0,.6);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div style="font-family:'Silkscreen',monospace;font-size:12px;color:var(--neon-cyan);letter-spacing:1px;">🤝 RESUMO DO ACORDO</div>
+        <button onclick="this.closest('[data-deal-summary]').remove()" style="background:none;border:1px solid var(--border-glow);color:var(--text-muted);width:26px;height:26px;border-radius:50%;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;">✕</button>
+      </div>
+      <div style="background:linear-gradient(135deg,rgba(0,255,204,.06),rgba(191,95,255,.06));border:1px solid rgba(0,255,204,.25);border-radius:12px;padding:14px;margin-bottom:14px;text-align:center;">
+        <div style="font-family:VT323,monospace;font-size:36px;color:var(--neon-cyan);line-height:1;">${fmt(d.value)}</div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">${xss(d.title||'Negociação')}</div>
+        <div style="margin-top:6px;font-size:11px;color:#00ff96;font-family:'Silkscreen',monospace;">✅ FECHADO</div>
+      </div>
+      <div style="display:flex;flex-direction:column;">
+        ${row('📋', 'SERVIÇO / PRODUTO', d.title)}
+        ${row('💳', 'FORMA DE PAGAMENTO', d.payment_method)}
+        ${row('📅', 'DATA', d.scheduled_date ? fmtDate(d.scheduled_date) : null)}
+        ${row('⏰', 'HORÁRIO', d.scheduled_time)}
+        ${row('📍', 'LOCAL', d.service_location || d.delivery_address)}
+        ${row('📦', 'ENTREGA', d.delivery_type)}
+        ${row('📝', 'OBSERVAÇÕES', d.notes)}
+        ${row('📆', 'DATA DO ACORDO', new Date(d.created_at).toLocaleDateString('pt-BR','pt-BR'))}
+      </div>
+      ${d.chat_id ? `<button onclick="openBizChatById && openBizChatById('${d.chat_id}'); this.closest('[data-deal-summary]').remove();" style="margin-top:14px;width:100%;background:linear-gradient(135deg,var(--neon-cyan),var(--neon-purple));border:none;border-radius:10px;padding:10px;color:#0a0a2a;font-family:'Silkscreen',monospace;font-size:10px;font-weight:bold;cursor:pointer;letter-spacing:.5px;">💬 VER CONVERSA</button>` : ''}
+    </div>`;
+  ov.dataset.dealSummary='1';
+  ov.querySelector('[data-deal-summary]') || (ov.firstElementChild.dataset.dealSummary='1');
+  ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+  document.body.appendChild(ov);
+}
 
-
-// ── Detalhe do negócio ────────────────────────────────────────────
+// ── Abre chat de negócio por ID (usado pelo resumo de deal) ───────────────────
+async function openBizChatById(chatId){
+  if(!chatId) return;
+  // Navega para a aba de atendimento e abre o chat
+  switchBizTab(document.getElementById('biz-atend-tab'));
+  await new Promise(r=>setTimeout(r,200));
+  const el = document.getElementById('biz-ci-'+chatId);
+  if(el){ el.click(); }
+}
 async function followBizFromNotif(bizId, notifId, btn){
   if(!CU) return;
   const actionsEl = btn.closest('.ni-actions');
@@ -17781,6 +17828,7 @@ async function sendDealProposal(btn){
   document.getElementById('deal-modal-overlay')?.remove();
   showToast('✅ Proposta enviada! Aguardando confirmação do cliente.','success');
   await loadBizMsgs(currentBizChat);
+  loadBizChats(); // atualiza sidebar e traz conversa ao topo
 }
 
 // ── Modal de confirmação EuAqui (substitui o confirm() nativo) ───
@@ -17931,8 +17979,10 @@ async function acceptDealProposal(dealId, btn){
       await db.from('business_chats').update({updated_at:new Date().toISOString()}).eq('id',chatId);
 
       showToast('🎉 Acordo confirmado e fechado!','success');
+      // Atualiza timestamp para evitar que o polling ignore a mensagem recém inserida
+      _bizLastMsgTs = new Date(Date.now() - 5000).toISOString();
       if(currentBizChat) await loadBizMsgs(currentBizChat);
-      loadBizChats();
+      await loadBizChats();
 
     } catch(err){
       console.error('[acceptDeal] erro inesperado:', err);
