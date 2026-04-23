@@ -17211,9 +17211,10 @@ async function loadBizDashboard(){
   const el=document.getElementById('biz-dash-content');
   if(!el||!myBusiness) return;
   const b=myBusiness;
-  // Load deals
+  // Load deals com perfil de quem aceitou
   const {data:deals}=await db.from('business_deals')
-    .select('*').eq('business_id',b.id).eq('status','closed').order('created_at',{ascending:false}).limit(20);
+    .select('*, accepted_profile:profiles!business_deals_accepted_by_fkey(id,username,full_name,avatar_url)')
+    .eq('business_id',b.id).eq('status','closed').order('created_at',{ascending:false}).limit(20);
   // Refresh business data
   const {data:fresh}=await db.from('businesses').select('*').eq('id',b.id).maybeSingle();
   if(fresh) myBusiness=fresh;
@@ -17257,6 +17258,9 @@ function openDealSummary(d){
     <div><div style="font-size:9px;color:var(--text-muted);font-family:'Silkscreen',monospace;letter-spacing:.5px;margin-bottom:2px;">${label}</div>
     <div style="font-size:13px;color:var(--text-light);">${xss(String(val))}</div></div></div>` : '';
 
+  // Nome de quem aceitou o acordo
+  const acceptedName = d.accepted_profile?.username || d.accepted_profile?.full_name || null;
+
   ov.innerHTML=`
     <div style="background:var(--bg-card);border:1px solid rgba(0,255,204,.4);border-radius:18px;padding:24px 22px;max-width:360px;width:100%;box-shadow:0 0 40px rgba(0,255,204,.12),0 20px 60px rgba(0,0,0,.6);max-height:90vh;overflow-y:auto;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
@@ -17269,6 +17273,7 @@ function openDealSummary(d){
         <div style="margin-top:6px;font-size:11px;color:#00ff96;font-family:'Silkscreen',monospace;">✅ FECHADO</div>
       </div>
       <div style="display:flex;flex-direction:column;">
+        ${row('👤', 'CLIENTE', acceptedName)}
         ${row('📋', 'SERVIÇO / PRODUTO', d.title)}
         ${row('💳', 'FORMA DE PAGAMENTO', d.payment_method)}
         ${row('📅', 'DATA', d.scheduled_date ? fmtDate(d.scheduled_date) : null)}
@@ -17278,7 +17283,6 @@ function openDealSummary(d){
         ${row('📝', 'OBSERVAÇÕES', d.notes)}
         ${row('📆', 'DATA DO ACORDO', new Date(d.created_at).toLocaleDateString('pt-BR'))}
       </div>
-      ${d.chat_id ? `<button id="deal-summary-chat-btn" style="margin-top:14px;width:100%;background:linear-gradient(135deg,var(--neon-cyan),var(--neon-purple));border:none;border-radius:10px;padding:10px;color:#0a0a2a;font-family:'Silkscreen',monospace;font-size:10px;font-weight:bold;cursor:pointer;letter-spacing:.5px;">💬 VER CONVERSA</button>` : ''}
     </div>`;
 
   // Fecha ao clicar no backdrop
@@ -17287,18 +17291,9 @@ function openDealSummary(d){
   // Botão X — fecha e volta ao Dashboard
   ov.querySelector('#deal-summary-close-btn')?.addEventListener('click', ()=>{
     ov.remove();
-    // Garante que o Dashboard continua visível
     const dashTab = document.getElementById('biz-dash-tab');
     if(dashTab) switchBizTab(dashTab);
   });
-
-  // Botão VER CONVERSA
-  if(d.chat_id){
-    ov.querySelector('#deal-summary-chat-btn')?.addEventListener('click', ()=>{
-      ov.remove();
-      openBizChatById(d.chat_id, d.title);
-    });
-  }
 
   document.body.appendChild(ov);
 }
