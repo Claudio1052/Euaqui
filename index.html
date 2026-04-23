@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="UTF-8"> 
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="theme-color" content="#0a0a2a">
 <title>EuAqui — Sua rede, seu mundo</title>
@@ -15768,6 +15768,17 @@ async function handleNotifNavigation(n){
   }
 }
 
+// Navega direto para uma loja a partir do business_id (usado no botão "Ir para a Loja" da notificação)
+async function eaGoToBizFromNotif(bizId){
+  if(!bizId){ nav('businesses'); return; }
+  nav('businesses');
+  await new Promise(r=>setTimeout(r,420));
+  try{
+    const {data:biz}=await db.from('businesses').select('*').eq('id',bizId).maybeSingle();
+    if(biz) openBizDetail(biz);
+  }catch(e){ console.warn('[eaGoToBizFromNotif] erro:',e); }
+}
+
 async function loadNotifTab(tabId){
   if(!CU) return;
   const typeMap={
@@ -16135,7 +16146,7 @@ async function loadNotifTab(tabId){
           <button class="ni-act-btn ni-act-acc" id="biz-follow-notif-${n.business_id}" onclick="event.stopPropagation();followBizFromNotif('${n.business_id}','${n.id}',this)" style="color:var(--neon-yellow);border-color:rgba(255,204,0,.3);background:rgba(255,204,0,.08);">🛍️ Seguir Loja</button>
         </div>`:''}
         ${_isApptDoneNotif?`<div class="ni-actions" style="margin-top:6px;">
-          <button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();handleNotifNavigation(JSON.parse(this.closest('.ni').dataset.notif))" style="color:var(--neon-cyan);border-color:rgba(0,255,204,.3);background:rgba(0,255,204,.08);">🏪 Ir para a Loja</button>
+          <button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();eaGoToBizFromNotif('${n.business_id||''}')" style="color:var(--neon-cyan);border-color:rgba(0,255,204,.3);background:rgba(0,255,204,.08);">🏪 Ir para a Loja</button>
         </div>`:''}
       </div>
       <button class="ni-dismiss" title="Marcar como lida" onclick="event.stopPropagation();markRead('${n.id}',this)">✕</button>
@@ -16798,10 +16809,10 @@ async function openBizChatCustomer(bizId, bizName){
 }
 
 // ── Timestamps de leitura e contadores de não-lidos ──────────────
-// Persiste no sessionStorage para sobreviver ao F5
+// Persiste no localStorage para sobreviver ao sair e voltar (não só ao F5)
 const _bizReadTimestamps = (()=>{
   try{
-    const raw = sessionStorage.getItem('_bizReadTs');
+    const raw = localStorage.getItem('_bizReadTs');
     return raw ? JSON.parse(raw) : {};
   }catch(e){ return {}; }
 })();
@@ -16824,7 +16835,7 @@ async function _loadBizUnreadCounts(chatIds){
 function _markBizChatRead(chatId){
   _bizReadTimestamps[chatId] = new Date().toISOString();
   _bizUnreadCounts[chatId] = 0;
-  try{ sessionStorage.setItem('_bizReadTs', JSON.stringify(_bizReadTimestamps)); }catch(e){}
+  try{ localStorage.setItem('_bizReadTs', JSON.stringify(_bizReadTimestamps)); }catch(e){}
   const badge = document.getElementById('biz-unread-'+chatId);
   if(badge){ badge.textContent='0'; badge.style.display='none'; }
 }
@@ -17324,11 +17335,24 @@ async function loadBizDashboard(){
   const {data:fresh}=await db.from('businesses').select('*').eq('id',b.id).maybeSingle();
   if(fresh) myBusiness=fresh;
   const bd=fresh||b;
+  // Calcula soma dos valores dos agendamentos concluídos
+  let totalRevenue = 0;
+  try{
+    const {data:doneAppts} = await db.from('appointments')
+      .select('value')
+      .eq('business_id',b.id)
+      .eq('status','done');
+    if(doneAppts?.length){
+      totalRevenue = doneAppts.reduce((sum,a)=>sum+(Number(a.value)||0),0);
+    }
+  }catch(e){}
+  const fmtCurrency = v => v>=1000 ? 'R$'+(v/1000).toFixed(1).replace('.',',')+'k' : 'R$'+v.toFixed(0);
   el.innerHTML=`
     <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);margin-bottom:14px;">📊 Dashboard — ${xss(bd.name)}</div>
     <div class="dash-grid">
       <div class="dash-card"><div class="dash-num">${bd.followers_count||0}</div><div class="dash-lbl">👥 Seguidores</div></div>
       <div class="dash-card"><div class="dash-num">${bd.deals_closed||0}</div><div class="dash-lbl">${bd.category==='servico'?'📅 Agendamentos':'🤝 Neg. Fechados'}</div></div>
+      ${bd.category==='servico'?`<div class="dash-card"><div class="dash-num" style="font-size:16px;">${fmtCurrency(totalRevenue)}</div><div class="dash-lbl">💰 Faturado</div></div>`:''}
       ${bd.category==='loja'?`<div class="dash-card"><div class="dash-num">${bd.sales_done||0}</div><div class="dash-lbl">✅ Vendas</div></div>`:''}
       <div class="dash-card"><div class="dash-num">${bd.rating?Number(bd.rating).toFixed(1):'—'}</div><div class="dash-lbl">⭐ Avaliação</div></div>
     </div>
@@ -18336,11 +18360,18 @@ function renderAppointmentsList(el, list, isOwner){
     el.innerHTML='<div style="color:var(--text-muted);padding:20px;text-align:center;font-size:12px;">Nenhum agendamento ainda.</div>';
     return;
   }
+  // Ordena por data mais recente
+  const sorted = [...list].sort((a,b)=>{
+    const da=new Date(a.scheduled_date+'T'+(a.scheduled_time||'00:00'));
+    const db2=new Date(b.scheduled_date+'T'+(b.scheduled_time||'00:00'));
+    return da - db2;
+  });
+  // Separa próximos e passados (só para exibir o label, não para esconder botões)
   const now = new Date();
-  const upcoming = list.filter(a=>{ const d=new Date(a.scheduled_date+'T'+(a.scheduled_time||'00:00')); return d >= now; });
-  const past     = list.filter(a=>{ const d=new Date(a.scheduled_date+'T'+(a.scheduled_time||'00:00')); return d < now; });
+  const upcoming = sorted.filter(a=>{ const d=new Date(a.scheduled_date+'T'+(a.scheduled_time||'00:00')); return d >= now; });
+  const past     = sorted.filter(a=>{ const d=new Date(a.scheduled_date+'T'+(a.scheduled_time||'00:00')); return d < now; });
 
-  function renderItem(a, isPast){
+  function renderItem(a){
     const dateStr = new Date(a.scheduled_date+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'});
     const timeStr = a.scheduled_time ? a.scheduled_time.substring(0,5) : '';
     const prof    = a.customer || a.profiles || null;
@@ -18360,19 +18391,19 @@ function renderAppointmentsList(el, list, isOwner){
     const safeCustomerId   = String(prof?.id||a.customer_id||'').replace(/['"]/g,'');
     const safeCustomerName = String(prof?.full_name||prof?.username||'Cliente').replace(/'/g,"’");
     // botoes cliente
-    const clientBtns = !isOwner && !isPast && !isCancelled && !isDone ? `
+    const clientBtns = !isOwner && !isCancelled && !isDone ? `
       <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
         <button class="tbtn" onclick="cancelAppointmentClient('${a.id}')" style="font-size:10px;color:var(--neon-pink);border-color:rgba(255,51,102,.4);">❌ Cancelar</button>
         <button class="tbtn" onclick="rescheduleAppointmentClient('${a.id}','${safeBizId}','${safeBizName}','${safeTitle}')" style="font-size:10px;color:var(--neon-yellow);border-color:rgba(255,204,0,.4);">📅 Reagendar</button>
       </div>` : '';
     // botoes proprietario
-    const ownerBtns = isOwner && !isPast && !isCancelled && !isDone ? `
+    const ownerBtns = isOwner && !isCancelled && !isDone ? `
       <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
         <button class="tbtn" onclick="ownerCancelAppointment('${a.id}','${safeCustomerId}','${safeCustomerName}')" style="font-size:10px;color:var(--neon-pink);border-color:rgba(255,51,102,.4);">❌ Cancelar</button>
         <button class="tbtn" onclick="ownerRescheduleAppointment('${a.id}','${safeCustomerId}','${safeCustomerName}')" style="font-size:10px;color:var(--neon-yellow);border-color:rgba(255,204,0,.4);">📅 Reagendar</button>
         <button class="tbtn" onclick="markAppointmentDone('${a.id}',this)" style="font-size:10px;color:var(--neon-cyan);">✔ Concluir</button>
       </div>` : '';
-    return `<div style="background:var(--bg-card);border:1px solid ${isPast||isCancelled||isDone?'rgba(255,255,255,.08)':'var(--border-glow)'};border-radius:12px;padding:12px 14px;margin-bottom:10px;${isPast||isCancelled||isDone?'opacity:.7':''}">
+    return `<div style="background:var(--bg-card);border:1px solid ${isCancelled||isDone?'rgba(255,255,255,.08)':'var(--border-glow)'};border-radius:12px;padding:12px 14px;margin-bottom:10px;${isCancelled||isDone?'opacity:.7':''}">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
         <img src="${xss(avatar)}" style="width:40px;height:40px;border-radius:${isOwner?'50%':'8px'};object-fit:cover;border:2px solid var(--border-glow);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=user'">
         <div style="flex:1;min-width:0;">
@@ -18398,11 +18429,11 @@ function renderAppointmentsList(el, list, isOwner){
   let html='';
   if(upcoming.length){
     html+=`<div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--neon-cyan);margin-bottom:8px;">📅 PRÓXIMOS (${upcoming.length})</div>`;
-    html+=upcoming.map(a=>renderItem(a,false)).join('');
+    html+=upcoming.map(a=>renderItem(a)).join('');
   }
   if(past.length){
-    html+=`<div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--text-muted);margin:14px 0 8px;">🗂 HISTÓRICO (${past.length})</div>`;
-    html+=past.map(a=>renderItem(a,true)).join('');
+    html+=`<div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--text-muted);margin:14px 0 8px;">🗂 ANTERIORES (${past.length})</div>`;
+    html+=past.map(a=>renderItem(a)).join('');
   }
   el.innerHTML=html;
 }
