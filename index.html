@@ -16850,7 +16850,8 @@ async function loadBizChats(){
 
   list.innerHTML = '';
   chats.forEach(chat=>{
-    const isOwner = myBusiness && chat.business_id === myBusiness.id;
+    // isOwner: true SOMENTE se este chat pertence ao MEU negócio (não a outra loja)
+    const isOwner = !!(myBusiness && myBusiness.id === chat.business_id);
     const label = isOwner
       ? (chat.profiles?.username || chat.profiles?.full_name || 'Cliente')
       : (chat.businesses?.name||'Negócio');
@@ -16931,32 +16932,36 @@ async function openBizChat(chatId, label){
       const qChat = await db.from('business_chats').select('business_id, customer_id, businesses(id,name,logo_url), customer:profiles!business_chats_customer_id_fkey(username,full_name,avatar_url)').eq('id',chatId).maybeSingle();
       if(!qChat.error && qChat.data){
         _chatBizId = qChat.data.businesses?.id || qChat.data.business_id || null;
-        if(myBusiness){
-          // sou o dono — mostro avatar do cliente
+        // Verifica se este chat pertence ao MEU negócio (não a outra loja)
+        const _iAmOwnerOfThisChat = myBusiness && myBusiness.id === (qChat.data.business_id || _chatBizId);
+        if(_iAmOwnerOfThisChat){
+          // sou o dono deste chat — mostro avatar circular do cliente
           const cust = qChat.data.customer || null;
           avatarSrc = cust?.avatar_url || '';
           if(!extraLabel) extraLabel = cust?.full_name || cust?.username || 'Cliente';
         } else {
-          // sou o cliente — mostro SEMPRE o logo da loja/serviço
+          // sou o cliente neste chat — mostro SEMPRE o logo da loja/serviço
           avatarSrc = qChat.data.businesses?.logo_url || '';
           if(!extraLabel) extraLabel = qChat.data.businesses?.name || label || 'Negócio';
         }
       }
     }catch(_){}
+    // isOwnerView: true SOMENTE se este chat pertence ao MEU negócio
+    const isOwnerView = !!(myBusiness && myBusiness.id === _chatBizId);
     // Fallback apenas para dono (cliente sempre usa logo da loja via query acima)
-    if(!avatarSrc && myBusiness){
+    if(!avatarSrc && isOwnerView){
       const ciEl = document.getElementById('biz-ci-'+chatId);
       const ciImg = ciEl?.querySelector('img');
       avatarSrc = ciImg?.src || '';
     }
-    const isOwnerView = !!myBusiness;
-    // Cliente: logo quadrado arredondado (loja); Dono: avatar circular (cliente)
+    // Dono: avatar circular (cliente); Cliente: logo quadrado arredondado (loja)
     const avatarRadius = isOwnerView ? '50%' : '10px';
+    const avatarBorder = isOwnerView ? 'var(--border-glow)' : 'rgba(255,204,0,.5)';
     const avatarHdrHtml = avatarSrc
-      ? `<img src="${xss(avatarSrc)}" style="width:36px;height:36px;border-radius:${avatarRadius};object-fit:cover;border:2px solid var(--border-glow);flex-shrink:0;margin-left:8px;" onerror="this.style.display='none'">`
-      : `<div style="width:36px;height:36px;border-radius:${avatarRadius};background:rgba(0,255,204,.1);border:2px solid var(--border-glow);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;margin-left:8px;">${isOwnerView?'👤':'🏪'}</div>`;
+      ? `<img src="${xss(avatarSrc)}" style="width:36px;height:36px;border-radius:${avatarRadius};object-fit:cover;border:2px solid ${avatarBorder};flex-shrink:0;margin-left:8px;" onerror="this.style.display='none'">`
+      : `<div style="width:36px;height:36px;border-radius:${avatarRadius};background:rgba(0,255,204,.1);border:2px solid ${avatarBorder};display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;margin-left:8px;">${isOwnerView?'👤':'🏪'}</div>`;
     hdr.innerHTML = backBtn + avatarHdrHtml + `<div style="font-size:13px;color:var(--neon-cyan);font-family:Silkscreen,monospace;margin-left:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${xss(extraLabel||label)}</div>`;
-    if(myBusiness){
+    if(isOwnerView){
       hdr.innerHTML += `<button class="tbtn" onclick="openNewDealModal()" style="margin-left:auto;font-size:10px;color:var(--neon-cyan);flex-shrink:0;">🤝 Propor Acordo</button>`;
     }
   }
