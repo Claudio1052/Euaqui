@@ -16100,9 +16100,9 @@ async function loadNotifTab(tabId){
       niIconHtml = `<span style="font-size:20px">${_fbBadge}</span>`;
     } else if(hasBizImg){
       niIconStyle = 'style="background:transparent;padding:0;position:relative;"';
-      // system = logo redonda com borda cyan; biz_promo = quadrada com borda amarela
+      // system = logo QUADRADA com borda cyan (igual às outras); biz_promo = quadrada com borda amarela
       const _isSystemBizN = n.type === 'system';
-      const _bizRad = _isSystemBizN ? '50%' : '10px';
+      const _bizRad = '10px'; // sempre quadrado
       const _bizBrd = _isSystemBizN ? 'rgba(0,255,204,.5)' : 'rgba(255,204,0,.4)';
       niIconHtml = `<img src="${bizLogo}" style="width:36px;height:36px;border-radius:${_bizRad};object-fit:cover;border:2px solid ${_bizBrd};display:block;" onerror="this.parentElement.innerHTML='<span style=\'font-size:20px\'>🏪</span>'">`;
     } else if(isBizNotif){
@@ -16113,11 +16113,16 @@ async function loadNotifTab(tabId){
     } else if(isCommunityNotif){
       niIconHtml = `<span style="font-size:20px">🏘️</span>`;
     }
+    // Para notificações system de conclusão de agendamento, limpa o link do texto
+    const _notifContent = n.type==='system' ? (n.content||'').replace(/https?:\/\/\S+/g,'').trim() : null;
+    const _displayText = _notifContent !== null ? _notifContent : getNotifDisplayText(n);
+    // Verifica se é notificação de conclusão (agradecimento) para mostrar botão ir à loja
+    const _isApptDoneNotif = n.type==='system' && n.business_id && (n.content||'').includes('Obrigado por confiar');
     return `
     <div class="ni${n.read?'':' unrd'}" id="ni-${n.id}">
       <div class="ni-icon" ${niIconStyle}>${niIconHtml}</div>
       <div class="ni-clickable-body" onclick="handleNotifNavigation(JSON.parse(this.closest('.ni').dataset.notif))">
-        <div class="ni-txt">${getNotifDisplayText(n)}</div>
+        <div class="ni-txt">${n.type==='system' ? _displayText : getNotifDisplayText(n)}</div>
         <div class="ni-time">${timeAgo(n.created_at)}</div>
         ${n.type==='friend_request'?`<div class="ni-actions">
           <button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();acceptFriendFromNotif(this)">✓ Aceitar</button>
@@ -16128,6 +16133,9 @@ async function loadNotifTab(tabId){
         </div>`:''}
         ${n.type==='biz_promo'&&n.business_id&&(n.content||'').includes('?biz=')?`<div class="ni-actions" style="margin-top:6px;">
           <button class="ni-act-btn ni-act-acc" id="biz-follow-notif-${n.business_id}" onclick="event.stopPropagation();followBizFromNotif('${n.business_id}','${n.id}',this)" style="color:var(--neon-yellow);border-color:rgba(255,204,0,.3);background:rgba(255,204,0,.08);">🛍️ Seguir Loja</button>
+        </div>`:''}
+        ${_isApptDoneNotif?`<div class="ni-actions" style="margin-top:6px;">
+          <button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();handleNotifNavigation(JSON.parse(this.closest('.ni').dataset.notif))" style="color:var(--neon-cyan);border-color:rgba(0,255,204,.3);background:rgba(0,255,204,.08);">🏪 Ir para a Loja</button>
         </div>`:''}
       </div>
       <button class="ni-dismiss" title="Marcar como lida" onclick="event.stopPropagation();markRead('${n.id}',this)">✕</button>
@@ -18342,6 +18350,7 @@ function renderAppointmentsList(el, list, isOwner){
       : (a.businesses?.logo_url||'https://api.dicebear.com/7.x/shapes/svg?seed=biz');
     const valor   = a.value ? 'R$ '+Number(a.value).toFixed(2).replace('.',',') : '';
     const isCancelled = a.status==='cancelled';
+    const isDone = a.status==='done';
     const statusColor = a.status==='confirmed'?'var(--neon-cyan)':a.status==='done'?'var(--neon-purple)':'var(--neon-pink)';
     const statusLabel = a.status==='confirmed'?'✅ Confirmado':a.status==='done'?'✔ Concluído':isCancelled?'❌ Cancelado':'⚠️ '+a.status;
     // ids seguros
@@ -18351,18 +18360,19 @@ function renderAppointmentsList(el, list, isOwner){
     const safeCustomerId   = String(prof?.id||a.customer_id||'').replace(/['"]/g,'');
     const safeCustomerName = String(prof?.full_name||prof?.username||'Cliente').replace(/'/g,"’");
     // botoes cliente
-    const clientBtns = !isOwner && !isPast && !isCancelled ? `
+    const clientBtns = !isOwner && !isPast && !isCancelled && !isDone ? `
       <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
         <button class="tbtn" onclick="cancelAppointmentClient('${a.id}')" style="font-size:10px;color:var(--neon-pink);border-color:rgba(255,51,102,.4);">❌ Cancelar</button>
         <button class="tbtn" onclick="rescheduleAppointmentClient('${a.id}','${safeBizId}','${safeBizName}','${safeTitle}')" style="font-size:10px;color:var(--neon-yellow);border-color:rgba(255,204,0,.4);">📅 Reagendar</button>
       </div>` : '';
     // botoes proprietario
-    const ownerBtns = isOwner && !isPast && !isCancelled ? `
+    const ownerBtns = isOwner && !isPast && !isCancelled && !isDone ? `
       <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
+        <button class="tbtn" onclick="ownerCancelAppointment('${a.id}','${safeCustomerId}','${safeCustomerName}')" style="font-size:10px;color:var(--neon-pink);border-color:rgba(255,51,102,.4);">❌ Cancelar</button>
         <button class="tbtn" onclick="ownerRescheduleAppointment('${a.id}','${safeCustomerId}','${safeCustomerName}')" style="font-size:10px;color:var(--neon-yellow);border-color:rgba(255,204,0,.4);">📅 Reagendar</button>
         <button class="tbtn" onclick="markAppointmentDone('${a.id}',this)" style="font-size:10px;color:var(--neon-cyan);">✔ Concluir</button>
       </div>` : '';
-    return `<div style="background:var(--bg-card);border:1px solid ${isPast||isCancelled?'rgba(255,255,255,.08)':'var(--border-glow)'};border-radius:12px;padding:12px 14px;margin-bottom:10px;${isPast||isCancelled?'opacity:.7':''}">
+    return `<div style="background:var(--bg-card);border:1px solid ${isPast||isCancelled||isDone?'rgba(255,255,255,.08)':'var(--border-glow)'};border-radius:12px;padding:12px 14px;margin-bottom:10px;${isPast||isCancelled||isDone?'opacity:.7':''}">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
         <img src="${xss(avatar)}" style="width:40px;height:40px;border-radius:${isOwner?'50%':'8px'};object-fit:cover;border:2px solid var(--border-glow);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=user'">
         <div style="flex:1;min-width:0;">
@@ -18397,10 +18407,30 @@ function renderAppointmentsList(el, list, isOwner){
   el.innerHTML=html;
 }
 
-async function markAppointmentDone(id, btn){
-  btn.disabled=true;
+function markAppointmentDone(id, btn){
+  // Mostra confirmação antes de concluir
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.88);backdrop-filter:blur(12px);z-index:6000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.innerHTML=`
+    <div class="modal" style="max-width:360px;width:100%;padding:24px;text-align:center;">
+      <div style="font-size:36px;margin-bottom:12px;">✅</div>
+      <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-cyan);margin-bottom:8px;">CONCLUIR SERVIÇO?</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:20px;">Deseja marcar este agendamento como concluído? Esta ação não pode ser desfeita.</div>
+      <div style="display:flex;gap:10px;">
+        <button class="tbtn" onclick="this.closest('.ea-done-ov').remove()" style="flex:1;padding:11px;">Não</button>
+        <button class="post-btn" onclick="eaDoMarkDone('${id}',this)" style="flex:1;padding:11px;background:linear-gradient(135deg,var(--neon-cyan),var(--neon-purple));font-size:11px;">✅ Sim, Concluir</button>
+      </div>
+    </div>`;
+  ov.classList.add('ea-done-ov');
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  document.body.appendChild(ov);
+}
+
+async function eaDoMarkDone(id, btn){
+  btn.disabled=true; btn.textContent='⏳ Salvando...';
   const res = await db.from('appointments').update({status:'done'}).eq('id',id);
-  if(res.error){ btn.disabled=false; showToast('Erro: '+res.error.message,'error'); return; }
+  if(res.error){ btn.disabled=false; btn.textContent='✅ Sim, Concluir'; showToast('Erro: '+res.error.message,'error'); return; }
+  document.querySelector('.ea-done-ov')?.remove();
   showToast('✔ Agendamento concluído!','success');
 
   // Envia notificação de agradecimento + convite para avaliar ao cliente
@@ -18412,13 +18442,10 @@ async function markAppointmentDone(id, btn){
       const bizName = appt.businesses?.name || myBusiness?.name || 'nosso serviço';
       const bizId   = appt.businesses?.id   || myBusiness?.id  || appt.business_id || '';
       const svcTitle= appt.service_title || 'nosso serviço';
-      // Link direto para a página da loja (para avaliar)
-      const bizLink = bizId ? `https://euaqui.store/lojas?biz=${bizId}` : 'https://euaqui.store/lojas';
       const msg =
         `🙏 Obrigado por confiar em *${bizName}*! ` +
         `Esperamos que tenha gostado do serviço *${svcTitle}*. ` +
-        `Sua opinião é muito importante para nós — que tal deixar uma avaliação? ` +
-        `⭐ Avalie nosso trabalho aqui: ${bizLink}`;
+        `Sua opinião é muito importante para nós — que tal deixar uma avaliação? ⭐`;
       await db.from('notifications').insert({
         user_id: appt.customer_id,
         actor_id: CU.id,
@@ -18428,7 +18455,14 @@ async function markAppointmentDone(id, btn){
         read: false
       });
     }
-  }catch(e){ console.warn('[markAppointmentDone] notif erro:', e); }
+    // ── KPI: incrementa deals_closed no dashboard ──
+    if(myBusiness?.id){
+      const {data:bizData}=await db.from('businesses').select('deals_closed').eq('id',myBusiness.id).maybeSingle();
+      const newCount=(bizData?.deals_closed||0)+1;
+      await db.from('businesses').update({deals_closed:newCount}).eq('id',myBusiness.id);
+      if(myBusiness) myBusiness.deals_closed=newCount;
+    }
+  }catch(e){ console.warn('[markAppointmentDone] notif/kpi erro:', e); }
 
   loadAppointments(true);
   loadBizDashboard();
@@ -18590,6 +18624,53 @@ async function eaDoReschedule(apptId, customerId, btn){
   showToast('✅ Reagendamento confirmado! Cliente notificado.','success');
   loadAppointments(true);
   loadBizDashboard();
+}
+
+// ── CANCELAR AGENDAMENTO (Proprietário) ──────────────────────────
+function ownerCancelAppointment(apptId, customerId, customerName){
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.88);backdrop-filter:blur(12px);z-index:6000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.innerHTML=`
+    <div class="modal" style="max-width:400px;width:100%;padding:24px;">
+      <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-pink);margin-bottom:8px;">❌ CANCELAR AGENDAMENTO</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;">Tem certeza que deseja cancelar o agendamento de <strong style="color:var(--text-light);">${xss(customerName)}</strong>?</div>
+      <textarea id="_ea_owner_cancel_reason" placeholder="Motivo do cancelamento (opcional)..." style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:11px;resize:vertical;min-height:80px;outline:none;"></textarea>
+      <div style="display:flex;gap:10px;margin-top:14px;">
+        <button class="tbtn" onclick="this.closest('.ea-owner-cancel-ov').remove()" style="flex:1;padding:11px;">Voltar</button>
+        <button class="post-btn" onclick="eaDoOwnerCancel('${apptId}','${customerId}',this)" style="flex:1;padding:11px;background:linear-gradient(135deg,var(--neon-pink),#cc0033);font-size:11px;">❌ Confirmar Cancelamento</button>
+      </div>
+    </div>`;
+  ov.classList.add('ea-owner-cancel-ov');
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  document.body.appendChild(ov);
+}
+
+async function eaDoOwnerCancel(apptId, customerId, btn){
+  btn.disabled=true; btn.textContent='⏳ Cancelando...';
+  const reason=(document.getElementById('_ea_owner_cancel_reason')?.value||'').trim();
+  let upd=await db.from('appointments').update({status:'cancelled',cancel_reason:reason||null}).eq('id',apptId);
+  if(upd.error){
+    upd=await db.from('appointments').update({status:'cancelled'}).eq('id',apptId);
+    if(upd.error){
+      btn.disabled=false; btn.textContent='❌ Confirmar Cancelamento';
+      showToast('Erro ao cancelar: '+upd.error.message,'error'); return;
+    }
+  }
+  // Notifica cliente
+  const cid=(customerId&&customerId!=='undefined'&&customerId!=='')?customerId:null;
+  if(cid && CU && cid!==CU.id){
+    const bizName=myBusiness?.name||'O Serviço';
+    await db.from('notifications').insert({
+      user_id:cid, actor_id:CU.id, type:'system',
+      business_id: myBusiness?.id||null,
+      content:'❌ '+bizName+' cancelou o seu agendamento.'+(reason?' Motivo: '+reason:''),
+      read:false
+    });
+  }
+  document.querySelector('.ea-owner-cancel-ov')?.remove();
+  showToast('✔ Agendamento cancelado. Cliente notificado.','success');
+  loadAppointments(true);
+  if(typeof loadBizDashboard === 'function') loadBizDashboard();
 }
 
 // ── NOTIFICAÇÃO DO DIA DO AGENDAMENTO (1x por sessão) ────────────
