@@ -16899,20 +16899,41 @@ async function openBizChat(chatId, label){
     if(backBtn) backBtn.style.display='flex';
   }
   }
-  // Header
+  // Header — busca avatar direto no banco se não estiver na lista
   const hdr = document.getElementById('biz-chat-win-hdr');
   if(hdr){
     const backBtn = window.innerWidth<=768 ? '<button class="tbtn" onclick="closeBizChat()" style="padding:6px 10px;font-size:12px;">← Voltar</button>' : '';
-    // Busca avatar do contato a partir do item da lista
+    // Tenta pegar avatar do item da lista
     const ciEl = document.getElementById('biz-ci-'+chatId);
     const ciImg = ciEl?.querySelector('img');
-    const avatarSrc = ciImg?.src || '';
+    let avatarSrc = ciImg?.src || '';
+    let extraLabel = label || '';
+    // Se não tem avatar na lista, busca do banco
+    if(!avatarSrc){
+      try{
+        const qChat = await db.from('business_chats').select('business_id, customer_id, businesses(name,logo_url), customer:profiles!business_chats_customer_id_fkey(username,full_name,avatar_url)').eq('id',chatId).maybeSingle();
+        if(!qChat.error && qChat.data){
+          if(myBusiness){
+            // sou o dono — mostro avatar do cliente
+            const cust = qChat.data.customer || null;
+            avatarSrc = cust?.avatar_url || '';
+            if(!extraLabel) extraLabel = cust?.full_name || cust?.username || 'Cliente';
+          } else {
+            // sou o cliente — mostro logo da loja
+            avatarSrc = qChat.data.businesses?.logo_url || '';
+            if(!extraLabel) extraLabel = qChat.data.businesses?.name || 'Negócio';
+          }
+        }
+      }catch(_){}
+    }
+    const isOwnerView = !!myBusiness;
+    const avatarRadius = isOwnerView ? '50%' : '8px';
     const avatarHdrHtml = avatarSrc
-      ? `<img src="${xss(avatarSrc)}" style="width:34px;height:34px;border-radius:50%;object-fit:cover;border:2px solid var(--border-glow);flex-shrink:0;margin-left:8px;" onerror="this.style.display='none'">`
-      : `<div style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.08);border:2px solid var(--border-glow);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;margin-left:8px;">👤</div>`;
-    hdr.innerHTML = backBtn + avatarHdrHtml + `<div style="font-size:13px;color:var(--neon-cyan);font-family:Silkscreen,monospace;margin-left:8px;">${xss(label)}</div>`;
+      ? `<img src="${xss(avatarSrc)}" style="width:36px;height:36px;border-radius:${avatarRadius};object-fit:cover;border:2px solid var(--border-glow);flex-shrink:0;margin-left:8px;" onerror="this.style.display='none'">`
+      : `<div style="width:36px;height:36px;border-radius:${avatarRadius};background:rgba(0,255,204,.1);border:2px solid var(--border-glow);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;margin-left:8px;">${isOwnerView?'👤':'🏪'}</div>`;
+    hdr.innerHTML = backBtn + avatarHdrHtml + `<div style="font-size:13px;color:var(--neon-cyan);font-family:Silkscreen,monospace;margin-left:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${xss(extraLabel||label)}</div>`;
     if(myBusiness){
-      hdr.innerHTML += `<button class="tbtn" onclick="openNewDealModal()" style="margin-left:auto;font-size:10px;color:var(--neon-cyan);">🤝 Propor Acordo</button>`;
+      hdr.innerHTML += `<button class="tbtn" onclick="openNewDealModal()" style="margin-left:auto;font-size:10px;color:var(--neon-cyan);flex-shrink:0;">🤝 Propor Acordo</button>`;
     }
   }
   document.getElementById('biz-msg-in-area').style.display='flex';
@@ -18175,45 +18196,44 @@ function renderAppointmentsList(el, list, isOwner){
   }
   const now = new Date();
   const upcoming = list.filter(a=>{ const d=new Date(a.scheduled_date+'T'+(a.scheduled_time||'00:00')); return d >= now; });
-  const past = list.filter(a=>{ const d=new Date(a.scheduled_date+'T'+(a.scheduled_time||'00:00')); return d < now; });
+  const past     = list.filter(a=>{ const d=new Date(a.scheduled_date+'T'+(a.scheduled_time||'00:00')); return d < now; });
 
   function renderItem(a, isPast){
     const dateStr = new Date(a.scheduled_date+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'});
     const timeStr = a.scheduled_time ? a.scheduled_time.substring(0,5) : '';
-    const prof = a.customer || a.profiles || null;
-    const name = isOwner
-      ? (prof?.full_name || prof?.username || 'Cliente')
-      : (a.businesses?.name || 'Neg\u00f3cio');
-    const avatar = isOwner
-      ? (prof?.avatar_url || 'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof?.username||'user'))
-      : (a.businesses?.logo_url || 'https://api.dicebear.com/7.x/shapes/svg?seed=biz');
-    const valor = a.value ? 'R$ '+Number(a.value).toFixed(2).replace('.',',') : '';
-    const isCancelled = a.status === 'cancelled';
-    const statusColor = a.status==='confirmed'?'var(--neon-cyan)':a.status==='done'?'var(--neon-purple)':isCancelled?'var(--neon-pink)':'var(--neon-pink)';
-    const statusLabel = a.status==='confirmed'?'\u2705 Confirmado':a.status==='done'?'\u2714 Conclu\u00eddo':isCancelled?'\u274c Cancelado':'\u26a0\ufe0f '+a.status;
-    // biz_id seguro para passar ao reagendar
-    const safeBizId = (a.businesses?.id || a.business_id || '').replace(/'/g,'');
-    const safeBizName = (a.businesses?.name || 'Neg\u00f3cio').replace(/'/g,'\x27');
-    const safeCustomerId = (prof?.id || a.customer_id || '').replace(/'/g,'');
-    const safeCustomerName = (prof?.full_name || prof?.username || 'Cliente').replace(/'/g,'\x27');
-    // Bot\u00f5es cliente
+    const prof    = a.customer || a.profiles || null;
+    const name    = isOwner ? (prof?.full_name||prof?.username||'Cliente') : (a.businesses?.name||'Negócio');
+    const avatar  = isOwner
+      ? (prof?.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof?.username||'user'))
+      : (a.businesses?.logo_url||'https://api.dicebear.com/7.x/shapes/svg?seed=biz');
+    const valor   = a.value ? 'R$ '+Number(a.value).toFixed(2).replace('.',',') : '';
+    const isCancelled = a.status==='cancelled';
+    const statusColor = a.status==='confirmed'?'var(--neon-cyan)':a.status==='done'?'var(--neon-purple)':'var(--neon-pink)';
+    const statusLabel = a.status==='confirmed'?'✅ Confirmado':a.status==='done'?'✔ Concluído':isCancelled?'❌ Cancelado':'⚠️ '+a.status;
+    // ids seguros
+    const safeBizId   = String(a.businesses?.id||a.business_id||'').replace(/['"]/g,'');
+    const safeBizName = String(a.businesses?.name||'Negócio').replace(/'/g,"’");
+    const safeTitle   = String(a.service_title||'Serviço').replace(/'/g,"’");
+    const safeCustomerId   = String(prof?.id||a.customer_id||'').replace(/['"]/g,'');
+    const safeCustomerName = String(prof?.full_name||prof?.username||'Cliente').replace(/'/g,"’");
+    // botoes cliente
     const clientBtns = !isOwner && !isPast && !isCancelled ? `
       <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
-        <button class="tbtn" onclick="cancelAppointmentClient('${a.id}')" style="font-size:10px;color:var(--neon-pink);border-color:rgba(255,51,102,.4);">\u274c Cancelar</button>
-        <button class="tbtn" onclick="rescheduleAppointmentClient('${a.id}','${safeBizId}','${safeBizName}')" style="font-size:10px;color:var(--neon-yellow);border-color:rgba(255,204,0,.4);">\ud83d\udcc5 Reagendar</button>
+        <button class="tbtn" onclick="cancelAppointmentClient('${a.id}')" style="font-size:10px;color:var(--neon-pink);border-color:rgba(255,51,102,.4);">❌ Cancelar</button>
+        <button class="tbtn" onclick="rescheduleAppointmentClient('${a.id}','${safeBizId}','${safeBizName}','${safeTitle}')" style="font-size:10px;color:var(--neon-yellow);border-color:rgba(255,204,0,.4);">📅 Reagendar</button>
       </div>` : '';
-    // Bot\u00f5es propriet\u00e1rio
+    // botoes proprietario
     const ownerBtns = isOwner && !isPast && !isCancelled ? `
       <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
-        <button class="tbtn" onclick="ownerRescheduleAppointment('${a.id}','${safeCustomerId}','${safeCustomerName}')" style="font-size:10px;color:var(--neon-yellow);border-color:rgba(255,204,0,.4);">\ud83d\udcc5 Reagendar</button>
-        <button class="tbtn" onclick="markAppointmentDone('${a.id}',this)" style="font-size:10px;color:var(--neon-cyan);">\u2714 Concluir</button>
+        <button class="tbtn" onclick="ownerRescheduleAppointment('${a.id}','${safeCustomerId}','${safeCustomerName}')" style="font-size:10px;color:var(--neon-yellow);border-color:rgba(255,204,0,.4);">📅 Reagendar</button>
+        <button class="tbtn" onclick="markAppointmentDone('${a.id}',this)" style="font-size:10px;color:var(--neon-cyan);">✔ Concluir</button>
       </div>` : '';
     return `<div style="background:var(--bg-card);border:1px solid ${isPast||isCancelled?'rgba(255,255,255,.08)':'var(--border-glow)'};border-radius:12px;padding:12px 14px;margin-bottom:10px;${isPast||isCancelled?'opacity:.7':''}">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
         <img src="${xss(avatar)}" style="width:40px;height:40px;border-radius:${isOwner?'50%':'8px'};object-fit:cover;border:2px solid var(--border-glow);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=user'">
         <div style="flex:1;min-width:0;">
           <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(name)}</div>
-          <div style="font-size:10px;color:var(--neon-cyan);margin-top:2px;">${xss(a.service_title||'Servi\u00e7o')}</div>
+          <div style="font-size:10px;color:var(--neon-cyan);margin-top:2px;">${xss(a.service_title||'Serviço')}</div>
         </div>
         <div style="text-align:right;flex-shrink:0;">
           ${valor?`<div style="font-family:VT323,monospace;font-size:18px;color:var(--neon-yellow);">${valor}</div>`:''}
@@ -18221,240 +18241,199 @@ function renderAppointmentsList(el, list, isOwner){
         </div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <span style="background:rgba(0,255,204,.1);border:1px solid rgba(0,255,204,.2);border-radius:6px;padding:3px 8px;font-size:10px;color:var(--neon-cyan);">\ud83d\udcc5 ${dateStr}${timeStr?' \u00b7 \u23f0 '+timeStr:''}</span>
-        ${a.location?`<span style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:3px 8px;font-size:10px;color:var(--text-muted);">\ud83d\udccd ${xss(a.location)}</span>`:''}
-        ${a.payment_method?`<span style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:3px 8px;font-size:10px;color:var(--text-muted);">\ud83d\udcb3 ${xss(a.payment_method)}</span>`:''}
+        <span style="background:rgba(0,255,204,.1);border:1px solid rgba(0,255,204,.2);border-radius:6px;padding:3px 8px;font-size:10px;color:var(--neon-cyan);">📅 ${dateStr}${timeStr?' · ⏰ '+timeStr:''}</span>
+        ${a.location?`<span style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:3px 8px;font-size:10px;color:var(--text-muted);">📍 ${xss(a.location)}</span>`:''}
+        ${a.payment_method?`<span style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:3px 8px;font-size:10px;color:var(--text-muted);">💳 ${xss(a.payment_method)}</span>`:''}
       </div>
-      ${a.notes?`<div style="font-size:10px;color:var(--text-muted);margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.06);">\ud83d\udcdd ${xss(a.notes)}</div>`:''}
-      ${a.cancel_reason?`<div style="font-size:10px;color:var(--neon-pink);margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,51,102,.15);">\u274c Motivo: ${xss(a.cancel_reason)}</div>`:''}
-      ${clientBtns}
-      ${ownerBtns}
+      ${a.notes?`<div style="font-size:10px;color:var(--text-muted);margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.06);">📝 ${xss(a.notes)}</div>`:''}
+      ${a.cancel_reason?`<div style="font-size:10px;color:var(--neon-pink);margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,51,102,.15);">❌ Motivo: ${xss(a.cancel_reason)}</div>`:''}
+      ${clientBtns}${ownerBtns}
     </div>`;
   }
 
-  let html = '';
+  let html='';
   if(upcoming.length){
-    html += `<div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--neon-cyan);margin-bottom:8px;">\ud83d\udcc5 PR\u00d3XIMOS (${upcoming.length})</div>`;
-    html += upcoming.map(a=>renderItem(a,false)).join('');
+    html+=`<div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--neon-cyan);margin-bottom:8px;">📅 PRÓXIMOS (${upcoming.length})</div>`;
+    html+=upcoming.map(a=>renderItem(a,false)).join('');
   }
   if(past.length){
-    html += `<div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--text-muted);margin:14px 0 8px;">\ud83d\uddc2 HIST\u00d3RICO (${past.length})</div>`;
-    html += past.map(a=>renderItem(a,true)).join('');
+    html+=`<div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--text-muted);margin:14px 0 8px;">🗂 HISTÓRICO (${past.length})</div>`;
+    html+=past.map(a=>renderItem(a,true)).join('');
   }
-  el.innerHTML = html;
+  el.innerHTML=html;
 }
 
 async function markAppointmentDone(id, btn){
   btn.disabled=true;
   const res = await db.from('appointments').update({status:'done'}).eq('id',id);
   if(res.error){ btn.disabled=false; showToast('Erro: '+res.error.message,'error'); return; }
-  showToast('\u2714 Agendamento conclu\u00eddo!','success');
+  showToast('✔ Agendamento concluído!','success');
   loadAppointments(true);
 }
 
-// \u2500\u2500 CANCELAR AGENDAMENTO (Cliente) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ── CANCELAR AGENDAMENTO (Cliente) ──────────────────────────────
 function cancelAppointmentClient(apptId){
-  const overlay = document.createElement('div');
-  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(10px);z-index:6000;display:flex;align-items:center;justify-content:center;padding:16px;';
-  overlay.innerHTML=`
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.88);backdrop-filter:blur(12px);z-index:6000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.innerHTML=`
     <div class="modal" style="max-width:400px;width:100%;padding:24px;">
-      <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-pink);margin-bottom:6px;">\u274c CANCELAR AGENDAMENTO</div>
+      <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-pink);margin-bottom:8px;">❌ CANCELAR AGENDAMENTO</div>
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;">Tem certeza que deseja cancelar este agendamento?</div>
-      <textarea id="_cancel-reason-input" placeholder="Motivo do cancelamento (opcional)..." style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:11px;resize:vertical;min-height:80px;outline:none;box-sizing:border-box;"></textarea>
+      <textarea id="_ea_cancel_reason" placeholder="Motivo do cancelamento (opcional)..." style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:11px;resize:vertical;min-height:80px;outline:none;"></textarea>
       <div style="display:flex;gap:10px;margin-top:14px;">
-        <button class="tbtn" onclick="this.closest('[style*=position]').remove()" style="flex:1;padding:11px;">Voltar</button>
-        <button class="post-btn" id="_cancel-confirm-btn" onclick="confirmCancelAppointment('${apptId}',this)" style="flex:1;padding:11px;background:linear-gradient(135deg,var(--neon-pink),#cc0033);font-size:11px;">\u274c Confirmar Cancelamento</button>
+        <button class="tbtn" onclick="this.closest('.ea-cancel-ov').remove()" style="flex:1;padding:11px;">Voltar</button>
+        <button class="post-btn" onclick="eaDoCancel('${apptId}',this)" style="flex:1;padding:11px;background:linear-gradient(135deg,var(--neon-pink),#cc0033);font-size:11px;">❌ Confirmar Cancelamento</button>
       </div>
     </div>`;
-  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
-  document.body.appendChild(overlay);
+  ov.classList.add('ea-cancel-ov');
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  document.body.appendChild(ov);
 }
 
-async function confirmCancelAppointment(apptId, btn){
-  btn.disabled=true; btn.textContent='\u23f3 Cancelando...';
-  const reason = document.getElementById('_cancel-reason-input')?.value.trim() || '';
-  try{
-    // 1. Cancela o agendamento
-    const upd = await db.from('appointments').update({status:'cancelled', cancel_reason: reason||null}).eq('id',apptId);
-    if(upd.error) throw new Error(upd.error.message);
-
-    // 2. Busca o owner_id do neg\u00f3cio via business_id do agendamento
-    let targetOwnerId = null;
-    try{
-      const {data:apptData, error:apptErr} = await db.from('appointments').select('business_id').eq('id',apptId).maybeSingle();
-      if(!apptErr && apptData?.business_id){
-        const {data:bizData} = await db.from('businesses').select('owner_id').eq('id',apptData.business_id).maybeSingle();
-        targetOwnerId = bizData?.owner_id || null;
-      }
-    }catch(_){}
-
-    // 3. Envia notifica\u00e7\u00e3o ao dono
-    if(targetOwnerId && CU && targetOwnerId !== CU.id){
-      const userName = CP?.full_name || CP?.username || 'Um usu\u00e1rio';
-      try{
-        await db.from('notifications').insert({
-          user_id: targetOwnerId,
-          actor_id: CU.id,
-          type: 'system',
-          content: '\u274c ' + userName + ' cancelou o agendamento.' + (reason ? ' Motivo: ' + reason : ''),
-          read: false
-        });
-      }catch(ne){ console.warn('[cancel notif]', ne); }
-    }
-
-    btn.closest('[style*=position]')?.remove();
-    showToast('\u2714 Agendamento cancelado com sucesso.','success');
-    loadAppointments(false);
-  }catch(err){
-    btn.disabled=false; btn.textContent='\u274c Confirmar Cancelamento';
-    showToast('Erro ao cancelar: '+err.message,'error');
+async function eaDoCancel(apptId, btn){
+  btn.disabled=true; btn.textContent='⏳ Cancelando...';
+  const reason=(document.getElementById('_ea_cancel_reason')?.value||'').trim();
+  // 1. Atualiza status
+  const upd=await db.from('appointments').update({status:'cancelled',cancel_reason:reason||null}).eq('id',apptId);
+  if(upd.error){
+    btn.disabled=false; btn.textContent='❌ Confirmar Cancelamento';
+    showToast('Erro ao cancelar: '+upd.error.message,'error'); return;
   }
+  // 2. Busca business_id e owner_id
+  let ownerId=null;
+  const q1=await db.from('appointments').select('business_id').eq('id',apptId).maybeSingle();
+  if(!q1.error && q1.data?.business_id){
+    const q2=await db.from('businesses').select('owner_id').eq('id',q1.data.business_id).maybeSingle();
+    if(!q2.error) ownerId=q2.data?.owner_id||null;
+  }
+  // 3. Notifica dono
+  if(ownerId && CU && ownerId!==CU.id){
+    const uName=CP?.full_name||CP?.username||'Um usuário';
+    await db.from('notifications').insert({
+      user_id:ownerId, actor_id:CU.id, type:'system',
+      content:'❌ '+uName+' cancelou o agendamento.'+(reason?' Motivo: '+reason:''),
+      read:false
+    });
+  }
+  document.querySelector('.ea-cancel-ov')?.remove();
+  showToast('✔ Agendamento cancelado.','success');
+  loadAppointments(false);
 }
 
-// \u2500\u2500 REAGENDAR (Cliente \u2192 abre chat com texto padr\u00e3o) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-async function rescheduleAppointmentClient(apptId, bizId, bizName){
-  if(!CU) return showToast('Fa\u00e7a login para continuar','error');
-  // Se bizId n\u00e3o foi passado, busca do banco
-  let finalBizId = (bizId && bizId !== 'undefined' && bizId !== '') ? bizId : null;
-  let finalBizName = (bizName && bizName !== 'undefined') ? bizName : 'Neg\u00f3cio';
-  if(!finalBizId){
-    try{
-      const {data:apptData} = await db.from('appointments').select('business_id, businesses(id,name)').eq('id',apptId).maybeSingle();
-      finalBizId = apptData?.business_id || apptData?.businesses?.id || null;
-      finalBizName = apptData?.businesses?.name || finalBizName;
-    }catch(_){}
-  }
-  if(!finalBizId){ showToast('Neg\u00f3cio n\u00e3o identificado','error'); return; }
-  showToast('\ud83d\udcc5 Abrindo chat para reagendamento...','');
-  // Cria ou obt\u00e9m chat existente
-  let chat = null;
-  try{
-    const {data:existing} = await db.from('business_chats').select('*').eq('business_id',finalBizId).eq('customer_id',CU.id).maybeSingle();
-    if(existing){ chat = existing; }
-    else{
-      const {data:nc, error:ncErr} = await db.from('business_chats').insert({business_id:finalBizId,customer_id:CU.id}).select().single();
-      if(ncErr) throw new Error(ncErr.message);
-      chat = nc;
+// ── REAGENDAR (Cliente → abre chat com texto padrão) ────────────
+async function rescheduleAppointmentClient(apptId, bizId, bizName, serviceTitle){
+  if(!CU){showToast('Faça login para continuar','error');return;}
+  let fBizId   = (bizId   && bizId!=='undefined'   && bizId!=='')   ? bizId   : null;
+  let fBizName = (bizName && bizName!=='undefined') ? bizName : 'Negócio';
+  let fTitle   = (serviceTitle && serviceTitle!=='undefined') ? serviceTitle : 'Serviço';
+  // Se bizId não veio, busca no banco
+  if(!fBizId){
+    const q=await db.from('appointments').select('business_id, businesses(id,name)').eq('id',apptId).maybeSingle();
+    if(!q.error && q.data){
+      fBizId   = q.data.business_id || q.data.businesses?.id || null;
+      fBizName = q.data.businesses?.name || fBizName;
     }
-  }catch(e){ showToast('N\u00e3o foi poss\u00edvel abrir o chat: '+e.message,'error'); return; }
-  if(!chat){ showToast('N\u00e3o foi poss\u00edvel abrir o chat','error'); return; }
-  // Navega para a aba de chats e abre o chat com texto pr\u00e9-preenchido
+  }
+  if(!fBizId){showToast('Negócio não identificado','error');return;}
+  showToast('📅 Abrindo chat...','');
+  // Cria/obtém chat
+  let chat=null;
+  const qc=await db.from('business_chats').select('*').eq('business_id',fBizId).eq('customer_id',CU.id).maybeSingle();
+  if(!qc.error && qc.data){ chat=qc.data; }
+  else{
+    const ins=await db.from('business_chats').insert({business_id:fBizId,customer_id:CU.id}).select().single();
+    if(ins.error){showToast('Erro ao abrir chat: '+ins.error.message,'error');return;}
+    chat=ins.data;
+  }
+  // Navega e abre o chat
   nav('businesses');
+  const msgPadrao='Olá! Gostaria de reagendar meu serviço de '+fTitle+'. Qual a disponibilidade?';
   setTimeout(async ()=>{
-    const chatsTab = document.querySelector('#biz-page-tabs .ptab[data-tab="biz-chats"]');
+    const chatsTab=document.querySelector('#biz-page-tabs .ptab[data-tab="biz-chats"]');
     if(chatsTab) switchBizTab(chatsTab);
     setTimeout(async ()=>{
-      await openBizChat(chat.id, finalBizName);
-      // Aguarda render do chat e preenche input
-      let tentativas = 0;
-      const tryFill = setInterval(()=>{
-        const inp = document.getElementById('biz-msg-input');
-        if(inp){
-          inp.value = 'Ol\u00e1! Gostaria de reagendar meu servi\u00e7o. Qual a disponibilidade?';
-          inp.focus();
-          clearInterval(tryFill);
-        }
-        if(++tentativas > 20) clearInterval(tryFill);
-      }, 150);
-    }, 500);
-  }, 350);
+      await openBizChat(chat.id, fBizName);
+      // Preenche input com retry
+      let tries=0;
+      const fill=setInterval(()=>{
+        const inp=document.getElementById('biz-msg-input');
+        if(inp){inp.value=msgPadrao;inp.focus();clearInterval(fill);}
+        if(++tries>30) clearInterval(fill);
+      },100);
+    },500);
+  },350);
 }
 
-// \u2500\u2500 REAGENDAR (Propriet\u00e1rio \u2192 escolhe nova data e notifica cliente) \u2500
+// ── REAGENDAR (Proprietário → escolhe nova data) ────────────────
 function ownerRescheduleAppointment(apptId, customerId, customerName){
-  const overlay = document.createElement('div');
-  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(10px);z-index:6000;display:flex;align-items:center;justify-content:center;padding:16px;';
-  const today = new Date().toISOString().split('T')[0];
-  overlay.innerHTML=`
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.88);backdrop-filter:blur(12px);z-index:6000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  const today=new Date().toISOString().split('T')[0];
+  ov.innerHTML=`
     <div class="modal" style="max-width:380px;width:100%;padding:24px;">
-      <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-yellow);margin-bottom:6px;">\ud83d\udcc5 REAGENDAR SERVI\u00c7O</div>
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;">Escolha a nova data para <strong style="color:var(--text-light);">${xss(customerName)}</strong>:</div>
-      <label style="font-family:Silkscreen,monospace;font-size:9px;color:var(--neon-cyan);display:block;margin-bottom:4px;">\ud83d\udcc5 Nova Data *</label>
-      <input type="date" id="_reschedule-date" min="${today}" style="width:100%;background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:12px;margin-bottom:10px;box-sizing:border-box;">
-      <label style="font-family:Silkscreen,monospace;font-size:9px;color:var(--neon-cyan);display:block;margin-bottom:4px;">\u23f0 Novo Hor\u00e1rio (opcional)</label>
-      <input type="time" id="_reschedule-time" style="width:100%;background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:12px;margin-bottom:14px;box-sizing:border-box;">
+      <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-yellow);margin-bottom:8px;">📅 REAGENDAR SERVIÇO</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;">Nova data para <strong style="color:var(--text-light);">${xss(customerName)}</strong>:</div>
+      <label style="font-family:Silkscreen,monospace;font-size:9px;color:var(--neon-cyan);display:block;margin-bottom:4px;">📅 Nova Data *</label>
+      <input type="date" id="_ea_rsch_date" min="${today}" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:12px;margin-bottom:10px;">
+      <label style="font-family:Silkscreen,monospace;font-size:9px;color:var(--neon-cyan);display:block;margin-bottom:4px;">⏰ Novo Horário (opcional)</label>
+      <input type="time" id="_ea_rsch_time" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:12px;margin-bottom:14px;">
       <div style="display:flex;gap:10px;">
-        <button class="tbtn" onclick="this.closest('[style*=position]').remove()" style="flex:1;padding:11px;">Cancelar</button>
-        <button class="post-btn" id="_reschedule-confirm-btn" onclick="confirmOwnerReschedule('${apptId}','${customerId}',this)" style="flex:1;padding:11px;background:linear-gradient(135deg,var(--neon-yellow),#cc8800);color:#000;font-size:11px;">\ud83d\udcc5 Confirmar Nova Data</button>
+        <button class="tbtn" onclick="this.closest('.ea-rsch-ov').remove()" style="flex:1;padding:11px;">Cancelar</button>
+        <button class="post-btn" onclick="eaDoReschedule('${apptId}','${customerId}',this)" style="flex:1;padding:11px;background:linear-gradient(135deg,var(--neon-yellow),#cc8800);color:#000;font-size:11px;">📅 Confirmar Nova Data</button>
       </div>
     </div>`;
-  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
-  document.body.appendChild(overlay);
+  ov.classList.add('ea-rsch-ov');
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  document.body.appendChild(ov);
 }
 
-async function confirmOwnerReschedule(apptId, customerId, btn){
-  const newDate = document.getElementById('_reschedule-date')?.value;
-  const newTime = document.getElementById('_reschedule-time')?.value;
-  if(!newDate){ showToast('Selecione a nova data','error'); return; }
-  btn.disabled=true; btn.textContent='\u23f3 Salvando...';
-  try{
-    const updates = {scheduled_date: newDate, status:'confirmed'};
-    if(newTime) updates.scheduled_time = newTime;
-    const upd = await db.from('appointments').update(updates).eq('id',apptId);
-    if(upd.error) throw new Error(upd.error.message);
-    // Notifica o cliente
-    const targetCid = (customerId && customerId !== 'undefined' && customerId !== '') ? customerId : null;
-    if(targetCid && CU){
-      const bizName = myBusiness?.name || 'O servi\u00e7o';
-      const dateLabel = new Date(newDate+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});
-      const timeLabel = newTime ? ' \u00e0s '+newTime.substring(0,5) : '';
-      try{
-        const notifRes = await db.from('notifications').insert({
-          user_id: targetCid,
-          actor_id: CU.id,
-          type: 'system',
-          content: '\ud83d\udcc5 ' + bizName + ' reagendou seu servi\u00e7o para ' + dateLabel + timeLabel + '.',
-          read: false
-        });
-        if(notifRes.error) console.warn('[reschedule notif error]', notifRes.error.message);
-      }catch(ne){ console.warn('[reschedule notif]', ne); }
-    }
-    btn.closest('[style*=position]')?.remove();
-    showToast('\u2705 Reagendamento confirmado! Cliente notificado.','success');
-    loadAppointments(true);
-  }catch(err){
-    btn.disabled=false; btn.textContent='\ud83d\udcc5 Confirmar Nova Data';
-    showToast('Erro: '+err.message,'error');
+async function eaDoReschedule(apptId, customerId, btn){
+  const newDate=document.getElementById('_ea_rsch_date')?.value;
+  const newTime=document.getElementById('_ea_rsch_time')?.value;
+  if(!newDate){showToast('Selecione a nova data','error');return;}
+  btn.disabled=true; btn.textContent='⏳ Salvando...';
+  const updates={scheduled_date:newDate,status:'confirmed'};
+  if(newTime) updates.scheduled_time=newTime;
+  const upd=await db.from('appointments').update(updates).eq('id',apptId);
+  if(upd.error){
+    btn.disabled=false; btn.textContent='📅 Confirmar Nova Data';
+    showToast('Erro: '+upd.error.message,'error'); return;
   }
+  // Notifica cliente
+  const cid=(customerId&&customerId!=='undefined'&&customerId!=='')?customerId:null;
+  if(cid && CU){
+    const bizName=myBusiness?.name||'O Serviço';
+    const dateLabel=new Date(newDate+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});
+    const timeLabel=newTime?' às '+newTime.substring(0,5):'';
+    await db.from('notifications').insert({
+      user_id:cid, actor_id:CU.id, type:'system',
+      content:'📅 '+bizName+' reagendou seu serviço para '+dateLabel+timeLabel+'.',
+      read:false
+    });
+  }
+  document.querySelector('.ea-rsch-ov')?.remove();
+  showToast('✅ Reagendamento confirmado! Cliente notificado.','success');
+  loadAppointments(true);
 }
 
-// \u2500\u2500 NOTIFICA\u00c7\u00c3O DO DIA DO AGENDAMENTO (1x por sess\u00e3o) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ── NOTIFICAÇÃO DO DIA DO AGENDAMENTO (1x por sessão) ────────────
 async function checkAppointmentDayNotifications(){
   if(!CU) return;
-  const storageKey = 'ea_appt_day_notif_'+CU.id+'_'+new Date().toISOString().split('T')[0];
-  if(sessionStorage.getItem(storageKey)) return;
+  const key='ea_appt_day_'+CU.id+'_'+new Date().toISOString().split('T')[0];
+  if(sessionStorage.getItem(key)) return;
+  sessionStorage.setItem(key,'1');
   try{
-    const today = new Date().toISOString().split('T')[0];
-    const {data:appts} = await db.from('appointments')
-      .select('*, businesses(name)')
-      .eq('customer_id', CU.id)
-      .eq('scheduled_date', today)
-      .neq('status','cancelled')
-      .neq('status','done');
-    if(!appts || !appts.length){ sessionStorage.setItem(storageKey,'1'); return; }
-    const {data:existing} = await db.from('notifications')
-      .select('id')
-      .eq('user_id', CU.id)
-      .eq('type','appointment_reminder')
-      .gte('created_at', today+'T00:00:00')
-      .limit(1);
-    if(!existing || !existing.length){
-      for(const a of appts){
-        const bizName = a.businesses?.name || 'Servi\u00e7o';
-        const timeLabel = a.scheduled_time ? ' \u00e0s '+a.scheduled_time.substring(0,5) : '';
-        try{
-          await db.from('notifications').insert({
-            user_id: CU.id,
-            actor_id: CU.id,
-            type: 'appointment_reminder',
-            content: '\u23f0 Lembrete: voc\u00ea tem um agendamento hoje'+timeLabel+' com '+bizName+'!',
-            read: false
-          });
-        }catch(_){}
-      }
+    const today=new Date().toISOString().split('T')[0];
+    const q=await db.from('appointments').select('*,businesses(name)').eq('customer_id',CU.id).eq('scheduled_date',today).neq('status','cancelled').neq('status','done');
+    if(!q.data?.length) return;
+    const qe=await db.from('notifications').select('id').eq('user_id',CU.id).eq('type','appointment_reminder').gte('created_at',today+'T00:00:00').limit(1);
+    if(qe.data?.length) return;
+    for(const a of q.data){
+      const bn=a.businesses?.name||'Serviço';
+      const tl=a.scheduled_time?' às '+a.scheduled_time.substring(0,5):'';
+      await db.from('notifications').insert({user_id:CU.id,actor_id:CU.id,type:'appointment_reminder',content:'⏰ Lembrete: você tem um agendamento hoje'+tl+' com '+bn+'!',read:false});
     }
-    sessionStorage.setItem(storageKey,'1');
-  }catch(e){ console.warn('[appt day notif]',e); }
+  }catch(e){console.warn('[appt-day-notif]',e);}
 }
 // ── CloseDeal legado (mantido por compatibilidade) ──────────────
 function openCloseDealModal(chatId){ openNewDealModal(); }
