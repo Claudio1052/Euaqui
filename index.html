@@ -18112,21 +18112,45 @@ async function loadAppointments(asOwner){
   el.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;font-size:11px;">⏳ Carregando agendamentos...</div>';
 
   if(asOwner && myBusiness){
-    // Tenta com join de profiles; se falhar, carrega sem join
-    let data = null;
+    // Busca agendamentos do negócio com join explícito no customer_id
+    let data = [];
     const res = await db.from('appointments')
-      .select('*, profiles(username,avatar_url,full_name)')
+      .select('*, customer:profiles!appointments_customer_id_fkey(id,username,full_name,avatar_url)')
       .eq('business_id', myBusiness.id)
       .order('scheduled_date',{ascending:true});
-    if(res.error){
-      console.warn('[appointments owner] join falhou, tentando sem join:', res.error.message);
+
+    if(!res.error && res.data){
+      data = res.data;
+    } else {
+      // FK com nome diferente — tenta join genérico
+      console.warn('[appointments owner] fkey join falhou:', res.error?.message);
       const res2 = await db.from('appointments')
-        .select('*')
+        .select('*, profiles(id,username,full_name,avatar_url)')
         .eq('business_id', myBusiness.id)
         .order('scheduled_date',{ascending:true});
-      data = res2.data || [];
-    } else {
-      data = res.data || [];
+
+      if(!res2.error && res2.data){
+        // normaliza para campo "customer"
+        data = res2.data.map(a=>({...a, customer: a.profiles||null}));
+      } else {
+        // último fallback: sem join, busca perfis separado
+        console.warn('[appointments owner] join genérico falhou:', res2.error?.message);
+        const res3 = await db.from('appointments')
+          .select('*')
+          .eq('business_id', myBusiness.id)
+          .order('scheduled_date',{ascending:true});
+        data = res3.data || [];
+        if(data.length){
+          const ids = [...new Set(data.map(a=>a.customer_id).filter(Boolean))];
+          if(ids.length){
+            const {data:profs} = await db.from('profiles').select('id,username,full_name,avatar_url').in('id',ids);
+            if(profs){
+              const map = Object.fromEntries(profs.map(p=>[p.id,p]));
+              data = data.map(a=>({...a, customer: map[a.customer_id]||null}));
+            }
+          }
+        }
+      }
     }
     renderAppointmentsList(el, data, true);
   } else {
@@ -18155,20 +18179,32 @@ function renderAppointmentsList(el, list, isOwner){
   function renderItem(a, isPast){
     const dateStr = new Date(a.scheduled_date+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'});
     const timeStr = a.scheduled_time ? a.scheduled_time.substring(0,5) : '';
+
+    // Suporte a campo 'customer' (novo) ou 'profiles' (legado)
+    const prof = a.customer || a.profiles || null;
     const name = isOwner
-      ? (a.profiles?.full_name||a.profiles?.username||'Cliente')
-      : (a.businesses?.name||'Negócio');
+      ? (prof?.full_name || prof?.username || 'Cliente')
+      : (a.businesses?.name || 'Negócio');
     const avatar = isOwner
-      ? (a.profiles?.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(a.profiles?.username||'user'))
-      : (a.businesses?.logo_url||'https://api.dicebear.com/7.x/shapes/svg?seed=biz');
+      ? (prof?.avatar_url || 'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof?.username||'user'))
+      : (a.businesses?.logo_url || 'https://api.dicebear.com/7.x/shapes/svg?seed=biz');
+
     const valor = a.value ? 'R$ '+Number(a.value).toFixed(2).replace('.',',') : '';
     const statusColor = a.status==='confirmed'?'var(--neon-cyan)':a.status==='done'?'var(--neon-purple)':'var(--neon-pink)';
     const statusLabel = a.status==='confirmed'?'✅ Confirmado':a.status==='done'?'✔ Concluído':'⚠️ '+a.status;
+
+    // Badge com nome do cliente (só visível para o dono do negócio)
+    const clientBadge = isOwner && prof ? `
+      <div style="display:flex;align-items:center;gap:6px;margin-top:6px;padding:5px 8px;background:rgba(0,255,204,.06);border:1px solid rgba(0,255,204,.15);border-radius:8px;">
+        <img src="${xss(avatar)}" style="width:22px;height:22px;border-radius:50%;object-fit:cover;border:1px solid var(--border-glow);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=user'">
+        <span style="font-size:10px;color:var(--neon-cyan);font-family:'Silkscreen',monospace;">👤 ${xss(prof.full_name||prof.username||'Cliente')}</span>
+      </div>` : '';
+
     return `<div style="background:var(--bg-card);border:1px solid ${isPast?'rgba(255,255,255,.08)':'var(--border-glow)'};border-radius:12px;padding:12px 14px;margin-bottom:10px;${isPast?'opacity:.7':''}">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-        <img src="${xss(avatar)}" style="width:36px;height:36px;border-radius:${isOwner?'50%':'8px'};object-fit:cover;border:2px solid var(--border-glow);flex-shrink:0;">
+        <img src="${xss(avatar)}" style="width:40px;height:40px;border-radius:${isOwner?'50%':'8px'};object-fit:cover;border:2px solid var(--border-glow);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=user'">
         <div style="flex:1;min-width:0;">
-          <div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(name)}</div>
+          <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(name)}</div>
           <div style="font-size:10px;color:var(--neon-cyan);margin-top:2px;">${xss(a.service_title||'Serviço')}</div>
         </div>
         <div style="text-align:right;flex-shrink:0;">
@@ -18176,7 +18212,8 @@ function renderAppointmentsList(el, list, isOwner){
           <div style="font-size:9px;color:${statusColor};">${statusLabel}</div>
         </div>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      ${clientBadge}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
         <span style="background:rgba(0,255,204,.1);border:1px solid rgba(0,255,204,.2);border-radius:6px;padding:3px 8px;font-size:10px;color:var(--neon-cyan);">📅 ${dateStr}${timeStr?' · ⏰ '+timeStr:''}</span>
         ${a.location?`<span style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:3px 8px;font-size:10px;color:var(--text-muted);">📍 ${xss(a.location)}</span>`:''}
         ${a.payment_method?`<span style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:3px 8px;font-size:10px;color:var(--text-muted);">💳 ${xss(a.payment_method)}</span>`:''}
