@@ -16189,11 +16189,14 @@ function switchBizTab(btn){
     // Monta toggle Meus Agendamentos / Como Proprietário
     const wrap = document.getElementById('appt-toggle-wrap');
     if(wrap && myBusiness){
+      // Estilos: selecionado = fundo cyan + texto escuro; normal = transparente + texto muted
+      const _apptSelStyle = 'font-size:10px;background:var(--neon-cyan);color:#0a0a2a;border-color:var(--neon-cyan);font-weight:bold;';
+      const _apptNormStyle = 'font-size:10px;background:transparent;color:var(--text-muted);border-color:rgba(255,255,255,.15);';
       wrap.innerHTML=`
-        <button class="tbtn" id="appt-btn-client" onclick="loadAppointments(false);this.style.background='';document.getElementById('appt-btn-owner').style.background='rgba(0,255,204,.15)'" style="font-size:10px;">👤 Meus</button>
-        <button class="tbtn" id="appt-btn-owner" onclick="loadAppointments(true);this.style.background='rgba(0,255,204,.15)';document.getElementById('appt-btn-client').style.background=''" style="font-size:10px;background:rgba(0,255,204,.15);">🏪 Meu Negócio</button>`;
-      // Se tem negócio, abre direto na visão de proprietário
-      loadAppointments(true);
+        <button class="tbtn" id="appt-btn-client" style="${_apptSelStyle}" onclick="loadAppointments(false);document.getElementById('appt-btn-client').style.cssText='${_apptSelStyle}';document.getElementById('appt-btn-owner').style.cssText='${_apptNormStyle}'">👤 Meus</button>
+        <button class="tbtn" id="appt-btn-owner" style="${_apptNormStyle}" onclick="loadAppointments(true);document.getElementById('appt-btn-owner').style.cssText='${_apptSelStyle}';document.getElementById('appt-btn-client').style.cssText='${_apptNormStyle}'">🏪 Meu Negócio</button>`;
+      // Abre em "Meus" por padrão
+      loadAppointments(false);
     } else if(wrap){
       wrap.innerHTML='';
       loadAppointments(false);
