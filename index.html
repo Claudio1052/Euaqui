@@ -15752,6 +15752,19 @@ async function handleNotifNavigation(n){
       if(_railEl) _railEl.scrollIntoView({ behavior:'smooth', block:'center' });
       break;
     }
+
+    // ── SISTEMA (agendamento, cancelamento, reagendamento) ──────
+    case 'system':{
+      // Vai direto para aba de Agendamentos em Lojas & Servicos
+      nav('businesses');
+      await new Promise(r=>setTimeout(r,420));
+      const _apptTab = document.getElementById('biz-appointments-tab');
+      if(_apptTab){
+        _apptTab.style.display = '';
+        switchBizTab(_apptTab);
+      }
+      break;
+    }
   }
 }
 
@@ -15889,11 +15902,9 @@ async function loadNotifTab(tabId){
   }
   await Promise.all(commNotifs.map(n=>_getCommName(n)));
 
-  // Pré-carrega logos das lojas para notificações biz_promo
-  const bizNotifs = data.filter(n=>n.type==='biz_promo' && n.business_id);
-  // ✅ Também carrega logos para notificações system com business_id (cancelamentos, reagendamentos)
-  const systemBizNotifs = data.filter(n=>n.type==='system' && n.business_id);
-  const _uniqueBizIds = [...new Set([...bizNotifs, ...systemBizNotifs].map(n=>n.business_id).filter(Boolean))];
+  // Pré-carrega logos das lojas para notificações biz_promo E system (cancelamentos/reagendamentos)
+  const bizNotifs = data.filter(n=>(n.type==='biz_promo'||n.type==='system') && n.business_id);
+  const _uniqueBizIds = [...new Set(bizNotifs.map(n=>n.business_id).filter(Boolean))];
   const _bizLogoCache = {};
   if(_uniqueBizIds.length){
     try{
@@ -16034,10 +16045,10 @@ async function loadNotifTab(tabId){
     const iconVal = icons[n.type];
     const iconDisp = typeof iconVal === 'function' ? iconVal(n) : (iconVal || '🔔');
 
-    // ── Logo de loja (biz_promo) ──
-    const isBizNotif = n.type === 'biz_promo';
-    const bizLogo = (isBizNotif || (n.type==='system' && n.business_id)) ? (_bizLogoCache[n.business_id] || '') : '';
-    const hasBizImg = bizLogo && bizLogo.startsWith('http');
+    // ── Logo de loja (biz_promo e system com business_id) ──
+    const isBizNotif = n.type === 'biz_promo' || (n.type === 'system' && !!n.business_id);
+    const bizLogo = isBizNotif ? (_bizLogoCache[n.business_id] || '') : '';
+    const hasBizImg = isBizNotif && bizLogo && bizLogo.startsWith('http');
 
     // ── Logo de comunidade ──
     const isCommunityNotif = COMM_TYPES_SET.has(n.type);
@@ -16090,11 +16101,10 @@ async function loadNotifTab(tabId){
     } else if(hasBizImg){
       niIconStyle = 'style="background:transparent;padding:0;position:relative;"';
       // system = logo redonda com borda cyan; biz_promo = quadrada com borda amarela
-      const _isSystemBiz = n.type === 'system';
-      const _bizRadius = _isSystemBiz ? '50%' : '10px';
-      const _bizBorder = _isSystemBiz ? 'rgba(0,255,204,.5)' : 'rgba(255,204,0,.4)';
-      const _bizBadge = _isSystemBiz ? '' : '';
-      niIconHtml = `<img src="${bizLogo}" style="width:36px;height:36px;border-radius:${_bizRadius};object-fit:cover;border:2px solid ${_bizBorder};display:block;" onerror="this.parentElement.innerHTML='<span style=\\'font-size:20px\\'>🏪</span>'">${_bizBadge?`<span style="position:absolute;bottom:-3px;right:-3px;font-size:13px;line-height:1;">${_bizBadge}</span>`:''}`;
+      const _isSystemBizN = n.type === 'system';
+      const _bizRad = _isSystemBizN ? '50%' : '10px';
+      const _bizBrd = _isSystemBizN ? 'rgba(0,255,204,.5)' : 'rgba(255,204,0,.4)';
+      niIconHtml = `<img src="${bizLogo}" style="width:36px;height:36px;border-radius:${_bizRad};object-fit:cover;border:2px solid ${_bizBrd};display:block;" onerror="this.parentElement.innerHTML='<span style=\'font-size:20px\'>🏪</span>'">`;
     } else if(isBizNotif){
       niIconHtml = `<span style="font-size:20px">🏪</span>`;
     } else if(hasCommImg){
@@ -16913,29 +16923,32 @@ async function openBizChat(chatId, label){
     let avatarSrc = '';
     let extraLabel = label || '';
     // Sempre busca dados frescos do banco para garantir logo/avatar correto
+    let _chatBizId = null;
     try{
-      const qChat = await db.from('business_chats').select('business_id, customer_id, businesses(name,logo_url), customer:profiles!business_chats_customer_id_fkey(username,full_name,avatar_url)').eq('id',chatId).maybeSingle();
+      const qChat = await db.from('business_chats').select('business_id, customer_id, businesses(id,name,logo_url), customer:profiles!business_chats_customer_id_fkey(username,full_name,avatar_url)').eq('id',chatId).maybeSingle();
       if(!qChat.error && qChat.data){
+        _chatBizId = qChat.data.businesses?.id || qChat.data.business_id || null;
         if(myBusiness){
           // sou o dono — mostro avatar do cliente
           const cust = qChat.data.customer || null;
           avatarSrc = cust?.avatar_url || '';
           if(!extraLabel) extraLabel = cust?.full_name || cust?.username || 'Cliente';
         } else {
-          // sou o cliente — mostro logo da loja
+          // sou o cliente — mostro SEMPRE o logo da loja/serviço
           avatarSrc = qChat.data.businesses?.logo_url || '';
           if(!extraLabel) extraLabel = qChat.data.businesses?.name || label || 'Negócio';
         }
       }
     }catch(_){}
-    // Fallback: tenta pegar do item da lista
-    if(!avatarSrc){
+    // Fallback apenas para dono (cliente sempre usa logo da loja via query acima)
+    if(!avatarSrc && myBusiness){
       const ciEl = document.getElementById('biz-ci-'+chatId);
       const ciImg = ciEl?.querySelector('img');
       avatarSrc = ciImg?.src || '';
     }
     const isOwnerView = !!myBusiness;
-    const avatarRadius = isOwnerView ? '50%' : '8px';
+    // Cliente: logo quadrado arredondado (loja); Dono: avatar circular (cliente)
+    const avatarRadius = isOwnerView ? '50%' : '10px';
     const avatarHdrHtml = avatarSrc
       ? `<img src="${xss(avatarSrc)}" style="width:36px;height:36px;border-radius:${avatarRadius};object-fit:cover;border:2px solid var(--border-glow);flex-shrink:0;margin-left:8px;" onerror="this.style.display='none'">`
       : `<div style="width:36px;height:36px;border-radius:${avatarRadius};background:rgba(0,255,204,.1);border:2px solid var(--border-glow);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;margin-left:8px;">${isOwnerView?'👤':'🏪'}</div>`;
@@ -18321,10 +18334,10 @@ async function eaDoCancel(apptId, btn){
   // 3. Notifica dono
   if(ownerId && CU && ownerId!==CU.id){
     const uName=CP?.full_name||CP?.username||'Um usuário';
-    const _notifBizId = q1.data?.business_id || null;
+    const _cancelBizId = q1.data?.business_id || null;
     await db.from('notifications').insert({
       user_id:ownerId, actor_id:CU.id, type:'system',
-      business_id: _notifBizId,
+      business_id: _cancelBizId,
       content:'❌ '+uName+' cancelou o agendamento.'+(reason?' Motivo: '+reason:''),
       read:false
     });
@@ -18334,13 +18347,13 @@ async function eaDoCancel(apptId, btn){
   loadAppointments(false);
 }
 
-// ── REAGENDAR (Cliente → abre chat com texto padrão) ────────────
+// ── REAGENDAR (Cliente → envia mensagem direto no banco, igual ao fluxo de compra) ────────────
 async function rescheduleAppointmentClient(apptId, bizId, bizName, serviceTitle){
   if(!CU){showToast('Faça login para continuar','error');return;}
   let fBizId   = (bizId   && bizId!=='undefined'   && bizId!=='')   ? bizId   : null;
-  let fBizName = (bizName && bizName!=='undefined') ? bizName : 'Negócio';
-  let fTitle   = (serviceTitle && serviceTitle!=='undefined') ? serviceTitle : 'Serviço';
-  // Se bizId não veio, busca no banco
+  let fBizName = (bizName && bizName!=='undefined') ? bizName : 'Negocio';
+  let fTitle   = (serviceTitle && serviceTitle!=='undefined') ? serviceTitle : 'Servico';
+  // Se bizId nao veio, busca no banco
   if(!fBizId){
     const q=await db.from('appointments').select('business_id, businesses(id,name)').eq('id',apptId).maybeSingle();
     if(!q.error && q.data){
@@ -18348,45 +18361,37 @@ async function rescheduleAppointmentClient(apptId, bizId, bizName, serviceTitle)
       fBizName = q.data.businesses?.name || fBizName;
     }
   }
-  if(!fBizId){showToast('Negócio não identificado','error');return;}
-  showToast('📅 Abrindo chat...','');
-  // Cria/obtém chat
-  let chat=null;
-  const qc=await db.from('business_chats').select('*').eq('business_id',fBizId).eq('customer_id',CU.id).maybeSingle();
-  if(!qc.error && qc.data){ chat=qc.data; }
-  else{
-    const ins=await db.from('business_chats').insert({business_id:fBizId,customer_id:CU.id}).select().single();
-    if(ins.error){showToast('Erro ao abrir chat: '+ins.error.message,'error');return;}
-    chat=ins.data;
-  }
-  // Navega e abre o chat
-  nav('businesses');
-  const msgPadrao='Olá! Gostaria de reagendar meu serviço de '+fTitle+'. Qual a disponibilidade?';
-  setTimeout(async ()=>{
+  if(!fBizId){showToast('Negocio nao identificado','error');return;}
+  try{
+    // 1. Cria/obtem chat
+    let chat=null;
+    const qc=await db.from('business_chats').select('*').eq('business_id',fBizId).eq('customer_id',CU.id).maybeSingle();
+    if(!qc.error && qc.data){ chat=qc.data; }
+    else{
+      const ins=await db.from('business_chats').insert({business_id:fBizId,customer_id:CU.id}).select().single();
+      if(ins.error){ showToast('Erro ao abrir chat: '+ins.error.message,'error'); return; }
+      chat=ins.data;
+    }
+    // 2. Insere mensagem direto no banco — igual ao fluxo "Quero Comprar" (sem usar textarea)
+    const msgPadrao='📅 Ola! Gostaria de reagendar meu servico de *'+fTitle+'*. Qual a disponibilidade?';
+    const mod=await moderateContent(msgPadrao);
+    if(mod.allowed){
+      await db.from('business_messages').insert({chat_id:chat.id, sender_id:CU.id, content:msgPadrao});
+      await db.from('business_chats').update({updated_at:new Date().toISOString()}).eq('id',chat.id);
+    }
+    showToast('✅ Mensagem enviada! Indo para o chat...','success');
+    // 3. Navega exatamente igual ao "Quero Comprar"
+    nav('businesses');
+    await new Promise(r=>setTimeout(r,400));
     const chatsTab=document.querySelector('#biz-page-tabs .ptab[data-tab="biz-chats"]');
     if(chatsTab) switchBizTab(chatsTab);
-    setTimeout(async ()=>{
-      await openBizChat(chat.id, fBizName);
-      // Preenche input e envia automaticamente — igual ao fluxo de compra
-      let tries=0;
-      const fill=setInterval(async ()=>{
-        const inp=document.getElementById('biz-msg-in');
-        const sendBtn=document.getElementById('biz-send-btn');
-        if(inp){
-          inp.value=msgPadrao;
-          inp.style.height='auto';
-          inp.style.height=Math.min(inp.scrollHeight,80)+'px';
-          inp.dispatchEvent(new Event('input'));
-          clearInterval(fill);
-          // Aguarda um tick e envia automaticamente
-          setTimeout(async ()=>{
-            if(typeof sendBizMsg === 'function') await sendBizMsg();
-          },150);
-        }
-        if(++tries>50) clearInterval(fill);
-      },100);
-    },600);
-  },400);
+    await new Promise(r=>setTimeout(r,500));
+    await loadBizChats();
+    await new Promise(r=>setTimeout(r,200));
+    openBizChat(chat.id, fBizName);
+  }catch(e){
+    showToast('Erro: '+e.message,'error');
+  }
 }
 
 // ── REAGENDAR (Proprietário → escolhe nova data) ────────────────
