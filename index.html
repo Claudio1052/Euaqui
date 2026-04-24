@@ -20781,135 +20781,306 @@ async function divulgarProduto(bizId, prodName, prodPrice, imgUrl, priceLabel){
   if(!CU) return showToast('Faça login','error');
   if(!myBusiness || myBusiness.id !== bizId) return showToast('Acesso negado','error');
 
-  // Check daily limit from biz_posts table
+  // Check daily limit
   const today = new Date(); today.setHours(0,0,0,0);
   const {count} = await db.from('biz_posts')
     .select('id',{count:'exact',head:true})
     .eq('owner_id',CU.id)
     .gte('created_at', today.toISOString());
-  if((count||0) >= BIZ_PROMO_LIMIT){
+  if((count||0) >= BIZ_PROMO_LIMIT)
     return showToast('Limite de '+BIZ_PROMO_LIMIT+' divulgações por dia atingido. Tente amanhã!','error');
-  }
 
   // Check followers
   const {data:followers} = await db.from('business_followers')
     .select('user_id').eq('business_id',bizId);
-  if(!followers?.length){
+  if(!followers?.length)
     return showToast('Sua loja ainda não tem seguidores para divulgar.','error');
-  }
 
-  // Show preview modal
+  const isServico = myBusiness.category === 'servico';
   const priceDisplay = prodPrice > 0
     ? 'R$ '+Number(prodPrice).toFixed(2).replace('.',',')
     : (priceLabel || 'Sob consulta');
+
+  // State for custom media
+  let _divulgFiles = [];
+  let _divulgTypes = [];
+  let _divulgMode  = 'padrao'; // 'padrao' | 'custom'
+
   const overlay = document.createElement('div');
-  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(8px);z-index:4000;display:flex;align-items:center;justify-content:center;padding:16px;';
-  overlay.innerHTML=`
-    <div class="modal" style="max-width:420px;width:100%;">
-      <div style="font-family:Silkscreen,monospace;font-size:12px;color:var(--neon-cyan);margin-bottom:14px;">📢 Divulgar produto/serviço</div>
-      <div style="background:var(--bg-mid);border:1px solid var(--border-glow);border-radius:12px;padding:14px;margin-bottom:14px;">
-        ${imgUrl?`<img src="${xss(imgUrl)}" style="width:100%;height:140px;object-fit:cover;border-radius:8px;margin-bottom:10px;">`:''}
-        <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--text-light);margin-bottom:4px;">${xss(prodName)}</div>
-        <div style="font-family:VT323,monospace;font-size:24px;color:var(--neon-cyan);">${priceDisplay}</div>
-        <div style="font-size:10px;color:var(--neon-yellow);margin-top:4px;">🏪 ${xss(myBusiness.name)}</div>
+  overlay.id = 'divulg-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(10px);z-index:4000;display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto;';
+
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:460px;width:100%;max-height:92vh;overflow-y:auto;">
+
+      <!-- Header -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div style="font-family:Silkscreen,monospace;font-size:12px;color:var(--neon-cyan);">📢 Divulgar ${isServico?'Serviço':'Produto'}/Serviço</div>
+        <button onclick="document.getElementById('divulg-overlay').remove()" style="background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;">✕</button>
       </div>
-      <div class="igrp">
+
+      <!-- Preview do produto/serviço -->
+      <div style="background:var(--bg-mid);border:1px solid var(--border-glow);border-radius:12px;padding:14px;margin-bottom:14px;display:flex;gap:12px;align-items:center;">
+        ${imgUrl
+          ? `<img src="${xss(imgUrl)}" style="width:70px;height:70px;object-fit:cover;border-radius:8px;flex-shrink:0;">`
+          : `<div style="width:70px;height:70px;border-radius:8px;background:rgba(255,255,255,.05);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;">${isServico?'🔧':'📦'}</div>`}
+        <div style="flex:1;min-width:0;">
+          <div style="font-family:Silkscreen,monospace;font-size:12px;color:var(--text-light);margin-bottom:3px;">${xss(prodName)}</div>
+          <div style="font-family:VT323,monospace;font-size:22px;color:var(--neon-cyan);">${priceDisplay}</div>
+          <div style="font-size:10px;color:var(--neon-yellow);margin-top:2px;">🏪 ${xss(myBusiness.name)}</div>
+        </div>
+        <!-- Botão ir para Loja/Serviço -->
+        <button onclick="openBizById('${bizId}')" style="flex-shrink:0;background:linear-gradient(135deg,rgba(0,255,204,.15),rgba(191,95,255,.15));border:1px solid var(--neon-cyan);border-radius:10px;padding:8px 12px;color:var(--neon-cyan);font-family:Silkscreen,monospace;font-size:9px;cursor:pointer;white-space:nowrap;line-height:1.4;">
+          ${isServico?'🔧 Ir ao<br>Serviço':'🛍️ Ir à<br>Loja'}
+        </button>
+      </div>
+
+      <!-- Seletor de modo: Foto Padrão vs Personalizar -->
+      <div style="display:flex;gap:8px;margin-bottom:14px;">
+        <button id="div-mode-padrao" onclick="divulgSetMode('padrao')"
+          style="flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;padding:12px 8px;border-radius:12px;border:2px solid var(--neon-cyan);background:rgba(0,255,204,.1);color:var(--neon-cyan);cursor:pointer;font-family:Space Mono,monospace;font-size:10px;">
+          <span style="font-size:20px;">🖼️</span>
+          <span style="font-family:Silkscreen,monospace;font-size:9px;">Foto Padrão</span>
+          <span style="font-size:9px;opacity:.7;">Usa a foto do cadastro</span>
+        </button>
+        <button id="div-mode-custom" onclick="divulgSetMode('custom')"
+          style="flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;padding:12px 8px;border-radius:12px;border:1px solid var(--border-glow);background:transparent;color:var(--text-muted);cursor:pointer;font-family:Space Mono,monospace;font-size:10px;">
+          <span style="font-size:20px;">🎨</span>
+          <span style="font-family:Silkscreen,monospace;font-size:9px;">Personalizar</span>
+          <span style="font-size:9px;opacity:.7;">Escolha foto/vídeo</span>
+        </button>
+      </div>
+
+      <!-- Painel: Foto Padrão -->
+      <div id="div-panel-padrao">
+        ${imgUrl
+          ? `<div style="border-radius:10px;overflow:hidden;margin-bottom:12px;border:1px solid var(--border-glow);">
+               <img src="${xss(imgUrl)}" style="width:100%;max-height:200px;object-fit:cover;display:block;">
+             </div>`
+          : `<div style="border-radius:10px;border:1px dashed rgba(0,255,204,.2);padding:18px;text-align:center;margin-bottom:12px;color:var(--text-muted);font-size:11px;">Sem foto cadastrada — será publicado só com texto.</div>`}
+      </div>
+
+      <!-- Painel: Personalizar (hidden por padrão) -->
+      <div id="div-panel-custom" style="display:none;">
+        <!-- Área de drop / preview -->
+        <div id="div-media-zone"
+          style="border:2px dashed rgba(0,255,204,.3);border-radius:12px;padding:16px;text-align:center;cursor:pointer;margin-bottom:10px;transition:border-color .2s;"
+          onclick="document.getElementById('div-file-input').click()"
+          ondragover="event.preventDefault();this.style.borderColor='var(--neon-cyan)'"
+          ondragleave="this.style.borderColor='rgba(0,255,204,.3)'"
+          ondrop="event.preventDefault();this.style.borderColor='rgba(0,255,204,.3)';divulgHandleFiles(event.dataTransfer.files)">
+          <div style="font-size:28px;margin-bottom:6px;">📸</div>
+          <div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--neon-cyan);margin-bottom:4px;">Arraste ou toque para adicionar</div>
+          <div style="font-size:9px;color:var(--text-muted);">Foto ou vídeo • Até 7 arquivos</div>
+        </div>
+        <input type="file" id="div-file-input" accept="image/*,video/*" multiple style="display:none;" onchange="divulgHandleFiles(this.files)">
+        <!-- Grid de preview -->
+        <div id="div-media-prev" style="display:none;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px;"></div>
+        <!-- Barra de progresso -->
+        <div id="div-prog-bar" style="display:none;margin-bottom:10px;">
+          <div style="height:4px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden;">
+            <div id="div-prog-fill" style="height:100%;background:linear-gradient(90deg,var(--neon-cyan),var(--neon-purple));width:0%;transition:width .3s;border-radius:2px;"></div>
+          </div>
+          <div id="div-prog-txt" style="font-size:9px;color:var(--text-muted);margin-top:4px;text-align:center;font-family:Space Mono,monospace;"></div>
+        </div>
+      </div>
+
+      <!-- Mensagem personalizada -->
+      <div class="igrp" style="margin-bottom:10px;">
         <label class="ilbl">Mensagem personalizada (opcional)</label>
-        <textarea class="ainput" id="promo-msg" rows="2" placeholder="Ex: Promoção especial! Estoque limitado..." style="resize:none;font-size:11px;"></textarea>
+        <textarea class="ainput" id="divulg-msg" rows="2" placeholder="Ex: Promoção especial! Estoque limitado..." style="resize:none;font-size:11px;"></textarea>
       </div>
-      <div style="font-size:10px;color:var(--text-muted);margin-bottom:12px;">
-        📊 ${count||0}/${BIZ_PROMO_LIMIT} divulgações hoje · 👥 Será enviado para ${followers.length} seguidor(es)
+
+      <!-- Stats -->
+      <div style="font-size:10px;color:var(--text-muted);margin-bottom:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span>📊 ${count||0}/${BIZ_PROMO_LIMIT} divulgações hoje</span>
+        <span>·</span>
+        <span>👥 ${followers.length} seguidor(es)</span>
       </div>
+
+      <!-- Ações -->
       <div style="display:flex;gap:10px;justify-content:flex-end;">
-        <button class="tbtn" onclick="this.closest('[style*=fixed]').remove()">Cancelar</button>
-        <button class="post-btn" style="font-size:10px;" 
-          onclick="confirmarDivulgacao('${bizId}','${xss(prodName)}',${prodPrice},'${xss(imgUrl||'')}','${xss(priceLabel||'')}',this)">
+        <button class="tbtn" onclick="document.getElementById('divulg-overlay').remove()">Cancelar</button>
+        <button id="divulg-submit-btn" class="post-btn" style="font-size:10px;"
+          onclick="divulgConfirmar('${bizId}','${xss(prodName)}',${prodPrice},'${xss(imgUrl||'')}','${xss(priceLabel||'')}',this)">
           📢 Divulgar agora
         </button>
       </div>
     </div>`;
-  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+
+  overlay.onclick = e => { if(e.target===overlay) overlay.remove(); };
   document.body.appendChild(overlay);
-}
 
-async function confirmarDivulgacao(bizId, prodName, prodPrice, imgUrl, priceLabel, btn){
-  btn.disabled=true; btn.textContent='⏳ Publicando...';
-  const msg = document.getElementById('promo-msg')?.value.trim()||'';
-  const priceDisplay = prodPrice > 0
-    ? 'R$ '+Number(prodPrice).toFixed(2).replace('.',',')
-    : (priceLabel||'Sob consulta');
-  const bizLogo = myBusiness.logo_url||'';
-  const bizNameSafe = (myBusiness.name||'').replace(/:/g,'|').replace(/\[/g,'(').replace(/\]/g,')');
-  const metaLine = '[BIZ_PROMO:'+myBusiness.id+':'+bizNameSafe+':'+bizLogo+']';
-  const postText = `${metaLine}\n🏪 *${myBusiness.name}*\n📦 ${prodName} — ${priceDisplay}${msg?'\n\n'+msg:''}`;
+  // ── Helpers do modal de divulgação ──────────────────────────────
+  window.divulgSetMode = function(mode) {
+    _divulgMode = mode;
+    const btnPad = document.getElementById('div-mode-padrao');
+    const btnCus = document.getElementById('div-mode-custom');
+    const panPad = document.getElementById('div-panel-padrao');
+    const panCus = document.getElementById('div-panel-custom');
+    if(mode === 'padrao') {
+      btnPad.style.cssText = btnPad.style.cssText.replace(/border:[^;]+/,'border:2px solid var(--neon-cyan)');
+      btnPad.style.background = 'rgba(0,255,204,.1)'; btnPad.style.color = 'var(--neon-cyan)';
+      btnCus.style.background = 'transparent'; btnCus.style.color = 'var(--text-muted)';
+      btnCus.style.border = '1px solid var(--border-glow)';
+      panPad.style.display = 'block'; panCus.style.display = 'none';
+    } else {
+      btnCus.style.cssText = btnCus.style.cssText.replace(/border:[^;]+/,'border:2px solid var(--neon-cyan)');
+      btnCus.style.background = 'rgba(0,255,204,.1)'; btnCus.style.color = 'var(--neon-cyan)';
+      btnPad.style.background = 'transparent'; btnPad.style.color = 'var(--text-muted)';
+      btnPad.style.border = '1px solid var(--border-glow)';
+      panPad.style.display = 'none'; panCus.style.display = 'block';
+    }
+  };
 
-  // Moderate content
-  if(msg){ const mod=await moderateContent(msg); if(!mod.allowed){showModerationError(mod.categories);btn.disabled=false;btn.textContent='📢 Divulgar agora';return;} }
+  window.divulgHandleFiles = function(fileList) {
+    const MAX = 7;
+    const newFiles = Array.from(fileList||[]).slice(0, MAX - _divulgFiles.length);
+    newFiles.forEach(f => {
+      _divulgFiles.push(f);
+      _divulgTypes.push(f.type.startsWith('video') ? 'video' : 'image');
+    });
+    const prev = document.getElementById('div-media-prev');
+    if(!prev) return;
+    if(!_divulgFiles.length) { prev.style.display = 'none'; prev.innerHTML = ''; return; }
+    prev.style.display = 'grid';
+    prev.innerHTML = _divulgFiles.map((f,i) => {
+      const url = URL.createObjectURL(f);
+      const isVid = _divulgTypes[i] === 'video';
+      return `<div style="position:relative;border-radius:8px;overflow:hidden;background:#000;aspect-ratio:1;">
+        ${isVid
+          ? `<video src="${url}" style="width:100%;height:100%;object-fit:cover;" muted playsinline></video>
+             <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;"><span style="font-size:18px;">▶</span></div>`
+          : `<img src="${url}" style="width:100%;height:100%;object-fit:cover;">`}
+        <button onclick="divulgRemoveFile(${i})" style="position:absolute;top:3px;right:3px;background:rgba(0,0,0,.8);border:none;color:#fff;width:20px;height:20px;border-radius:50%;cursor:pointer;font-size:12px;z-index:2;display:flex;align-items:center;justify-content:center;">×</button>
+        ${i===0 ? `<span style="position:absolute;bottom:2px;left:4px;font-size:8px;color:rgba(255,255,255,.8);font-family:'Space Mono',monospace;">CAPA</span>` : ''}
+      </div>`;
+    }).join('');
+    const restantes = MAX - _divulgFiles.length;
+    if(restantes > 0) {
+      prev.innerHTML += `<div onclick="document.getElementById('div-file-input').click()" style="display:flex;align-items:center;justify-content:center;border:1px dashed rgba(0,255,204,.3);border-radius:8px;aspect-ratio:1;color:var(--text-muted);flex-direction:column;gap:3px;cursor:pointer;">
+        <span style="font-size:20px;color:var(--neon-cyan);">+</span>
+        <span style="font-size:9px;">${restantes} livre${restantes>1?'s':''}</span>
+      </div>`;
+    }
+  };
 
-  // Create post with type biz_promo
-  const {data:post, error} = await db.from('posts').insert({
-    user_id: CU.id,
-    content: postText,
-    type: imgUrl ? 'image' : 'text',
-    media_urls: imgUrl ? [imgUrl] : [],
-    media_types: imgUrl ? ['image'] : [],
-    visibility: 'public'
-  }).select().maybeSingle();
+  window.divulgRemoveFile = function(i) {
+    _divulgFiles.splice(i, 1); _divulgTypes.splice(i, 1);
+    window.divulgHandleFiles([]);
+  };
 
-  if(error){ btn.disabled=false; btn.textContent='📢 Divulgar'; return showToast('Erro: '+error.message,'error'); }
+  window.divulgConfirmar = async function(bizId, prodName, prodPrice, defaultImgUrl, priceLabel, btn) {
+    btn.disabled = true; btn.textContent = '⏳ Publicando...';
 
-  // Save to dedicated biz_posts table (for tracking + clean separation)
-  await db.from('biz_posts').insert({
-    business_id:  bizId,
-    owner_id:     CU.id,
-    product_name: prodName,
-    product_price: prodPrice>0 ? prodPrice : null,
-    price_label:  prodPrice>0 ? null : priceLabel,
-    image_url:    imgUrl||null,
-    message:      msg||null,
-    biz_name:     myBusiness.name,
-    biz_logo:     myBusiness.logo_url||null,
-    biz_segment:  myBusiness.segment||null,
-    biz_city:     myBusiness.city||null,
-    sent_to:      0
-  });
+    function setStatus(s) {
+      const bar = document.getElementById('div-prog-bar');
+      const fill = document.getElementById('div-prog-fill');
+      const txt  = document.getElementById('div-prog-txt');
+      if(!bar) return;
+      bar.style.display = 'block';
+      if(s.startsWith('PROGRESS:')) {
+        const parts = s.split(':');
+        const pct = parseInt(parts[1])||0;
+        const label = parts.slice(2).join(':') || '';
+        if(fill) fill.style.width = pct + '%';
+        if(txt)  txt.textContent = label || (pct + '%');
+      } else {
+        if(txt) txt.textContent = s;
+      }
+    }
 
-  // Send notification to all followers
-  const {data:followers} = await db.from('business_followers')
-    .select('user_id').eq('business_id',bizId);
-  if(followers?.length){
-    const notifs = followers
-      .filter(f=>f.user_id !== CU.id)
-      .map(f=>({
-        user_id:     f.user_id,
-        actor_id:    CU.id,
-        type:        'biz_promo',
-        content:     `🏪 ${myBusiness.name} divulgou: ${prodName} por ${priceDisplay}`,
-        business_id: bizId,
-        read:        false
-      }));
-    if(notifs.length) await db.from('notifications').insert(notifs);
-  }
+    const msg = document.getElementById('divulg-msg')?.value.trim()||'';
+    const priceDisplay = prodPrice > 0
+      ? 'R$ '+Number(prodPrice).toFixed(2).replace('.',',')
+      : (priceLabel||'Sob consulta');
+    const bizLogo = myBusiness.logo_url||'';
+    const bizNameSafe = (myBusiness.name||'').replace(/:/g,'|').replace(/\[/g,'(').replace(/\]/g,')');
+    const metaLine = '[BIZ_PROMO:'+myBusiness.id+':'+bizNameSafe+':'+bizLogo+']';
 
-  btn.closest('[style*=fixed]').remove();
-  const numFollowers = followers?.length||0;
-  showToast('✅ Divulgado para '+numFollowers+' seguidor(es)! Abrindo feed...','success');
-  // Force feed refresh and navigate to home > Recentes
-  cachedPosts={};cachedPostIds=new Set();lastFeedLoad=0;
-  setTimeout(()=>{
-    feedTab='recent'; // Ensure Recentes tab is active
-    nav('home');
-    setTimeout(()=>{
-      // Activate ht-feed home tab
-      const feedHomeTab = document.querySelector('.nav-tab[data-tab="ht-feed"]');
-      if(feedHomeTab) switchHomeTab(feedHomeTab);
-      // Activate Recentes in feed
-      document.querySelectorAll('.ftab').forEach(b=>{
-        b.classList.toggle('active', b.textContent.includes('Recentes'));
-      });
-      loadFeed(true); // force reload bypassing cache
-    }, 500);
-  }, 800);
+    // Moderar mensagem
+    if(msg){ const mod = await moderateContent(msg); if(!mod.allowed){ showModerationError(mod.categories); btn.disabled=false; btn.textContent='📢 Divulgar agora'; return; } }
+
+    let mediaUrls = [];
+    let mediaTypes2 = [];
+    let postType = 'text';
+
+    if(_divulgMode === 'padrao') {
+      // Usa a imagem padrão do produto (já hospedada)
+      if(defaultImgUrl) { mediaUrls = [defaultImgUrl]; mediaTypes2 = ['image']; postType = 'image'; }
+    } else {
+      // Faz upload de cada arquivo pelo pipeline completo (igual ao feed)
+      if(_divulgFiles.length) {
+        setStatus('PROGRESS:2:Iniciando uploads...');
+        for(let i = 0; i < _divulgFiles.length; i++) {
+          try {
+            setStatus('PROGRESS:'+ Math.round(5 + (i/_divulgFiles.length)*85) +':Enviando '+(i+1)+'/'+_divulgFiles.length+'...');
+            const publicUrl = await uploadWithPipeline(_divulgFiles[i], _divulgTypes[i], setStatus);
+            mediaUrls.push(publicUrl);
+            mediaTypes2.push(_divulgTypes[i]);
+          } catch(e) {
+            showToast(e.userMessage || ('Erro no upload: '+e.message), 'error');
+            btn.disabled=false; btn.textContent='📢 Divulgar agora';
+            return;
+          }
+        }
+        postType = mediaTypes2.includes('video') ? 'video' : 'image';
+      }
+    }
+
+    setStatus('PROGRESS:95:Publicando...');
+    const postText = `${metaLine}\n\uD83C\uDFEA *${myBusiness.name}*\n\uD83D\uDCE6 ${prodName} \u2014 ${priceDisplay}${msg?'\n\n'+msg:''}`;
+
+    const {data:post, error} = await db.from('posts').insert({
+      user_id: CU.id,
+      content: postText,
+      type: postType,
+      media_urls: mediaUrls,
+      media_types: mediaTypes2,
+      visibility: 'public'
+    }).select().maybeSingle();
+
+    if(error){ btn.disabled=false; btn.textContent='📢 Divulgar agora'; return showToast('Erro: '+error.message,'error'); }
+
+    await db.from('biz_posts').insert({
+      business_id:   bizId,
+      owner_id:      CU.id,
+      product_name:  prodName,
+      product_price: prodPrice>0 ? prodPrice : null,
+      price_label:   prodPrice>0 ? null : priceLabel,
+      image_url:     mediaUrls[0]||null,
+      message:       msg||null,
+      biz_name:      myBusiness.name,
+      biz_logo:      myBusiness.logo_url||null,
+      biz_segment:   myBusiness.segment||null,
+      biz_city:      myBusiness.city||null,
+      sent_to:       0
+    });
+
+    // Notificar seguidores
+    const {data:followers2} = await db.from('business_followers').select('user_id').eq('business_id',bizId);
+    if(followers2?.length) {
+      const notifs = followers2
+        .filter(f=>f.user_id !== CU.id)
+        .map(f=>({ user_id:f.user_id, actor_id:CU.id, type:'biz_promo',
+          content:`\uD83C\uDFEA ${myBusiness.name} divulgou: ${prodName} por ${priceDisplay}`,
+          business_id:bizId, read:false }));
+      if(notifs.length) await db.from('notifications').insert(notifs);
+    }
+
+    document.getElementById('divulg-overlay')?.remove();
+    const numFollowers = followers2?.length||0;
+    showToast('\u2705 Divulgado para '+numFollowers+' seguidor(es)! Abrindo feed...','success');
+    cachedPosts={};cachedPostIds=new Set();lastFeedLoad=0;
+    setTimeout(()=>{ feedTab='recent'; nav('home');
+      setTimeout(()=>{
+        const feedHomeTab=document.querySelector('.nav-tab[data-tab="ht-feed"]');
+        if(feedHomeTab) switchHomeTab(feedHomeTab);
+        document.querySelectorAll('.ftab').forEach(b=>{ b.classList.toggle('active',b.textContent.includes('Recentes')); });
+        loadFeed(true);
+      },500);
+    },800);
+  };
 }
 
 // ── 3. Notificar seguidores (promoção manual) ────────────────────
