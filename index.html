@@ -19924,34 +19924,78 @@ function _buildPurchFilters(el){
   row.id = 'purch-filter-row';
   row.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;align-items:center;';
 
-  const selStyle = 'background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:7px 10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:10px;outline:none;cursor:pointer;';
+  const inputStyle = 'flex:1;min-width:120px;background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:7px 10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:10px;outline:none;';
 
   const search = document.createElement('input');
   search.id = 'purch-search';
   search.type = 'text';
-  search.placeholder = 'Buscar cliente, produto ou nº pedido...';
+  search.placeholder = 'Buscar cliente, produto ou n\u00ba pedido...';
   search.oninput = eaPurchFilter;
-  search.style.cssText = 'flex:1;min-width:120px;' + selStyle;
-
-  const statusSel = document.createElement('select');
-  statusSel.id = 'purch-status-filter';
-  statusSel.onchange = eaPurchFilter;
-  statusSel.style.cssText = selStyle;
-  [['','Todos'],['confirmed','Confirmado'],['shipped','Enviado'],['delivered','Entregue'],['done','Concluído'],['cancelled','Cancelado']].forEach(([v,t])=>{
-    const o=document.createElement('option'); o.value=v; o.textContent=t; statusSel.appendChild(o);
-  });
-
-  const sortSel = document.createElement('select');
-  sortSel.id = 'purch-sort-filter';
-  sortSel.onchange = eaPurchFilter;
-  sortSel.style.cssText = selStyle;
-  [['desc','Mais recente'],['asc','Mais antigo']].forEach(([v,t])=>{
-    const o=document.createElement('option'); o.value=v; o.textContent=t; sortSel.appendChild(o);
-  });
-
+  search.style.cssText = inputStyle;
   row.appendChild(search);
-  row.appendChild(statusSel);
-  row.appendChild(sortSel);
+
+  function _makePurchDrop({ wrapperId, hiddenId, defaultLabel, defaultVal, options }) {
+    const wrap = document.createElement('div');
+    wrap.id = wrapperId;
+    wrap.style.cssText = 'position:relative;flex-shrink:0;';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:6px;background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:10px;padding:7px 12px;color:var(--text-light);font-family:Space Mono,monospace;font-size:10px;cursor:pointer;white-space:nowrap;';
+    const lbl = document.createElement('span');
+    lbl.textContent = defaultLabel;
+    const arrow = document.createElement('span');
+    arrow.textContent = '\u25be';
+    arrow.style.cssText = 'color:var(--text-muted);font-size:10px;';
+    btn.appendChild(lbl); btn.appendChild(arrow);
+    const hidden = document.createElement('input');
+    hidden.type = 'hidden'; hidden.id = hiddenId; hidden.value = defaultVal;
+    const list = document.createElement('div');
+    list.style.cssText = 'display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:100%;background:var(--bg-card);border:1px solid var(--border-glow);border-radius:12px;overflow-y:auto;max-height:220px;z-index:9999;box-shadow:0 8px 32px rgba(0,0,0,.6);';
+    options.forEach(([v, t]) => {
+      const item = document.createElement('div');
+      item.textContent = t;
+      item.style.cssText = 'padding:9px 14px;cursor:pointer;font-family:Space Mono,monospace;font-size:10px;color:var(--text-light);border-bottom:1px solid rgba(255,255,255,.04);transition:background .1s;white-space:nowrap;';
+      if(v === defaultVal) item.style.color = 'var(--neon-cyan)';
+      item.onmouseenter = () => item.style.background = 'rgba(0,255,204,.08)';
+      item.onmouseleave = () => item.style.background = 'transparent';
+      item.onclick = () => {
+        hidden.value = v; lbl.textContent = t;
+        list.querySelectorAll('div').forEach(d => d.style.color = 'var(--text-light)');
+        item.style.color = 'var(--neon-cyan)';
+        list.style.display = 'none'; arrow.textContent = '\u25be';
+        eaPurchFilter();
+      };
+      list.appendChild(item);
+    });
+    btn.onclick = () => {
+      const open = list.style.display === 'none';
+      list.style.display = open ? 'block' : 'none';
+      arrow.textContent = open ? '\u25b4' : '\u25be';
+      if(open) {
+        setTimeout(() => {
+          document.addEventListener('pointerdown', function _cls(e) {
+            if(!wrap.contains(e.target)) { list.style.display='none'; arrow.textContent='\u25be'; }
+            document.removeEventListener('pointerdown', _cls);
+          }, { once:true });
+        }, 10);
+      }
+    };
+    wrap.appendChild(btn); wrap.appendChild(hidden); wrap.appendChild(list);
+    return wrap;
+  }
+
+  row.appendChild(_makePurchDrop({
+    wrapperId:'purch-status-wrap', hiddenId:'purch-status-filter',
+    defaultLabel:'\ud83d\uded2 Todos', defaultVal:'',
+    options:[['','\ud83d\uded2 Todos'],['confirmed','\u2705 Confirmado'],['shipped','\ud83d\ude9a Enviado'],['delivered','\ud83d\udce6 Entregue'],['done','\ud83c\udfc1 Conclu\u00eddo'],['cancelled','\u274c Cancelado']]
+  }));
+
+  row.appendChild(_makePurchDrop({
+    wrapperId:'purch-sort-wrap', hiddenId:'purch-sort-filter',
+    defaultLabel:'\ud83d\udcc5 Mais recente', defaultVal:'desc',
+    options:[['desc','\ud83d\udcc5 Mais recente'],['asc','\ud83d\udd70\ufe0f Mais antigo']]
+  }));
+
   el.appendChild(row);
 }
 
