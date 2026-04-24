@@ -15945,8 +15945,8 @@ async function loadNotifTab(tabId){
   }
   await Promise.all(commNotifs.map(n=>_getCommName(n)));
 
-  // Pré-carrega logos das lojas para notificações biz_promo E system (cancelamentos/reagendamentos)
-  const bizNotifs = data.filter(n=>(n.type==='biz_promo'||n.type==='system') && n.business_id);
+  // Pré-carrega logos das lojas para notificações biz_promo, system e purchase_done
+  const bizNotifs = data.filter(n=>(n.type==='biz_promo'||n.type==='system'||n.type==='purchase_done') && n.business_id);
   const _uniqueBizIds = [...new Set(bizNotifs.map(n=>n.business_id).filter(Boolean))];
   const _bizLogoCache = {};
   if(_uniqueBizIds.length){
@@ -16091,8 +16091,8 @@ async function loadNotifTab(tabId){
     const iconVal = icons[n.type];
     const iconDisp = typeof iconVal === 'function' ? iconVal(n) : (iconVal || '🔔');
 
-    // ── Logo de loja (biz_promo e system com business_id) ──
-    const isBizNotif = n.type === 'biz_promo' || (n.type === 'system' && !!n.business_id);
+    // ── Logo de loja (biz_promo, system e purchase_done com business_id) ──
+    const isBizNotif = n.type === 'biz_promo' || n.type === 'purchase_done' || (n.type === 'system' && !!n.business_id);
     const bizLogo = isBizNotif ? (_bizLogoCache[n.business_id] || '') : '';
     const hasBizImg = isBizNotif && bizLogo && bizLogo.startsWith('http');
 
@@ -16146,10 +16146,10 @@ async function loadNotifTab(tabId){
       niIconHtml = `<span style="font-size:20px">${_fbBadge}</span>`;
     } else if(hasBizImg){
       niIconStyle = 'style="background:transparent;padding:0;position:relative;"';
-      // system = logo QUADRADA com borda cyan (igual às outras); biz_promo = quadrada com borda amarela
+      // system = logo QUADRADA com borda cyan (igual às outras); biz_promo = quadrada com borda amarela; purchase_done = borda amarela
       const _isSystemBizN = n.type === 'system';
       const _bizRad = '10px'; // sempre quadrado
-      const _bizBrd = _isSystemBizN ? 'rgba(0,255,204,.5)' : 'rgba(255,204,0,.4)';
+      const _bizBrd = (n.type === 'purchase_done' || n.type === 'biz_promo') ? 'rgba(255,204,0,.5)' : 'rgba(0,255,204,.5)';
       niIconHtml = `<img src="${bizLogo}" style="width:36px;height:36px;border-radius:${_bizRad};object-fit:cover;border:2px solid ${_bizBrd};display:block;" onerror="this.parentElement.innerHTML='<span style=\'font-size:20px\'>🏪</span>'">`;
     } else if(isBizNotif){
       niIconHtml = `<span style="font-size:20px">🏪</span>`;
