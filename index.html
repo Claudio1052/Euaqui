@@ -19562,33 +19562,35 @@ function open99EntregaApp(ev){
   if(ev){ try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){} }
   const plat = _eaDetectPlatform();
   if(plat === 'android'){
-    // intent:// garante abrir o APP 99 instalado (package com.taxis99).
-    // Se o app não estiver instalado, o Android exibe a opção de instalar — mas não abrimos nem site nem Play Store manualmente.
-    window.location.href = 'intent://delivery#Intent;scheme=taxis99;package=com.taxis99;end';
+    // Abre o APP 99 direto na tela inicial (sem rota específica, pra não travar).
+    // O package correto é "com.taxis99" e o scheme do app é "taxis99".
+    // Usar apenas "scheme=taxis99" (sem host/path) manda o app abrir na tela principal.
+    window.location.href = 'intent://open#Intent;scheme=taxis99;package=com.taxis99;end';
     return;
   }
   if(plat === 'ios'){
-    // iOS: scheme customizado do app 99.
-    _eaTryOpenApp('taxis99://delivery');
+    // iOS: scheme sem rota específica, cai na home do app.
+    _eaTryOpenApp('taxis99://');
     return;
   }
   // Desktop: apps de motoboy só existem em mobile.
-  alert('📱 O app 99Entrega só funciona em celular (Android/iOS).\nAbra esta página pelo seu celular para solicitar o motoboy.');
+  alert('📱 O app 99 só funciona em celular (Android/iOS).\nAbra esta página pelo seu celular para solicitar o motoboy.');
 }
 
 function openIfoodCourierApp(ev){
   if(ev){ try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){} }
   const plat = _eaDetectPlatform();
   if(plat === 'android'){
-    // intent:// abre o app iFood Entregadores (package br.com.ifood.couriers).
-    window.location.href = 'intent://#Intent;scheme=ifood-courier;package=br.com.ifood.couriers;end';
+    // App "iFood Entregador" — package correto: br.com.ifood.courier (singular).
+    // Scheme do app: ifood-entregador.
+    window.location.href = 'intent://open#Intent;scheme=ifood-entregador;package=br.com.ifood.courier;end';
     return;
   }
   if(plat === 'ios'){
-    _eaTryOpenApp('ifood-courier://');
+    _eaTryOpenApp('ifood-entregador://');
     return;
   }
-  alert('📱 O app iFood Entregadores só funciona em celular (Android/iOS).\nAbra esta página pelo seu celular para solicitar o entregador.');
+  alert('📱 O app iFood Entregador só funciona em celular (Android/iOS).\nAbra esta página pelo seu celular para solicitar o entregador.');
 }
 
 // Seleciona tipo de entrega (local / nacional)
