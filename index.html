@@ -17,6 +17,10 @@
   ALTER TABLE purchases
     ADD COLUMN IF NOT EXISTS product_id uuid DEFAULT NULL;
 
+  -- Flag de sincronização: marca vendas já descontadas do estoque
+  ALTER TABLE purchases
+    ADD COLUMN IF NOT EXISTS stock_synced boolean DEFAULT false;
+
   -- Vincula deal ao produto específico (para devolver estoque em rejeições/cancelamentos)
   ALTER TABLE business_deals
     ADD COLUMN IF NOT EXISTS product_id uuid DEFAULT NULL;
@@ -16508,6 +16512,108 @@ async function loadBizFollowing(){
 }
 
 // ── Meu negócio ──────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// 🔄 SINCRONIZAÇÃO RETROATIVA DO ESTOQUE
+// ═══════════════════════════════════════════════════════════════════
+// Recalcula o estoque de cada produto com base em:
+//   estoque_base  = estoque atual + vendas JÁ registradas para ele
+//   estoque_final = estoque_base - vendas ativas (não canceladas)
+// Na prática: conta quantas purchases (status != 'cancelled') existem para
+// cada produto e ajusta. Usa product_id quando disponível, senão nome.
+// ⚠️ Esta função é IDEMPOTENTE via tracking de deals_sincronizados:
+//   marca cada deal.stock_synced=true após contabilizá-lo, para evitar
+//   dupla contagem em execuções futuras. Mas na primeira execução ela
+//   zera-e-recalcula para fechar a lacuna das vendas antigas.
+async function manualSyncStock(bizId){
+  const confirmed = await new Promise(resolve=>{
+    eaConfirm('Sincronizar o estoque com as vendas concluídas? Cada venda ativa (confirmada/enviada/entregue/concluída) será descontada uma vez do estoque dos produtos correspondentes.', ()=>resolve(true), ()=>resolve(false));
+  });
+  if(!confirmed) return;
+  showToast('⏳ Sincronizando...', 'info');
+  const res = await syncStockFromSales(bizId, false);
+  if(res.adjusted === 0 && res.errors === 0){
+    showToast('Tudo já está sincronizado! ✅', 'success');
+  }
+  if(typeof loadMyBusiness === 'function') loadMyBusiness();
+}
+
+async function syncStockFromSales(bizId, silent){
+  if(!bizId) return {adjusted:0, errors:0};
+  try{
+    // 1. Busca todos os produtos com controle de estoque
+    const {data:prods, error:prodErr} = await db.from('business_products')
+      .select('id,name,stock').eq('business_id', bizId);
+    if(prodErr){
+      if(!silent) showToast('Erro ao ler produtos: '+prodErr.message, 'error');
+      return {adjusted:0, errors:1};
+    }
+    if(!prods?.length) return {adjusted:0, errors:0};
+
+    // 2. Busca purchases ATIVAS (confirmed, shipped, delivered, done) deste negócio
+    //    que ainda NÃO foram sincronizadas (stock_synced != true)
+    let purchases = [];
+    try{
+      const {data:pRows} = await db.from('purchases')
+        .select('id,product_id,product_title,status,stock_synced')
+        .eq('business_id', bizId)
+        .neq('status', 'cancelled');
+      purchases = pRows || [];
+    }catch(_){ purchases = []; }
+
+    // Filtra apenas purchases ainda não sincronizadas
+    const pending = purchases.filter(p => !p.stock_synced);
+    if(!pending.length){
+      if(!silent) console.log('[syncStock] Nada para sincronizar. Todas as vendas já estão refletidas.');
+      return {adjusted:0, errors:0};
+    }
+
+    let adjusted = 0;
+    let errors = 0;
+
+    // 3. Para cada purchase pendente, acha o produto e decrementa
+    for(const purch of pending){
+      let prod = null;
+      if(purch.product_id){
+        prod = prods.find(p => p.id === purch.product_id) || null;
+      }
+      if(!prod && purch.product_title){
+        const needle = purch.product_title.trim().toLowerCase();
+        prod = prods.find(p => (p.name||'').trim().toLowerCase() === needle) || null;
+      }
+      if(!prod || prod.stock == null){
+        // Produto sem controle de estoque — apenas marca como sincronizada
+        try{ await db.from('purchases').update({stock_synced:true}).eq('id', purch.id); }catch(_){}
+        continue;
+      }
+      if(prod.stock <= 0){
+        // Já está em zero — marca como sincronizada sem mexer
+        try{ await db.from('purchases').update({stock_synced:true}).eq('id', purch.id); }catch(_){}
+        continue;
+      }
+      const newStk = prod.stock - 1;
+      const upd = await db.from('business_products').update({stock: newStk}).eq('id', prod.id);
+      if(upd.error){
+        errors++;
+        console.error('[syncStock] erro ao atualizar:', prod.id, upd.error);
+        continue;
+      }
+      // Atualiza o objeto em memória para próxima iteração
+      prod.stock = newStk;
+      // Marca purchase como sincronizada
+      try{ await db.from('purchases').update({stock_synced:true}).eq('id', purch.id); }catch(_){}
+      adjusted++;
+    }
+
+    if(adjusted > 0 && !silent){
+      showToast(`✅ Estoque sincronizado: ${adjusted} venda(s) descontada(s).`, 'success');
+    }
+    return {adjusted, errors};
+  }catch(e){
+    console.error('[syncStock] exception:', e);
+    return {adjusted:0, errors:1};
+  }
+}
+
 async function loadMyBusiness(){
   const el = document.getElementById('biz-mine-content');
   if(!el||!CU) return;
@@ -16533,6 +16639,10 @@ async function loadMyBusiness(){
   const apptTab = document.getElementById('biz-appointments-tab');
   if(apptTab) apptTab.style.display = '';
 
+  // 🔄 Sincroniza estoque com vendas já aceitas (silencioso, idempotente)
+  //    Isso resolve o caso de propostas aceitas ANTES da coluna stock existir.
+  try{ await syncStockFromSales(data.id, true); }catch(_){}
+
   // Load products
   const {data:prods} = await db.from('business_products').select('*').eq('business_id',data.id).eq('available',true);
 
@@ -16540,7 +16650,8 @@ async function loadMyBusiness(){
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
       <div style="font-family:Silkscreen,monospace;font-size:16px;color:var(--neon-cyan);">🏪 ${xss(data.name)}</div>
       <span style="font-size:10px;color:var(--neon-yellow);">${xss(data.segment)}</span>
-      <div style="display:flex;gap:6px;margin-left:auto;">
+      <div style="display:flex;gap:6px;margin-left:auto;flex-wrap:wrap;">
+        <button class="tbtn" style="font-size:9px;color:var(--neon-cyan);" onclick="manualSyncStock('${data.id}')" title="Sincronizar estoque com vendas já concluídas">🔄 Sync</button>
         <button class="tbtn" style="font-size:9px;color:var(--neon-pink);" onclick="gerarLinkConvite('${data.id}','${xss(data.name)}')">📣 Convite</button>
         <button class="tbtn" style="font-size:9px;" onclick="openBizForm(true)">✏️ Editar</button>
       </div>
@@ -18576,29 +18687,57 @@ async function acceptDealProposal(dealId, btn){
 
       // 4b. 📦 REDUZ ESTOQUE do produto vinculado (apenas para loja, não serviço)
       //     O estoque só é reduzido AGORA, quando o cliente aceita a proposta.
+      console.log('[acceptDeal] 📦 INICIANDO decremento de estoque. deal=', {
+        id: deal.id, is_service: deal.is_service, business_id: deal.business_id,
+        product_id: deal.product_id, title: deal.title
+      });
       if(!deal.is_service && deal.business_id){
         try{
           let _stkProd = null;
           // Prioridade 1: busca por product_id se existir na coluna
           if(deal.product_id){
             const r1 = await db.from('business_products')
-              .select('id,stock').eq('id', deal.product_id).maybeSingle();
+              .select('id,name,stock').eq('id', deal.product_id).maybeSingle();
+            console.log('[acceptDeal] busca por product_id:', deal.product_id, '→', r1);
             if(!r1.error && r1.data) _stkProd = r1.data;
           }
           // Prioridade 2: fallback por nome do produto (caso product_id não esteja presente)
           if(!_stkProd && deal.title){
             const r2 = await db.from('business_products')
-              .select('id,stock').eq('business_id', deal.business_id)
-              .eq('name', deal.title).maybeSingle();
+              .select('id,name,stock').eq('business_id', deal.business_id)
+              .ilike('name', deal.title).maybeSingle();
+            console.log('[acceptDeal] busca por nome ilike:', deal.title, '→', r2);
             if(!r2.error && r2.data) _stkProd = r2.data;
+            // Se ainda não achou, tenta pegar todos e comparar com trim
+            if(!_stkProd){
+              const r3 = await db.from('business_products')
+                .select('id,name,stock').eq('business_id', deal.business_id);
+              if(r3.data && r3.data.length){
+                const needle = (deal.title||'').trim().toLowerCase();
+                _stkProd = r3.data.find(x => (x.name||'').trim().toLowerCase() === needle) || null;
+                console.log('[acceptDeal] busca manual por nome normalizado:', needle, '→', _stkProd);
+              }
+            }
           }
-          if(_stkProd && _stkProd.stock != null && _stkProd.stock > 0){
-            await db.from('business_products')
-              .update({stock: _stkProd.stock - 1})
+          if(!_stkProd){
+            console.warn('[acceptDeal] ⚠️ Produto não encontrado. Estoque NÃO foi reduzido. Verifique se o produto foi cadastrado e se o deal foi criado após a migração do Supabase (coluna product_id).');
+          } else if(_stkProd.stock == null){
+            console.warn('[acceptDeal] ⚠️ Produto sem controle de estoque (stock=null). Edite o produto e defina uma quantidade para ativar o controle.');
+          } else if(_stkProd.stock <= 0){
+            console.warn('[acceptDeal] ⚠️ Produto já está esgotado (stock=0).');
+          } else {
+            const _newStk = _stkProd.stock - 1;
+            const _updRes = await db.from('business_products')
+              .update({stock: _newStk})
               .eq('id', _stkProd.id);
-            console.log('[acceptDeal] estoque reduzido:', _stkProd.id, '→', _stkProd.stock-1);
+            if(_updRes.error){
+              console.error('[acceptDeal] ❌ Erro ao salvar novo estoque:', _updRes.error);
+              console.error('   ⚠️ Verifique se a coluna "stock" existe na tabela business_products. Execute no Supabase: ALTER TABLE business_products ADD COLUMN IF NOT EXISTS stock integer DEFAULT NULL;');
+            } else {
+              console.log('[acceptDeal] ✅ Estoque reduzido:', _stkProd.name, _stkProd.stock, '→', _newStk);
+            }
           }
-        } catch(e){ console.warn('[acceptDeal] stock decrement:', e.message); }
+        } catch(e){ console.warn('[acceptDeal] stock decrement exception:', e.message); }
       }
 
       // 5. Se for serviço, cria agendamento (silencioso se a tabela não existir)
