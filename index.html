@@ -17601,7 +17601,7 @@ function _renderDashHistory(deals, appts, limit=10, search='', statusFilter='', 
       } else if(_effStatus === 'rejected'){
         _dsc='var(--neon-pink)'; _dsl='❌ Recusada'; _dborder='rgba(255,51,102,.25)';
       } else if(_effStatus === 'pending'){
-        _dsc=_NEON_ORANGE; _dsl='📋 Proposta'; _dborder='rgba(255,153,51,.30)';
+        _dsc=_NEON_ORANGE; _dsl='📋 Pendente'; _dborder='rgba(255,153,51,.30)';
       } else if(_effStatus === 'confirmed'){
         _dsc='var(--neon-yellow)'; _dsl='📋 Confirmado'; _dborder='rgba(255,204,0,.25)';
       } else {
@@ -17682,7 +17682,7 @@ function openDealSummary(d){
   } else if(d.status === 'confirmed'){
     _stLabel = '📋 CONFIRMADO'; _stColor = 'var(--neon-yellow)';
   } else if(d.status === 'pending'){
-    _stLabel = '📋 PROPOSTA'; _stColor = '#ff9933';
+    _stLabel = '📋 PENDENTE'; _stColor = '#ff9933';
   } else {
     // 'closed' e demais → Proposta (amarelo)
     _stLabel = '📋 PROPOSTA'; _stColor = 'var(--neon-yellow)';
