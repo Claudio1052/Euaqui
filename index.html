@@ -19471,9 +19471,24 @@ function markPurchaseShipped(purchId, customerId, customerName, productTitle){
           <!-- Apps de entrega -->
           <div id="ea-ship-apps" style="display:none;padding:10px;background:rgba(255,153,51,.05);border:1px solid rgba(255,153,51,.2);border-radius:10px;">
             <div style="font-size:9px;color:var(--text-muted);margin-bottom:8px;font-family:Silkscreen,monospace;">ABRIR APP / SITE:</div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-              <a href="intent://delivery.99app.com#Intent;scheme=https;package=com.taxis99;S.browser_fallback_url=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dcom.taxis99;end" target="_blank" style="padding:7px 12px;background:rgba(255,204,0,.1);border:1px solid rgba(255,204,0,.35);border-radius:8px;color:var(--neon-yellow);font-size:10px;text-decoration:none;font-family:Space Mono,monospace;">🟡 99Entrega</a>
-              <a href="intent://courier.ifood.com.br#Intent;scheme=https;package=br.com.ifood.couriers;S.browser_fallback_url=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dbr.com.ifood.couriers;end" target="_blank" style="padding:7px 12px;background:rgba(255,51,51,.08);border:1px solid rgba(255,80,80,.3);border-radius:8px;color:#ff6060;font-size:10px;text-decoration:none;font-family:Space Mono,monospace;">🔴 iFood Entrega</a>
+            <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:10px;">
+
+              <!-- 99Entrega -->
+              <div style="background:rgba(255,204,0,.06);border:1px solid rgba(255,204,0,.2);border-radius:10px;padding:10px;">
+                <div style="font-size:10px;color:var(--neon-yellow);font-family:Space Mono,monospace;margin-bottom:7px;">🟡 <strong>99Entrega</strong></div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                  <a href="javascript:void(0)" onclick="open99EntregaApp(event)" style="padding:6px 10px;background:rgba(255,204,0,.15);border:1px solid rgba(255,204,0,.4);border-radius:7px;color:var(--neon-yellow);font-size:9px;text-decoration:none;font-family:Space Mono,monospace;cursor:pointer;">📱 Abrir App</a>
+                </div>
+              </div>
+
+              <!-- iFood Entrega -->
+              <div style="background:rgba(255,51,51,.06);border:1px solid rgba(255,80,80,.2);border-radius:10px;padding:10px;">
+                <div style="font-size:10px;color:#ff6060;font-family:Space Mono,monospace;margin-bottom:7px;">🔴 <strong>iFood Entrega</strong></div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                  <a href="javascript:void(0)" onclick="openIfoodCourierApp(event)" style="padding:6px 10px;background:rgba(255,51,51,.15);border:1px solid rgba(255,80,80,.4);border-radius:7px;color:#ff6060;font-size:9px;text-decoration:none;font-family:Space Mono,monospace;cursor:pointer;">📱 Abrir App</a>
+                </div>
+              </div>
+
             </div>
             <label style="font-family:Silkscreen,monospace;font-size:9px;color:var(--neon-cyan);display:block;margin-bottom:4px;">🔗 Link / Código de rastreio do motoboy (opcional)</label>
             <input type="text" id="_ea_track_code" placeholder="Cole aqui o link ou código gerado pelo app..." style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:9px;color:var(--text-light);font-family:Space Mono,monospace;font-size:11px;outline:none;">
@@ -19513,6 +19528,67 @@ function markPurchaseShipped(purchId, customerId, customerName, productTitle){
     </div>`;
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   document.body.appendChild(ov);
+}
+
+// ===== Abertura direta do APP (99Entrega e iFood Entregadores) =====
+// Estratégia: detecta plataforma e usa o método nativo mais confiável.
+// - Android: intent:// força abrir o app instalado; se não estiver instalado,
+//            o próprio intent envia o usuário à Play Store (comportamento do SO).
+// - iOS: Universal Link / scheme customizado abre o app direto.
+// - Desktop: avisa que o recurso é mobile (apps de motoboy não existem em desktop).
+
+function _eaDetectPlatform(){
+  const ua = (navigator.userAgent || navigator.vendor || window.opera || '').toLowerCase();
+  if(/android/i.test(ua)) return 'android';
+  if(/iphone|ipad|ipod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'ios';
+  return 'desktop';
+}
+
+function _eaTryOpenApp(schemeUrl){
+  // Tenta abrir o scheme em iframe oculto (não gera aba em branco nem redireciona a página).
+  try{
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = schemeUrl;
+    document.body.appendChild(iframe);
+    setTimeout(()=>{ try{ iframe.remove(); }catch(_){} }, 1500);
+  }catch(_){
+    // fallback: navegação direta ao scheme
+    window.location.href = schemeUrl;
+  }
+}
+
+function open99EntregaApp(ev){
+  if(ev){ try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){} }
+  const plat = _eaDetectPlatform();
+  if(plat === 'android'){
+    // intent:// garante abrir o APP 99 instalado (package com.taxis99).
+    // Se o app não estiver instalado, o Android exibe a opção de instalar — mas não abrimos nem site nem Play Store manualmente.
+    window.location.href = 'intent://delivery#Intent;scheme=taxis99;package=com.taxis99;end';
+    return;
+  }
+  if(plat === 'ios'){
+    // iOS: scheme customizado do app 99.
+    _eaTryOpenApp('taxis99://delivery');
+    return;
+  }
+  // Desktop: apps de motoboy só existem em mobile.
+  alert('📱 O app 99Entrega só funciona em celular (Android/iOS).\nAbra esta página pelo seu celular para solicitar o motoboy.');
+}
+
+function openIfoodCourierApp(ev){
+  if(ev){ try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){} }
+  const plat = _eaDetectPlatform();
+  if(plat === 'android'){
+    // intent:// abre o app iFood Entregadores (package br.com.ifood.couriers).
+    window.location.href = 'intent://#Intent;scheme=ifood-courier;package=br.com.ifood.couriers;end';
+    return;
+  }
+  if(plat === 'ios'){
+    _eaTryOpenApp('ifood-courier://');
+    return;
+  }
+  alert('📱 O app iFood Entregadores só funciona em celular (Android/iOS).\nAbra esta página pelo seu celular para solicitar o entregador.');
 }
 
 // Seleciona tipo de entrega (local / nacional)
