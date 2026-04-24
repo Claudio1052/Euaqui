@@ -19320,11 +19320,16 @@ function renderPurchasesList(el, list, isOwner, purchSearch='', purchStatus='', 
       if(btns.length) ownerBtns = `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">${btns.join('')}</div>`;
     }
 
-    // Tracking code (se existir)
-    const trackingHtml = p.tracking_code
-      ? `<div style="font-size:10px;color:var(--neon-purple);margin-top:6px;padding-top:6px;border-top:1px solid rgba(191,95,255,.15);">📮 Código de rastreio: <strong style="color:var(--text-light);font-family:VT323,monospace;font-size:13px;letter-spacing:1px;">${xss(p.tracking_code)}</strong></div>`
+    // Tracking code (se existir) — link clicável se for URL, texto se for código
+    const _tc = p.tracking_code || '';
+    const _tcIsUrl = /^https?:\/\//i.test(_tc.trim());
+    const trackingHtml = _tc
+      ? `<div style="font-size:10px;color:var(--neon-purple);margin-top:6px;padding-top:6px;border-top:1px solid rgba(191,95,255,.15);">🔗 Rastreio: ${
+          _tcIsUrl
+            ? `<a href="${xss(_tc.trim())}" target="_blank" rel="noopener" style="color:var(--neon-cyan);font-family:Space Mono,monospace;font-size:9px;word-break:break-all;text-decoration:underline;cursor:pointer;">📍 Acompanhar entrega</a>`
+            : `<strong style="color:var(--text-light);font-family:VT323,monospace;font-size:13px;letter-spacing:1px;">${xss(_tc)}</strong>`
+        }</div>`
       : '';
-
     return `<div style="background:var(--bg-card);border:1px solid ${isCancelled||isDone?'rgba(255,255,255,.08)':'var(--border-glow)'};border-radius:12px;padding:12px 14px;margin-bottom:10px;${isCancelled||isDone?'opacity:.7':''}">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
         <img src="${xss(avatar)}" style="width:40px;height:40px;border-radius:${isOwner?'50%':'8px'};object-fit:cover;border:2px solid var(--border-glow);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=user'">
@@ -19683,7 +19688,12 @@ async function eaDoShipPurchase(purchId, customerId, productTitle, btn){
   const cid=(customerId&&customerId!=='undefined'&&customerId!=='')?customerId:null;
   if(cid && CU && cid!==CU.id){
     const bizName=myBusiness?.name||'A Loja';
-    const trackLine = trackCode ? ' • Rastreio: '+trackCode : '';
+    const _tcIsLink = /^https?:\/\//i.test((trackCode||'').trim());
+    const trackLine = trackCode
+      ? (_tcIsLink
+          ? ' • 🔗 Rastreio: ' + trackCode + ' — toque para acompanhar'
+          : ' • 📦 Código de rastreio: ' + trackCode)
+      : '';
     await db.from('notifications').insert({
       user_id:cid, actor_id:CU.id, type:'system',
       business_id: myBusiness?.id || null,
