@@ -5679,11 +5679,24 @@ body.day-mode::before{
       <div class="tab-panel active" id="biz-browse">
         <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
           <input class="ainput" id="biz-search" placeholder="🔍 Buscar loja ou serviço..." oninput="filterBiz()" style="flex:1;min-width:160px;">
-          <select class="ainput" id="biz-cat-filter" onchange="filterBiz()" style="width:140px;">
-            <option value="">Todos</option>
-            <option value="loja">🛍️ Lojas</option>
-            <option value="servico">🔧 Serviços</option>
-          </select>
+          <!-- Dropdown customizado de categoria — estilo music genre -->
+          <div style="position:relative;width:140px;flex-shrink:0;" id="biz-cat-wrap">
+            <button onclick="toggleBizCatDropdown()" id="biz-cat-btn"
+              style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;
+                     background:rgba(255,255,255,.05);border:1px solid var(--border-glow);
+                     border-radius:10px;padding:7px 12px;color:var(--text-light);
+                     font-family:'Space Mono',monospace;font-size:10px;cursor:pointer;text-align:left;">
+              <span id="biz-cat-label">🏪 Todos</span>
+              <span style="color:var(--text-muted);font-size:10px;">▾</span>
+            </button>
+            <div id="biz-cat-list"
+              style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;
+                     background:var(--bg-card);border:1px solid var(--border-glow);
+                     border-radius:12px;overflow-y:auto;max-height:220px;z-index:999;
+                     box-shadow:0 8px 32px rgba(0,0,0,.6);">
+            </div>
+          </div>
+          <input type="hidden" id="biz-cat-filter" value="">
         </div>
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
           <span id="biz-location-label" style="font-size:11px;color:var(--neon-cyan);">📍 Detectando localização...</span>
@@ -5790,32 +5803,47 @@ body.day-mode::before{
         </div>
 
         <div class="igrp"><label class="ilbl">Tipo *</label>
-          <select class="ainput" id="biz-type">
-            <option value="loja">🛍️ Loja (venda de produtos)</option>
-            <option value="servico">🔧 Serviço (prestação de serviços)</option>
-          </select>
+          <!-- Dropdown customizado de tipo — estilo music genre -->
+          <div style="position:relative;" id="biz-type-wrap">
+            <button onclick="toggleBizTypeDropdown()" id="biz-type-btn"
+              style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;
+                     background:rgba(255,255,255,.05);border:1px solid var(--border-glow);
+                     border-radius:10px;padding:9px 14px;color:var(--text-light);
+                     font-family:'Space Mono',monospace;font-size:10px;cursor:pointer;text-align:left;">
+              <span id="biz-type-label">🛍️ Loja (venda de produtos)</span>
+              <span style="color:var(--text-muted);font-size:10px;">▾</span>
+            </button>
+            <div id="biz-type-list"
+              style="display:none;position:absolute;bottom:calc(100% + 4px);left:0;right:0;
+                     background:var(--bg-card);border:1px solid var(--border-glow);
+                     border-radius:12px;overflow-y:auto;max-height:220px;z-index:999;
+                     box-shadow:0 -8px 32px rgba(0,0,0,.6);">
+            </div>
+          </div>
+          <input type="hidden" id="biz-type" value="loja">
         </div>
         <div class="igrp"><label class="ilbl">Nome do Negócio *</label>
           <input class="ainput" id="biz-name" placeholder="Ex: Boutique da Ana" maxlength="60">
         </div>
         <div class="igrp"><label class="ilbl">Segmento *</label>
-          <select class="ainput" id="biz-segment">
-            <option value="Alimentação">🍕 Alimentação</option>
-            <option value="Moda">👗 Moda & Vestuário</option>
-            <option value="Eletrônicos">📱 Eletrônicos</option>
-            <option value="Beleza">💄 Beleza & Estética</option>
-            <option value="Saúde">🏥 Saúde</option>
-            <option value="Educação">📚 Educação</option>
-            <option value="Tecnologia">💻 Tecnologia</option>
-            <option value="Construção">🏗️ Construção & Reforma</option>
-            <option value="Transporte">🚗 Transporte</option>
-            <option value="Turismo">✈️ Turismo & Hospedagem</option>
-            <option value="Pets">🐾 Pets</option>
-            <option value="Esporte">⚽ Esporte & Lazer</option>
-            <option value="Jurídico">⚖️ Jurídico</option>
-            <option value="Finanças">💰 Finanças</option>
-            <option value="Outros">📦 Outros</option>
-          </select>
+          <!-- Dropdown customizado de segmento — estilo music genre -->
+          <div style="position:relative;" id="biz-seg-wrap">
+            <button onclick="toggleBizSegDropdown()" id="biz-seg-btn"
+              style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;
+                     background:rgba(255,255,255,.05);border:1px solid var(--border-glow);
+                     border-radius:10px;padding:9px 14px;color:var(--text-light);
+                     font-family:'Space Mono',monospace;font-size:10px;cursor:pointer;text-align:left;">
+              <span id="biz-seg-label">🍕 Alimentação</span>
+              <span style="color:var(--text-muted);font-size:10px;">▾</span>
+            </button>
+            <div id="biz-seg-list"
+              style="display:none;position:absolute;bottom:calc(100% + 4px);left:0;right:0;
+                     background:var(--bg-card);border:1px solid var(--border-glow);
+                     border-radius:12px;overflow-y:auto;max-height:220px;z-index:999;
+                     box-shadow:0 -8px 32px rgba(0,0,0,.6);">
+            </div>
+          </div>
+          <input type="hidden" id="biz-segment" value="Alimentação">
         </div>
         <div class="igrp"><label class="ilbl">Descrição</label>
           <textarea class="ainput" id="biz-desc" rows="3" placeholder="Descreva seu negócio..." style="resize:none;"></textarea>
@@ -16718,6 +16746,7 @@ function openBizForm(edit=false){
     document.getElementById('biz-type').value = b.category;
     document.getElementById('biz-name').value = b.name;
     document.getElementById('biz-segment').value = b.segment;
+    _syncBizDropdownLabels(b.category, b.segment);
     document.getElementById('biz-desc').value = b.description||'';
     document.getElementById('biz-whatsapp').value = b.whatsapp||'';
     document.getElementById('biz-email').value = b.email||'';
@@ -28701,6 +28730,169 @@ function toggleGenreDropdown(forceState) {
   }
 }
 window.toggleGenreDropdown = toggleGenreDropdown;
+
+
+// ── Dropdown customizado: Filtro de categoria (Explorar Lojas) ─────────
+const BIZ_CAT_OPTIONS = [
+  { val:'',        label:'🏪 Todos' },
+  { val:'loja',    label:'🛍️ Lojas' },
+  { val:'servico', label:'🔧 Serviços' },
+];
+function _buildBizCatList() {
+  const list = document.getElementById('biz-cat-list');
+  if(!list || list.children.length > 0) return;
+  BIZ_CAT_OPTIONS.forEach(o => {
+    const item = document.createElement('div');
+    item.textContent = o.label;
+    item.dataset.val = o.val;
+    item.style.cssText = 'padding:9px 14px;cursor:pointer;font-family:Space Mono,monospace;font-size:10px;color:var(--text-light);border-bottom:1px solid rgba(255,255,255,.04);transition:background .1s;';
+    item.onmouseenter = () => item.style.background = 'rgba(0,255,204,.08)';
+    item.onmouseleave = () => item.style.background = 'transparent';
+    item.onclick = () => {
+      document.getElementById('biz-cat-filter').value = o.val;
+      document.getElementById('biz-cat-label').textContent = o.label;
+      list.querySelectorAll('div').forEach(d => d.style.color = 'var(--text-light)');
+      item.style.color = 'var(--neon-cyan)';
+      toggleBizCatDropdown(false);
+      filterBiz();
+    };
+    list.appendChild(item);
+  });
+}
+function toggleBizCatDropdown(forceState) {
+  const list = document.getElementById('biz-cat-list');
+  const btn  = document.getElementById('biz-cat-btn');
+  if(!list) return;
+  _buildBizCatList();
+  const open = forceState !== undefined ? forceState : list.style.display === 'none';
+  list.style.display = open ? 'block' : 'none';
+  if(btn) btn.querySelector('span:last-child').textContent = open ? '▴' : '▾';
+  if(open) {
+    setTimeout(() => {
+      document.addEventListener('pointerdown', function _close(e) {
+        if(!document.getElementById('biz-cat-wrap')?.contains(e.target)) toggleBizCatDropdown(false);
+        document.removeEventListener('pointerdown', _close);
+      }, { once:true });
+    }, 10);
+  }
+}
+window.toggleBizCatDropdown = toggleBizCatDropdown;
+
+// ── Dropdown customizado: Tipo de Negócio ─────────────────────────────
+const BIZ_TYPE_OPTIONS = [
+  { val:'loja',    label:'🛍️ Loja (venda de produtos)' },
+  { val:'servico', label:'🔧 Serviço (prestação de serviços)' },
+];
+function _buildBizTypeList() {
+  const list = document.getElementById('biz-type-list');
+  if(!list || list.children.length > 0) return;
+  BIZ_TYPE_OPTIONS.forEach(o => {
+    const item = document.createElement('div');
+    item.textContent = o.label;
+    item.dataset.val = o.val;
+    item.style.cssText = 'padding:9px 14px;cursor:pointer;font-family:Space Mono,monospace;font-size:10px;color:var(--text-light);border-bottom:1px solid rgba(255,255,255,.04);transition:background .1s;';
+    item.onmouseenter = () => item.style.background = 'rgba(0,255,204,.08)';
+    item.onmouseleave = () => item.style.background = 'transparent';
+    item.onclick = () => {
+      document.getElementById('biz-type').value = o.val;
+      document.getElementById('biz-type-label').textContent = o.label;
+      list.querySelectorAll('div').forEach(d => d.style.color = 'var(--text-light)');
+      item.style.color = 'var(--neon-cyan)';
+      toggleBizTypeDropdown(false);
+    };
+    list.appendChild(item);
+  });
+}
+function toggleBizTypeDropdown(forceState) {
+  const list = document.getElementById('biz-type-list');
+  const btn  = document.getElementById('biz-type-btn');
+  if(!list) return;
+  _buildBizTypeList();
+  const open = forceState !== undefined ? forceState : list.style.display === 'none';
+  list.style.display = open ? 'block' : 'none';
+  if(btn) btn.querySelector('span:last-child').textContent = open ? '▴' : '▾';
+  if(open) {
+    setTimeout(() => {
+      document.addEventListener('pointerdown', function _close(e) {
+        if(!document.getElementById('biz-type-wrap')?.contains(e.target)) toggleBizTypeDropdown(false);
+        document.removeEventListener('pointerdown', _close);
+      }, { once:true });
+    }, 10);
+  }
+}
+window.toggleBizTypeDropdown = toggleBizTypeDropdown;
+
+// ── Dropdown customizado: Segmento ────────────────────────────────────
+const BIZ_SEG_OPTIONS = [
+  { val:'Alimentação',  label:'🍕 Alimentação' },
+  { val:'Moda',         label:'👗 Moda & Vestuário' },
+  { val:'Eletrônicos',  label:'📱 Eletrônicos' },
+  { val:'Beleza',       label:'💄 Beleza & Estética' },
+  { val:'Saúde',        label:'🏥 Saúde' },
+  { val:'Educação',     label:'📚 Educação' },
+  { val:'Tecnologia',   label:'💻 Tecnologia' },
+  { val:'Construção',   label:'🏗️ Construção & Reforma' },
+  { val:'Transporte',   label:'🚗 Transporte' },
+  { val:'Turismo',      label:'✈️ Turismo & Hospedagem' },
+  { val:'Pets',         label:'🐾 Pets' },
+  { val:'Esporte',      label:'⚽ Esporte & Lazer' },
+  { val:'Jurídico',     label:'⚖️ Jurídico' },
+  { val:'Finanças',     label:'💰 Finanças' },
+  { val:'Outros',       label:'📦 Outros' },
+];
+function _buildBizSegList() {
+  const list = document.getElementById('biz-seg-list');
+  if(!list || list.children.length > 0) return;
+  BIZ_SEG_OPTIONS.forEach(o => {
+    const item = document.createElement('div');
+    item.textContent = o.label;
+    item.dataset.val = o.val;
+    item.style.cssText = 'padding:9px 14px;cursor:pointer;font-family:Space Mono,monospace;font-size:10px;color:var(--text-light);border-bottom:1px solid rgba(255,255,255,.04);transition:background .1s;';
+    item.onmouseenter = () => item.style.background = 'rgba(0,255,204,.08)';
+    item.onmouseleave = () => item.style.background = 'transparent';
+    item.onclick = () => {
+      document.getElementById('biz-segment').value = o.val;
+      document.getElementById('biz-seg-label').textContent = o.label;
+      list.querySelectorAll('div').forEach(d => d.style.color = 'var(--text-light)');
+      item.style.color = 'var(--neon-cyan)';
+      toggleBizSegDropdown(false);
+    };
+    list.appendChild(item);
+  });
+}
+function toggleBizSegDropdown(forceState) {
+  const list = document.getElementById('biz-seg-list');
+  const btn  = document.getElementById('biz-seg-btn');
+  if(!list) return;
+  _buildBizSegList();
+  const open = forceState !== undefined ? forceState : list.style.display === 'none';
+  list.style.display = open ? 'block' : 'none';
+  if(btn) btn.querySelector('span:last-child').textContent = open ? '▴' : '▾';
+  if(open) {
+    setTimeout(() => {
+      document.addEventListener('pointerdown', function _close(e) {
+        if(!document.getElementById('biz-seg-wrap')?.contains(e.target)) toggleBizSegDropdown(false);
+        document.removeEventListener('pointerdown', _close);
+      }, { once:true });
+    }, 10);
+  }
+}
+window.toggleBizSegDropdown = toggleBizSegDropdown;
+
+// Patch para sincronizar valor ao editar negócio existente
+// (quando o código faz biz-type.value = b.category e biz-segment.value = b.segment)
+const _origSetBizTypeVal = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');
+function _syncBizDropdownLabels(type, segment) {
+  if(type !== undefined) {
+    const o = BIZ_TYPE_OPTIONS.find(x => x.val === type);
+    if(o) document.getElementById('biz-type-label').textContent = o.label;
+  }
+  if(segment !== undefined) {
+    const o = BIZ_SEG_OPTIONS.find(x => x.val === segment);
+    if(o) document.getElementById('biz-seg-label').textContent = o.label;
+  }
+}
+window._syncBizDropdownLabels = _syncBizDropdownLabels;
 
 
 // ── Video Trim Timeline (janela deslizante de 30s) ─────────────────
