@@ -7535,7 +7535,7 @@ async function loadFeed(force=false){
   }
 
   _hydrateAllReposts(feed);
-  filteredPosts.forEach(p=>cachedPostIds.add(p.id));
+  setTimeout(_hydrateBizCtaBtns, 200);
   updateCommentCounts(filteredPosts.map(p=>p.id));
 
   // Hidrata avatares/nomes das comunidades em posts COMM_POST
@@ -7854,6 +7854,9 @@ function renderPost(post,rxCounts={},myRx='',_origPostMap){
       const globalViews = post.video_views || 0;
       return `<div style="padding:6px 2px 0;font-size:10px;color:var(--text-muted);font-family:'Space Mono',monospace;display:flex;align-items:center;gap:4px;">👁 <span id="feed-views-${post.id}">${_fmtViews(globalViews)}</span> visualizações</div>`;
     })()}
+    ${bizMeta && !isOwn && CU ? `<div style="padding:8px 0 4px;display:flex;gap:8px;">
+      <button class="post-btn" style="flex:1;font-size:11px;padding:9px 10px;background:linear-gradient(135deg,rgba(0,255,204,.18),rgba(0,255,204,.08));border:1px solid rgba(0,255,204,.5);color:var(--neon-cyan);border-radius:10px;cursor:pointer;font-family:'Silkscreen',monospace;letter-spacing:.5px;transition:all .18s;" onclick="event.stopPropagation();_bizCtaAction('${bizMeta.id}','${xss(bizMeta.name).replace(/'/g,"\\'")}','${post.id}')" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'" id="biz-cta-btn-${post.id}">⏳ Carregar...</button>
+    </div>` : ''}
     <div class="pactions">
       <button class="abtn" onclick="toggleCmts('${post.id}',this)">💬 <span id="cmtcnt-${post.id}">${cmtCnt}</span></button>
       <button class="abtn" onclick="openShareModal('${post.id}','${xss(prof.full_name||prof.username||'')}','${xss((post.content||'').slice(0,80)).replace(/'/g,'').replace(/\n/g,' ')}')">🔗 Compartilhar</button>
@@ -7867,6 +7870,75 @@ function renderPost(post,rxCounts={},myRx='',_origPostMap){
     return '';
   }
 }
+
+// ── CTA de Negócio no Feed (Agendar / Comprar) ─────────────────────────────
+// Cache simples: bizId → { category, owner_id }
+const _bizCtaCache = {};
+
+async function _bizCtaAction(bizId, bizName, postId) {
+  if(!CU) return showToast('Faça login para continuar','error');
+  // Busca category do cache ou do DB
+  let meta = _bizCtaCache[bizId];
+  if(!meta) {
+    const { data } = await db.from('businesses').select('id,category,owner_id').eq('id',bizId).maybeSingle();
+    if(!data) return openBizById(bizId);
+    meta = data;
+    _bizCtaCache[bizId] = meta;
+  }
+  const isServico = (meta.category === 'servico' || meta.category === 'serviço');
+  if(meta.owner_id === CU.id) return; // dono não faz CTA
+  if(isServico) {
+    // Abre chat de atendimento direto
+    openBizChatCustomer(bizId, bizName);
+  } else {
+    // Vai direto para o chat de atendimento (compra)
+    openBizChatCustomer(bizId, bizName);
+  }
+}
+
+// Hidrata os botões CTA dos posts BIZ_PROMO no feed com texto correto (Agendar / Comprar)
+async function _hydrateBizCtaBtns() {
+  const btns = document.querySelectorAll('[id^="biz-cta-btn-"]');
+  if(!btns.length) return;
+  // Coleta ids únicos de lojas necessárias
+  const postBizMap = {}; // postId → bizId
+  btns.forEach(btn => {
+    const postId = btn.id.replace('biz-cta-btn-','');
+    const card   = document.getElementById('post-'+postId);
+    if(!card) return;
+    const bizId  = card.querySelector('[data-bizid]')?.dataset?.bizid;
+    if(bizId && bizId !== 'undefined') postBizMap[postId] = bizId;
+  });
+  const uniqueIds = [...new Set(Object.values(postBizMap).filter(Boolean))];
+  if(!uniqueIds.length) { btns.forEach(b=>b.textContent='🏪 Ver loja'); return; }
+  // Busca em lote somente as que não estão no cache
+  const missing = uniqueIds.filter(id => !_bizCtaCache[id]);
+  if(missing.length) {
+    const { data } = await db.from('businesses').select('id,category,owner_id').in('id',missing);
+    (data||[]).forEach(b => { _bizCtaCache[b.id] = b; });
+  }
+  // Atualiza cada botão
+  btns.forEach(btn => {
+    const postId = btn.id.replace('biz-cta-btn-','');
+    const bizId  = postBizMap[postId];
+    const meta   = bizId ? _bizCtaCache[bizId] : null;
+    if(!meta) { btn.textContent='🏪 Ver loja'; return; }
+    if(CU && meta.owner_id === CU.id) { btn.parentElement?.remove(); return; }
+    const isServico = (meta.category === 'servico' || meta.category === 'serviço');
+    if(isServico) {
+      btn.innerHTML = '📅 Agendar';
+      btn.style.background = 'linear-gradient(135deg,rgba(191,95,255,.22),rgba(191,95,255,.10))';
+      btn.style.borderColor = 'rgba(191,95,255,.6)';
+      btn.style.color = 'var(--neon-purple)';
+    } else {
+      btn.innerHTML = '🛒 Comprar';
+      btn.style.background = 'linear-gradient(135deg,rgba(255,204,0,.18),rgba(255,204,0,.08))';
+      btn.style.borderColor = 'rgba(255,204,0,.55)';
+      btn.style.color = 'var(--neon-yellow)';
+    }
+  });
+}
+// ────────────────────────────────────────────────────────────────────────────
 
 // Preenche um card de repost com dados já disponíveis (sem fetch)
 function _fillRepostCard(repostPostId, op, origId){
@@ -11495,6 +11567,7 @@ async function loadExploreFeed(){
   const myRxMap={};(myLikesData.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
   feed.innerHTML='<h3 style="font-family:\'Silkscreen\',monospace;font-size:12px;color:var(--neon-cyan);margin-bottom:14px;margin-top:4px;">POSTS EM DESTAQUE</h3>'+((posts||[]).map(p=>renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||'')).join('')||'<div style="text-align:center;padding:30px;color:var(--text-muted);">Nenhum post ainda</div>');
   _hydrateAllReposts(feed);
+  setTimeout(_hydrateBizCtaBtns, 200);
 }
 // ✅ OTIMIZAÇÃO EGRESS (Ponto 3 — Debounce na busca):
 // Aguarda 400ms após o utilizador parar de digitar antes de disparar queries.
@@ -15681,6 +15754,7 @@ async function loadCommPosts(commId){
   const myRxMap={};(myRxRes.data||[]).forEach(r=>{myRxMap[r.post_id]=r.reaction_type;});
   el.innerHTML = posts.map(p=>renderPost(p,rxMap[p.id]||{},myRxMap[p.id]||'')).join('') || '<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhum post ainda. Seja o primeiro!</div>';
   _hydrateAllReposts(el);
+  setTimeout(_hydrateBizCtaBtns, 200);
   setTimeout(initFeedAutoplay, 100); // roda em todos (autoplay só mobile)
 }
 
@@ -20815,7 +20889,7 @@ async function divulgarProduto(bizId, prodName, prodPrice, imgUrl, priceLabel){
 
       <!-- Header -->
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-        <div style="font-family:Silkscreen,monospace;font-size:12px;color:var(--neon-cyan);">📢 Divulgar ${isServico?'Serviço':'Produto'}/Serviço</div>
+        <div style="font-family:Silkscreen,monospace;font-size:12px;color:var(--neon-cyan);">📢 Divulgar ${isServico?'Serviço':'Produto'}</div>
         <button onclick="document.getElementById('divulg-overlay').remove()" style="background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;">✕</button>
       </div>
 
