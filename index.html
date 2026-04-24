@@ -17614,12 +17614,17 @@ function _renderDashHistory(deals, appts, limit=10, search='', statusFilter='', 
       const dValor = d.value ? 'R$ '+Number(d.value).toFixed(2).replace('.',',') : '';
       const dDate = d.created_at ? new Date(d.created_at).toLocaleDateString('pt-BR') : '—';
       const dJson = JSON.stringify(d).replace(/"/g,'&quot;');
-      return `<div onclick="openDealSummary(${dJson})" style="background:var(--bg-card);border:1px solid ${_dborder};border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer;transition:border-color .2s;" onmouseover="this.style.borderColor='var(--neon-cyan)'" onmouseout="this.style.borderColor='${_dborder}'">
+      const dChatId = d.chat_id || '';
+      const dClientName = xss(dName).replace(/'/g,"\\'");
+      return `<div data-djson="${dJson}" style="background:var(--bg-card);border:1px solid ${_dborder};border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer;transition:border-color .2s;" onclick="if(!event._dealSummaryClick){ openBizChatById('${dChatId}','${dClientName}'); }" onmouseover="this.style.borderColor='var(--neon-cyan)'" onmouseout="this.style.borderColor='${_dborder}'">
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <div style="flex:1;min-width:0;">
             <div style="font-size:12px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(d.title||'Venda')}</div>
             <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">📅 ${dDate} · 👤 ${xss(dName)}${d._linkedPurchase?.order_number?` · <span style="color:var(--neon-yellow);font-family:VT323,monospace;font-size:12px;">#${xss(d._linkedPurchase.order_number)}</span>`:''}</div>
-            <div style="font-size:10px;color:var(--neon-cyan);margin-top:2px;">🔍 ver resumo</div>
+            <div style="font-size:10px;color:var(--neon-cyan);margin-top:2px;display:inline-flex;align-items:center;gap:4px;">
+              <span onclick="event._dealSummaryClick=true;event.stopPropagation();openDealSummary(JSON.parse(this.closest('[data-djson]').dataset.djson))" style="cursor:pointer;padding:2px 6px;border:1px solid rgba(0,255,204,.25);border-radius:5px;background:rgba(0,255,204,.06);">🔍 ver resumo</span>
+              ${dChatId?`<span style="font-size:9px;color:var(--text-muted);">· 💬 clique para chat</span>`:''}
+            </div>
             ${d.cancel_reason?`<div style="font-size:9px;color:var(--neon-pink);margin-top:2px;">❌ ${xss(d.cancel_reason)}</div>`:''}
           </div>
           <div style="text-align:right;flex-shrink:0;margin-left:10px;">
