@@ -17352,7 +17352,10 @@ async function loadBizDashboard(){
   // Load deals — tenta join de perfil, faz fallback simples se falhar
   let deals = [];
   // Busca todos os status relevantes para o histórico da loja
-  const _dealStatuses = ['closed','done','confirmed','cancelled','pending','rejected'];
+  // NOTA: 'rejected' (recusado) NÃO entra no histórico — só aparece no chat.
+  // 'pending' = proposta enviada, aguardando · 'closed' = proposta aceita (Proposta amarelo) ·
+  // 'done' = venda concluída (verde) · 'cancelled' = cancelada (vermelho)
+  const _dealStatuses = ['closed','done','confirmed','cancelled','pending'];
   const {data:d1, error:e1} = await db.from('business_deals')
     .select('*, accepted_profile:profiles!business_deals_accepted_by_fkey(id,username,full_name,avatar_url)')
     .eq('business_id',b.id).in('status',_dealStatuses).order('created_at',{ascending:false}).limit(1000);
@@ -17398,6 +17401,28 @@ async function loadBizDashboard(){
       }
     }
   }catch(e){}
+
+  // Carrega purchases do negócio para cruzar com os deals e saber o status efetivo da venda.
+  // Um deal 'closed' cuja purchase associada está 'done' deve aparecer como Concluído;
+  // se a purchase foi cancelada, o deal aparece como Cancelado; senão, Proposta (amarelo).
+  try{
+    const {data:purchRows} = await db.from('purchases')
+      .select('id,deal_id,status,cancel_reason,updated_at')
+      .eq('business_id',b.id).limit(2000);
+    const purchByDeal = {};
+    (purchRows||[]).forEach(p=>{ if(p.deal_id) purchByDeal[p.deal_id] = p; });
+    deals = deals.map(d=>{
+      const p = purchByDeal[d.id];
+      if(!p) return d;
+      // Se o deal ainda não estiver explicitamente cancelado/concluído, herda o status da purchase
+      if(d.status === 'closed'){
+        if(p.status === 'done')       return {...d, _effectiveStatus:'done', _linkedPurchase:p};
+        if(p.status === 'cancelled')  return {...d, _effectiveStatus:'cancelled', cancel_reason: d.cancel_reason || p.cancel_reason, _linkedPurchase:p};
+      }
+      return {...d, _linkedPurchase:p};
+    });
+  }catch(e){ /* tabela purchases pode não existir — silencioso */ }
+
   // Armazena globalmente para filtros sem nova consulta ao banco
   _dashDeals = deals;
   _dashAppts = apptHistory;
@@ -17415,8 +17440,19 @@ async function loadBizDashboard(){
     if(doneAppts?.length){
       totalRevenue += doneAppts.reduce((sum,a)=>sum+(Number(a.value)||0),0);
     }
-    // Deals concluídos (para lojas) — status 'done' ou 'closed'
-    const doneDealsList = deals.filter(d=>d.status==='done'||d.status==='closed');
+    // Deals concluídos (para lojas):
+    //  · status 'done' explícito OU
+    //  · status 'closed' com purchase associada já marcada como 'done' (_effectiveStatus=='done') OU
+    //  · status 'closed' sem purchase associada (retrocompatibilidade com o fluxo antigo)
+    const doneDealsList = deals.filter(d=>{
+      if(d.status === 'done') return true;
+      if(d.status === 'closed'){
+        if(d._effectiveStatus === 'done') return true;
+        if(d._effectiveStatus === 'cancelled') return false;
+        if(!d._linkedPurchase) return true; // retrocompat
+      }
+      return false;
+    });
     totalSalesDone = doneDealsList.length;
     totalRevenue += doneDealsList.reduce((sum,d)=>sum+(Number(d.value)||0),0);
   }catch(e){}
@@ -17452,7 +17488,7 @@ async function loadBizDashboard(){
     statusSel.id = 'dash-status-filter';
     statusSel.onchange = eaDashFilter;
     statusSel.style.cssText = selStyle;
-    [['','Todos'],['done','Concluído'],['closed','Fechado'],['confirmed','Confirmado'],['cancelled','Cancelado'],['pending','Pendente'],['rejected','Recusado']].forEach(([v,t])=>{
+    [['','Todos'],['done','Concluído'],['proposta','Proposta'],['confirmed','Confirmado'],['cancelled','Cancelado'],['pending','Pendente']].forEach(([v,t])=>{
       const o=document.createElement('option'); o.value=v; o.textContent=t; statusSel.appendChild(o);
     });
 
@@ -17504,10 +17540,16 @@ function _renderDashHistory(deals, appts, limit=10, search='', statusFilter='', 
     ...(appts||[]).map(a=>({_type:'appt', _date: new Date((a.scheduled_date||a.created_at)+'T12:00:00'), _status:a.status, _name:(a.service_title||'').toLowerCase()+' '+(a.customer?.full_name||a.customer?.username||'').toLowerCase(), data:a}))
   ];
 
-  // Filtro de status — 'done' e 'closed' são tratados como concluído
+  // Filtro de status — mapeamentos especiais:
+  //   'done'     → concluído (deals: 'done' ou 'closed antigo' + appts: 'done')
+  //   'proposta' → proposta aceita/pendente em loja (deals: 'closed' ou 'pending')
+  // Garantia: rejected nunca aparece (já é filtrado na carga), mas reforçamos aqui
+  items = items.filter(i => i._type!=='deal' || i._status !== 'rejected');
   if(statusFilter){
     if(statusFilter === 'done'){
-      items = items.filter(i=> i._status === 'done' || i._status === 'closed');
+      items = items.filter(i=> i._status === 'done');
+    } else if(statusFilter === 'proposta'){
+      items = items.filter(i=> i._type==='deal' && (i._status === 'closed' || i._status === 'pending'));
     } else {
       items = items.filter(i=> i._status === statusFilter);
     }
@@ -17529,18 +17571,54 @@ function _renderDashHistory(deals, appts, limit=10, search='', statusFilter='', 
   return summary + items.map(item=>{
     if(item._type==='deal'){
       const d=item.data;
-      // Status visual do deal
-      // 'closed' é o status final de um acordo de loja (equivale a concluído)
-      const _dEffective = (d.status==='closed'||d.status==='done') ? 'done' : d.status;
-      const _dsc = _dEffective==='done'?'var(--neon-cyan)':_dEffective==='cancelled'?'var(--neon-pink)':_dEffective==='confirmed'?'var(--neon-yellow)':_dEffective==='rejected'?'var(--neon-pink)':'var(--neon-cyan)';
-      const _dsl = _dEffective==='done'?'✅ Concluído':_dEffective==='cancelled'?'❌ Cancelado':_dEffective==='confirmed'?'📋 Confirmado':_dEffective==='rejected'?'❌ Recusado':_dEffective==='pending'?'⏳ Pendente':'✅ Concluído';
-      const _dborder = _dEffective==='done'?'rgba(0,255,204,.25)':_dEffective==='cancelled'||_dEffective==='rejected'?'rgba(255,51,102,.25)':_dEffective==='confirmed'?'rgba(255,204,0,.25)':'rgba(0,255,204,.25)';
-      return `<div onclick="openDealSummary(${JSON.stringify(d).replace(/"/g,'&quot;')})" style="background:var(--bg-card);border:1px solid ${_dborder};border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:border-color .2s;" onmouseover="this.style.borderColor='var(--neon-cyan)'" onmouseout="this.style.borderColor='${_dborder}'">
-        <div><div style="font-size:12px;color:var(--text-light);">${xss(d.title||'Venda')}</div>
-        <div style="font-size:10px;color:var(--text-muted);">${new Date(d.created_at).toLocaleDateString('pt-BR')} · <span style="color:var(--neon-cyan);">🔍 ver resumo</span></div></div>
-        <div style="text-align:right;">
-          ${d.value?`<div style="font-family:VT323,monospace;font-size:18px;color:var(--neon-cyan);">R$ ${Number(d.value).toFixed(2)}</div>`:''}
-          <div style="font-size:10px;color:${_dsc};">${_dsl}</div>
+      // Determina o status efetivo do deal:
+      //   · Se houver _effectiveStatus (veio da purchase associada), usa ele
+      //   · Senão, para 'closed' sem purchase: considera como Concluído (retrocompat com o fluxo antigo)
+      //   · Senão, usa o status original do deal
+      let _effStatus;
+      if(d._effectiveStatus){
+        _effStatus = d._effectiveStatus;
+      } else if(d.status === 'closed' && !d._linkedPurchase){
+        _effStatus = 'done'; // retrocompat
+      } else {
+        _effStatus = d.status;
+      }
+      // Mapeamento visual:
+      //   'done'              → ✅ Concluído (verde neon)
+      //   'closed' (aceito, aguardando conclusão da venda) → 📋 Proposta (amarelo)
+      //   'pending'           → 📋 Proposta (amarelo) — aguardando cliente
+      //   'cancelled'         → ❌ Cancelado (vermelho)
+      //   'confirmed'         → 📋 Confirmado (amarelo)
+      //   'rejected'          → nunca aparece (já filtrado)
+      let _dsc, _dsl, _dborder;
+      if(_effStatus === 'done'){
+        _dsc='var(--neon-cyan)'; _dsl='✅ Concluído'; _dborder='rgba(0,255,204,.25)';
+      } else if(_effStatus === 'cancelled'){
+        _dsc='var(--neon-pink)'; _dsl='❌ Cancelado'; _dborder='rgba(255,51,102,.25)';
+      } else if(_effStatus === 'confirmed'){
+        _dsc='var(--neon-yellow)'; _dsl='📋 Confirmado'; _dborder='rgba(255,204,0,.25)';
+      } else {
+        // closed (aceito) ou pending (aguardando) → tratados como "Proposta"
+        _dsc='var(--neon-yellow)'; _dsl='📋 Proposta'; _dborder='rgba(255,204,0,.25)';
+      }
+      // Nome do cliente que aceitou a proposta (ou null se ainda pendente)
+      const dProf = d.accepted_profile || null;
+      const dName = dProf?.full_name || dProf?.username || (d.status==='pending' ? 'Aguardando cliente' : 'Cliente');
+      const dValor = d.value ? 'R$ '+Number(d.value).toFixed(2).replace('.',',') : '';
+      const dDate = d.created_at ? new Date(d.created_at).toLocaleDateString('pt-BR') : '—';
+      const dJson = JSON.stringify(d).replace(/"/g,'&quot;');
+      return `<div onclick="openDealSummary(${dJson})" style="background:var(--bg-card);border:1px solid ${_dborder};border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer;transition:border-color .2s;" onmouseover="this.style.borderColor='var(--neon-cyan)'" onmouseout="this.style.borderColor='${_dborder}'">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(d.title||'Venda')}</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">📅 ${dDate} · 👤 ${xss(dName)}</div>
+            <div style="font-size:10px;color:var(--neon-cyan);margin-top:2px;">🔍 ver resumo</div>
+            ${d.cancel_reason?`<div style="font-size:9px;color:var(--neon-pink);margin-top:2px;">❌ ${xss(d.cancel_reason)}</div>`:''}
+          </div>
+          <div style="text-align:right;flex-shrink:0;margin-left:10px;">
+            ${dValor?`<div style="font-family:VT323,monospace;font-size:18px;color:var(--neon-yellow);">${dValor}</div>`:''}
+            <div style="font-size:10px;color:${_dsc};">${_dsl}</div>
+          </div>
         </div></div>`;
     } else {
       const a=item.data;
@@ -17583,8 +17661,23 @@ function openDealSummary(d){
     <div><div style="font-size:9px;color:var(--text-muted);font-family:'Silkscreen',monospace;letter-spacing:.5px;margin-bottom:2px;">${label}</div>
     <div style="font-size:13px;color:var(--text-light);">${xss(String(val))}</div></div></div>` : '';
 
-  // Nome de quem aceitou o acordo
-  const acceptedName = d.accepted_profile?.username || d.accepted_profile?.full_name || null;
+  // Nome de quem aceitou o acordo (prioriza full_name, depois username)
+  const acceptedName = d.accepted_profile?.full_name || d.accepted_profile?.username || null;
+
+  // Calcula rótulo e cor do status (coerente com o histórico do Dashboard)
+  let _stLabel, _stColor;
+  if(d.status === 'done'){
+    _stLabel = '✅ CONCLUÍDO'; _stColor = '#00ff96';
+  } else if(d.status === 'cancelled'){
+    _stLabel = '❌ CANCELADO'; _stColor = 'var(--neon-pink)';
+  } else if(d.status === 'confirmed'){
+    _stLabel = '📋 CONFIRMADO'; _stColor = 'var(--neon-yellow)';
+  } else if(d.status === 'pending'){
+    _stLabel = '⏳ PENDENTE'; _stColor = 'var(--neon-yellow)';
+  } else {
+    // 'closed' e demais → Proposta (amarelo)
+    _stLabel = '📋 PROPOSTA'; _stColor = 'var(--neon-yellow)';
+  }
 
   ov.innerHTML=`
     <div style="background:var(--bg-card);border:1px solid rgba(0,255,204,.4);border-radius:18px;padding:24px 22px;max-width:360px;width:100%;box-shadow:0 0 40px rgba(0,255,204,.12),0 20px 60px rgba(0,0,0,.6);max-height:90vh;overflow-y:auto;">
@@ -17595,7 +17688,7 @@ function openDealSummary(d){
       <div style="background:linear-gradient(135deg,rgba(0,255,204,.06),rgba(191,95,255,.06));border:1px solid rgba(0,255,204,.25);border-radius:12px;padding:14px;margin-bottom:14px;text-align:center;">
         <div style="font-family:VT323,monospace;font-size:36px;color:var(--neon-cyan);line-height:1;">${fmt(d.value)}</div>
         <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">${xss(d.title||'Negociação')}</div>
-        <div style="margin-top:6px;font-size:11px;color:${d.status==='cancelled'||d.status==='rejected'?'var(--neon-pink)':d.status==='confirmed'?'var(--neon-yellow)':'#00ff96'};font-family:'Silkscreen',monospace;">${(d.status==='done'||d.status==='closed')?'✅ CONCLUÍDO':d.status==='cancelled'?'❌ CANCELADO':d.status==='confirmed'?'📋 CONFIRMADO':d.status==='rejected'?'❌ RECUSADO':d.status==='pending'?'⏳ PENDENTE':'✅ CONCLUÍDO'}</div>
+        <div style="margin-top:6px;font-size:11px;color:${_stColor};font-family:'Silkscreen',monospace;">${_stLabel}</div>
       </div>
       <div style="display:flex;flex-direction:column;">
         ${row('👤', 'CLIENTE', acceptedName)}
@@ -17607,6 +17700,7 @@ function openDealSummary(d){
         ${row('📦', 'ENTREGA', d.delivery_type)}
         ${row('📝', 'OBSERVAÇÕES', d.notes)}
         ${row('📆', 'DATA DO ACORDO', new Date(d.created_at).toLocaleDateString('pt-BR'))}
+        ${d.cancel_reason ? row('❌', 'MOTIVO DO CANCELAMENTO', d.cancel_reason) : ''}
       </div>
     </div>`;
 
