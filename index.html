@@ -7848,8 +7848,8 @@ function renderPost(post,rxCounts={},myRx='',_origPostMap){
     }
     ${repostCardHtml}
     ${mediaHtml}
-    ${bizMeta ? `<div style="padding:10px 0 4px;display:flex;gap:8px;" id="biz-cta-wrap-${post.id}">
-      <button class="post-btn" data-bizid="${bizMeta.id}" style="flex:1;font-size:11px;padding:9px 10px;background:linear-gradient(135deg,rgba(0,255,204,.18),rgba(0,255,204,.08));border:1px solid rgba(0,255,204,.5);color:var(--neon-cyan);border-radius:10px;cursor:pointer;font-family:'Silkscreen',monospace;letter-spacing:.5px;transition:all .18s;" onclick="event.stopPropagation();_bizCtaAction('${bizMeta.id}','${xss(bizMeta.name).replace(/'/g,"\\'")}','${post.id}')" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'" id="biz-cta-btn-${post.id}">⏳ Carregar...</button>
+    ${bizMeta ? `<div style="padding:10px 0 6px;display:flex;gap:8px;" id="biz-cta-wrap-${post.id}">
+      <button data-bizid="${bizMeta.id}" style="flex:1;font-size:11px;padding:11px 10px;background:linear-gradient(135deg,var(--neon-cyan),#00ccaa);border:none;color:#0a0a2a;border-radius:10px;cursor:pointer;font-family:'Silkscreen',monospace;letter-spacing:.8px;font-weight:700;transition:all .18s;box-shadow:0 4px 14px rgba(0,255,204,.35);" onclick="event.stopPropagation();_bizCtaAction('${bizMeta.id}','${xss(bizMeta.name).replace(/'/g,"\\'")}','${post.id}')" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 22px rgba(0,255,204,.55)'" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 4px 14px rgba(0,255,204,.35)'" id="biz-cta-btn-${post.id}">⏳ Carregar...</button>
     </div>` : ''}
     <div class="preactions">${rxHtml}</div>
     ${(()=>{
@@ -7929,17 +7929,10 @@ async function _hydrateBizCtaBtns() {
     if(CU && meta.owner_id === CU.id) { if(wrap) wrap.style.display='none'; return; }
 
     const isServico = (meta.category === 'servico' || meta.category === 'serviço');
-    if(isServico) {
-      btn.innerHTML = '📅 Agendar';
-      btn.style.background = 'linear-gradient(135deg,rgba(191,95,255,.22),rgba(191,95,255,.10))';
-      btn.style.borderColor = 'rgba(191,95,255,.6)';
-      btn.style.color = 'var(--neon-purple)';
-    } else {
-      btn.innerHTML = '🛒 Comprar';
-      btn.style.background = 'linear-gradient(135deg,rgba(255,204,0,.18),rgba(255,204,0,.08))';
-      btn.style.borderColor = 'rgba(255,204,0,.55)';
-      btn.style.color = 'var(--neon-yellow)';
-    }
+    btn.style.cssText = `flex:1;font-size:11px;padding:11px 10px;background:linear-gradient(135deg,var(--neon-cyan),#00ccaa);border:none;color:#0a0a2a;border-radius:10px;cursor:pointer;font-family:'Silkscreen',monospace;letter-spacing:.8px;font-weight:700;transition:all .18s;box-shadow:0 4px 14px rgba(0,255,204,.35);`;
+    btn.onmouseover = () => { btn.style.transform='translateY(-2px)'; btn.style.boxShadow='0 8px 22px rgba(0,255,204,.55)'; };
+    btn.onmouseout  = () => { btn.style.transform='translateY(0)';    btn.style.boxShadow='0 4px 14px rgba(0,255,204,.35)'; };
+    btn.innerHTML = isServico ? '📅 Agendar' : '🛒 Comprar';
   });
 }
 // ────────────────────────────────────────────────────────────────────────────
