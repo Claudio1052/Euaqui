@@ -17341,14 +17341,16 @@ async function loadBizDashboard(){
   const b=myBusiness;
   // Load deals — tenta join de perfil, faz fallback simples se falhar
   let deals = [];
+  // Busca todos os status relevantes para o histórico da loja
+  const _dealStatuses = ['closed','done','confirmed','cancelled','pending','rejected'];
   const {data:d1, error:e1} = await db.from('business_deals')
     .select('*, accepted_profile:profiles!business_deals_accepted_by_fkey(id,username,full_name,avatar_url)')
-    .eq('business_id',b.id).eq('status','closed').order('created_at',{ascending:false}).limit(1000);
+    .eq('business_id',b.id).in('status',_dealStatuses).order('created_at',{ascending:false}).limit(1000);
   if(!e1 && d1){
     deals = d1;
   } else {
     const {data:d2} = await db.from('business_deals')
-      .select('*').eq('business_id',b.id).eq('status','closed').order('created_at',{ascending:false}).limit(1000);
+      .select('*').eq('business_id',b.id).in('status',_dealStatuses).order('created_at',{ascending:false}).limit(1000);
     deals = d2 || [];
     if(deals.length){
       const ids = [...new Set(deals.map(d=>d.accepted_by).filter(Boolean))];
@@ -17393,25 +17395,29 @@ async function loadBizDashboard(){
   const {data:fresh}=await db.from('businesses').select('*').eq('id',b.id).maybeSingle();
   if(fresh) myBusiness=fresh;
   const bd=fresh||b;
-  // Calcula soma dos valores dos agendamentos concluídos
+  // Calcula faturamento: agendamentos concluídos (serviço) + deals concluídos (loja)
   let totalRevenue = 0;
+  let totalSalesDone = 0; // contagem real de vendas concluídas
   try{
+    // Agendamentos concluídos (para serviços)
     const {data:doneAppts} = await db.from('appointments')
-      .select('value')
-      .eq('business_id',b.id)
-      .eq('status','done');
+      .select('value').eq('business_id',b.id).eq('status','done');
     if(doneAppts?.length){
-      totalRevenue = doneAppts.reduce((sum,a)=>sum+(Number(a.value)||0),0);
+      totalRevenue += doneAppts.reduce((sum,a)=>sum+(Number(a.value)||0),0);
     }
+    // Deals concluídos (para lojas) — status 'done' ou 'closed'
+    const doneDealsList = deals.filter(d=>d.status==='done'||d.status==='closed');
+    totalSalesDone = doneDealsList.length;
+    totalRevenue += doneDealsList.reduce((sum,d)=>sum+(Number(d.value)||0),0);
   }catch(e){}
   const fmtCurrency = v => v>=1000 ? 'R$'+(v/1000).toFixed(1).replace('.',',')+'k' : 'R$'+v.toFixed(0);
   el.innerHTML=`
     <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);margin-bottom:14px;">📊 Dashboard — ${xss(bd.name)}</div>
     <div class="dash-grid">
       <div class="dash-card"><div class="dash-num">${bd.followers_count||0}</div><div class="dash-lbl">👥 Seguidores</div></div>
-      <div class="dash-card"><div class="dash-num">${bd.deals_closed||0}</div><div class="dash-lbl">${bd.category==='servico'?'📅 Agendamentos':'🤝 Neg. Fechados'}</div></div>
-      ${bd.category==='servico'?`<div class="dash-card"><div class="dash-num">${fmtCurrency(totalRevenue)}</div><div class="dash-lbl">💰 Faturado</div></div>`:''}
-      ${bd.category==='loja'?`<div class="dash-card"><div class="dash-num">${bd.sales_done||0}</div><div class="dash-lbl">✅ Vendas</div></div>`:''}
+      ${bd.category==='servico'?`<div class="dash-card"><div class="dash-num">${bd.deals_closed||0}</div><div class="dash-lbl">📅 Agendamentos</div></div>`:''}
+      <div class="dash-card"><div class="dash-num">${fmtCurrency(totalRevenue)}</div><div class="dash-lbl">💰 Faturamento</div></div>
+      ${bd.category==='loja'?`<div class="dash-card"><div class="dash-num">${totalSalesDone}</div><div class="dash-lbl">✅ Vendas</div></div>`:''}
       <div class="dash-card"><div class="dash-num">${bd.rating?Number(bd.rating).toFixed(1):'—'}</div><div class="dash-lbl">⭐ Avaliação</div></div>
     </div>
     <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);margin-bottom:10px;">📋 Histórico de Negócios</div>
@@ -17436,7 +17442,7 @@ async function loadBizDashboard(){
     statusSel.id = 'dash-status-filter';
     statusSel.onchange = eaDashFilter;
     statusSel.style.cssText = selStyle;
-    [['','Todos'],['done','Concluido'],['confirmed','Confirmado'],['cancelled','Cancelado'],['closed','Fechado']].forEach(([v,t])=>{
+    [['','Todos'],['done','Concluído'],['closed','Fechado'],['confirmed','Confirmado'],['cancelled','Cancelado'],['pending','Pendente'],['rejected','Recusado']].forEach(([v,t])=>{
       const o=document.createElement('option'); o.value=v; o.textContent=t; statusSel.appendChild(o);
     });
 
@@ -17484,7 +17490,7 @@ function _renderDashHistory(deals, appts, limit=10, search='', statusFilter='', 
 
   // Combina deals (acordos) e agendamentos em um único array cronológico
   let items = [
-    ...(deals||[]).map(d=>({_type:'deal', _date: new Date(d.created_at), _status:'closed', _name:(d.title||'').toLowerCase(), data:d})),
+    ...(deals||[]).map(d=>({_type:'deal', _date: new Date(d.created_at), _status:d.status, _name:(d.title||'').toLowerCase(), data:d})),
     ...(appts||[]).map(a=>({_type:'appt', _date: new Date((a.scheduled_date||a.created_at)+'T12:00:00'), _status:a.status, _name:(a.service_title||'').toLowerCase()+' '+(a.customer?.full_name||a.customer?.username||'').toLowerCase(), data:a}))
   ];
 
@@ -17509,12 +17515,16 @@ function _renderDashHistory(deals, appts, limit=10, search='', statusFilter='', 
   return summary + items.map(item=>{
     if(item._type==='deal'){
       const d=item.data;
-      return `<div onclick="openDealSummary(${JSON.stringify(d).replace(/"/g,'&quot;')})" style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:border-color .2s;" onmouseover="this.style.borderColor='var(--neon-cyan)'" onmouseout="this.style.borderColor='var(--border-glow)'">
+      // Status visual do deal
+      const _dsc = d.status==='done'?'var(--neon-cyan)':d.status==='cancelled'?'var(--neon-pink)':d.status==='confirmed'?'var(--neon-yellow)':d.status==='rejected'?'var(--neon-pink)':'var(--neon-cyan)';
+      const _dsl = d.status==='done'?'✅ Concluído':d.status==='cancelled'?'❌ Cancelado':d.status==='confirmed'?'📋 Confirmado':d.status==='rejected'?'❌ Recusado':d.status==='pending'?'⏳ Pendente':'✅ Fechado';
+      const _dborder = d.status==='done'?'rgba(0,255,204,.25)':d.status==='cancelled'||d.status==='rejected'?'rgba(255,51,102,.25)':d.status==='confirmed'?'rgba(255,204,0,.25)':'var(--border-glow)';
+      return `<div onclick="openDealSummary(${JSON.stringify(d).replace(/"/g,'&quot;')})" style="background:var(--bg-card);border:1px solid ${_dborder};border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:border-color .2s;" onmouseover="this.style.borderColor='var(--neon-cyan)'" onmouseout="this.style.borderColor='${_dborder}'">
         <div><div style="font-size:12px;color:var(--text-light);">${xss(d.title||'Venda')}</div>
         <div style="font-size:10px;color:var(--text-muted);">${new Date(d.created_at).toLocaleDateString('pt-BR')} · <span style="color:var(--neon-cyan);">🔍 ver resumo</span></div></div>
         <div style="text-align:right;">
           ${d.value?`<div style="font-family:VT323,monospace;font-size:18px;color:var(--neon-cyan);">R$ ${Number(d.value).toFixed(2)}</div>`:''}
-          <div style="font-size:10px;color:var(--neon-cyan);">✅ Fechado</div>
+          <div style="font-size:10px;color:${_dsc};">${_dsl}</div>
         </div></div>`;
     } else {
       const a=item.data;
@@ -17569,7 +17579,7 @@ function openDealSummary(d){
       <div style="background:linear-gradient(135deg,rgba(0,255,204,.06),rgba(191,95,255,.06));border:1px solid rgba(0,255,204,.25);border-radius:12px;padding:14px;margin-bottom:14px;text-align:center;">
         <div style="font-family:VT323,monospace;font-size:36px;color:var(--neon-cyan);line-height:1;">${fmt(d.value)}</div>
         <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">${xss(d.title||'Negociação')}</div>
-        <div style="margin-top:6px;font-size:11px;color:#00ff96;font-family:'Silkscreen',monospace;">✅ FECHADO</div>
+        <div style="margin-top:6px;font-size:11px;color:${d.status==='cancelled'||d.status==='rejected'?'var(--neon-pink)':d.status==='confirmed'?'var(--neon-yellow)':'#00ff96'};font-family:'Silkscreen',monospace;">${d.status==='done'?'✅ CONCLUÍDO':d.status==='cancelled'?'❌ CANCELADO':d.status==='confirmed'?'📋 CONFIRMADO':d.status==='rejected'?'❌ RECUSADO':d.status==='pending'?'⏳ PENDENTE':'✅ FECHADO'}</div>
       </div>
       <div style="display:flex;flex-direction:column;">
         ${row('👤', 'CLIENTE', acceptedName)}
