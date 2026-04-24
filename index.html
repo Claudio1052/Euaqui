@@ -19561,16 +19561,10 @@ function _eaTryOpenApp(schemeUrl){
 function open99EntregaApp(ev){
   if(ev){ try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){} }
   const plat = _eaDetectPlatform();
-  if(plat === 'android'){
-    // intent:// com HTTPS embutido força o Android a abrir o app 99 (package com.taxis99).
-    // S.browser_fallback_url é acionado só se o app não estiver instalado.
-    // Diferente de window.location simples, esse formato dispara a interceptação do App Link.
-    window.location.href = 'intent://oia.99app.com/#Intent;scheme=https;package=com.taxis99;S.browser_fallback_url=https%3A%2F%2Fwww.99app.com%2F;end';
-    return;
-  }
-  if(plat === 'ios'){
-    // iOS: Universal Link HTTPS verificado abre direto no app se instalado.
-    window.location.href = 'https://oia.99app.com/';
+  if(plat === 'android' || plat === 'ios'){
+    // Abre o app 99 normal (testado e funcionando).
+    // No Android, o App Link verificado intercepta e abre no app instalado.
+    window.location.href = 'https://www.99app.com/';
     return;
   }
   alert('📱 O app 99 só funciona em celular (Android/iOS).\nAbra esta página pelo seu celular para solicitar o motoboy.');
@@ -19579,13 +19573,9 @@ function open99EntregaApp(ev){
 function openIfoodCourierApp(ev){
   if(ev){ try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){} }
   const plat = _eaDetectPlatform();
-  if(plat === 'android'){
-    // intent:// com HTTPS força o Android a abrir o app iFood instalado.
-    // Usa www.ifood.com.br (domínio verificado e com conteúdo real, não endpoint de API).
-    window.location.href = 'intent://www.ifood.com.br/#Intent;scheme=https;package=br.com.ifood;S.browser_fallback_url=https%3A%2F%2Fwww.ifood.com.br%2F;end';
-    return;
-  }
-  if(plat === 'ios'){
+  if(plat === 'android' || plat === 'ios'){
+    // Abre o site normal do iFood — o Android intercepta automaticamente
+    // e abre direto no app iFood instalado (testado e funcionando).
     window.location.href = 'https://www.ifood.com.br/';
     return;
   }
