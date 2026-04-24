@@ -18502,8 +18502,7 @@ async function acceptDealProposal(dealId, btn){
           const purchPayload = {
             business_id: deal.business_id,
             customer_id: CU.id,
-            status: 'confirmed',
-            order_number: 'PED-' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).substring(2,5).toUpperCase()
+            status: 'confirmed'
           };
           if(deal.title)           purchPayload.product_title   = deal.title;
           if(deal.value)           purchPayload.value            = deal.value;
@@ -18513,8 +18512,16 @@ async function acceptDealProposal(dealId, btn){
           if(deal.notes)           purchPayload.notes            = deal.notes;
           if(chatId)               purchPayload.chat_id          = chatId;
           if(dealId)               purchPayload.deal_id          = dealId;
-          const purchRes = await db.from('purchases').insert(purchPayload);
-          if(purchRes.error) console.warn('[acceptDeal] purchases insert:', purchRes.error.message);
+
+          // Tenta COM order_number primeiro. Se falhar (coluna pode não existir), refaz SEM.
+          const orderNum = 'PED-' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).substring(2,5).toUpperCase();
+          const payloadWithOrder = { ...purchPayload, order_number: orderNum };
+          let purchRes = await db.from('purchases').insert(payloadWithOrder);
+          if(purchRes.error){
+            console.warn('[acceptDeal] purchases insert com order_number falhou:', purchRes.error.message, '— tentando sem order_number');
+            purchRes = await db.from('purchases').insert(purchPayload);
+            if(purchRes.error) console.warn('[acceptDeal] purchases insert (fallback sem order_number):', purchRes.error.message);
+          }
         } catch(e){ console.warn('[acceptDeal] purchases:', e.message); }
       }
 
