@@ -17910,7 +17910,7 @@ async function openBizDetail(biz){
       ${biz.whatsapp?`<a href="https://wa.me/55${biz.whatsapp.replace(/\D/g,'')}" target="_blank" class="post-btn" style="text-decoration:none;font-size:10px;padding:8px 14px;">📱 WhatsApp</a>`:''}
       ${biz.email?`<a href="mailto:${xss(biz.email)}" class="tbtn" style="text-decoration:none;">✉️ E-mail</a>`:''}
       ${biz.website?`<a href="${xss(biz.website)}" target="_blank" class="tbtn" style="text-decoration:none;">🌐 Site</a>`:''}
-      ${CU && biz.owner_id !== CU.id ? `<button class="tbtn" onclick="openBizChatCustomer('${biz.id}','${xss(biz.name||'Loja').replace(/'/g,"\\'")}');document.querySelector('[data-biz-overlay]')?.remove();" style="color:var(--neon-cyan);border-color:rgba(0,255,204,.4);background:rgba(0,255,204,.08);">💬 Chat de Atendimento</button>` : ''}
+      ${CU && biz.owner_id !== CU.id ? `<button class="tbtn" onclick="openBizChatCustomer('${biz.id}','${xss(biz.name||'Loja').replace(/'/g,"\\'")}');document.querySelector('[data-biz-overlay]')?.remove();" style="color:var(--neon-cyan);border-color:rgba(0,255,204,.4);background:rgba(0,255,204,.08);">💬 Chat</button>` : ''}
       <button id="biz-follow-btn-${biz.id}" class="tbtn" onclick="toggleBizFollow('${biz.id}',this)" style="color:var(--neon-cyan);">⏳ ...</button>
     </div>
     <div id="biz-prods-section-${biz.id}"><div style="color:var(--text-muted);font-size:11px;">⏳ Carregando produtos...</div></div>
