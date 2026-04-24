@@ -13771,7 +13771,7 @@ async function loadHomeAlerts(){
       const tpl=_HA_LABEL[n.type];
       return tpl?tpl(_HA_commName(n)):`Notificação de comunidade: <strong>${_HA_commName(n)}</strong>`;
     }
-    return xss(n.content||'Nova notificação');
+    return _parseBold(n.content||'Nova notificação');
   }
 
   const icons={follow:'👤',like:'❤️',comment:'💬',friend_request:'👥',friend_accept:'🎉',message:'💬',community_invite:'🏘️',community_post:'🏘️',community_mention:'🏘️',biz_promo:'🏪',mention:'@',call_missed:'📞',share:'🔁',olha_aqui_new:'👁️',olha_aqui_comm:'🏘️',olha_aqui_biz:'🏪'};
@@ -14911,14 +14911,24 @@ function getYouTubeId(url){
   }catch(e){ return null; }
 }
 
+// Converte *texto* e **texto** em <strong> — seguro contra XSS (aplica xss antes)
+function _parseBold(str){
+  if(!str) return '';
+  const safe = xss(str);
+  return safe
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*\n]+)\*/g,   '<strong>$1</strong>');
+}
+
 function linkify(t){
   // 0. Processar markdown antes do xss
   // [texto](url) → link estilizado
   t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, (_, label, href)=>{
     return `\x00MDLINK:${encodeURIComponent(href)}:${encodeURIComponent(label)}\x00`;
   });
-  // **negrito**
+  // **negrito** e *negrito simples*
   t = t.replace(/\*\*([^*]+)\*\*/g, '\x00BOLD:$1\x00');
+  t = t.replace(/\*([^*\n]+)\*/g, '\x00BOLD:$1\x00');
 
   const safe = xss(t);
 
@@ -16021,9 +16031,9 @@ async function loadNotifTab(tabId){
       return xss(clean || 'Nova notificação de loja');
     }
     if(n.type === 'purchase_done'){
-      return xss(n.content || '🎉 Parabéns pela sua aquisição!');
+      return _parseBold(n.content || '🎉 Parabéns pela sua aquisição!');
     }
-    return xss(n.content || 'Nova notificação');
+    return _parseBold(n.content || 'Nova notificação');
   }
 
   // Pré-carrega avatares para notificações OlhaAqui
@@ -16160,7 +16170,7 @@ async function loadNotifTab(tabId){
       niIconHtml = `<span style="font-size:20px">🏘️</span>`;
     }
     // Para notificações system de conclusão de agendamento, limpa o link do texto
-    const _notifContent = n.type==='system' ? (n.content||'').replace(/https?:\/\/\S+/g,'').trim() : null;
+    const _notifContent = n.type==='system' ? _parseBold((n.content||'').replace(/https?:\/\/\S+/g,'').trim()) : null;
     const _displayText = _notifContent !== null ? _notifContent : getNotifDisplayText(n);
     // Verifica se é notificação de conclusão (agradecimento) para mostrar botão ir à loja
     const _isApptDoneNotif = n.type==='system' && n.business_id && (n.content||'').includes('Obrigado por confiar');
@@ -17121,7 +17131,7 @@ async function loadBizMsgs(chatId){
       // Extrai linhas visíveis (remove a tag interna e linhas vazias residuais)
       const cleanContent = m.content.replace(/\[DEAL_PROPOSAL:[^\]]*\]/g,'').trim();
       const lines = cleanContent.split('\n').filter(l=>l.trim()!=='');
-      const visibleText = lines.join('<br>');
+      const visibleText = lines.map(l=>_parseBold(l)).join('<br>');
       const isTheirProposal = !isMine; // cliente vê botões de aceitar/recusar
       const btnsHtml = (isTheirProposal && dealId) ? `
         <div style="display:flex;gap:8px;margin-top:12px;">
@@ -17165,7 +17175,7 @@ async function loadBizMsgs(chatId){
       </div><div class="mb-time">${time}</div>`;
     } else if(m.msg_type === 'deal_closed' || (m.content && m.content.includes('[DEAL_CLOSED:'))){
       const lines = m.content.replace(/\[DEAL_CLOSED:[^\]]*\]/g,'').trim().split('\n').filter(l=>l.trim()!=='');
-      const visibleText = lines.join('<br>');
+      const visibleText = lines.map(l=>_parseBold(l)).join('<br>');
       div.innerHTML=`<div class="mb-bubble" style="
         background:linear-gradient(135deg,rgba(0,255,100,.08),rgba(0,255,204,.08));
         border:2px solid rgba(0,255,150,.5);
@@ -17180,7 +17190,7 @@ async function loadBizMsgs(chatId){
       </div><div class="mb-time">${time}</div>`;
     } else if(m.msg_type === 'deal_rejected' || (m.content && m.content.includes('[DEAL_REJECTED:'))){
       const lines = m.content.replace(/\[DEAL_REJECTED:[^\]]*\]/g,'').trim().split('\n').filter(l=>l.trim()!=='');
-      const visibleText = lines.join('<br>');
+      const visibleText = lines.map(l=>_parseBold(l)).join('<br>');
       div.innerHTML=`<div class="mb-bubble" style="background:rgba(255,51,102,.06);border:1px solid rgba(255,51,102,.3);border-radius:12px;padding:12px 14px;">
         <div style="font-size:11px;line-height:1.6;color:var(--text-light);white-space:pre-wrap;">${visibleText}</div>
       </div><div class="mb-time">${time}</div>`;
