@@ -17482,7 +17482,7 @@ async function loadBizDashboard(){
     const search = document.createElement('input');
     search.id = 'dash-search';
     search.type = 'text';
-    search.placeholder = 'Buscar por nome...';
+    search.placeholder = 'Buscar por nome ou nº pedido...';
     search.oninput = eaDashFilter;
     search.style.cssText = 'flex:1;min-width:120px;' + selStyle;
 
@@ -17538,7 +17538,7 @@ function _renderDashHistory(deals, appts, limit=10, search='', statusFilter='', 
 
   // Combina deals (acordos) e agendamentos em um único array cronológico
   let items = [
-    ...(deals||[]).map(d=>({_type:'deal', _date: new Date(d.created_at), _status:d.status, _name:(d.title||'').toLowerCase(), data:d})),
+    ...(deals||[]).map(d=>({_type:'deal', _date: new Date(d.created_at), _status:d.status, _name:(d.title||'').toLowerCase()+' '+(d._linkedPurchase?.order_number||'').toLowerCase(), data:d})),
     ...(appts||[]).map(a=>({_type:'appt', _date: new Date((a.scheduled_date||a.created_at)+'T12:00:00'), _status:a.status, _name:(a.service_title||'').toLowerCase()+' '+(a.customer?.full_name||a.customer?.username||'').toLowerCase(), data:a}))
   ];
 
@@ -17618,7 +17618,7 @@ function _renderDashHistory(deals, appts, limit=10, search='', statusFilter='', 
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <div style="flex:1;min-width:0;">
             <div style="font-size:12px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(d.title||'Venda')}</div>
-            <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">📅 ${dDate} · 👤 ${xss(dName)}</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">📅 ${dDate} · 👤 ${xss(dName)}${d._linkedPurchase?.order_number?` · <span style="color:var(--neon-yellow);font-family:VT323,monospace;font-size:12px;">#${xss(d._linkedPurchase.order_number)}</span>`:''}</div>
             <div style="font-size:10px;color:var(--neon-cyan);margin-top:2px;">🔍 ver resumo</div>
             ${d.cancel_reason?`<div style="font-size:9px;color:var(--neon-pink);margin-top:2px;">❌ ${xss(d.cancel_reason)}</div>`:''}
           </div>
@@ -18497,7 +18497,8 @@ async function acceptDealProposal(dealId, btn){
           const purchPayload = {
             business_id: deal.business_id,
             customer_id: CU.id,
-            status: 'confirmed'
+            status: 'confirmed',
+            order_number: 'PED-' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).substring(2,5).toUpperCase()
           };
           if(deal.title)           purchPayload.product_title   = deal.title;
           if(deal.value)           purchPayload.value            = deal.value;
@@ -19238,7 +19239,8 @@ function renderPurchasesList(el, list, isOwner, purchSearch='', purchStatus='', 
         const prof = p.customer || p.profiles || null;
         const name = (prof?.full_name||prof?.username||'').toLowerCase();
         const title = (p.product_title||'').toLowerCase();
-        return name.includes(s) || title.includes(s);
+        const orderNum = (p.order_number||'').toLowerCase();
+        return name.includes(s) || title.includes(s) || orderNum.includes(s);
       });
     }
   }
@@ -19258,6 +19260,7 @@ function renderPurchasesList(el, list, isOwner, purchSearch='', purchStatus='', 
     const dateStr = p.created_at ? new Date(p.created_at).toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'2-digit'}) : '';
     const prof    = p.customer || p.profiles || null;
     const name    = isOwner ? (prof?.full_name||prof?.username||'Cliente') : (p.businesses?.name||'Loja');
+    const orderNum = p.order_number ? `<span style="font-family:VT323,monospace;font-size:11px;color:var(--neon-yellow);background:rgba(255,204,0,.08);border:1px solid rgba(255,204,0,.2);border-radius:4px;padding:1px 5px;margin-right:4px;">#${xss(p.order_number)}</span>` : '';
     const avatar  = isOwner
       ? (prof?.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof?.username||'user'))
       : (p.businesses?.logo_url||'https://api.dicebear.com/7.x/shapes/svg?seed=biz');
@@ -19336,6 +19339,7 @@ function renderPurchasesList(el, list, isOwner, purchSearch='', purchStatus='', 
         <div style="flex:1;min-width:0;">
           <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(name)}</div>
           <div style="font-size:10px;color:var(--neon-yellow);margin-top:2px;">🛒 ${xss(p.product_title||'Produto')}</div>
+          ${p.order_number?`<div style="margin-top:3px;">${orderNum}</div>`:''}
         </div>
         <div style="text-align:right;flex-shrink:0;">
           ${valor?`<div style="font-family:VT323,monospace;font-size:18px;color:var(--neon-yellow);">${valor}</div>`:''}
@@ -19395,7 +19399,7 @@ function _buildPurchFilters(el){
   const search = document.createElement('input');
   search.id = 'purch-search';
   search.type = 'text';
-  search.placeholder = 'Buscar cliente ou produto...';
+  search.placeholder = 'Buscar cliente, produto ou nº pedido...';
   search.oninput = eaPurchFilter;
   search.style.cssText = 'flex:1;min-width:120px;' + selStyle;
 
