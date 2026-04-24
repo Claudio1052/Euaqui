@@ -15765,13 +15765,22 @@ async function handleNotifNavigation(n){
 
     // ── SISTEMA (agendamento, cancelamento, reagendamento) ──────
     case 'system':{
-      // Vai direto para aba de Agendamentos em Lojas & Servicos
       nav('businesses');
       await new Promise(r=>setTimeout(r,420));
-      const _apptTab = document.getElementById('biz-appointments-tab');
-      if(_apptTab){
-        _apptTab.style.display = '';
-        switchBizTab(_apptTab);
+      // Detecta categoria do negócio: serviço → Agendamentos; loja → Compras
+      let _sysIsLoja = false;
+      if(n.business_id){
+        try{
+          const{data:_sysBiz}=await db.from('businesses').select('category').eq('id',n.business_id).maybeSingle();
+          if(_sysBiz) _sysIsLoja = (_sysBiz.category !== 'servico');
+        }catch(_){}
+      }
+      if(_sysIsLoja){
+        const _purchTab = document.getElementById('biz-purchases-tab');
+        if(_purchTab){ _purchTab.style.display=''; switchBizTab(_purchTab); }
+      } else {
+        const _apptTab = document.getElementById('biz-appointments-tab');
+        if(_apptTab){ _apptTab.style.display=''; switchBizTab(_apptTab); }
       }
       break;
     }
@@ -15780,6 +15789,7 @@ async function handleNotifNavigation(n){
     case 'purchase_done':{
       nav('businesses');
       await new Promise(r=>setTimeout(r,420));
+      // purchase_done = sempre loja → vai para Compras
       const _purchTab = document.getElementById('biz-purchases-tab');
       if(_purchTab){
         _purchTab.style.display = '';
@@ -17494,9 +17504,13 @@ function _renderDashHistory(deals, appts, limit=10, search='', statusFilter='', 
     ...(appts||[]).map(a=>({_type:'appt', _date: new Date((a.scheduled_date||a.created_at)+'T12:00:00'), _status:a.status, _name:(a.service_title||'').toLowerCase()+' '+(a.customer?.full_name||a.customer?.username||'').toLowerCase(), data:a}))
   ];
 
-  // Filtro de status
+  // Filtro de status — 'done' e 'closed' são tratados como concluído
   if(statusFilter){
-    items = items.filter(i=> i._status === statusFilter);
+    if(statusFilter === 'done'){
+      items = items.filter(i=> i._status === 'done' || i._status === 'closed');
+    } else {
+      items = items.filter(i=> i._status === statusFilter);
+    }
   }
   // Filtro de busca por nome
   if(search){
@@ -17516,9 +17530,11 @@ function _renderDashHistory(deals, appts, limit=10, search='', statusFilter='', 
     if(item._type==='deal'){
       const d=item.data;
       // Status visual do deal
-      const _dsc = d.status==='done'?'var(--neon-cyan)':d.status==='cancelled'?'var(--neon-pink)':d.status==='confirmed'?'var(--neon-yellow)':d.status==='rejected'?'var(--neon-pink)':'var(--neon-cyan)';
-      const _dsl = d.status==='done'?'✅ Concluído':d.status==='cancelled'?'❌ Cancelado':d.status==='confirmed'?'📋 Confirmado':d.status==='rejected'?'❌ Recusado':d.status==='pending'?'⏳ Pendente':'✅ Fechado';
-      const _dborder = d.status==='done'?'rgba(0,255,204,.25)':d.status==='cancelled'||d.status==='rejected'?'rgba(255,51,102,.25)':d.status==='confirmed'?'rgba(255,204,0,.25)':'var(--border-glow)';
+      // 'closed' é o status final de um acordo de loja (equivale a concluído)
+      const _dEffective = (d.status==='closed'||d.status==='done') ? 'done' : d.status;
+      const _dsc = _dEffective==='done'?'var(--neon-cyan)':_dEffective==='cancelled'?'var(--neon-pink)':_dEffective==='confirmed'?'var(--neon-yellow)':_dEffective==='rejected'?'var(--neon-pink)':'var(--neon-cyan)';
+      const _dsl = _dEffective==='done'?'✅ Concluído':_dEffective==='cancelled'?'❌ Cancelado':_dEffective==='confirmed'?'📋 Confirmado':_dEffective==='rejected'?'❌ Recusado':_dEffective==='pending'?'⏳ Pendente':'✅ Concluído';
+      const _dborder = _dEffective==='done'?'rgba(0,255,204,.25)':_dEffective==='cancelled'||_dEffective==='rejected'?'rgba(255,51,102,.25)':_dEffective==='confirmed'?'rgba(255,204,0,.25)':'rgba(0,255,204,.25)';
       return `<div onclick="openDealSummary(${JSON.stringify(d).replace(/"/g,'&quot;')})" style="background:var(--bg-card);border:1px solid ${_dborder};border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:border-color .2s;" onmouseover="this.style.borderColor='var(--neon-cyan)'" onmouseout="this.style.borderColor='${_dborder}'">
         <div><div style="font-size:12px;color:var(--text-light);">${xss(d.title||'Venda')}</div>
         <div style="font-size:10px;color:var(--text-muted);">${new Date(d.created_at).toLocaleDateString('pt-BR')} · <span style="color:var(--neon-cyan);">🔍 ver resumo</span></div></div>
@@ -17579,7 +17595,7 @@ function openDealSummary(d){
       <div style="background:linear-gradient(135deg,rgba(0,255,204,.06),rgba(191,95,255,.06));border:1px solid rgba(0,255,204,.25);border-radius:12px;padding:14px;margin-bottom:14px;text-align:center;">
         <div style="font-family:VT323,monospace;font-size:36px;color:var(--neon-cyan);line-height:1;">${fmt(d.value)}</div>
         <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">${xss(d.title||'Negociação')}</div>
-        <div style="margin-top:6px;font-size:11px;color:${d.status==='cancelled'||d.status==='rejected'?'var(--neon-pink)':d.status==='confirmed'?'var(--neon-yellow)':'#00ff96'};font-family:'Silkscreen',monospace;">${d.status==='done'?'✅ CONCLUÍDO':d.status==='cancelled'?'❌ CANCELADO':d.status==='confirmed'?'📋 CONFIRMADO':d.status==='rejected'?'❌ RECUSADO':d.status==='pending'?'⏳ PENDENTE':'✅ FECHADO'}</div>
+        <div style="margin-top:6px;font-size:11px;color:${d.status==='cancelled'||d.status==='rejected'?'var(--neon-pink)':d.status==='confirmed'?'var(--neon-yellow)':'#00ff96'};font-family:'Silkscreen',monospace;">${(d.status==='done'||d.status==='closed')?'✅ CONCLUÍDO':d.status==='cancelled'?'❌ CANCELADO':d.status==='confirmed'?'📋 CONFIRMADO':d.status==='rejected'?'❌ RECUSADO':d.status==='pending'?'⏳ PENDENTE':'✅ CONCLUÍDO'}</div>
       </div>
       <div style="display:flex;flex-direction:column;">
         ${row('👤', 'CLIENTE', acceptedName)}
