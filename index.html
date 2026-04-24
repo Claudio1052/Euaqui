@@ -19561,10 +19561,12 @@ function _eaTryOpenApp(schemeUrl){
 function open99EntregaApp(ev){
   if(ev){ try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){} }
   const plat = _eaDetectPlatform();
-  if(plat === 'android' || plat === 'ios'){
-    // Abre o app 99 normal (testado e funcionando).
-    // No Android, o App Link verificado intercepta e abre no app instalado.
-    window.location.href = 'https://www.99app.com/';
+  if(plat === 'android'){
+    window.location.href = 'intent://open#Intent;scheme=taxis99;package=com.taxis99;end';
+    return;
+  }
+  if(plat === 'ios'){
+    _eaTryOpenApp('taxis99://');
     return;
   }
   alert('📱 O app 99 só funciona em celular (Android/iOS).\nAbra esta página pelo seu celular para solicitar o motoboy.');
