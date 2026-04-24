@@ -19481,11 +19481,11 @@ function markPurchaseShipped(purchId, customerId, customerName, productTitle){
                 </div>
               </div>
 
-              <!-- iFood Entrega -->
-              <div style="background:rgba(255,51,51,.06);border:1px solid rgba(255,80,80,.2);border-radius:10px;padding:10px;">
-                <div style="font-size:10px;color:#ff6060;font-family:Space Mono,monospace;margin-bottom:7px;">🔴 <strong>iFood Entrega</strong></div>
+              <!-- Uber Flash -->
+              <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:10px;">
+                <div style="font-size:10px;color:#ffffff;font-family:Space Mono,monospace;margin-bottom:7px;">⬛ <strong>Uber Flash</strong></div>
                 <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                  <a href="javascript:void(0)" onclick="openIfoodCourierApp(event)" style="padding:6px 10px;background:rgba(255,51,51,.15);border:1px solid rgba(255,80,80,.4);border-radius:7px;color:#ff6060;font-size:9px;text-decoration:none;font-family:Space Mono,monospace;cursor:pointer;">📱 Abrir App</a>
+                  <a href="javascript:void(0)" onclick="openUberApp(event)" style="padding:6px 10px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);border-radius:7px;color:#ffffff;font-size:9px;text-decoration:none;font-family:Space Mono,monospace;cursor:pointer;">📱 Abrir App</a>
                 </div>
               </div>
 
@@ -19572,16 +19572,19 @@ function open99EntregaApp(ev){
   alert('📱 O app 99 só funciona em celular (Android/iOS).\nAbra esta página pelo seu celular para solicitar o motoboy.');
 }
 
-function openIfoodCourierApp(ev){
+function openUberApp(ev){
   if(ev){ try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){} }
   const plat = _eaDetectPlatform();
-  if(plat === 'android' || plat === 'ios'){
-    // Abre o site normal do iFood — o Android intercepta automaticamente
-    // e abre direto no app iFood instalado (testado e funcionando).
-    window.location.href = 'https://www.ifood.com.br/';
+  if(plat === 'android'){
+    // Abre o app Uber (package com.ubercab) via intent.
+    window.location.href = 'intent://open#Intent;scheme=uber;package=com.ubercab;end';
     return;
   }
-  alert('📱 O app iFood só funciona em celular (Android/iOS).\nAbra esta página pelo seu celular para solicitar o entregador.');
+  if(plat === 'ios'){
+    _eaTryOpenApp('uber://');
+    return;
+  }
+  alert('📱 O app Uber só funciona em celular (Android/iOS).\nAbra esta página pelo seu celular para solicitar o entregador.');
 }
 
 // Seleciona tipo de entrega (local / nacional)
