@@ -5690,7 +5690,7 @@ body.day-mode::before{
               <div style="display:flex;gap:6px;align-items:center;width:100%;">
                 <button class="msg-mic-btn" id="biz-mic-btn" onclick="startBizAudioRecord()" title="Gravar áudio" style="background:rgba(0,255,204,.1);border:1px solid rgba(0,255,204,.3);color:var(--neon-cyan);width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;font-size:15px;">🎙</button>
                 <textarea class="msg-in" id="biz-msg-in" placeholder="Responda o cliente..." rows="1" style="flex:1;max-height:80px;resize:none;overflow-y:auto;" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendBizMsg()}" oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,80)+'px'"></textarea>
-                <button id="biz-deal-btn" onclick="openNewDealModal()" title="Propor Acordo" style="background:rgba(0,255,204,.12);border:1px solid rgba(0,255,204,.35);color:var(--neon-cyan);width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;font-size:17px;" title="Propor Acordo 🤝">🤝</button>
+                <button id="biz-deal-btn" onclick="openNewDealModal()" title="Propor Acordo 🤝" style="background:rgba(0,255,204,.12);border:1px solid rgba(0,255,204,.35);color:var(--neon-cyan);width:34px;height:34px;border-radius:50%;display:none;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;font-size:17px;" title="Propor Acordo 🤝">🤝</button>
                 <button class="msg-snd" id="biz-send-btn" onclick="sendBizMsg()">➤</button>
               </div>
             </div>
@@ -6648,7 +6648,7 @@ function showApp(){
     }catch(e){ console.warn('loadFeed/page restore:',e); }
   }, 0);
   setTimeout(()=>{ try{ loadNotifCount(); loadUnreadMsgCount(); }catch(e){} }, 0);
-  setTimeout(()=>{ try{ _debugNotifRLS(); }catch(e){} }, 2000); // Diagnóstico RLS (ver console)
+  // _debugNotifRLS desabilitado — não gerar notificações [RLS TEST] em produção
   setTimeout(()=>{ try{ _initCallListen(); }catch(e){} }, 500);
   setTimeout(()=>{ try{ loadNotifCount(); }catch(e){} }, 100);
   setTimeout(()=>{ try{ checkMigration(); }catch(e){} }, 2000);
@@ -15775,6 +15775,18 @@ async function handleNotifNavigation(n){
       }
       break;
     }
+
+    // ── COMPRA CONCLUÍDA (acordo fechado) ───────────────────────
+    case 'purchase_done':{
+      nav('businesses');
+      await new Promise(r=>setTimeout(r,420));
+      const _purchTab = document.getElementById('biz-purchases-tab');
+      if(_purchTab){
+        _purchTab.style.display = '';
+        switchBizTab(_purchTab);
+      }
+      break;
+    }
   }
 }
 
@@ -15849,7 +15861,7 @@ async function loadNotifTab(tabId){
     },
     comment:'💬',friend_request:'👥',friend_accept:'🎉',message:'💬',
     community_invite:'🏘️',community_post:'🏘️',community_mention:'🏘️',
-    biz_promo:'🏪',mention:'@',call_missed:'📞',share:'🔁',
+    biz_promo:'🏪',mention:'@',call_missed:'📞',share:'🔁',purchase_done:'🛍️',
     // ✅ Tipos de notificação do OlhaAqui
     olha_aqui_new:'👁️',
     olha_aqui_comm:'🏘️',
@@ -15997,6 +16009,9 @@ async function loadNotifTab(tabId){
     if(n.type === 'biz_promo'){
       const clean = (n.content||'').replace(/https?:\/\/[^\s]+/g,'').replace(/—\s*$/,'').trim();
       return xss(clean || 'Nova notificação de loja');
+    }
+    if(n.type === 'purchase_done'){
+      return xss(n.content || '🎉 Parabéns pela sua aquisição!');
     }
     return xss(n.content || 'Nova notificação');
   }
@@ -16157,6 +16172,9 @@ async function loadNotifTab(tabId){
         </div>`:''}
         ${_isApptDoneNotif?`<div class="ni-actions" style="margin-top:6px;">
           <button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();eaGoToBizFromNotif('${n.business_id||''}')" style="color:var(--neon-cyan);border-color:rgba(0,255,204,.3);background:rgba(0,255,204,.08);">🏪 Ir para a Loja</button>
+        </div>`:''}
+        ${n.type==='purchase_done'&&n.business_id?`<div class="ni-actions" style="margin-top:6px;">
+          <button class="ni-act-btn ni-act-acc" onclick="event.stopPropagation();eaGoToBizFromNotif('${n.business_id||''}')" style="color:var(--neon-yellow);border-color:rgba(255,204,0,.3);background:rgba(255,204,0,.08);">⭐ Ir à Loja e Avaliar</button>
         </div>`:''}
       </div>
       <button class="ni-dismiss" title="Marcar como lida" onclick="event.stopPropagation();markRead('${n.id}',this)">✕</button>
@@ -16971,13 +16989,13 @@ async function openBizChat(chatId, label){
   }
   }
   // Header — busca avatar direto no banco se não estiver na lista
+  let _chatBizId = null;  // escopo de função para reutilizar no deal-btn
   const hdr = document.getElementById('biz-chat-win-hdr');
   if(hdr){
     const backBtn = window.innerWidth<=768 ? '<button class="tbtn" onclick="closeBizChat()" style="padding:6px 10px;font-size:12px;">← Voltar</button>' : '';
     let avatarSrc = '';
     let extraLabel = label || '';
     // Sempre busca dados frescos do banco para garantir logo/avatar correto
-    let _chatBizId = null;
     try{
       const qChat = await db.from('business_chats').select('business_id, customer_id, businesses(id,name,logo_url), customer:profiles!business_chats_customer_id_fkey(username,full_name,avatar_url)').eq('id',chatId).maybeSingle();
       if(!qChat.error && qChat.data){
@@ -17016,6 +17034,12 @@ async function openBizChat(chatId, label){
     }
   }
   document.getElementById('biz-msg-in-area').style.display='flex';
+  // Botão de acordo: apenas para dono do negócio
+  const _dealBtn = document.getElementById('biz-deal-btn');
+  if(_dealBtn){
+    const _isOwner = !!(myBusiness && myBusiness.id === _chatBizId);
+    _dealBtn.style.display = _isOwner ? 'flex' : 'none';
+  }
   _markBizChatRead(chatId);
   await loadBizMsgs(chatId);
   startBizChatPoll();
@@ -18369,6 +18393,24 @@ async function acceptDealProposal(dealId, btn){
         msg_type: 'deal_closed'
       });
       if(msgRes.error) console.warn('[acceptDeal] msg insert:', msgRes.error.message);
+
+      // 7. Notificação para o comprador (cliente) parabenizando pela aquisição
+      try{
+        const {data:_chatInfo} = await db.from('business_chats').select('customer_id, business_id, businesses(id,name,logo_url)').eq('id',chatId).maybeSingle();
+        if(_chatInfo && _chatInfo.customer_id && _chatInfo.customer_id !== CU.id){
+          const _bizName = _chatInfo.businesses?.name || 'a loja';
+          const _bizId   = _chatInfo.business_id || _chatInfo.businesses?.id || null;
+          const _notifContent = `🎉 Parabéns pela sua aquisição! Seu acordo com ${_bizName} foi confirmado — ${deal.title||'produto'}${valorFmt?' (R$ '+valorFmt+')':''} . Que você aproveite muito! 🛍️`;
+          await db.from('notifications').insert({
+            user_id:   _chatInfo.customer_id,
+            actor_id:  CU.id,
+            type:      'purchase_done',
+            content:   _notifContent,
+            business_id: _bizId,
+            read: false
+          });
+        }
+      }catch(_notifErr){ console.warn('[acceptDeal] notif cliente:', _notifErr.message); }
 
       await db.from('business_chats').update({updated_at:new Date().toISOString()}).eq('id',chatId);
 
