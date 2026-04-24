@@ -19331,7 +19331,7 @@ function renderPurchasesList(el, list, isOwner, purchSearch='', purchStatus='', 
     // Tracking code (se existir) — link clicável se for URL, texto se for código
     const _tc = p.tracking_code || '';
     const _tcIsUrl = /^https?:\/\//i.test(_tc.trim());
-    const trackingHtml = _tc
+    const trackingHtml = _tc && !isDone
       ? `<div style="font-size:10px;color:var(--neon-purple);margin-top:6px;padding-top:6px;border-top:1px solid rgba(191,95,255,.15);">🔗 Rastreio: ${
           _tcIsUrl
             ? `<a href="${xss(_tc.trim())}" target="_blank" rel="noopener" style="color:var(--neon-cyan);font-family:Space Mono,monospace;font-size:9px;word-break:break-all;text-decoration:underline;cursor:pointer;">📍 Acompanhar entrega</a>`
