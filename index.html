@@ -17495,8 +17495,13 @@ function eaDashFilter(){
 // ── Renderiza histórico combinado (deals + agendamentos) no Dashboard ──────────
 function _renderDashHistory(deals, appts, limit=10, search='', statusFilter='', sort='desc'){
   const fmtDate = v => { try{ return v ? new Date(v+'T12:00:00').toLocaleDateString('pt-BR') : '—'; }catch(e){return v||'—';} };
-  const apptStatusColor = s => s==='done'?'var(--neon-cyan)':s==='cancelled'?'var(--neon-pink)':'var(--neon-yellow)';
-  const apptStatusLabel = s => s==='done'?'✅ Concluído':s==='cancelled'?'❌ Cancelado':'📅 Confirmado';
+
+  // Helpers de status idênticos aos dos cards de Agendamento
+  const _statusBg  = s => s==='done'||s==='closed'?'rgba(0,255,204,.15)' : s==='cancelled'||s==='rejected'?'rgba(255,51,102,.15)' : 'rgba(255,204,0,.15)';
+  const _statusBdr = s => s==='done'||s==='closed'?'rgba(0,255,204,.45)' : s==='cancelled'||s==='rejected'?'rgba(255,51,102,.45)' : 'rgba(255,204,0,.45)';
+  const _statusClr = s => s==='done'||s==='closed'?'var(--neon-cyan)'    : s==='cancelled'||s==='rejected'?'var(--neon-pink)'    : 'var(--neon-yellow)';
+  const _statusLbl = s => s==='done'||s==='closed'?'✅ Concluído'        : s==='cancelled'?'❌ Cancelado' : s==='rejected'?'❌ Recusado' : s==='pending'?'⏳ Pendente' : '📋 Confirmado';
+  const _statusBadge = s => `<span style="display:inline-block;background:${_statusBg(s)};border:1px solid ${_statusBdr(s)};border-radius:6px;padding:2px 8px;font-family:Silkscreen,monospace;font-size:9px;color:${_statusClr(s)};white-space:nowrap;">${_statusLbl(s)}</span>`;
 
   // Combina deals (acordos) e agendamentos em um único array cronológico
   let items = [
@@ -17512,13 +17517,8 @@ function _renderDashHistory(deals, appts, limit=10, search='', statusFilter='', 
       items = items.filter(i=> i._status === statusFilter);
     }
   }
-  // Filtro de busca por nome
-  if(search){
-    items = items.filter(i=> i._name.includes(search));
-  }
-  // Ordenação
+  if(search) items = items.filter(i=> i._name.includes(search));
   items.sort((a,b)=> sort==='asc' ? a._date - b._date : b._date - a._date);
-  // Limite de linhas
   const total = items.length;
   items = items.slice(0, limit);
 
@@ -17529,40 +17529,43 @@ function _renderDashHistory(deals, appts, limit=10, search='', statusFilter='', 
   return summary + items.map(item=>{
     if(item._type==='deal'){
       const d=item.data;
-      // Status visual do deal
-      // 'closed' é o status final de um acordo de loja (equivale a concluído)
-      const _dEffective = (d.status==='closed'||d.status==='done') ? 'done' : d.status;
-      const _dsc = _dEffective==='done'?'var(--neon-cyan)':_dEffective==='cancelled'?'var(--neon-pink)':_dEffective==='confirmed'?'var(--neon-yellow)':_dEffective==='rejected'?'var(--neon-pink)':'var(--neon-cyan)';
-      const _dsl = _dEffective==='done'?'✅ Concluído':_dEffective==='cancelled'?'❌ Cancelado':_dEffective==='confirmed'?'📋 Confirmado':_dEffective==='rejected'?'❌ Recusado':_dEffective==='pending'?'⏳ Pendente':'✅ Concluído';
-      const _dborder = _dEffective==='done'?'rgba(0,255,204,.25)':_dEffective==='cancelled'||_dEffective==='rejected'?'rgba(255,51,102,.25)':_dEffective==='confirmed'?'rgba(255,204,0,.25)':'rgba(0,255,204,.25)';
-      return `<div onclick="openDealSummary(${JSON.stringify(d).replace(/"/g,'&quot;')})" style="background:var(--bg-card);border:1px solid ${_dborder};border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:border-color .2s;" onmouseover="this.style.borderColor='var(--neon-cyan)'" onmouseout="this.style.borderColor='${_dborder}'">
-        <div><div style="font-size:12px;color:var(--text-light);">${xss(d.title||'Venda')}</div>
-        <div style="font-size:10px;color:var(--text-muted);">${new Date(d.created_at).toLocaleDateString('pt-BR')} · <span style="color:var(--neon-cyan);">🔍 ver resumo</span></div></div>
-        <div style="text-align:right;">
-          ${d.value?`<div style="font-family:VT323,monospace;font-size:18px;color:var(--neon-cyan);">R$ ${Number(d.value).toFixed(2)}</div>`:''}
-          <div style="font-size:10px;color:${_dsc};">${_dsl}</div>
-        </div></div>`;
+      const _dBorderCard = (d.status==='done'||d.status==='closed')?'rgba(0,255,204,.18)':(d.status==='cancelled'||d.status==='rejected')?'rgba(255,51,102,.18)':'rgba(255,204,0,.18)';
+      const _dOpacity    = (d.status==='cancelled'||d.status==='rejected') ? 'opacity:.75;' : '';
+      return `<div onclick="openDealSummary(${JSON.stringify(d).replace(/"/g,'&quot;')})" style="background:var(--bg-card);border:1px solid ${_dBorderCard};border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer;transition:border-color .2s;${_dOpacity}" onmouseover="this.style.borderColor='var(--neon-cyan)'" onmouseout="this.style.borderColor='${_dBorderCard}'">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(d.title||'Venda')}</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:3px;">📅 ${new Date(d.created_at).toLocaleDateString('pt-BR')}</div>
+            <div style="font-size:10px;color:var(--neon-cyan);margin-top:3px;">🔍 ver resumo</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;">
+            ${d.value?`<div style="font-family:VT323,monospace;font-size:20px;color:var(--neon-yellow);">R$ ${Number(d.value).toFixed(2).replace('.',',')}</div>`:''}
+            <div style="margin-top:4px;">${_statusBadge(d.status)}</div>
+          </div>
+        </div>
+      </div>`;
     } else {
       const a=item.data;
       const prof=a.customer||null;
       const name=prof?.full_name||prof?.username||'Cliente';
-      const sc=apptStatusColor(a.status);
-      const sl=apptStatusLabel(a.status);
       const valor=a.value?'R$ '+Number(a.value).toFixed(2).replace('.',','):'';
       const aJson=JSON.stringify(a).replace(/"/g,'&quot;');
-      return `<div onclick="openApptSummary(${aJson})" style="background:var(--bg-card);border:1px solid ${a.status==='cancelled'?'rgba(255,51,102,.25)':a.status==='done'?'rgba(0,255,204,.25)':'var(--border-glow)'};border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer;transition:border-color .2s;" onmouseover="this.style.borderColor='var(--neon-cyan)'" onmouseout="this.style.borderColor='${a.status==='cancelled'?'rgba(255,51,102,.25)':a.status==='done'?'rgba(0,255,204,.25)':'var(--border-glow)'}'">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
+      const _aBorderCard = a.status==='cancelled'?'rgba(255,51,102,.18)':a.status==='done'?'rgba(0,255,204,.18)':'rgba(255,204,0,.18)';
+      const _aOpacity    = (a.status==='cancelled'||a.status==='done') ? 'opacity:.75;' : '';
+      return `<div onclick="openApptSummary(${aJson})" style="background:var(--bg-card);border:1px solid ${_aBorderCard};border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer;transition:border-color .2s;${_aOpacity}" onmouseover="this.style.borderColor='var(--neon-cyan)'" onmouseout="this.style.borderColor='${_aBorderCard}'">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
           <div style="flex:1;min-width:0;">
-            <div style="font-size:12px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(a.service_title||'Agendamento')}</div>
-            <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">📅 ${fmtDate(a.scheduled_date)}${a.scheduled_time?' · ⏰ '+a.scheduled_time.substring(0,5):''} · 👤 ${xss(name)}</div>
-            <div style="font-size:10px;color:var(--neon-cyan);margin-top:2px;">🔍 ver resumo</div>
-            ${a.cancel_reason?`<div style="font-size:9px;color:var(--neon-pink);margin-top:2px;">❌ ${xss(a.cancel_reason)}</div>`:''}
+            <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(a.service_title||'Agendamento')}</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:3px;">📅 ${fmtDate(a.scheduled_date)}${a.scheduled_time?' · ⏰ '+a.scheduled_time.substring(0,5):''} · 👤 ${xss(name)}</div>
+            <div style="font-size:10px;color:var(--neon-cyan);margin-top:3px;">🔍 ver resumo</div>
+            ${a.cancel_reason?`<div style="font-size:9px;color:var(--neon-pink);margin-top:3px;">❌ ${xss(a.cancel_reason)}</div>`:''}
           </div>
-          <div style="text-align:right;flex-shrink:0;margin-left:10px;">
-            ${valor?`<div style="font-family:VT323,monospace;font-size:18px;color:var(--neon-yellow);">${valor}</div>`:''}
-            <div style="font-size:10px;color:${sc};">${sl}</div>
+          <div style="text-align:right;flex-shrink:0;">
+            ${valor?`<div style="font-family:VT323,monospace;font-size:20px;color:var(--neon-yellow);">${valor}</div>`:''}
+            <div style="margin-top:4px;">${_statusBadge(a.status)}</div>
           </div>
-        </div></div>`;
+        </div>
+      </div>`;
     }
   }).join('');
 }
