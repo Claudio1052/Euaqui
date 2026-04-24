@@ -17716,43 +17716,105 @@ async function loadBizDashboard(){
   // Monta a barra de filtros via DOM (evita problemas com caracteres especiais em template literals)
   const filtersRow = el.querySelector('#dash-filters-row');
   if(filtersRow){
-    const selStyle = 'background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:7px 10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:10px;outline:none;cursor:pointer;';
+    const inputStyle = 'flex:1;min-width:120px;background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:7px 10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:10px;outline:none;';
 
     const search = document.createElement('input');
     search.id = 'dash-search';
     search.type = 'text';
     search.placeholder = 'Buscar por nome ou nº pedido...';
     search.oninput = eaDashFilter;
-    search.style.cssText = 'flex:1;min-width:120px;' + selStyle;
-
-    const statusSel = document.createElement('select');
-    statusSel.id = 'dash-status-filter';
-    statusSel.onchange = eaDashFilter;
-    statusSel.style.cssText = selStyle;
-    [['','Todos'],['done','Concluído'],['proposta','Proposta'],['pending','Pendente'],['cancelled','Cancelado'],['rejected','Recusada'],['confirmed','Confirmado']].forEach(([v,t])=>{
-      const o=document.createElement('option'); o.value=v; o.textContent=t; statusSel.appendChild(o);
-    });
-
-    const sortSel = document.createElement('select');
-    sortSel.id = 'dash-sort-filter';
-    sortSel.onchange = eaDashFilter;
-    sortSel.style.cssText = selStyle;
-    [['desc','Mais recente'],['asc','Mais antigo']].forEach(([v,t])=>{
-      const o=document.createElement('option'); o.value=v; o.textContent=t; sortSel.appendChild(o);
-    });
-
-    const limitSel = document.createElement('select');
-    limitSel.id = 'dash-limit-filter';
-    limitSel.onchange = eaDashFilter;
-    limitSel.style.cssText = selStyle;
-    ['10','20','100','200','500','1000'].forEach(v=>{
-      const o=document.createElement('option'); o.value=v; o.textContent=v+' linhas'; limitSel.appendChild(o);
-    });
-
+    search.style.cssText = inputStyle;
     filtersRow.appendChild(search);
-    filtersRow.appendChild(statusSel);
-    filtersRow.appendChild(sortSel);
-    filtersRow.appendChild(limitSel);
+
+    // ── Helper: cria um custom dropdown no estilo music-genre ──
+    function _makeCustomDrop({ wrapperId, btnId, labelId, hiddenId, defaultLabel, defaultVal, options, onChange, openUp=false }) {
+      const wrap = document.createElement('div');
+      wrap.id = wrapperId;
+      wrap.style.cssText = 'position:relative;flex-shrink:0;';
+
+      const btn = document.createElement('button');
+      btn.id = btnId;
+      btn.type = 'button';
+      btn.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:6px;background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:10px;padding:7px 12px;color:var(--text-light);font-family:Space Mono,monospace;font-size:10px;cursor:pointer;white-space:nowrap;';
+
+      const lbl = document.createElement('span');
+      lbl.id = labelId;
+      lbl.textContent = defaultLabel;
+
+      const arrow = document.createElement('span');
+      arrow.textContent = '▾';
+      arrow.style.cssText = 'color:var(--text-muted);font-size:10px;';
+
+      btn.appendChild(lbl);
+      btn.appendChild(arrow);
+
+      const hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.id = hiddenId;
+      hidden.value = defaultVal;
+
+      const list = document.createElement('div');
+      list.style.cssText = `display:none;position:absolute;${openUp?'bottom:calc(100% + 4px)':'top:calc(100% + 4px)'};left:0;min-width:100%;background:var(--bg-card);border:1px solid var(--border-glow);border-radius:12px;overflow-y:auto;max-height:220px;z-index:9999;box-shadow:0 ${openUp?'-':''}8px 32px rgba(0,0,0,.6);`;
+
+      options.forEach(([v, t]) => {
+        const item = document.createElement('div');
+        item.textContent = t;
+        item.style.cssText = 'padding:9px 14px;cursor:pointer;font-family:Space Mono,monospace;font-size:10px;color:var(--text-light);border-bottom:1px solid rgba(255,255,255,.04);transition:background .1s;white-space:nowrap;';
+        if(v === defaultVal) item.style.color = 'var(--neon-cyan)';
+        item.onmouseenter = () => item.style.background = 'rgba(0,255,204,.08)';
+        item.onmouseleave = () => item.style.background = 'transparent';
+        item.onclick = () => {
+          hidden.value = v;
+          lbl.textContent = t;
+          list.querySelectorAll('div').forEach(d => d.style.color = 'var(--text-light)');
+          item.style.color = 'var(--neon-cyan)';
+          list.style.display = 'none';
+          arrow.textContent = '▾';
+          if(onChange) onChange();
+        };
+        list.appendChild(item);
+      });
+
+      btn.onclick = () => {
+        const open = list.style.display === 'none';
+        list.style.display = open ? 'block' : 'none';
+        arrow.textContent = open ? '▴' : '▾';
+        if(open) {
+          setTimeout(() => {
+            document.addEventListener('pointerdown', function _cls(e) {
+              if(!wrap.contains(e.target)) { list.style.display='none'; arrow.textContent='▾'; }
+              document.removeEventListener('pointerdown', _cls);
+            }, { once:true });
+          }, 10);
+        }
+      };
+
+      wrap.appendChild(btn);
+      wrap.appendChild(hidden);
+      wrap.appendChild(list);
+      return wrap;
+    }
+
+    filtersRow.appendChild(_makeCustomDrop({
+      wrapperId:'dash-status-wrap', btnId:'dash-status-btn', labelId:'dash-status-lbl',
+      hiddenId:'dash-status-filter', defaultLabel:'🏪 Todos', defaultVal:'',
+      options:[['','🏪 Todos'],['done','✅ Concluído'],['proposta','📋 Proposta'],['pending','🟠 Pendente'],['cancelled','❌ Cancelado'],['rejected','❌ Recusada'],['confirmed','📅 Confirmado']],
+      onChange: eaDashFilter
+    }));
+
+    filtersRow.appendChild(_makeCustomDrop({
+      wrapperId:'dash-sort-wrap', btnId:'dash-sort-btn', labelId:'dash-sort-lbl',
+      hiddenId:'dash-sort-filter', defaultLabel:'📅 Mais recente', defaultVal:'desc',
+      options:[['desc','📅 Mais recente'],['asc','🕰️ Mais antigo']],
+      onChange: eaDashFilter
+    }));
+
+    filtersRow.appendChild(_makeCustomDrop({
+      wrapperId:'dash-limit-wrap', btnId:'dash-limit-btn', labelId:'dash-limit-lbl',
+      hiddenId:'dash-limit-filter', defaultLabel:'10 linhas', defaultVal:'10',
+      options:[['10','10 linhas'],['20','20 linhas'],['100','100 linhas'],['200','200 linhas'],['500','500 linhas'],['1000','1000 linhas']],
+      onChange: eaDashFilter
+    }));
   }
   // Renderiza lista inicial com 10 linhas
   const dealsList = el.querySelector('#deals-list');
@@ -19105,34 +19167,97 @@ function _buildApptFilters(el){
   row.id = 'appt-filter-row';
   row.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;align-items:center;';
 
-  const selStyle = 'background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:7px 10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:10px;outline:none;cursor:pointer;';
+  const inputStyle = 'flex:1;min-width:120px;background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:7px 10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:10px;outline:none;';
 
   const search = document.createElement('input');
   search.id = 'appt-search';
   search.type = 'text';
   search.placeholder = 'Buscar cliente ou servico...';
   search.oninput = eaApptFilter;
-  search.style.cssText = 'flex:1;min-width:120px;' + selStyle;
-
-  const statusSel = document.createElement('select');
-  statusSel.id = 'appt-status-filter';
-  statusSel.onchange = eaApptFilter;
-  statusSel.style.cssText = selStyle;
-  [['','Todos'],['confirmed','Confirmado'],['done','Concluido'],['cancelled','Cancelado']].forEach(([v,t])=>{
-    const o=document.createElement('option'); o.value=v; o.textContent=t; statusSel.appendChild(o);
-  });
-
-  const sortSel = document.createElement('select');
-  sortSel.id = 'appt-sort-filter';
-  sortSel.onchange = eaApptFilter;
-  sortSel.style.cssText = selStyle;
-  [['asc','Mais antigo'],['desc','Mais recente']].forEach(([v,t])=>{
-    const o=document.createElement('option'); o.value=v; o.textContent=t; sortSel.appendChild(o);
-  });
-
+  search.style.cssText = inputStyle;
   row.appendChild(search);
-  row.appendChild(statusSel);
-  row.appendChild(sortSel);
+
+  // ── Helper: cria um custom dropdown no estilo music-genre ──
+  function _makeApptDrop({ wrapperId, btnId, labelId, hiddenId, defaultLabel, defaultVal, options }) {
+    const wrap = document.createElement('div');
+    wrap.id = wrapperId;
+    wrap.style.cssText = 'position:relative;flex-shrink:0;';
+
+    const btn = document.createElement('button');
+    btn.id = btnId;
+    btn.type = 'button';
+    btn.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:6px;background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:10px;padding:7px 12px;color:var(--text-light);font-family:Space Mono,monospace;font-size:10px;cursor:pointer;white-space:nowrap;';
+
+    const lbl = document.createElement('span');
+    lbl.id = labelId;
+    lbl.textContent = defaultLabel;
+
+    const arrow = document.createElement('span');
+    arrow.textContent = '▾';
+    arrow.style.cssText = 'color:var(--text-muted);font-size:10px;';
+
+    btn.appendChild(lbl);
+    btn.appendChild(arrow);
+
+    const hidden = document.createElement('input');
+    hidden.type = 'hidden';
+    hidden.id = hiddenId;
+    hidden.value = defaultVal;
+
+    const list = document.createElement('div');
+    list.style.cssText = 'display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:100%;background:var(--bg-card);border:1px solid var(--border-glow);border-radius:12px;overflow-y:auto;max-height:220px;z-index:9999;box-shadow:0 8px 32px rgba(0,0,0,.6);';
+
+    options.forEach(([v, t]) => {
+      const item = document.createElement('div');
+      item.textContent = t;
+      item.style.cssText = 'padding:9px 14px;cursor:pointer;font-family:Space Mono,monospace;font-size:10px;color:var(--text-light);border-bottom:1px solid rgba(255,255,255,.04);transition:background .1s;white-space:nowrap;';
+      if(v === defaultVal) item.style.color = 'var(--neon-cyan)';
+      item.onmouseenter = () => item.style.background = 'rgba(0,255,204,.08)';
+      item.onmouseleave = () => item.style.background = 'transparent';
+      item.onclick = () => {
+        hidden.value = v;
+        lbl.textContent = t;
+        list.querySelectorAll('div').forEach(d => d.style.color = 'var(--text-light)');
+        item.style.color = 'var(--neon-cyan)';
+        list.style.display = 'none';
+        arrow.textContent = '▾';
+        eaApptFilter();
+      };
+      list.appendChild(item);
+    });
+
+    btn.onclick = () => {
+      const open = list.style.display === 'none';
+      list.style.display = open ? 'block' : 'none';
+      arrow.textContent = open ? '▴' : '▾';
+      if(open) {
+        setTimeout(() => {
+          document.addEventListener('pointerdown', function _cls(e) {
+            if(!wrap.contains(e.target)) { list.style.display='none'; arrow.textContent='▾'; }
+            document.removeEventListener('pointerdown', _cls);
+          }, { once:true });
+        }, 10);
+      }
+    };
+
+    wrap.appendChild(btn);
+    wrap.appendChild(hidden);
+    wrap.appendChild(list);
+    return wrap;
+  }
+
+  row.appendChild(_makeApptDrop({
+    wrapperId:'appt-status-wrap', btnId:'appt-status-btn', labelId:'appt-status-lbl',
+    hiddenId:'appt-status-filter', defaultLabel:'🏪 Todos', defaultVal:'',
+    options:[['','🏪 Todos'],['confirmed','✅ Confirmado'],['done','🏁 Concluido'],['cancelled','❌ Cancelado']]
+  }));
+
+  row.appendChild(_makeApptDrop({
+    wrapperId:'appt-sort-wrap', btnId:'appt-sort-btn', labelId:'appt-sort-lbl',
+    hiddenId:'appt-sort-filter', defaultLabel:'🕰️ Mais antigo', defaultVal:'asc',
+    options:[['asc','🕰️ Mais antigo'],['desc','📅 Mais recente']]
+  }));
+
   el.appendChild(row);
 }
 
