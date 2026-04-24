@@ -7848,6 +7848,9 @@ function renderPost(post,rxCounts={},myRx='',_origPostMap){
     }
     ${repostCardHtml}
     ${mediaHtml}
+    ${bizMeta ? `<div style="padding:10px 0 4px;display:flex;gap:8px;" id="biz-cta-wrap-${post.id}">
+      <button class="post-btn" data-bizid="${bizMeta.id}" style="flex:1;font-size:11px;padding:9px 10px;background:linear-gradient(135deg,rgba(0,255,204,.18),rgba(0,255,204,.08));border:1px solid rgba(0,255,204,.5);color:var(--neon-cyan);border-radius:10px;cursor:pointer;font-family:'Silkscreen',monospace;letter-spacing:.5px;transition:all .18s;" onclick="event.stopPropagation();_bizCtaAction('${bizMeta.id}','${xss(bizMeta.name).replace(/'/g,"\\'")}','${post.id}')" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'" id="biz-cta-btn-${post.id}">⏳ Carregar...</button>
+    </div>` : ''}
     <div class="preactions">${rxHtml}</div>
     ${(()=>{
       const hasVid = mediaTyps.some(t=>t==='video') || mediaUrls.some(u=>u&&u.match(/\.mp4$|\.webm$|\.mov$|\.ogg$/i));
@@ -7855,9 +7858,6 @@ function renderPost(post,rxCounts={},myRx='',_origPostMap){
       const globalViews = post.video_views || 0;
       return `<div style="padding:6px 2px 0;font-size:10px;color:var(--text-muted);font-family:'Space Mono',monospace;display:flex;align-items:center;gap:4px;">👁 <span id="feed-views-${post.id}">${_fmtViews(globalViews)}</span> visualizações</div>`;
     })()}
-    ${bizMeta ? `<div style="padding:8px 0 4px;display:flex;gap:8px;" id="biz-cta-wrap-${post.id}">
-      <button class="post-btn" data-bizid="${bizMeta.id}" style="flex:1;font-size:11px;padding:9px 10px;background:linear-gradient(135deg,rgba(0,255,204,.18),rgba(0,255,204,.08));border:1px solid rgba(0,255,204,.5);color:var(--neon-cyan);border-radius:10px;cursor:pointer;font-family:'Silkscreen',monospace;letter-spacing:.5px;transition:all .18s;" onclick="event.stopPropagation();_bizCtaAction('${bizMeta.id}','${xss(bizMeta.name).replace(/'/g,"\\'")}','${post.id}')" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'" id="biz-cta-btn-${post.id}">⏳ Carregar...</button>
-    </div>` : ''}
     <div class="pactions">
       <button class="abtn" onclick="toggleCmts('${post.id}',this)">💬 <span id="cmtcnt-${post.id}">${cmtCnt}</span></button>
       <button class="abtn" onclick="openShareModal('${post.id}','${xss(prof.full_name||prof.username||'')}','${xss((post.content||'').slice(0,80)).replace(/'/g,'').replace(/\n/g,' ')}')">🔗 Compartilhar</button>
