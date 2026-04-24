@@ -19760,23 +19760,24 @@ async function eaDoMarkPurchaseDone(id, btn){
   // Notificação + convite para avaliar
   try{
     const {data:purch}=await db.from('purchases')
-      .select('customer_id, product_title, business_id, businesses(id,name)')
+      .select('customer_id, product_title, business_id, businesses(id,name,logo_url)')
       .eq('id',id).maybeSingle();
     if(purch?.customer_id && CU && purch.customer_id !== CU.id){
-      const bizName = purch.businesses?.name || myBusiness?.name || 'nossa loja';
-      const bizId   = purch.businesses?.id   || myBusiness?.id  || purch.business_id || '';
+      const bizName  = purch.businesses?.name || myBusiness?.name || 'nossa loja';
+      const bizId    = purch.businesses?.id   || myBusiness?.id  || purch.business_id || '';
       const prodTitle= purch.product_title || 'seu produto';
       const msg =
-        `🙏 Obrigado por comprar em *${bizName}*! ` +
-        `Esperamos que tenha gostado de *${prodTitle}*. ` +
-        `Sua opinião é muito importante — que tal deixar uma avaliação? ⭐`;
+        `🎉 Parabéns pela sua aquisição! ` +
+        `Seu pedido *${prodTitle}* foi concluído com sucesso por *${bizName}*. ` +
+        `Esperamos que você aproveite muito! 🛍️ ` +
+        `Que tal visitar nossa loja e deixar uma avaliação? Sua opinião faz toda a diferença! ⭐`;
       await db.from('notifications').insert({
-        user_id: purch.customer_id,
-        actor_id: CU.id,
-        type: 'system',
+        user_id:    purch.customer_id,
+        actor_id:   CU.id,
+        type:       'purchase_done',
         business_id: bizId || null,
-        content: msg,
-        read: false
+        content:    msg,
+        read:       false
       });
     }
     // KPI: incrementa sales_done
@@ -19871,15 +19872,18 @@ async function eaDoConfirmReceived(purchId, btn){
   document.querySelector('.ea-purchreceived-ov')?.remove();
   showToast('🎉 Compra finalizada! Obrigado por confirmar.','success');
 
-  // Notifica vendedor + incrementa KPI
+  // Notifica vendedor + incrementa KPI + envia purchase_done para o cliente
   try{
     const {data:purch}=await db.from('purchases')
-      .select('business_id, product_title, businesses(id,name,owner_id,sales_done)')
+      .select('business_id, customer_id, product_title, businesses(id,name,owner_id,sales_done,logo_url)')
       .eq('id',purchId).maybeSingle();
     if(purch && CU){
-      const ownerId = purch.businesses?.owner_id;
-      const bizId   = purch.businesses?.id || purch.business_id;
-      const prodT   = purch.product_title || 'o produto';
+      const ownerId  = purch.businesses?.owner_id;
+      const bizId    = purch.businesses?.id || purch.business_id;
+      const bizName  = purch.businesses?.name || 'a loja';
+      const prodT    = purch.product_title || 'o produto';
+
+      // Notifica vendedor
       if(ownerId && ownerId!==CU.id){
         const cName = CP?.full_name || CP?.username || 'Cliente';
         await db.from('notifications').insert({
@@ -19891,6 +19895,21 @@ async function eaDoConfirmReceived(purchId, btn){
           read: false
         });
       }
+
+      // Notifica o próprio cliente com purchase_done (parabéns + botão ir à loja)
+      await db.from('notifications').insert({
+        user_id:     CU.id,
+        actor_id:    ownerId || CU.id,
+        type:        'purchase_done',
+        business_id: bizId || null,
+        content:
+          `🎉 Parabéns pela sua aquisição! ` +
+          `Você confirmou o recebimento de *${prodT}* de *${bizName}*. ` +
+          `Esperamos que você aproveite muito! 🛍️ ` +
+          `Que tal visitar nossa loja e deixar uma avaliação? Sua opinião faz toda a diferença! ⭐`,
+        read: false
+      });
+
       // KPI sales_done
       if(bizId){
         const newCount = (purch.businesses?.sales_done||0)+1;
