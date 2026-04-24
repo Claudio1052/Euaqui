@@ -19436,55 +19436,192 @@ function eaPurchFilter(){
 // ── MARCAR COMO ENVIADO (Proprietário) ───────────────────────────
 function markPurchaseShipped(purchId, customerId, customerName, productTitle){
   const ov=document.createElement('div');
+  ov.id='ea-ship-ov';
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.88);backdrop-filter:blur(12px);z-index:6000;display:flex;align-items:center;justify-content:center;padding:16px;';
   ov.innerHTML=`
     <div class="modal" style="max-width:400px;width:100%;padding:24px;">
-      <div style="font-size:32px;text-align:center;margin-bottom:10px;">🚚</div>
-      <div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-purple);margin-bottom:8px;text-align:center;">MARCAR COMO ENVIADO</div>
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;text-align:center;">Produto <strong style="color:var(--text-light);">${xss(productTitle||'')}</strong> para <strong style="color:var(--text-light);">${xss(customerName||'')}</strong>:</div>
-      <label style="font-family:Silkscreen,monospace;font-size:9px;color:var(--neon-cyan);display:block;margin-bottom:4px;">📮 Código de Rastreio (opcional)</label>
-      <input type="text" id="_ea_track_code" placeholder="Ex: BR123456789BR" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:10px;color:var(--text-light);font-family:Space Mono,monospace;font-size:12px;margin-bottom:14px;outline:none;">
-      <div style="background:rgba(191,95,255,.07);border:1px solid rgba(191,95,255,.25);border-radius:8px;padding:10px;margin-bottom:14px;font-size:10px;color:var(--neon-purple);line-height:1.5;">
-        💡 O cliente será notificado que o produto foi enviado.
+      <div style="font-size:30px;text-align:center;margin-bottom:8px;">🚚</div>
+      <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-purple);margin-bottom:4px;text-align:center;">ENVIAR PRODUTO</div>
+      <div style="font-size:10px;color:var(--text-muted);margin-bottom:18px;text-align:center;">
+        <strong style="color:var(--text-light);">${xss(productTitle||'Produto')}</strong> para <strong style="color:var(--text-light);">${xss(customerName||'Cliente')}</strong>
       </div>
+
+      <!-- Escolha do tipo de entrega -->
+      <div style="font-family:Silkscreen,monospace;font-size:9px;color:var(--neon-cyan);margin-bottom:8px;">📦 TIPO DE ENTREGA</div>
+      <div style="display:flex;gap:8px;margin-bottom:18px;">
+        <button id="ea-ship-local-btn" onclick="eaShipSelectType('local')" style="flex:1;padding:12px 6px;background:rgba(0,255,204,.08);border:2px solid rgba(0,255,204,.5);border-radius:10px;color:var(--neon-cyan);font-family:Silkscreen,monospace;font-size:9px;cursor:pointer;transition:all .2s;line-height:1.6;">
+          📍 LOCAL<br><span style="font-family:Space Mono,monospace;font-size:8px;color:var(--text-muted);">Cidade / Região</span>
+        </button>
+        <button id="ea-ship-nacional-btn" onclick="eaShipSelectType('nacional')" style="flex:1;padding:12px 6px;background:rgba(191,95,255,.06);border:2px solid rgba(191,95,255,.25);border-radius:10px;color:var(--neon-purple);font-family:Silkscreen,monospace;font-size:9px;cursor:pointer;transition:all .2s;line-height:1.6;">
+          📦 NACIONAL<br><span style="font-family:Space Mono,monospace;font-size:8px;color:var(--text-muted);">Correios / Transportadora</span>
+        </button>
+      </div>
+
+      <!-- PAINEL LOCAL -->
+      <div id="ea-ship-panel-local" style="display:none;">
+        <div style="font-family:Silkscreen,monospace;font-size:9px;color:var(--neon-cyan);margin-bottom:8px;">🛵 COMO VAI ENTREGAR?</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;">
+
+          <!-- Opção: Motoboy / App -->
+          <button id="ea-ship-moto-btn" onclick="eaShipSelectLocal('motoboy')" style="padding:12px;background:rgba(255,153,51,.07);border:2px solid rgba(255,153,51,.3);border-radius:10px;color:#ff9933;font-family:Space Mono,monospace;font-size:10px;cursor:pointer;text-align:left;transition:all .2s;">
+            🛵 <strong>Solicitar Motoboy</strong>
+            <div style="font-size:9px;color:var(--text-muted);margin-top:3px;">Você pede o motoboy pelo app e informa o link de rastreio</div>
+          </button>
+
+          <!-- Apps de entrega -->
+          <div id="ea-ship-apps" style="display:none;padding:10px;background:rgba(255,153,51,.05);border:1px solid rgba(255,153,51,.2);border-radius:10px;">
+            <div style="font-size:9px;color:var(--text-muted);margin-bottom:8px;font-family:Silkscreen,monospace;">ABRIR APP / SITE:</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+              <a href="https://99app.com" target="_blank" style="padding:7px 12px;background:rgba(255,204,0,.1);border:1px solid rgba(255,204,0,.35);border-radius:8px;color:var(--neon-yellow);font-size:10px;text-decoration:none;font-family:Space Mono,monospace;">🟡 99Entrega</a>
+              <a href="https://couriers.ifood.com.br" target="_blank" style="padding:7px 12px;background:rgba(255,51,51,.08);border:1px solid rgba(255,80,80,.3);border-radius:8px;color:#ff6060;font-size:10px;text-decoration:none;font-family:Space Mono,monospace;">🔴 iFood Entrega</a>
+            </div>
+            <label style="font-family:Silkscreen,monospace;font-size:9px;color:var(--neon-cyan);display:block;margin-bottom:4px;">🔗 Link / Código de rastreio do motoboy (opcional)</label>
+            <input type="text" id="_ea_track_code" placeholder="Cole aqui o link ou código gerado pelo app..." style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:9px;color:var(--text-light);font-family:Space Mono,monospace;font-size:11px;outline:none;">
+          </div>
+
+          <!-- Opção: Entrega Pessoal -->
+          <button id="ea-ship-pessoal-btn" onclick="eaShipSelectLocal('pessoal')" style="padding:12px;background:rgba(0,255,204,.06);border:2px solid rgba(0,255,204,.2);border-radius:10px;color:var(--neon-cyan);font-family:Space Mono,monospace;font-size:10px;cursor:pointer;text-align:left;transition:all .2s;">
+            🚶 <strong>Entrega Pessoal</strong>
+            <div style="font-size:9px;color:var(--text-muted);margin-top:3px;">Você mesmo vai entregar ao cliente</div>
+          </button>
+
+        </div>
+        <div id="ea-ship-local-info" style="display:none;background:rgba(0,255,204,.06);border:1px solid rgba(0,255,204,.2);border-radius:8px;padding:10px;margin-bottom:12px;font-size:10px;color:var(--neon-cyan);line-height:1.5;">
+          💡 O cliente será notificado que você está a caminho.
+        </div>
+      </div>
+
+      <!-- PAINEL NACIONAL -->
+      <div id="ea-ship-panel-nacional" style="display:none;">
+        <label style="font-family:Silkscreen,monospace;font-size:9px;color:var(--neon-cyan);display:block;margin-bottom:4px;">📮 CÓDIGO DE RASTREIO</label>
+        <input type="text" id="_ea_track_code_nacional" placeholder="Ex: BR123456789BR (Correios)" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:8px;padding:10px;color:var(--text-light);font-family:VT323,monospace;font-size:15px;letter-spacing:2px;margin-bottom:10px;outline:none;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+          <a href="https://rastreamento.correios.com.br" target="_blank" style="padding:6px 10px;background:rgba(255,204,0,.08);border:1px solid rgba(255,204,0,.25);border-radius:8px;color:var(--neon-yellow);font-size:9px;text-decoration:none;font-family:Space Mono,monospace;">📬 Rastrear Correios</a>
+          <a href="https://www.jadlog.com.br/siteDpd/tracking.jad" target="_blank" style="padding:6px 10px;background:rgba(191,95,255,.08);border:1px solid rgba(191,95,255,.25);border-radius:8px;color:var(--neon-purple);font-size:9px;text-decoration:none;font-family:Space Mono,monospace;">📦 JadLog</a>
+          <a href="https://www.totalexpress.com.br/rastreamento" target="_blank" style="padding:6px 10px;background:rgba(0,255,204,.06);border:1px solid rgba(0,255,204,.2);border-radius:8px;color:var(--neon-cyan);font-size:9px;text-decoration:none;font-family:Space Mono,monospace;">📦 Total Express</a>
+        </div>
+        <div style="background:rgba(191,95,255,.07);border:1px solid rgba(191,95,255,.25);border-radius:8px;padding:10px;margin-bottom:12px;font-size:10px;color:var(--neon-purple);line-height:1.5;">
+          💡 O código será enviado ao cliente para acompanhar a entrega.
+        </div>
+      </div>
+
+      <!-- Botões de ação -->
       <div style="display:flex;gap:10px;">
-        <button class="tbtn" onclick="this.closest('.ea-ship-ov').remove()" style="flex:1;padding:11px;">Cancelar</button>
-        <button class="post-btn" onclick="eaDoShipPurchase('${purchId}','${customerId}','${xss(productTitle||'')}',this)" style="flex:1;padding:11px;background:linear-gradient(135deg,var(--neon-purple),#8833cc);font-size:11px;">🚚 Confirmar Envio</button>
+        <button class="tbtn" onclick="document.getElementById('ea-ship-ov')?.remove()" style="flex:1;padding:11px;">✕ Cancelar</button>
+        <button id="ea-ship-confirm-btn" class="post-btn" onclick="eaDoShipPurchase('${purchId}','${customerId}','${xss(productTitle||'')}',this)" style="flex:1;padding:11px;background:linear-gradient(135deg,var(--neon-purple),#8833cc);font-size:11px;opacity:.4;pointer-events:none;">🚚 Confirmar Envio</button>
       </div>
     </div>`;
-  ov.classList.add('ea-ship-ov');
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   document.body.appendChild(ov);
 }
 
+// Seleciona tipo de entrega (local / nacional)
+function eaShipSelectType(tipo){
+  const btnLocal    = document.getElementById('ea-ship-local-btn');
+  const btnNacional = document.getElementById('ea-ship-nacional-btn');
+  const panelLocal    = document.getElementById('ea-ship-panel-local');
+  const panelNacional = document.getElementById('ea-ship-panel-nacional');
+  const confirmBtn    = document.getElementById('ea-ship-confirm-btn');
+
+  if(tipo==='local'){
+    btnLocal.style.borderColor    = 'var(--neon-cyan)';
+    btnLocal.style.background     = 'rgba(0,255,204,.14)';
+    btnNacional.style.borderColor = 'rgba(191,95,255,.25)';
+    btnNacional.style.background  = 'rgba(191,95,255,.06)';
+    panelLocal.style.display    = 'block';
+    panelNacional.style.display = 'none';
+    // Confirmar habilitado só após escolher sub-opção local
+    confirmBtn.style.opacity = '.4'; confirmBtn.style.pointerEvents = 'none';
+  } else {
+    btnNacional.style.borderColor = 'var(--neon-purple)';
+    btnNacional.style.background  = 'rgba(191,95,255,.14)';
+    btnLocal.style.borderColor    = 'rgba(0,255,204,.25)';
+    btnLocal.style.background     = 'rgba(0,255,204,.08)';
+    panelNacional.style.display = 'block';
+    panelLocal.style.display    = 'none';
+    confirmBtn.style.opacity = '1'; confirmBtn.style.pointerEvents = 'auto';
+  }
+}
+
+// Seleciona sub-opção local (motoboy / pessoal)
+function eaShipSelectLocal(modo){
+  const btnMoto    = document.getElementById('ea-ship-moto-btn');
+  const btnPessoal = document.getElementById('ea-ship-pessoal-btn');
+  const appsDiv    = document.getElementById('ea-ship-apps');
+  const infoDiv    = document.getElementById('ea-ship-local-info');
+  const confirmBtn = document.getElementById('ea-ship-confirm-btn');
+
+  // Reset visual
+  btnMoto.style.borderColor    = 'rgba(255,153,51,.3)';
+  btnMoto.style.background     = 'rgba(255,153,51,.07)';
+  btnPessoal.style.borderColor = 'rgba(0,255,204,.2)';
+  btnPessoal.style.background  = 'rgba(0,255,204,.06)';
+
+  if(modo==='motoboy'){
+    btnMoto.style.borderColor = '#ff9933';
+    btnMoto.style.background  = 'rgba(255,153,51,.18)';
+    appsDiv.style.display  = 'block';
+    infoDiv.style.display  = 'none';
+  } else {
+    btnPessoal.style.borderColor = 'var(--neon-cyan)';
+    btnPessoal.style.background  = 'rgba(0,255,204,.14)';
+    appsDiv.style.display  = 'none';
+    infoDiv.style.display  = 'block';
+  }
+  confirmBtn.style.opacity = '1'; confirmBtn.style.pointerEvents = 'auto';
+  // Guarda modo escolhido
+  document.getElementById('ea-ship-confirm-btn').dataset.localModo = modo;
+}
+
 async function eaDoShipPurchase(purchId, customerId, productTitle, btn){
   btn.disabled=true; btn.textContent='⏳ Salvando...';
-  const trackCode=(document.getElementById('_ea_track_code')?.value||'').trim();
+
+  // Determina o código de rastreio dependendo do painel ativo
+  let trackCode = '';
+  const panelNacional = document.getElementById('ea-ship-panel-nacional');
+  const panelLocal    = document.getElementById('ea-ship-panel-local');
+  const localModo     = btn.dataset?.localModo || '';
+
+  if(panelNacional && panelNacional.style.display !== 'none'){
+    trackCode = (document.getElementById('_ea_track_code_nacional')?.value||'').trim();
+  } else if(panelLocal && panelLocal.style.display !== 'none' && localModo === 'motoboy'){
+    trackCode = (document.getElementById('_ea_track_code')?.value||'').trim();
+  }
+
+  // Monta descrição da modalidade para a notificação
+  let modoLabel = '🚚 Enviado';
+  if(panelLocal && panelLocal.style.display !== 'none'){
+    modoLabel = localModo === 'motoboy' ? '🛵 Motoboy a caminho' : '🚶 Entrega pessoal a caminho';
+  } else {
+    modoLabel = '📦 Enviado (nacional)';
+  }
+
   const updates={status:'shipped'};
   if(trackCode) updates.tracking_code=trackCode;
   let upd = await db.from('purchases').update(updates).eq('id',purchId);
   if(upd.error){
-    // Fallback se tracking_code não existir
     upd = await db.from('purchases').update({status:'shipped'}).eq('id',purchId);
     if(upd.error){
       btn.disabled=false; btn.textContent='🚚 Confirmar Envio';
       showToast('Erro: '+upd.error.message,'error'); return;
     }
   }
+
   // Notifica cliente
   const cid=(customerId&&customerId!=='undefined'&&customerId!=='')?customerId:null;
   if(cid && CU && cid!==CU.id){
     const bizName=myBusiness?.name||'A Loja';
-    const trackLine = trackCode ? ' Código de rastreio: '+trackCode : '';
+    const trackLine = trackCode ? ' • Rastreio: '+trackCode : '';
     await db.from('notifications').insert({
       user_id:cid, actor_id:CU.id, type:'system',
       business_id: myBusiness?.id || null,
-      content:'🚚 '+bizName+' enviou seu produto "'+(productTitle||'compra')+'"!'+trackLine,
+      content: modoLabel+' — '+bizName+' enviou "'+( productTitle||'sua compra')+'".'+trackLine,
       read:false
     });
   }
-  document.querySelector('.ea-ship-ov')?.remove();
-  showToast('✅ Produto marcado como enviado! Cliente notificado.','success');
+
+  document.getElementById('ea-ship-ov')?.remove();
+  showToast('✅ Envio confirmado! Cliente notificado.','success');
   loadPurchases(true);
 }
 
