@@ -18581,6 +18581,103 @@ async function openNewDealModal(){
     </div>`;
   overlay.onclick = e=>{ if(e.target===overlay) overlay.remove(); };
   document.body.appendChild(overlay);
+
+  // ── Converte selects do modal em dropdowns customizados (estilo music-genre) ──
+  function _dmMakeDrop(selectEl, openUp=false) {
+    if(!selectEl) return;
+    const options = [...selectEl.options].map(o => ({ val: o.value, label: o.textContent, disabled: o.disabled, data: o.dataset }));
+    const origId  = selectEl.id;
+    const origOnchange = selectEl.onchange;
+    const parent  = selectEl.parentNode;
+    const defaultOpt = options[0] || { val:'', label:'Selecione...' };
+
+    // Cria wrapper
+    const wrap = document.createElement('div');
+    wrap.id = origId + '-wrap';
+    wrap.style.cssText = 'position:relative;';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.style.cssText = 'width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:10px;padding:9px 14px;color:var(--text-light);font-family:Space Mono,monospace;font-size:10px;cursor:pointer;text-align:left;';
+
+    const lbl = document.createElement('span');
+    lbl.id = origId + '-lbl';
+    lbl.textContent = defaultOpt.label;
+
+    const arrow = document.createElement('span');
+    arrow.textContent = '▾';
+    arrow.style.cssText = 'color:var(--text-muted);font-size:10px;flex-shrink:0;';
+
+    btn.appendChild(lbl);
+    btn.appendChild(arrow);
+
+    const hidden = document.createElement('input');
+    hidden.type = 'hidden';
+    hidden.id = origId;
+    hidden.value = defaultOpt.val;
+
+    const list = document.createElement('div');
+    list.style.cssText = `display:none;position:absolute;${openUp?'bottom:calc(100% + 4px)':'top:calc(100% + 4px)'};left:0;right:0;background:var(--bg-card);border:1px solid var(--border-glow);border-radius:12px;overflow-y:auto;max-height:200px;z-index:9999;box-shadow:0 ${openUp?'-':''}8px 32px rgba(0,0,0,.7);`;
+
+    options.forEach(o => {
+      const item = document.createElement('div');
+      item.textContent = o.label;
+      item.style.cssText = `padding:9px 14px;cursor:${o.disabled?'default':'pointer'};font-family:Space Mono,monospace;font-size:10px;color:${o.disabled?'var(--text-muted)':'var(--text-light)'};border-bottom:1px solid rgba(255,255,255,.04);transition:background .1s;`;
+      if(!o.disabled) {
+        item.onmouseenter = () => item.style.background = 'rgba(0,255,204,.08)';
+        item.onmouseleave = () => item.style.background = 'transparent';
+        item.onclick = () => {
+          hidden.value = o.val;
+          lbl.textContent = o.label;
+          list.querySelectorAll('div').forEach(d => d.style.color = 'var(--text-light)');
+          item.style.color = 'var(--neon-cyan)';
+          list.style.display = 'none';
+          arrow.textContent = '▾';
+          // Replica o onchange original (para dm-prod-select preencher campos)
+          if(origId === 'dm-prod-select') {
+            const dmTitle = document.getElementById('dm-title');
+            const dmValue = document.getElementById('dm-value');
+            const dmProdId = document.getElementById('dm-prodid-hidden');
+            if(o.val) {
+              if(dmTitle) dmTitle.value = o.data.name || '';
+              const pr = parseFloat(o.data.price || '0');
+              if(pr > 0 && dmValue) dmValue.value = pr.toFixed(2);
+              if(dmProdId) dmProdId.value = o.val;
+            } else {
+              if(dmProdId) dmProdId.value = '';
+            }
+          }
+        };
+      }
+      list.appendChild(item);
+    });
+
+    btn.onclick = () => {
+      const open = list.style.display === 'none';
+      list.style.display = open ? 'block' : 'none';
+      arrow.textContent = open ? '▴' : '▾';
+      if(open) {
+        setTimeout(() => {
+          document.addEventListener('pointerdown', function _cls(e) {
+            if(!wrap.contains(e.target)) { list.style.display='none'; arrow.textContent='▾'; }
+            document.removeEventListener('pointerdown', _cls);
+          }, { once:true });
+        }, 10);
+      }
+    };
+
+    wrap.appendChild(btn);
+    wrap.appendChild(hidden);
+    wrap.appendChild(list);
+    parent.replaceChild(wrap, selectEl);
+  }
+
+  // Aplica nos 3 selects do modal (com pequeno delay para garantir que o DOM foi renderizado)
+  requestAnimationFrame(() => {
+    _dmMakeDrop(document.getElementById('dm-prod-select'), false);
+    _dmMakeDrop(document.getElementById('dm-payment'), false);
+    _dmMakeDrop(document.getElementById('dm-delivery'), false);
+  });
 }
 
 async function sendDealProposal(btn){
