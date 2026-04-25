@@ -14171,8 +14171,13 @@ function _updateMsgTicksLive(updatedMsg){
 // ── Helper: anexa uma única bolha na área de msgs (sem reload completo) ──
 function _appendChatBubble(msg, area){
   if(!area) return;
+  // Deduplicacao: nao adiciona bolha se o ID ja existe no DOM
+  if(msg.id && area.querySelector('[data-msg-id="'+msg.id+'"]')) return;
   const isSent = msg.sender_id === CU?.id;
-  const timeHtml = '<div class="mb-time">'+timeAgo(msg.created_at)+'<span class="mb-status sent" aria-label="enviado"><span class="tick tick-1">✓</span><span class="tick tick-2">✓</span></span></div>';
+  const statusHtml = isSent
+    ? '<span class="mb-status sent" aria-label="enviado"><span class="tick tick-1">\u2713</span><span class="tick tick-2">\u2713</span></span>'
+    : '';
+  const timeHtml = '<div class="mb-time">'+timeAgo(msg.created_at)+statusHtml+'</div>';
   let mediaHtml = '';
   if(msg.media_url){
     const safeUrl=xss(msg.media_url);
@@ -14186,8 +14191,8 @@ function _appendChatBubble(msg, area){
   div.className='mb '+(isSent?'sent':'recv');
   if(msg.id) div.dataset.msgId=msg.id;
   div.innerHTML=mediaHtml+contentHtml+timeHtml;
-  // Remove placeholder "início de conversa" se existir
   area.querySelector('.chat-empty')?.remove();
+  area.querySelector('.ht-chat-empty-state')?.remove();
   area.appendChild(div);
   area.scrollTop=area.scrollHeight;
 }
@@ -14215,15 +14220,16 @@ async function sendMsg(){
     inp.value='';
     inp.style.height='auto';
     // ── Insert no banco ──
-    const{data:inserted,error}=await db.from('messages').insert({sender_id:CU.id,receiver_id:currentChatUser.id,content:txt,read:false}).select('id').maybeSingle();
+    const{data:inserted,error}=await db.from('messages').insert({sender_id:CU.id,receiver_id:currentChatUser.id,content:txt,read:false}).select('id,created_at').maybeSingle();
     if(error){
       showToast('Erro ao enviar: '+error.message,'error');
-      // Remove bolha otimista em caso de erro
       area?.querySelector('.mb.sent:last-child')?.remove();
     } else if(inserted?.id){
-      // Atualiza o data-msg-id da bolha otimista com o ID real
-      const lastBubble=area?.querySelector('.mb.sent:last-child');
+      // Atualiza bolha otimista com ID real (dedup vai funcionar corretamente)
+      const lastBubble=area?.querySelector('.mb.sent:not([data-msg-id])');
       if(lastBubble) lastBubble.dataset.msgId=inserted.id;
+      // Avanca _lastMsgCheck para o poll nao reprocessar esta msg
+      if(inserted.created_at && inserted.created_at > _lastMsgCheck) _lastMsgCheck=inserted.created_at;
     }
     try{await db.from('notifications').insert({user_id:currentChatUser.id,actor_id:CU.id,type:'message',content:`@${CP?.username||'alguém'} enviou uma mensagem`,read:false});}catch(e){}
   } finally {
@@ -14490,14 +14496,30 @@ let _lastMsgCheck=new Date().toISOString();
 async function pollNewMessages(){
   if(!CU) return;
   try{
-    const{data}=await db.from('messages')
-      .select('id,sender_id,receiver_id,content,created_at')
-      .eq('receiver_id',CU.id)
-      .gt('created_at',_lastMsgCheck)
-      .order('created_at');
+    // Busca msgs em AMBAS as direcoes da conversa aberta + msgs recebidas de qualquer um
+    const activePeer = currentChatUser?.id || homeChatUser?.id;
+    let q;
+    if(activePeer){
+      // Conversa aberta: busca todas as msgs da conversa (sent + recv) para nao perder nenhuma
+      q = db.from('messages')
+        .select('id,sender_id,receiver_id,content,media_url,media_type,created_at')
+        .or('and(sender_id.eq.'+CU.id+',receiver_id.eq.'+activePeer+'),and(sender_id.eq.'+activePeer+',receiver_id.eq.'+CU.id+')')
+        .gt('created_at',_lastMsgCheck)
+        .order('created_at');
+    } else {
+      // Sem conversa aberta: so msgs recebidas (para badge/notificacao)
+      q = db.from('messages')
+        .select('id,sender_id,receiver_id,content,media_url,media_type,created_at')
+        .eq('receiver_id',CU.id)
+        .gt('created_at',_lastMsgCheck)
+        .order('created_at');
+    }
+    const{data}=await q;
     if(data?.length){
       _lastMsgCheck=data[data.length-1].created_at;
-      data.forEach(msg=>handleIncomingMessage(msg));
+      // So envia para handleIncomingMessage msgs que eu NAO enviei (recv)
+      // Msgs que eu enviei ja foram adicionadas otimisticamente
+      data.filter(msg=>msg.sender_id!==CU.id).forEach(msg=>handleIncomingMessage(msg));
     }
   }catch(e){}
 }
@@ -14912,15 +14934,16 @@ async function sendHomeMsg(){
   _appendChatBubble(optimisticHt,areaHt);
   if(inp){inp.value='';inp.style.height='auto';}
   // ── Insert no banco ──
-  const{data:insertedHt,error}=await db.from('messages').insert({sender_id:CU.id,receiver_id:homeChatUser.id,content:txt||null,media_url:mediaUrl,media_type:mediaType,read:false}).select('id').maybeSingle();
+  const{data:insertedHt,error}=await db.from('messages').insert({sender_id:CU.id,receiver_id:homeChatUser.id,content:txt||null,media_url:mediaUrl,media_type:mediaType,read:false}).select('id,created_at').maybeSingle();
   if(error){
     showToast('Erro: '+error.message,'error');
     areaHt?.querySelector('.mb.sent:last-child')?.remove();
     return;
   }
   if(insertedHt?.id){
-    const lastBubbleHt=areaHt?.querySelector('.mb.sent:last-child');
+    const lastBubbleHt=areaHt?.querySelector('.mb.sent:not([data-msg-id])');
     if(lastBubbleHt) lastBubbleHt.dataset.msgId=insertedHt.id;
+    if(insertedHt.created_at && insertedHt.created_at > _lastMsgCheck) _lastMsgCheck=insertedHt.created_at;
   }
   try{await db.from('notifications').insert({user_id:homeChatUser.id,actor_id:CU.id,type:'message',content:'@'+(CP?.username||'alguém')+' enviou uma mensagem',read:false});}catch(e){}
 }
