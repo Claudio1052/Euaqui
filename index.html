@@ -7382,39 +7382,7 @@ body.day-mode .lp-chip{ background:rgba(0,0,0,.04); color:#1a1a2e; }
 <div class="tst-wrap" id="tst-wrap"></div>
 
 
-
 <script>
-/* EuAqui — Deferred Executor v5
-   Pinta a loading screen ANTES dos 1.3MB de JS. */
-(function(){
-  function _exec(src){
-    try{ var s=document.createElement('script'); s.textContent=src; document.head.appendChild(s); }
-    catch(e){ console.error('[EA]',e); }
-  }
-  function _run(){
-    var app=document.getElementById('_ea-app-code');
-    var lay=document.getElementById('_ea-layout-code');
-    var dice=document.getElementById('_ea-dicebear-code');
-    if(!app){ console.error('[EA] app code not found'); return; }
-    _exec(app.textContent);
-    setTimeout(function(){
-      if(lay)  _exec(lay.textContent);
-      if(dice) _exec(dice.textContent);
-    }, 200);
-  }
-  function _waitSdk(){
-    if(!window.supabase||!window.supabase.createClient){ setTimeout(_waitSdk,40); return; }
-    requestAnimationFrame(function(){ requestAnimationFrame(_run); });
-  }
-  if(document.readyState==='loading'){
-    document.addEventListener('DOMContentLoaded', _waitSdk);
-  } else {
-    _waitSdk();
-  }
-})();
-</script>
-
-<script type="text/plain" id="_ea-app-code">
 
 // ===== FAILSAFE: garante que loading nunca trava =====
 let _appInitDone = false;
@@ -7586,9 +7554,6 @@ const db = createClient(SB_URL, SB_KEY, {
     }
   }
 });
-window.db=db;
-Object.defineProperty(window,'CU',{get:()=>(typeof CU!=='undefined'?CU:null),set:v=>{CU=v;},configurable:true});
-Object.defineProperty(window,'CP',{get:()=>(typeof CP!=='undefined'?CP:null),set:v=>{CP=v;},configurable:true});
 
 /* ── SQL necessário no Supabase para views e reações de stories ──────────────
    Execute no SQL Editor do Supabase:
@@ -7930,13 +7895,7 @@ document.addEventListener('error', function(e){
   }
 }, true);
 
-(function(_eaBoot){
-  if(document.readyState==='loading'){
-    document.addEventListener('DOMContentLoaded', _eaBoot);
-  } else {
-    _eaBoot();
-  }
-})(async function(){
+document.addEventListener('DOMContentLoaded', async()=>{
   _initFont();
   const minWait = new Promise(r=>setTimeout(r,400));
 
@@ -27930,7 +27889,7 @@ async function oaLoadRail(){
       } else if(info.code === 'PGRST301' || /jwt|JWT|permission/i.test(info.message)){
         console.warn('[OA] RLS/JWT bloqueou SELECT em olha_aqui. Verifique as policies.');
       } else {
-        if(!(info.message||'').includes('DataClone'))console.warn('[OA] erro lendo olha_aqui:', info.message, '(code:', info.code||'?', ')');
+        console.warn('[OA] erro lendo olha_aqui:', info.message, '(code:', info.code||'?', ')');
       }
       renderOaRail([]);
       return;
@@ -29376,7 +29335,7 @@ function oaBoot(){
 
   // ✅ REALTIME: ouve novos stories inseridos — recarrega rail instantaneamente
   // Throttle de 2s para evitar múltiplos reloads quando vários stories chegam juntos.
-  if(!window._oaRealtimeCh && window.db && CU){
+  if(!window._oaRealtimeCh && window.db){
     let _oaRtThrottle = null;
     function _oaRtReload(){
       if(_oaRtThrottle) return; // já agendado, ignora
@@ -31825,7 +31784,7 @@ window.oaNavigateFromHeader = function(){
 
 </script>
 
-<script type="text/plain" id="_ea-layout-code">
+<script>
 /* ══════════════════════════════════════════════════════════════
    🎨 LAYOUT PERSONALIZADO DE PERFIL — v61
    Sistema completo de customização visual por usuário.
@@ -32786,7 +32745,7 @@ window.oaNavigateFromHeader = function(){
 })();
 </script>
 
-<script type="text/plain" id="_ea-dicebear-code">
+<script>
 // Redireciona todas as imagens Dicebear para o Worker de cache assim que o DOM carrega.
 // Isso cobre os src estáticos no HTML e os onerror handlers dinâmicos.
 (function patchDicebearSrcs(){
@@ -33316,8 +33275,6 @@ export default {
     <div id="oa-viewers-modal-list"></div>
   </div>
 </div>
-
-</body>
 
 </body>
 </html>
