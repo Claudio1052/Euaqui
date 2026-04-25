@@ -7384,57 +7384,33 @@ body.day-mode .lp-chip{ background:rgba(0,0,0,.04); color:#1a1a2e; }
 
 
 <script>
-/* ════════════════════════════════════════════════════════════════════════
-   EuAqui — Deferred JS Executor v4
-   Pinta a loading screen ANTES de executar 1.3MB de JavaScript.
-   Usa textContent injection (sem Blob URL, sem CSP issues).
-   ════════════════════════════════════════════════════════════════════════ */
+/* EuAqui — Deferred Executor v5
+   Pinta a loading screen ANTES dos 1.3MB de JS. */
 (function(){
-
-  function _execCode(src, label){
-    try {
-      var s = document.createElement('script');
-      s.textContent = src;
-      document.head.appendChild(s);
-    } catch(e) {
-      console.error('[EA] Falha ao executar ' + label + ':', e);
-    }
+  function _exec(src){
+    try{ var s=document.createElement('script'); s.textContent=src; document.head.appendChild(s); }
+    catch(e){ console.error('[EA]',e); }
   }
-
-  function _runAll(){
-    var elApp      = document.getElementById('_ea-app-code');
-    var elLayout   = document.getElementById('_ea-layout-code');
-    var elDicebear = document.getElementById('_ea-dicebear-code');
-
-    if(!elApp){
-      console.error('[EA] _ea-app-code nao encontrado no DOM');
-      return;
-    }
-
-    // App principal — executa imediatamente
-    _execCode(elApp.textContent, 'app-core');
-
-    // Layout e dicebear — 200ms depois (nao sao criticos para o boot)
+  function _run(){
+    var app=document.getElementById('_ea-app-code');
+    var lay=document.getElementById('_ea-layout-code');
+    var dice=document.getElementById('_ea-dicebear-code');
+    if(!app){ console.error('[EA] app code not found'); return; }
+    _exec(app.textContent);
     setTimeout(function(){
-      if(elLayout)   _execCode(elLayout.textContent,   'layout-profile');
-      if(elDicebear) _execCode(elDicebear.textContent, 'dicebear-router');
+      if(lay)  _exec(lay.textContent);
+      if(dice) _exec(dice.textContent);
     }, 200);
   }
-
   function _waitSdk(){
-    if(!window.supabase || !window.supabase.createClient){
-      setTimeout(_waitSdk, 40);
-      return;
-    }
-    // Dois RAFs garantem que o browser pintou a loading screen
-    requestAnimationFrame(function(){
-      requestAnimationFrame(_runAll);
-    });
+    if(!window.supabase||!window.supabase.createClient){ setTimeout(_waitSdk,40); return; }
+    requestAnimationFrame(function(){ requestAnimationFrame(_run); });
   }
-
-  // DOMContentLoaded garante que todos os text/plain ja existem no DOM
-  document.addEventListener('DOMContentLoaded', _waitSdk);
-
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded', _waitSdk);
+  } else {
+    _waitSdk();
+  }
 })();
 </script>
 
@@ -7610,6 +7586,9 @@ const db = createClient(SB_URL, SB_KEY, {
     }
   }
 });
+window.db=db;
+Object.defineProperty(window,'CU',{get:()=>(typeof CU!=='undefined'?CU:null),set:v=>{CU=v;},configurable:true});
+Object.defineProperty(window,'CP',{get:()=>(typeof CP!=='undefined'?CP:null),set:v=>{CP=v;},configurable:true});
 
 /* ── SQL necessário no Supabase para views e reações de stories ──────────────
    Execute no SQL Editor do Supabase:
@@ -7951,7 +7930,13 @@ document.addEventListener('error', function(e){
   }
 }, true);
 
-document.addEventListener('DOMContentLoaded', async()=>{
+(function(_eaBoot){
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded', _eaBoot);
+  } else {
+    _eaBoot();
+  }
+})(async function(){
   _initFont();
   const minWait = new Promise(r=>setTimeout(r,400));
 
@@ -27945,7 +27930,7 @@ async function oaLoadRail(){
       } else if(info.code === 'PGRST301' || /jwt|JWT|permission/i.test(info.message)){
         console.warn('[OA] RLS/JWT bloqueou SELECT em olha_aqui. Verifique as policies.');
       } else {
-        console.warn('[OA] erro lendo olha_aqui:', info.message, '(code:', info.code||'?', ')');
+        if(!(info.message||'').includes('DataClone'))console.warn('[OA] erro lendo olha_aqui:', info.message, '(code:', info.code||'?', ')');
       }
       renderOaRail([]);
       return;
@@ -29391,7 +29376,7 @@ function oaBoot(){
 
   // ✅ REALTIME: ouve novos stories inseridos — recarrega rail instantaneamente
   // Throttle de 2s para evitar múltiplos reloads quando vários stories chegam juntos.
-  if(!window._oaRealtimeCh && window.db){
+  if(!window._oaRealtimeCh && window.db && CU){
     let _oaRtThrottle = null;
     function _oaRtReload(){
       if(_oaRtThrottle) return; // já agendado, ignora
