@@ -20438,9 +20438,11 @@ async function acceptDealProposal(dealId, btn){
       }
 
       // 3. Atualiza o chat
-      await db.from('business_chats').update({
-        status:'deal_closed', updated_at: new Date().toISOString()
-      }).eq('id', chatId).catch(()=>{});
+      try{
+        await db.from('business_chats').update({
+          status:'deal_closed', updated_at: new Date().toISOString()
+        }).eq('id', chatId);
+      }catch(_){}
 
       // 4. Incrementa contadores do negócio (silencioso se falhar)
       if(deal.business_id){
