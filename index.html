@@ -18499,6 +18499,7 @@ async function loadBizMsgs(chatId){
     const isMine=m.sender_id===CU.id;
     const div=document.createElement('div');
     div.className='mb '+(isMine?'sent':'recv');
+    div.dataset.msgId=m.id; // ✅ usado pelo _appendBizMsgFromRealtime para dedup
     const t=new Date(m.created_at);
     const time=t.getHours().toString().padStart(2,'0')+':'+t.getMinutes().toString().padStart(2,'0');
     const isAudio = (m.media_type && m.media_type.startsWith('audio')) ||
@@ -18617,14 +18618,37 @@ async function sendBizMsg(){
   }
   inp.value='';
   inp.style.height = 'auto'; // reseta o auto-grow do textarea
+
+  // ✅ INSERÇÃO OTIMISTA: mostra a mensagem na tela imediatamente, sem esperar o banco
+  _appendBizMsgOptimistic(txt);
+
   const {error}=await db.from('business_messages').insert({chat_id:currentBizChat,sender_id:CU.id,content:txt});
-  if(error){ showToast('Erro ao enviar','error'); _bizMsgSending=false; if(sendBtn){sendBtn.disabled=false;sendBtn.style.opacity='';} return; }
-  // Update chat timestamp
+  if(error){
+    showToast('Erro ao enviar','error');
+    // Remove a bolha otimista em caso de erro
+    const area=document.getElementById('biz-msgs-area');
+    area?.querySelector('.mb-optimistic')?.remove();
+    _bizMsgSending=false; if(sendBtn){sendBtn.disabled=false;sendBtn.style.opacity='';} return;
+  }
+  // Remove flag otimista (o Realtime vai confirmar com o dado real do banco)
+  document.querySelector('.mb-optimistic')?.classList.remove('mb-optimistic');
   await db.from('business_chats').update({updated_at:new Date().toISOString()}).eq('id',currentBizChat);
-  await loadBizMsgs(currentBizChat);
   loadBizChats(); // traz conversa ao topo da sidebar
   _bizMsgSending = false;
   if(sendBtn){ sendBtn.disabled=false; sendBtn.style.opacity=''; }
+}
+
+// Renderiza uma bolha de mensagem própria imediatamente (sem aguardar o banco)
+function _appendBizMsgOptimistic(txt){
+  const area=document.getElementById('biz-msgs-area');
+  if(!area) return;
+  const now=new Date();
+  const time=now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0');
+  const div=document.createElement('div');
+  div.className='mb sent mb-optimistic';
+  div.innerHTML=`<div class="mb-bubble">${linkify(txt)}</div><div class="mb-time">${time} <span style="opacity:.4;font-size:9px;">✓</span></div>`;
+  area.appendChild(div);
+  area.scrollTop=area.scrollHeight;
 }
 
 // ── Áudio no chat de loja ─────────────────────────────────────────────────────
@@ -19574,44 +19598,56 @@ function startBizChatPoll(){
   stopBizChatPoll();
   if(!currentBizChat||!CU) return;
 
-  // Captura o timestamp atual como referência — só msgs DEPOIS disso são "novas"
   _bizLastMsgTs = new Date().toISOString();
 
-  // ✅ REALTIME FIRST: Supabase Realtime avisa o frontend instantaneamente.
-  // Zero requisições ao banco quando o chat está ocioso.
+  // ✅ REALTIME — ouve TODAS as mensagens novas do chat (sender e receiver)
+  // Usa append incremental: não recarrega tudo, só acrescenta a bolha nova.
   _bizRealtimeCh = db.channel('biz-rt-'+currentBizChat)
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'business_messages',
-      filter:'chat_id=eq.'+currentBizChat},(pl)=>{
+    .on('postgres_changes',{
+      event:'INSERT',
+      schema:'public',
+      table:'business_messages',
+      filter:'chat_id=eq.'+currentBizChat
+    },(pl)=>{
       if(!pl?.new) return;
-      if(pl.new.sender_id === CU.id) return; // própria msg já foi inserida
-      _bizLastMsgTs = pl.new.created_at || new Date().toISOString();
-      loadBizMsgs(currentBizChat);
-      _markBizChatRead(currentBizChat);
-      loadBizChats();
+      const msg = pl.new;
+      _bizLastMsgTs = msg.created_at || new Date().toISOString();
+
+      if(msg.sender_id === CU.id){
+        // Mensagem própria confirmada pelo banco: remove o flag otimista se ainda existir
+        document.querySelector('.mb-optimistic')?.classList.remove('mb-optimistic');
+      } else {
+        // Mensagem da outra parte: append sem recarregar tudo
+        _appendBizMsgFromRealtime(msg);
+        _markBizChatRead(currentBizChat);
+        loadBizChats();
+      }
     })
     .subscribe((status)=>{
-      // ✅ FALLBACK: só ativa polling se o canal Realtime falhar ou demorar a conectar
       if(status === 'CHANNEL_ERROR' || status === 'TIMED_OUT'){
+        // Fallback polling 30s só se Realtime falhar
         console.warn('[biz-realtime] canal com problema, ativando fallback polling 30s');
         if(!_bizPollInterval){
           _bizPollInterval = setInterval(async()=>{
             if(!currentBizChat||!CU) return;
             try{
               const {data} = await db.from('business_messages')
-                .select('id,created_at,sender_id')
+                .select('id,created_at,sender_id,content,media_url,media_type,msg_type')
                 .eq('chat_id', currentBizChat)
                 .gt('created_at', _bizLastMsgTs)
-                .order('created_at',{ascending:false})
-                .limit(1);
-              if(data && data.length > 0){
-                _bizLastMsgTs = data[0].created_at;
-                await loadBizMsgs(currentBizChat);
+                .order('created_at',{ascending:true});
+              if(data?.length){
+                _bizLastMsgTs = data[data.length-1].created_at;
+                data.forEach(m=>{ if(m.sender_id!==CU.id) _appendBizMsgFromRealtime(m); });
                 _markBizChatRead(currentBizChat);
-                if(data[0].sender_id !== CU.id) loadBizChats();
+                loadBizChats();
               }
-            }catch(e){ /* ignora erros de rede */ }
-          }, 30000); // 30s — só como segurança, não como motor principal
+            }catch(e){}
+          }, 30000);
         }
+      } else if(status === 'SUBSCRIBED'){
+        // Reconectou: recarrega msgs para garantir que nada ficou de fora durante a queda
+        loadBizMsgs(currentBizChat);
       }
     });
 
@@ -19623,6 +19659,42 @@ function startBizChatPoll(){
         if(pl?.new?.business_id === myBusiness.id) loadBizChats();
       }).subscribe();
   }
+}
+
+// Acrescenta uma única mensagem recebida via Realtime sem recarregar o histórico inteiro
+function _appendBizMsgFromRealtime(m){
+  const area=document.getElementById('biz-msgs-area');
+  if(!area) return;
+  // Evita duplicata: verifica se o msg já está no DOM (pode ter chegado pelo fallback também)
+  if(area.querySelector('[data-msg-id="'+m.id+'"]')) return;
+  const isMine = m.sender_id===CU.id;
+  const t=new Date(m.created_at);
+  const time=t.getHours().toString().padStart(2,'0')+':'+t.getMinutes().toString().padStart(2,'0');
+  const div=document.createElement('div');
+  div.className='mb '+(isMine?'sent':'recv');
+  div.dataset.msgId=m.id;
+  const isAudio=(m.media_type&&m.media_type.startsWith('audio'))||(m.content&&m.content.startsWith('🎙 [Áudio]'));
+  const isVideo=m.media_type&&m.media_type.startsWith('video');
+  const isImg=m.media_type&&m.media_type.startsWith('image');
+  let audioSrc=m.media_url||null;
+  if(!audioSrc&&m.content&&m.content.startsWith('🎙 [Áudio]')) audioSrc=m.content.replace('🎙 [Áudio] ','').trim();
+  let mediaHtml='';
+  if(isAudio&&audioSrc) mediaHtml=renderAudioBubble(audioSrc);
+  else if(isVideo&&m.media_url) mediaHtml='<div class="mb-media"><video src="'+m.media_url+'" controls playsinline style="width:100%;max-height:200px;border-radius:8px;"></video></div>';
+  else if(isImg&&m.media_url) mediaHtml='<div class="mb-media"><img src="'+m.media_url+'" style="width:100%;border-radius:8px;" class="img-safe"></div>';
+  if(m.msg_type==='deal_proposal'||(m.content&&m.content.includes('[DEAL_PROPOSAL:'))){
+    // Para propostas via Realtime, faz full reload para garantir os botões corretos
+    loadBizMsgs(currentBizChat); return;
+  } else if(m.msg_type==='deal_closed'||(m.content&&m.content.includes('[DEAL_CLOSED:'))){
+    loadBizMsgs(currentBizChat); return;
+  } else if(m.msg_type==='deal_rejected'||(m.content&&m.content.includes('[DEAL_REJECTED:'))){
+    loadBizMsgs(currentBizChat); return;
+  } else {
+    div.innerHTML=`<div class="mb-bubble">${mediaHtml||linkify(m.content)}</div><div class="mb-time">${time}</div>`;
+  }
+  const wasAtBottom=area.scrollHeight-area.scrollTop-area.clientHeight<80;
+  area.appendChild(div);
+  if(wasAtBottom) area.scrollTop=area.scrollHeight;
 }
 
 function stopBizChatPoll(){
