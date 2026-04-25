@@ -19600,64 +19600,72 @@ function startBizChatPoll(){
 
   _bizLastMsgTs = new Date().toISOString();
 
-  // ✅ REALTIME — ouve TODAS as mensagens novas do chat (sender e receiver)
-  // Usa append incremental: não recarrega tudo, só acrescenta a bolha nova.
-  _bizRealtimeCh = db.channel('biz-rt-'+currentBizChat)
-    .on('postgres_changes',{
-      event:'INSERT',
-      schema:'public',
-      table:'business_messages',
-      filter:'chat_id=eq.'+currentBizChat
-    },(pl)=>{
-      if(!pl?.new) return;
-      const msg = pl.new;
-      _bizLastMsgTs = msg.created_at || new Date().toISOString();
-
-      if(msg.sender_id === CU.id){
-        // Mensagem própria confirmada pelo banco: remove o flag otimista se ainda existir
-        document.querySelector('.mb-optimistic')?.classList.remove('mb-optimistic');
-      } else {
-        // Mensagem da outra parte: append sem recarregar tudo
-        _appendBizMsgFromRealtime(msg);
-        _markBizChatRead(currentBizChat);
-        loadBizChats();
-      }
-    })
-    .subscribe((status)=>{
-      if(status === 'CHANNEL_ERROR' || status === 'TIMED_OUT'){
-        // Fallback polling 30s só se Realtime falhar
-        console.warn('[biz-realtime] canal com problema, ativando fallback polling 30s');
-        if(!_bizPollInterval){
-          _bizPollInterval = setInterval(async()=>{
-            if(!currentBizChat||!CU) return;
-            try{
-              const {data} = await db.from('business_messages')
-                .select('id,created_at,sender_id,content,media_url,media_type,msg_type')
-                .eq('chat_id', currentBizChat)
-                .gt('created_at', _bizLastMsgTs)
-                .order('created_at',{ascending:true});
-              if(data?.length){
-                _bizLastMsgTs = data[data.length-1].created_at;
-                data.forEach(m=>{ if(m.sender_id!==CU.id) _appendBizMsgFromRealtime(m); });
-                _markBizChatRead(currentBizChat);
-                loadBizChats();
-              }
-            }catch(e){}
-          }, 30000);
+  // ══════════════════════════════════════════════════════════════
+  // MOTOR PRINCIPAL: Polling a cada 3s — simples, confiável,
+  // funciona independente de RLS ou configuração do Supabase.
+  // Só busca mensagens NOVAS (gt created_at) — custo mínimo.
+  // ══════════════════════════════════════════════════════════════
+  _bizPollInterval = setInterval(async()=>{
+    if(!currentBizChat||!CU) return;
+    try{
+      const {data} = await db.from('business_messages')
+        .select('id,created_at,sender_id,content,media_url,media_type,msg_type')
+        .eq('chat_id', currentBizChat)
+        .gt('created_at', _bizLastMsgTs)
+        .order('created_at',{ascending:true});
+      if(!data?.length) return;
+      _bizLastMsgTs = data[data.length-1].created_at;
+      data.forEach(m=>{
+        if(m.sender_id === CU.id){
+          // Própria mensagem confirmada: remove flag otimista
+          document.querySelector('.mb-optimistic')?.classList.remove('mb-optimistic');
+        } else {
+          _appendBizMsgFromRealtime(m);
+          loadBizChats();
         }
-      } else if(status === 'SUBSCRIBED'){
-        // Reconectou: recarrega msgs para garantir que nada ficou de fora durante a queda
-        loadBizMsgs(currentBizChat);
-      }
-    });
+      });
+      _markBizChatRead(currentBizChat);
+    }catch(e){ /* ignora erros de rede */ }
+  }, 3000);
+
+  // ══════════════════════════════════════════════════════════════
+  // BÔNUS: Realtime SEM filtro — dispara instantaneamente quando
+  // funcionar. Verifica o chat_id manualmente no callback.
+  // Não depende de RLS, funciona em qualquer configuração.
+  // ══════════════════════════════════════════════════════════════
+  try{
+    _bizRealtimeCh = db.channel('biz-rt-'+currentBizChat+'-'+Date.now())
+      .on('postgres_changes',{
+        event:'INSERT',
+        schema:'public',
+        table:'business_messages'
+      },(pl)=>{
+        if(!pl?.new) return;
+        const msg = pl.new;
+        // Filtra manualmente pelo chat correto
+        if(msg.chat_id !== currentBizChat) return;
+        // Se chegou pelo Realtime antes do poll, processa imediatamente
+        if(msg.created_at <= _bizLastMsgTs) return; // poll já pegou
+        _bizLastMsgTs = msg.created_at;
+        if(msg.sender_id === CU.id){
+          document.querySelector('.mb-optimistic')?.classList.remove('mb-optimistic');
+        } else {
+          _appendBizMsgFromRealtime(msg);
+          _markBizChatRead(currentBizChat);
+          loadBizChats();
+        }
+      })
+      .subscribe();
+  }catch(e){ console.warn('[biz-realtime] não disponível, usando só polling:', e.message); }
 
   // Canal da sidebar (novos chats chegando para o dono do negócio)
   if(!_bizListRealtimeCh && myBusiness){
-    _bizListRealtimeCh = db.channel('biz-list-'+myBusiness.id)
-      .on('postgres_changes',{event:'*',schema:'public',table:'business_chats',
-        filter:'business_id=eq.'+myBusiness.id},(pl)=>{
-        if(pl?.new?.business_id === myBusiness.id) loadBizChats();
-      }).subscribe();
+    try{
+      _bizListRealtimeCh = db.channel('biz-list-'+myBusiness.id+'-'+Date.now())
+        .on('postgres_changes',{event:'*',schema:'public',table:'business_chats'},(pl)=>{
+          if(pl?.new?.business_id === myBusiness.id) loadBizChats();
+        }).subscribe();
+    }catch(e){}
   }
 }
 
