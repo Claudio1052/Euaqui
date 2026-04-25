@@ -14401,13 +14401,14 @@ function setupRealtime(){
       _updateMsgTicksLive(pl.new);
     }).subscribe();
 
-  // Polling fallback every 60s — Realtime já cobre msgs e notifs em tempo real
+  // ✅ Fallback polling a cada 5min — o Realtime acima cobre msgs e notifs em tempo real.
+  // Este intervalo só existe como rede de segurança para casos de reconexão silenciosa.
   clearInterval(_msgPollInterval);
-  _msgPollInterval = setInterval(()=>{ pollNewMessages(); loadUnreadMsgCount(); loadNotifCount(); pollTickUpdates(); }, 120000); // 120s (era 60s) — economiza PostgREST egress
+  _msgPollInterval = setInterval(()=>{ loadUnreadMsgCount(); loadNotifCount(); pollTickUpdates(); }, 300000); // 5min
 
-  // ✅ Atualiza o rail do OlhaAqui a cada 3 minutos (stories expiram em 24h, não precisa ser mais frequente)
+  // ✅ Rail do OlhaAqui a cada 5 minutos (stories expiram em 24h — não precisa ser mais frequente)
   clearInterval(window._oaRailInterval);
-  window._oaRailInterval = setInterval(()=>{ if(typeof oaLoadRail==='function') oaLoadRail(); }, 180000);
+  window._oaRailInterval = setInterval(()=>{ if(typeof oaLoadRail==='function') oaLoadRail(); }, 300000);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -19576,44 +19577,49 @@ function startBizChatPoll(){
   // Captura o timestamp atual como referência — só msgs DEPOIS disso são "novas"
   _bizLastMsgTs = new Date().toISOString();
 
-  // 1) Polling a cada 2s — busca mensagens mais novas que o último timestamp visto
-  _bizPollInterval = setInterval(async()=>{
-    if(!currentBizChat||!CU) return;
-    try{
-      const {data} = await db.from('business_messages')
-        .select('id,created_at,sender_id')
-        .eq('chat_id', currentBizChat)
-        .gt('created_at', _bizLastMsgTs)
-        .order('created_at',{ascending:false})
-        .limit(1);
-      if(data && data.length > 0){
-        _bizLastMsgTs = data[0].created_at;
-        await loadBizMsgs(currentBizChat);
-        // Marca como lido imediatamente (chat está aberto)
-        _markBizChatRead(currentBizChat);
-        // Atualiza sidebar só se a mensagem não é minha
-        if(data[0].sender_id !== CU.id) loadBizChats();
-      }
-    }catch(e){ /* ignora erros de rede */ }
-  }, 2000);
-
-  // 2) Realtime como bônus (quando funcionar, é instantâneo)
-  _bizRealtimeCh = db.channel('biz-rt-'+currentBizChat+'-'+Date.now())
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'business_messages'},(pl)=>{
+  // ✅ REALTIME FIRST: Supabase Realtime avisa o frontend instantaneamente.
+  // Zero requisições ao banco quando o chat está ocioso.
+  _bizRealtimeCh = db.channel('biz-rt-'+currentBizChat)
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'business_messages',
+      filter:'chat_id=eq.'+currentBizChat},(pl)=>{
       if(!pl?.new) return;
-      if(pl.new.chat_id !== currentBizChat) return;
       if(pl.new.sender_id === CU.id) return; // própria msg já foi inserida
       _bizLastMsgTs = pl.new.created_at || new Date().toISOString();
       loadBizMsgs(currentBizChat);
       _markBizChatRead(currentBizChat);
       loadBizChats();
     })
-    .subscribe();
+    .subscribe((status)=>{
+      // ✅ FALLBACK: só ativa polling se o canal Realtime falhar ou demorar a conectar
+      if(status === 'CHANNEL_ERROR' || status === 'TIMED_OUT'){
+        console.warn('[biz-realtime] canal com problema, ativando fallback polling 30s');
+        if(!_bizPollInterval){
+          _bizPollInterval = setInterval(async()=>{
+            if(!currentBizChat||!CU) return;
+            try{
+              const {data} = await db.from('business_messages')
+                .select('id,created_at,sender_id')
+                .eq('chat_id', currentBizChat)
+                .gt('created_at', _bizLastMsgTs)
+                .order('created_at',{ascending:false})
+                .limit(1);
+              if(data && data.length > 0){
+                _bizLastMsgTs = data[0].created_at;
+                await loadBizMsgs(currentBizChat);
+                _markBizChatRead(currentBizChat);
+                if(data[0].sender_id !== CU.id) loadBizChats();
+              }
+            }catch(e){ /* ignora erros de rede */ }
+          }, 30000); // 30s — só como segurança, não como motor principal
+        }
+      }
+    });
 
-  // 3) Canal da sidebar (novos chats chegando para o dono do negocio)
+  // Canal da sidebar (novos chats chegando para o dono do negócio)
   if(!_bizListRealtimeCh && myBusiness){
-    _bizListRealtimeCh = db.channel('biz-list-'+myBusiness.id+'-'+Date.now())
-      .on('postgres_changes',{event:'*',schema:'public',table:'business_chats'},(pl)=>{
+    _bizListRealtimeCh = db.channel('biz-list-'+myBusiness.id)
+      .on('postgres_changes',{event:'*',schema:'public',table:'business_chats',
+        filter:'business_id=eq.'+myBusiness.id},(pl)=>{
         if(pl?.new?.business_id === myBusiness.id) loadBizChats();
       }).subscribe();
   }
@@ -27287,7 +27293,7 @@ async function checkCanCreateComm(){
 const OA_IMAGE_DURATION_MS = 6000;   // Imagem: 6s na tela
 const OA_VIDEO_MAX_MS      = 30000;  // Vídeo: máximo 30s
 const OA_TTL_HOURS         = 24;     // Expiração: 24h
-const OA_POLL_MS           = 60000;  // Recarregar rail a cada 60s
+const OA_POLL_MS           = 600000; // ✅ Fallback: recarregar rail a cada 10min (Realtime é o motor principal)
 
 // =========================================================================
 // ESTADO
@@ -28851,7 +28857,23 @@ function oaBoot(){
   // Só tenta carregar se o rail existe no DOM (pode estar em outra aba/página)
   if(!document.getElementById('oa-rail')) return;
   oaLoadRail();
-  // Auto-refresh leve
+
+  // ✅ REALTIME: ouve novos stories inseridos — recarrega rail instantaneamente
+  if(!window._oaRealtimeCh && window.db){
+    window._oaRealtimeCh = window.db.channel('oa-stories-rt')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'oa_posts'},(pl)=>{
+        if(!pl?.new) return;
+        if(!document.getElementById('oa-rail') || oaViewer.open) return;
+        oaLoadRail();
+      })
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'oa_posts'},(pl)=>{
+        if(!document.getElementById('oa-rail') || oaViewer.open) return;
+        oaLoadRail(); // atualiza quando story expira/é removido
+      })
+      .subscribe();
+  }
+
+  // ✅ Fallback polling a cada 10min — só para garantir expiração de stories (24h TTL)
   if(!window._oaPollTimer){
     window._oaPollTimer = setInterval(()=>{
       if(document.getElementById('oa-rail') && !oaViewer.open){
@@ -32194,14 +32216,17 @@ window.oaNavigateFromHeader = function(){
     };
   }
 
-  // Fallback contínuo: tenta a cada 2s enquanto o perfil estiver visível
-  setInterval(()=>{
-    const page = document.getElementById('page-profile');
-    if(page && page.classList.contains('active')){
-      _startObs();
-      if(!page.querySelector('#lp-open-btn')) injectLayoutButton();
-    }
-  }, 2000);
+  // ✅ MutationObserver: detecta quando a página de perfil fica ativa
+  // sem nenhum setInterval — zero custo quando o perfil não está visível.
+  const _profilePage = document.getElementById('page-profile');
+  if(_profilePage){
+    new MutationObserver(()=>{
+      if(_profilePage.classList.contains('active')){
+        _startObs();
+        if(!_profilePage.querySelector('#lp-open-btn')) injectLayoutButton();
+      }
+    }).observe(_profilePage, { attributes: true, attributeFilter: ['class'] });
+  }
 
   // Tentativa imediata após o script carregar (caso o perfil já esteja aberto)
   setTimeout(()=>{ try{ _startObs(); injectLayoutButton(); }catch(_){} }, 500);
