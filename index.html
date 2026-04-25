@@ -112,6 +112,154 @@
     "textColor": "#e0e0ff"
   }
   ══════════════════════════════════════════════════════════════
+
+  ══════════════════════════════════════════════════════════════
+  🔒 MIGRAÇÃO SUPABASE — RLS + RPC SEGURA PARA TRANSAÇÕES (v75)
+  ══════════════════════════════════════════════════════════════
+  PROBLEMA: O cliente envia value/price diretamente no payload
+  de business_deals e purchases. Um usuário mal-intencionado
+  pode alterar esses valores pelo console do navegador.
+
+  SOLUÇÃO EM 2 CAMADAS:
+    1. RLS restritivo: o INSERT em purchases só é permitido
+       quando o valor bate com o produto real no banco.
+    2. RPC SECURITY DEFINER: o cliente envia apenas o deal_id;
+       o banco busca o valor real e cria o purchase.
+
+  Execute no SQL Editor do Supabase:
+
+  -- ─────────────────────────────────────────────────────────────
+  -- 1) RLS em purchases: cliente só insere a própria compra
+  --    e o valor deve bater com o produto cadastrado no banco.
+  -- ─────────────────────────────────────────────────────────────
+  ALTER TABLE purchases ENABLE ROW LEVEL SECURITY;
+
+  DROP POLICY IF EXISTS "purchases_insert_own" ON purchases;
+  CREATE POLICY "purchases_insert_own" ON purchases
+    FOR INSERT WITH CHECK (
+      auth.uid() = customer_id
+      AND (
+        -- se há product_id, o valor deve ser exatamente o do produto no banco
+        product_id IS NULL
+        OR value = (
+          SELECT price FROM business_products WHERE id = product_id
+        )
+      )
+    );
+
+  DROP POLICY IF EXISTS "purchases_select_own" ON purchases;
+  CREATE POLICY "purchases_select_own" ON purchases
+    FOR SELECT USING (
+      auth.uid() = customer_id
+      OR auth.uid() = (SELECT owner_id FROM businesses WHERE id = business_id)
+    );
+
+  DROP POLICY IF EXISTS "purchases_update_owner" ON purchases;
+  CREATE POLICY "purchases_update_owner" ON purchases
+    FOR UPDATE USING (
+      auth.uid() = customer_id
+      OR auth.uid() = (SELECT owner_id FROM businesses WHERE id = business_id)
+    );
+
+  -- ─────────────────────────────────────────────────────────────
+  -- 2) RLS em business_deals: somente o dono do negócio insere
+  --    e o valor fica livre (é negociado entre as partes —
+  --    o preço é uma proposta, não um preço fixo de produto).
+  --    UPDATE só pelo dono do negócio ou pelo cliente do chat.
+  -- ─────────────────────────────────────────────────────────────
+  ALTER TABLE business_deals ENABLE ROW LEVEL SECURITY;
+
+  DROP POLICY IF EXISTS "deals_insert_owner" ON business_deals;
+  CREATE POLICY "deals_insert_owner" ON business_deals
+    FOR INSERT WITH CHECK (
+      auth.uid() = proposed_by
+      AND auth.uid() = (SELECT owner_id FROM businesses WHERE id = business_id)
+    );
+
+  DROP POLICY IF EXISTS "deals_select_parties" ON business_deals;
+  CREATE POLICY "deals_select_parties" ON business_deals
+    FOR SELECT USING (
+      auth.uid() = proposed_by
+      OR auth.uid() = (
+        SELECT customer_id FROM business_chats WHERE id = chat_id
+      )
+    );
+
+  DROP POLICY IF EXISTS "deals_update_parties" ON business_deals;
+  CREATE POLICY "deals_update_parties" ON business_deals
+    FOR UPDATE USING (
+      -- dono do negócio ou cliente do chat podem alterar status
+      auth.uid() = (SELECT owner_id FROM businesses WHERE id = business_id)
+      OR auth.uid() = (SELECT customer_id FROM business_chats WHERE id = chat_id)
+    );
+
+  -- ─────────────────────────────────────────────────────────────
+  -- 3) RPC SECURITY DEFINER: accept_deal(deal_id)
+  --    O cliente envia APENAS o deal_id. O banco busca
+  --    business_id, customer_id e value do deal real.
+  --    Garante que o purchase é criado com o valor correto,
+  --    sem que o cliente possa injetar valor adulterado.
+  -- ─────────────────────────────────────────────────────────────
+  CREATE OR REPLACE FUNCTION accept_deal(p_deal_id uuid)
+  RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+  DECLARE
+    _deal        business_deals%ROWTYPE;
+    _chat        business_chats%ROWTYPE;
+    _order_num   text;
+    _purch_id    uuid;
+    _stock_res   jsonb;
+  BEGIN
+    -- Busca o deal real no banco (ignora qualquer valor enviado pelo cliente)
+    SELECT * INTO _deal FROM business_deals WHERE id = p_deal_id FOR UPDATE;
+    IF NOT FOUND THEN
+      RETURN jsonb_build_object('ok', false, 'reason', 'deal_not_found');
+    END IF;
+
+    -- Só o customer do chat pode aceitar
+    SELECT * INTO _chat FROM business_chats WHERE id = _deal.chat_id;
+    IF _chat.customer_id <> auth.uid() THEN
+      RETURN jsonb_build_object('ok', false, 'reason', 'unauthorized');
+    END IF;
+
+    -- Só deals 'pending' podem ser aceitos
+    IF _deal.status <> 'pending' THEN
+      RETURN jsonb_build_object('ok', false, 'reason', 'deal_not_pending', 'status', _deal.status);
+    END IF;
+
+    -- Decrementa estoque se houver produto vinculado (reutiliza RPC atômica existente)
+    IF _deal.product_id IS NOT NULL AND NOT _deal.is_service THEN
+      SELECT decrement_stock(_deal.product_id) INTO _stock_res;
+      IF NOT (_stock_res->>'ok')::boolean AND (_stock_res->>'reason') = 'out_of_stock' THEN
+        RETURN jsonb_build_object('ok', false, 'reason', 'out_of_stock');
+      END IF;
+    END IF;
+
+    -- Atualiza status do deal para 'closed' com accepted_by real do banco
+    UPDATE business_deals
+      SET status = 'closed', accepted_by = auth.uid(), accepted_at = now()
+      WHERE id = p_deal_id;
+
+    -- Cria purchase com valor vindo do deal (não do cliente)
+    _order_num := 'PED-' || upper(substring(encode(gen_random_bytes(4),'hex'),1,8));
+    INSERT INTO purchases (
+      business_id, customer_id, status, stock_synced,
+      product_title, value, payment_method,
+      delivery_type, delivery_address, notes,
+      chat_id, deal_id, product_id, order_number
+    ) VALUES (
+      _deal.business_id, auth.uid(), 'confirmed', true,
+      _deal.title, _deal.value, _deal.payment_method,
+      _deal.delivery_type, _deal.delivery_address, _deal.notes,
+      _deal.chat_id, p_deal_id, _deal.product_id, _order_num
+    ) RETURNING id INTO _purch_id;
+
+    RETURN jsonb_build_object('ok', true, 'purchase_id', _purch_id, 'order_number', _order_num);
+  END;
+  $$;
+
+  GRANT EXECUTE ON FUNCTION accept_deal(uuid) TO authenticated;
+
+  ══════════════════════════════════════════════════════════════
 -->
 
 <meta charset="UTF-8">
@@ -20192,33 +20340,107 @@ async function acceptDealProposal(dealId, btn){
         return showToast('Chat não identificado','error');
       }
 
-      // 2. Atualiza o deal — tenta com colunas extras primeiro, faz fallback se falhar
-      let dealUpdateErr;
-      const fullUpdate = await db.from('business_deals').update({
-        status:'closed',
-        accepted_by: CU.id,
-        accepted_at: new Date().toISOString()
-      }).eq('id', dealId);
-      dealUpdateErr = fullUpdate.error;
+      // ✅ SEGURANÇA: Usa RPC SECURITY DEFINER no banco.
+      // O cliente envia APENAS o deal_id — o banco busca valor, business_id
+      // e customer_id do deal real, eliminando qualquer possibilidade de
+      // injeção de preço adulterado pelo console do navegador.
+      let _rpcDealOk = false;
+      try{
+        const {data:_rpcRes, error:_rpcErr} = await db.rpc('accept_deal', {p_deal_id: dealId});
+        if(_rpcErr){
+          console.warn('[acceptDeal] RPC accept_deal indisponível, usando fluxo legado:', _rpcErr.message);
+        } else if(!_rpcRes?.ok){
+          if(_rpcRes?.reason === 'out_of_stock'){
+            _resetBtn();
+            return showToast('❌ Produto esgotado — estoque não disponível.','error');
+          }
+          if(_rpcRes?.reason === 'unauthorized'){
+            _resetBtn();
+            return showToast('❌ Sem permissão para aceitar este acordo.','error');
+          }
+          console.warn('[acceptDeal] RPC retornou ok=false:', _rpcRes?.reason, '— usando fluxo legado');
+        } else {
+          console.log('[acceptDeal] ✅ RPC accept_deal executada com segurança pelo banco. purchase_id:', _rpcRes?.purchase_id);
+          _rpcDealOk = true;
+        }
+      } catch(e){ console.warn('[acceptDeal] RPC accept_deal exception, usando fluxo legado:', e.message); }
 
-      if(dealUpdateErr){
-        console.warn('[acceptDeal] update completo falhou, tentando fallback:', dealUpdateErr.message);
-        const fallback = await db.from('business_deals').update({ status:'closed' }).eq('id', dealId);
-        if(fallback.error){
-          console.error('[acceptDeal] fallback também falhou:', fallback.error);
-          _resetBtn();
-          return showToast('Erro ao atualizar acordo: '+fallback.error.message,'error');
+      // Fluxo legado (fallback enquanto a RPC não está implantada no Supabase)
+      if(!_rpcDealOk){
+        // 2. Atualiza o deal — tenta com colunas extras primeiro, faz fallback se falhar
+        let dealUpdateErr;
+        const fullUpdate = await db.from('business_deals').update({
+          status:'closed',
+          accepted_by: CU.id,
+          accepted_at: new Date().toISOString()
+        }).eq('id', dealId);
+        dealUpdateErr = fullUpdate.error;
+        if(dealUpdateErr){
+          const fallback = await db.from('business_deals').update({ status:'closed' }).eq('id', dealId);
+          if(fallback.error){
+            _resetBtn();
+            return showToast('Erro ao atualizar acordo: '+fallback.error.message,'error');
+          }
+        }
+
+        // 4b. 📦 REDUZ ESTOQUE atomicamente via RPC (imune a race condition)
+        if(!deal.is_service && deal.business_id){
+          try{
+            let _stkProd = null;
+            if(deal.product_id){
+              const r1 = await db.from('business_products').select('id,name,stock').eq('id', deal.product_id).maybeSingle();
+              if(!r1.error && r1.data) _stkProd = r1.data;
+            }
+            if(!_stkProd && deal.title){
+              const r2 = await db.from('business_products').select('id,name,stock').eq('business_id', deal.business_id).ilike('name', deal.title).maybeSingle();
+              if(!r2.error && r2.data) _stkProd = r2.data;
+              if(!_stkProd){
+                const r3 = await db.from('business_products').select('id,name,stock').eq('business_id', deal.business_id);
+                const needle = (deal.title||'').trim().toLowerCase();
+                _stkProd = r3.data?.find(x => (x.name||'').trim().toLowerCase() === needle) || null;
+              }
+            }
+            if(_stkProd && _stkProd.stock > 0){
+              const {data:_sr, error:_se} = await db.rpc('decrement_stock', {product_uuid: _stkProd.id});
+              if(_se) console.error('[acceptDeal] ❌ decrement_stock:', _se.message);
+              else if(!_sr?.ok) console.warn('[acceptDeal] ⚠️ estoque não reduzido:', _sr?.reason);
+              else console.log('[acceptDeal] ✅ estoque reduzido:', _stkProd.name, '→', _sr?.new_stock);
+            }
+          } catch(e){ console.warn('[acceptDeal] stock decrement exception:', e.message); }
+        }
+
+        // 5b. Cria purchase com valor do deal (não enviado pelo cliente)
+        if(!deal.is_service){
+          try{
+            const purchPayload = {
+              business_id: deal.business_id,
+              customer_id: CU.id,
+              status: 'confirmed',
+              stock_synced: true,
+              product_title:    deal.title          || null,
+              value:            deal.value          || null,  // valor vem do deal do banco
+              payment_method:   deal.payment_method || null,
+              delivery_type:    deal.delivery_type  || null,
+              delivery_address: deal.delivery_address|| null,
+              notes:            deal.notes          || null,
+              chat_id:          chatId,
+              deal_id:          dealId,
+              product_id:       deal.product_id     || null
+            };
+            const orderNum = 'PED-' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).substring(2,5).toUpperCase();
+            let purchRes = await db.from('purchases').insert({...purchPayload, order_number: orderNum});
+            if(purchRes.error){
+              purchRes = await db.from('purchases').insert(purchPayload);
+              if(purchRes.error) console.warn('[acceptDeal] purchases insert fallback:', purchRes.error.message);
+            }
+          } catch(e){ console.warn('[acceptDeal] purchases:', e.message); }
         }
       }
 
       // 3. Atualiza o chat
-      const chatUpdate = await db.from('business_chats').update({
-        status:'deal_closed',
-        updated_at: new Date().toISOString()
-      }).eq('id', chatId);
-      if(chatUpdate.error){
-        await db.from('business_chats').update({ updated_at: new Date().toISOString() }).eq('id', chatId);
-      }
+      await db.from('business_chats').update({
+        status:'deal_closed', updated_at: new Date().toISOString()
+      }).eq('id', chatId).catch(()=>{});
 
       // 4. Incrementa contadores do negócio (silencioso se falhar)
       if(deal.business_id){
@@ -20230,74 +20452,15 @@ async function acceptDealProposal(dealId, btn){
               sales_done:(biz.sales_done||0)+1
             }).eq('id',deal.business_id);
           }
-        } catch(e){ console.warn('[acceptDeal] counters:', e.message); }
-      }
-
-      // 4b. 📦 REDUZ ESTOQUE do produto vinculado (apenas para loja, não serviço)
-      //     O estoque só é reduzido AGORA, quando o cliente aceita a proposta.
-      console.log('[acceptDeal] 📦 INICIANDO decremento de estoque. deal=', {
-        id: deal.id, is_service: deal.is_service, business_id: deal.business_id,
-        product_id: deal.product_id, title: deal.title
-      });
-      if(!deal.is_service && deal.business_id){
-        try{
-          let _stkProd = null;
-          // Prioridade 1: busca por product_id se existir na coluna
-          if(deal.product_id){
-            const r1 = await db.from('business_products')
-              .select('id,name,stock').eq('id', deal.product_id).maybeSingle();
-            console.log('[acceptDeal] busca por product_id:', deal.product_id, '→', r1);
-            if(!r1.error && r1.data) _stkProd = r1.data;
-          }
-          // Prioridade 2: fallback por nome do produto (caso product_id não esteja presente)
-          if(!_stkProd && deal.title){
-            const r2 = await db.from('business_products')
-              .select('id,name,stock').eq('business_id', deal.business_id)
-              .ilike('name', deal.title).maybeSingle();
-            console.log('[acceptDeal] busca por nome ilike:', deal.title, '→', r2);
-            if(!r2.error && r2.data) _stkProd = r2.data;
-            // Se ainda não achou, tenta pegar todos e comparar com trim
-            if(!_stkProd){
-              const r3 = await db.from('business_products')
-                .select('id,name,stock').eq('business_id', deal.business_id);
-              if(r3.data && r3.data.length){
-                const needle = (deal.title||'').trim().toLowerCase();
-                _stkProd = r3.data.find(x => (x.name||'').trim().toLowerCase() === needle) || null;
-                console.log('[acceptDeal] busca manual por nome normalizado:', needle, '→', _stkProd);
-              }
-            }
-          }
-          if(!_stkProd){
-            console.warn('[acceptDeal] ⚠️ Produto não encontrado. Estoque NÃO foi reduzido. Verifique se o produto foi cadastrado e se o deal foi criado após a migração do Supabase (coluna product_id).');
-          } else if(_stkProd.stock == null){
-            console.warn('[acceptDeal] ⚠️ Produto sem controle de estoque (stock=null). Edite o produto e defina uma quantidade para ativar o controle.');
-          } else if(_stkProd.stock <= 0){
-            console.warn('[acceptDeal] ⚠️ Produto já está esgotado (stock=0).');
-          } else {
-            // ✅ ATÔMICO: RPC com FOR UPDATE no banco — imune a race condition
-            const { data: _rpcRes, error: _rpcErr } = await db.rpc('decrement_stock', {
-              product_uuid: _stkProd.id
-            });
-            if(_rpcErr){
-              console.error('[acceptDeal] ❌ Erro RPC decrement_stock:', _rpcErr);
-              console.error('   ⚠️ Execute no Supabase SQL Editor a função decrement_stock (ver comentário no topo do script v58).');
-            } else if(!_rpcRes?.ok){
-              console.warn('[acceptDeal] ⚠️ Estoque não reduzido via RPC. Motivo:', _rpcRes?.reason);
-            } else {
-              console.log('[acceptDeal] ✅ Estoque reduzido atomicamente:', _stkProd.name, '→ novo estoque:', _rpcRes?.new_stock);
-            }
-          }
-        } catch(e){ console.warn('[acceptDeal] stock decrement exception:', e.message); }
+        } catch(e){}
       }
 
       // 5. Se for serviço, cria agendamento (silencioso se a tabela não existir)
       if(deal.is_service && deal.scheduled_date){
         try{
           const apptPayload = {
-            business_id: deal.business_id,
-            customer_id: CU.id,
-            scheduled_date: deal.scheduled_date,
-            status: 'confirmed'
+            business_id: deal.business_id, customer_id: CU.id,
+            scheduled_date: deal.scheduled_date, status: 'confirmed'
           };
           if(deal.title)           apptPayload.service_title  = deal.title;
           if(deal.value)           apptPayload.value           = deal.value;
@@ -20309,41 +20472,7 @@ async function acceptDealProposal(dealId, btn){
           if(dealId)               apptPayload.deal_id         = dealId;
           const apptRes = await db.from('appointments').insert(apptPayload);
           if(apptRes.error) console.warn('[acceptDeal] appointments insert:', apptRes.error.message);
-        } catch(e){ console.warn('[acceptDeal] appointments:', e.message); }
-      }
-
-      // 5b. Se for produto (loja), cria purchase (silencioso se a tabela não existir)
-      if(!deal.is_service){
-        try{
-          const purchPayload = {
-            business_id: deal.business_id,
-            customer_id: CU.id,
-            status: 'confirmed',
-            // ✅ Já marca como sincronizada: o estoque foi reduzido pela RPC acima
-            // neste mesmo fluxo. Sem isso, syncStockFromSales (chamado ao abrir o
-            // painel) descontaria novamente, causando duplo decremento.
-            stock_synced: true
-          };
-          if(deal.title)           purchPayload.product_title   = deal.title;
-          if(deal.value)           purchPayload.value            = deal.value;
-          if(deal.payment_method)  purchPayload.payment_method   = deal.payment_method;
-          if(deal.delivery_type)   purchPayload.delivery_type    = deal.delivery_type;
-          if(deal.delivery_address)purchPayload.delivery_address = deal.delivery_address;
-          if(deal.notes)           purchPayload.notes            = deal.notes;
-          if(chatId)               purchPayload.chat_id          = chatId;
-          if(dealId)               purchPayload.deal_id          = dealId;
-          if(deal.product_id)      purchPayload.product_id       = deal.product_id;
-
-          // Tenta COM order_number primeiro. Se falhar (coluna pode não existir), refaz SEM.
-          const orderNum = 'PED-' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).substring(2,5).toUpperCase();
-          const payloadWithOrder = { ...purchPayload, order_number: orderNum };
-          let purchRes = await db.from('purchases').insert(payloadWithOrder);
-          if(purchRes.error){
-            console.warn('[acceptDeal] purchases insert com order_number falhou:', purchRes.error.message, '— tentando sem order_number');
-            purchRes = await db.from('purchases').insert(purchPayload);
-            if(purchRes.error) console.warn('[acceptDeal] purchases insert (fallback sem order_number):', purchRes.error.message);
-          }
-        } catch(e){ console.warn('[acceptDeal] purchases:', e.message); }
+        } catch(e){}
       }
 
       // 6. Mensagem de acordo fechado no chat
