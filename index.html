@@ -30463,6 +30463,27 @@ window.oaNavigateFromHeader = function(){
   'use strict';
 
   // ─────────────────────────────────────────────────────────────
+  // HELPERS — acessa CU e db que estão declarados como let/const
+  // no escopo do script principal (não em window por causa do let/const)
+  // ─────────────────────────────────────────────────────────────
+  function _cu(){
+    // Tenta várias formas de acessar o usuário atual
+    try{ if(typeof CU !== 'undefined' && CU) return CU; }catch(_){}
+    try{ if(window.CU) return window.CU; }catch(_){}
+    return null;
+  }
+  function _cp(){
+    try{ if(typeof CP !== 'undefined' && CP) return CP; }catch(_){}
+    try{ if(window.CP) return window.CP; }catch(_){}
+    return null;
+  }
+  function _db(){
+    try{ if(typeof db !== 'undefined' && db) return db; }catch(_){}
+    try{ if(window.db) return window.db; }catch(_){}
+    return null;
+  }
+
+  // ─────────────────────────────────────────────────────────────
   // PRESETS DE LAYOUT — temas prontos que o usuário pode escolher
   // ─────────────────────────────────────────────────────────────
   const LP_PRESETS = {
@@ -30712,8 +30733,9 @@ window.oaNavigateFromHeader = function(){
   // ─────────────────────────────────────────────────────────────
   async function fetchAndApplyLayout(userId){
     try{
-      if(!userId || !window.db) return;
-      const {data, error} = await window.db
+      const DB = _db();
+      if(!userId || !DB) return;
+      const {data, error} = await DB
         .from('profiles')
         .select('profile_layout')
         .eq('id', userId)
@@ -30752,15 +30774,19 @@ window.oaNavigateFromHeader = function(){
   let _lpState = null; // layout em edição
 
   window.openLayoutEditor = async function(){
-    if(!window.CU){
+    const currentUser = _cu();
+    if(!currentUser){
       if(typeof showToast==='function') showToast('Faça login para personalizar','warning');
       return;
     }
     // Buscar layout atual
     let current = null;
     try{
-      const {data} = await window.db.from('profiles').select('profile_layout').eq('id', CU.id).maybeSingle();
-      current = data && data.profile_layout ? data.profile_layout : null;
+      const DB = _db();
+      if(DB){
+        const {data} = await DB.from('profiles').select('profile_layout').eq('id', currentUser.id).maybeSingle();
+        current = data && data.profile_layout ? data.profile_layout : null;
+      }
     }catch(_){}
     _lpState = current ? _lpClone(current) : _lpClone(LP_PRESETS.default);
     if(!_lpState.preset) _lpState.preset = 'default';
@@ -30813,6 +30839,9 @@ window.oaNavigateFromHeader = function(){
       {id:'linear-gradient(135deg,#fc466b,#3f5efb)', label:'🎨 Vibrante'}
     ];
     const L = _lpMerged(_lpState);
+    const _CU_render = _cu(), _CP_render = _cp();
+    const previewName = (_CP_render && (_CP_render.full_name || _CP_render.username)) || (_CU_render && _CU_render.email) || 'Seu Nome';
+    const previewHandle = (_CP_render && _CP_render.username) || 'voce';
 
     return (
       '<div id="lp-editor-modal">'+
@@ -30828,8 +30857,8 @@ window.oaNavigateFromHeader = function(){
           '<div class="lp-preview-body">'+
             '<div class="lp-preview-av" id="lp-preview-av">👤</div>'+
             '<div class="lp-preview-info">'+
-              '<div class="lp-preview-name" id="lp-preview-name">'+((window.CU&&window.CP&&(CP.full_name||CP.username))||'Seu Nome')+'</div>'+
-              '<div class="lp-preview-handle" id="lp-preview-handle">@'+((window.CP&&CP.username)||'voce')+'</div>'+
+              '<div class="lp-preview-name" id="lp-preview-name">'+previewName+'</div>'+
+              '<div class="lp-preview-handle" id="lp-preview-handle">@'+previewHandle+'</div>'+
             '</div>'+
           '</div>'+
         '</div>'+
@@ -31091,15 +31120,17 @@ window.oaNavigateFromHeader = function(){
 
   // Salvar
   window._lpSave = async function(){
-    if(!window.CU || !window.db){
+    const currentUser = _cu();
+    const DB = _db();
+    if(!currentUser || !DB){
       if(typeof showToast==='function') showToast('Erro: sessão expirada','error');
       return;
     }
     const clean = _lpSanitize(_lpState);
     try{
-      const {error} = await window.db.from('profiles')
+      const {error} = await DB.from('profiles')
         .update({profile_layout: clean})
-        .eq('id', CU.id);
+        .eq('id', currentUser.id);
       if(error){
         if(String(error.message||'').toLowerCase().includes('profile_layout')){
           if(typeof showToast==='function') showToast('⚠ Execute a migração SQL no Supabase primeiro (veja o cabeçalho do arquivo)','error');
@@ -31112,7 +31143,7 @@ window.oaNavigateFromHeader = function(){
       document.getElementById('lp-editor-overlay')?.remove();
       // Recarregar o perfil para aplicar
       if(typeof window.loadProfilePage==='function'){
-        setTimeout(()=>window.loadProfilePage(CU.id), 200);
+        setTimeout(()=>window.loadProfilePage(currentUser.id), 200);
       }
     }catch(err){
       console.error('[LP] save:', err);
@@ -31124,12 +31155,15 @@ window.oaNavigateFromHeader = function(){
   window._lpReset = async function(){
     if(!confirm('Restaurar layout padrão? Suas personalizações serão apagadas.')) return;
     try{
-      await window.db.from('profiles').update({profile_layout: null}).eq('id', CU.id);
+      const currentUser = _cu();
+      const DB = _db();
+      if(!currentUser || !DB) return;
+      await DB.from('profiles').update({profile_layout: null}).eq('id', currentUser.id);
       if(typeof showToast==='function') showToast('Layout restaurado','success');
       document.getElementById('lp-editor-overlay')?.remove();
       clearProfileLayout();
       if(typeof window.loadProfilePage==='function'){
-        setTimeout(()=>window.loadProfilePage(CU.id), 200);
+        setTimeout(()=>window.loadProfilePage(currentUser.id), 200);
       }
     }catch(err){
       console.error('[LP] reset:', err);
@@ -31146,46 +31180,60 @@ window.oaNavigateFromHeader = function(){
     const coverBar = document.getElementById('profile-cover-bar');
     if(!coverBar) return false;
     const uid = coverBar.dataset.profileUid;
-    if(!uid || !window.CU || uid !== window.CU.id) return false; // só no perfil do próprio
+    const currentUser = _cu();
+    if(!uid || !currentUser || uid !== currentUser.id) return false; // só no perfil do próprio
     // Evita duplicar
     if(page.querySelector('#lp-open-btn')) return true;
 
-    // Estratégia 1: achar o botão "Editar Perfil" pelo texto e inserir ao lado
-    let editBtn = null;
-    const allBtns = coverBar.querySelectorAll('button.post-btn, button');
-    for(const b of allBtns){
-      const t = (b.textContent||'').trim();
-      if(t.includes('Editar Perfil') || t.startsWith('✏')){ editBtn = b; break; }
-    }
+    // Pega a div da CAPA (primeiro filho do coverBar — o banner em si)
+    const coverEl = coverBar.querySelector('div:first-child');
+    if(!coverEl) return false;
+
+    // Garante position:relative no cover para posicionar o botão flutuante
+    if(!coverEl.style.position) coverEl.style.position = 'relative';
 
     const lpBtn = document.createElement('button');
     lpBtn.id = 'lp-open-btn';
-    lpBtn.className = 'post-btn';
-    lpBtn.style.cssText = 'background:linear-gradient(135deg,#bf5fff,#00ffcc);color:#0a0a2a;border:none;font-size:11px;padding:7px 12px;font-weight:700;box-shadow:0 0 10px rgba(191,95,255,.4);';
-    lpBtn.textContent = '🎨 Layout';
-    lpBtn.onclick = ()=>window.openLayoutEditor();
-
-    if(editBtn && editBtn.parentNode){
-      // Inserir DEPOIS do botão Editar Perfil
-      if(editBtn.nextSibling) editBtn.parentNode.insertBefore(lpBtn, editBtn.nextSibling);
-      else editBtn.parentNode.appendChild(lpBtn);
-      return true;
-    }
-
-    // Estratégia 2: achar container flex de botões (div com display:flex e gap)
-    const divs = coverBar.querySelectorAll('div');
-    for(const d of divs){
-      const st = d.getAttribute('style')||'';
-      if(st.includes('display:flex') && st.includes('gap') && d.querySelector('button.post-btn')){
-        d.appendChild(lpBtn);
-        return true;
-      }
-    }
-
-    // Estratégia 3: fallback absoluto — criar botão flutuante no canto superior direito do perfil
-    lpBtn.style.cssText = 'position:absolute;top:10px;right:10px;z-index:10;background:linear-gradient(135deg,#bf5fff,#00ffcc);color:#0a0a2a;border:none;font-size:11px;padding:7px 12px;font-weight:700;border-radius:8px;cursor:pointer;box-shadow:0 2px 12px rgba(191,95,255,.5);';
-    coverBar.style.position = coverBar.style.position || 'relative';
-    coverBar.appendChild(lpBtn);
+    lpBtn.type = 'button';
+    lpBtn.title = 'Personalizar Layout do Perfil';
+    lpBtn.setAttribute('aria-label','Personalizar Layout');
+    lpBtn.style.cssText = [
+      'position:absolute',
+      'top:12px',
+      'right:12px',
+      'z-index:20',
+      'display:flex',
+      'align-items:center',
+      'justify-content:center',
+      'gap:6px',
+      'background:linear-gradient(135deg,rgba(191,95,255,.95),rgba(0,255,204,.95))',
+      'color:#0a0a2a',
+      'border:2px solid rgba(255,255,255,.4)',
+      'font-family:Silkscreen,monospace',
+      'font-size:10px',
+      'font-weight:700',
+      'letter-spacing:0.5px',
+      'padding:8px 12px',
+      'border-radius:20px',
+      'cursor:pointer',
+      'box-shadow:0 2px 14px rgba(191,95,255,.55), 0 0 20px rgba(0,255,204,.3)',
+      'backdrop-filter:blur(4px)',
+      'transition:transform .15s ease, box-shadow .15s ease'
+    ].join(';');
+    lpBtn.innerHTML = '<span style="font-size:14px;">🎨</span><span>PERSONALIZAR</span>';
+    lpBtn.onmouseenter = function(){
+      this.style.transform = 'scale(1.05)';
+      this.style.boxShadow = '0 4px 20px rgba(191,95,255,.75), 0 0 30px rgba(0,255,204,.5)';
+    };
+    lpBtn.onmouseleave = function(){
+      this.style.transform = '';
+      this.style.boxShadow = '0 2px 14px rgba(191,95,255,.55), 0 0 20px rgba(0,255,204,.3)';
+    };
+    lpBtn.onclick = function(e){
+      e.preventDefault(); e.stopPropagation();
+      if(typeof window.openLayoutEditor === 'function') window.openLayoutEditor();
+    };
+    coverEl.appendChild(lpBtn);
     return true;
   }
 
