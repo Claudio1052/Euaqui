@@ -5888,6 +5888,87 @@ body.day-mode .lp-chip{ background:rgba(0,0,0,.04); color:#1a1a2e; }
   box-shadow:0 0 16px #ff6bcb !important;
 }
 
+/* ══════════════════════════════════════════════════════════════
+   🌟 EFEITOS DE CENA — partículas animadas sobrepostas ao perfil
+   ══════════════════════════════════════════════════════════════ */
+.ea-lp-scene{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  overflow:hidden;
+  z-index:1;
+}
+.ea-lp-scene-particle{
+  position:absolute;
+  font-size:14px;
+  opacity:0;
+  animation: ea-lp-fall 8s linear infinite;
+  filter: drop-shadow(0 0 3px currentColor);
+  will-change: transform, opacity;
+}
+@keyframes ea-lp-fall{
+  0%{ transform:translateY(-20px) rotate(0deg); opacity:0; }
+  10%{ opacity:1; }
+  90%{ opacity:1; }
+  100%{ transform:translateY(220px) rotate(360deg); opacity:0; }
+}
+@keyframes ea-lp-float{
+  0%{ transform:translateY(0) translateX(0); opacity:0; }
+  10%{ opacity:.9; }
+  50%{ transform:translateY(-100px) translateX(15px); opacity:.7; }
+  90%{ opacity:.3; }
+  100%{ transform:translateY(-220px) translateX(-10px); opacity:0; }
+}
+.ea-lp-scene-snow .ea-lp-scene-particle{ color:#fff; }
+.ea-lp-scene-hearts .ea-lp-scene-particle{ color:#ff6ba8; animation-name:ea-lp-float; }
+.ea-lp-scene-stars .ea-lp-scene-particle{ color:#ffea00; }
+.ea-lp-scene-bubbles .ea-lp-scene-particle{ color:#a0e8ff; animation-name:ea-lp-float; }
+.ea-lp-scene-leaves .ea-lp-scene-particle{ color:#8cd867; }
+.ea-lp-scene-rain .ea-lp-scene-particle{ color:#8cc5ff; font-size:10px; animation-duration:1.2s; }
+.ea-lp-scene-confetti .ea-lp-scene-particle{ animation-duration:4s; }
+.ea-lp-scene-fire .ea-lp-scene-particle{ color:#ff6b1a; animation-name:ea-lp-float; animation-duration:3s; }
+.ea-lp-scene-petals .ea-lp-scene-particle{ color:#ff99cc; animation-duration:10s; }
+
+/* ══════════════════════════════════════════════════════════════
+   💾 ACESSIBILIDADE — respeita preferência de movimento reduzido
+   ══════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce){
+  .ea-lp-avframe-neon img, .ea-lp-avframe-neon .pbav, .ea-lp-avframe-neon .lp-preview-av,
+  .ea-lp-avframe-neonpulse img, .ea-lp-avframe-neonpulse .pbav, .ea-lp-avframe-neonpulse .lp-preview-av,
+  .ea-lp-avframe-fire img, .ea-lp-avframe-fire .pbav, .ea-lp-avframe-fire .lp-preview-av,
+  .ea-lp-avframe-flames img, .ea-lp-avframe-flames .pbav, .ea-lp-avframe-flames .lp-preview-av,
+  .ea-lp-avframe-thunder img, .ea-lp-avframe-thunder .pbav, .ea-lp-avframe-thunder .lp-preview-av,
+  .ea-lp-avframe-hearts img, .ea-lp-avframe-hearts .pbav, .ea-lp-avframe-hearts .lp-preview-av{
+    animation: none !important;
+  }
+  .ea-lp-avframe-flower::before,
+  .ea-lp-avframe-thunder::before,
+  .ea-lp-avframe-stars::before,
+  .ea-lp-avframe-stars::after,
+  .ea-lp-avframe-hearts::before,
+  .ea-lp-avframe-butterflies::before,
+  .ea-lp-avframe-leaves::before,
+  .ea-lp-avframe-flames::before,
+  .ea-lp-avframe-coins::before,
+  .ea-lp-avframe-rainbow::before,
+  .ea-lp-avframe-galaxy::before,
+  .ea-lp-avframe-galaxy::after,
+  .ea-lp-avframe-electric::before,
+  .ea-lp-avframe-electric::after,
+  .ea-lp-avframe-bubbles::before,
+  .ea-lp-avframe-halloween::before,
+  .ea-lp-avframe-xmas::before,
+  .ea-lp-avframe-crystal::before,
+  .ea-lp-avframe-waves::before,
+  .ea-lp-avframe-music::before,
+  .ea-lp-avframe-neonpulse::before,
+  .ea-lp-avframe-neonpulse::after{
+    animation-duration: 60s !important; /* muito lento, quase estático */
+  }
+  .ea-lp-scene-particle{ display:none !important; }
+  .lp-preview-card::before{ animation:none !important; }
+}
+
 </style>
 </head>
 <body>
@@ -30942,7 +31023,8 @@ window.oaNavigateFromHeader = function(){
       bg:'#0a0a2a', textColor:'#e0e0ff',
       bgPattern:'circuit',
       banner:'linear-gradient(135deg,#0a0a2a 0%,#1a0a4a 50%,#0a3a5a 100%)',
-      avatarFrame:'neon', photoFrame:'neon'
+      avatarFrame:'electric', photoFrame:'neon',
+      scene:'none'
     },
     beach: {
       name: '🏖 Praia / Verão',
@@ -30950,7 +31032,8 @@ window.oaNavigateFromHeader = function(){
       bg:'#05446f', textColor:'#fff6e0',
       bgPattern:'waves',
       banner:'linear-gradient(180deg,#6ec8f0 0%,#ffd47a 60%,#ff9f68 100%)',
-      avatarFrame:'gold', photoFrame:'polaroid'
+      avatarFrame:'waves', photoFrame:'polaroid',
+      scene:'bubbles'
     },
     cyber: {
       name: '🤖 Cyberpunk',
@@ -30958,7 +31041,8 @@ window.oaNavigateFromHeader = function(){
       bg:'#0a0014', textColor:'#ffeaff',
       bgPattern:'grid',
       banner:'linear-gradient(135deg,#0a0014 0%,#2a0038 40%,#ff007a 100%)',
-      avatarFrame:'neon', photoFrame:'neon'
+      avatarFrame:'thunder', photoFrame:'neon',
+      scene:'none'
     },
     pink: {
       name: '🌸 Rosa / Cute',
@@ -30966,7 +31050,8 @@ window.oaNavigateFromHeader = function(){
       bg:'#2b1626', textColor:'#ffe5f0',
       bgPattern:'stars',
       banner:'linear-gradient(135deg,#ff85c1 0%,#ffc0e0 50%,#ffe5f0 100%)',
-      avatarFrame:'flower', photoFrame:'gold'
+      avatarFrame:'hearts', photoFrame:'gold',
+      scene:'hearts'
     },
     nature: {
       name: '🌿 Natureza',
@@ -30974,7 +31059,8 @@ window.oaNavigateFromHeader = function(){
       bg:'#102010', textColor:'#e7f5d7',
       bgPattern:'none',
       banner:'linear-gradient(180deg,#4a8a3f 0%,#8cd867 50%,#d7f0a5 100%)',
-      avatarFrame:'flower', photoFrame:'polaroid'
+      avatarFrame:'leaves', photoFrame:'polaroid',
+      scene:'leaves'
     },
     retro: {
       name: '🎮 Retrô / 8-bit',
@@ -30982,7 +31068,8 @@ window.oaNavigateFromHeader = function(){
       bg:'#1a1a40', textColor:'#fff',
       bgPattern:'grid',
       banner:'linear-gradient(135deg,#8338ec 0%,#3a86ff 50%,#ff006e 100%)',
-      avatarFrame:'pixel', photoFrame:'pixel'
+      avatarFrame:'pixel', photoFrame:'pixel',
+      scene:'confetti'
     },
     gold: {
       name: '👑 Dourado / Luxo',
@@ -30990,7 +31077,8 @@ window.oaNavigateFromHeader = function(){
       bg:'#140a00', textColor:'#fff4cc',
       bgPattern:'none',
       banner:'linear-gradient(135deg,#000 0%,#3a2400 40%,#f9d423 100%)',
-      avatarFrame:'gold', photoFrame:'gold'
+      avatarFrame:'coins', photoFrame:'gold',
+      scene:'stars'
     },
     fire: {
       name: '🔥 Fogo',
@@ -30998,7 +31086,8 @@ window.oaNavigateFromHeader = function(){
       bg:'#200800', textColor:'#ffe0b8',
       bgPattern:'none',
       banner:'linear-gradient(180deg,#200800 0%,#8b1a00 40%,#ff6b1a 80%,#ffcc00 100%)',
-      avatarFrame:'fire', photoFrame:'neon'
+      avatarFrame:'flames', photoFrame:'neon',
+      scene:'fire'
     },
     ice: {
       name: '❄ Gelo / Neve',
@@ -31006,7 +31095,8 @@ window.oaNavigateFromHeader = function(){
       bg:'#0a1a2a', textColor:'#e0f7ff',
       bgPattern:'stars',
       banner:'linear-gradient(180deg,#0a1a2a 0%,#2a5a8a 50%,#a0e8ff 100%)',
-      avatarFrame:'ice', photoFrame:'neon'
+      avatarFrame:'crystal', photoFrame:'neon',
+      scene:'snow'
     },
     minimal: {
       name: '⚪ Minimalista',
@@ -31014,7 +31104,8 @@ window.oaNavigateFromHeader = function(){
       bg:'#0a0a14', textColor:'#e8e8f0',
       bgPattern:'none',
       banner:'linear-gradient(135deg,#0a0a14 0%,#1a1a2a 100%)',
-      avatarFrame:'none', photoFrame:'none'
+      avatarFrame:'none', photoFrame:'none',
+      scene:'none'
     },
     default: {
       name: '🌙 Padrão EuAqui',
@@ -31022,7 +31113,8 @@ window.oaNavigateFromHeader = function(){
       bg:'#0a0a2a', textColor:'#e0e0ff',
       bgPattern:'none',
       banner:'linear-gradient(135deg,#0a0a2a,#1a0a3a,#0a1a2a)',
-      avatarFrame:'none', photoFrame:'none'
+      avatarFrame:'none', photoFrame:'none',
+      scene:'none'
     }
   };
 
@@ -31056,6 +31148,8 @@ window.oaNavigateFromHeader = function(){
     const validPh = ['none','neon','gold','polaroid','pixel'];
     if(validAv.includes(layout.avatarFrame)) clean.avatarFrame = layout.avatarFrame;
     if(validPh.includes(layout.photoFrame)) clean.photoFrame = layout.photoFrame;
+    const validScenes = ['none','snow','hearts','stars','bubbles','leaves','rain','confetti','fire','petals'];
+    if(validScenes.includes(layout.scene)) clean.scene = layout.scene;
     return clean;
   }
 
@@ -31137,8 +31231,65 @@ window.oaNavigateFromHeader = function(){
       page.classList.add('ea-lp-photoframe-'+L.photoFrame);
     }
 
+    // 🌟 Cena animada (partículas de fundo)
+    _applyScene(page, L.scene);
+
     // Guarda o layout aplicado para limpeza posterior
     page.dataset.lpApplied = '1';
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // EFEITOS DE CENA — partículas DOM animadas
+  // ─────────────────────────────────────────────────────────────
+  const LP_SCENES = {
+    snow:     { chars:['❄','❅','❆','·'], count:24, duration:[6,12] },
+    hearts:   { chars:['💖','💕','💗','♥'], count:14, duration:[4,8] },
+    stars:    { chars:['⭐','✨','·','✦'], count:20, duration:[5,10] },
+    bubbles:  { chars:['🫧','○','○','·'], count:18, duration:[4,9] },
+    leaves:   { chars:['🍃','🍂','🌿'], count:14, duration:[7,13] },
+    rain:     { chars:['│','/','|','┃'], count:36, duration:[0.8,1.6] },
+    confetti: { chars:['🟥','🟨','🟦','🟩','🟪','🟧'], count:22, duration:[3,6] },
+    fire:     { chars:['🔥','✨','·'], count:14, duration:[2,4] },
+    petals:   { chars:['🌸','🌷','🌺','·'], count:16, duration:[8,14] }
+  };
+
+  function _applyScene(page, sceneName){
+    // remove cena anterior
+    page.querySelectorAll('.ea-lp-scene').forEach(el=>el.remove());
+    if(!sceneName || sceneName === 'none') return;
+    const cfg = LP_SCENES[sceneName];
+    if(!cfg) return;
+
+    // Respeita preferência de movimento reduzido
+    try{
+      if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    }catch(_){}
+
+    const scene = document.createElement('div');
+    scene.className = 'ea-lp-scene ea-lp-scene-'+sceneName;
+    // Injeta partículas com positions/delays aleatórios
+    const frag = document.createDocumentFragment();
+    for(let i=0; i<cfg.count; i++){
+      const p = document.createElement('span');
+      p.className = 'ea-lp-scene-particle';
+      p.textContent = cfg.chars[Math.floor(Math.random()*cfg.chars.length)];
+      const left = Math.random()*100;
+      const delay = Math.random() * cfg.duration[1];
+      const dur = cfg.duration[0] + Math.random()*(cfg.duration[1]-cfg.duration[0]);
+      const size = 10 + Math.random()*10;
+      p.style.left = left+'%';
+      p.style.top = (sceneName==='hearts' || sceneName==='bubbles' || sceneName==='fire') ? (80 + Math.random()*20)+'%' : (-5 - Math.random()*20)+'%';
+      p.style.animationDelay = '-'+delay.toFixed(2)+'s';
+      p.style.animationDuration = dur.toFixed(2)+'s';
+      p.style.fontSize = size.toFixed(0)+'px';
+      frag.appendChild(p);
+    }
+    scene.appendChild(frag);
+    // Anexa no page-profile (z-index baixo para ficar atrás do conteúdo)
+    // O page-profile precisa ter position relative
+    const cs = getComputedStyle(page);
+    if(cs.position === 'static') page.style.position = 'relative';
+    page.appendChild(scene);
   }
 
   function clearProfileLayout(){
@@ -31168,6 +31319,8 @@ window.oaNavigateFromHeader = function(){
         avWrap.classList.remove('ea-lp-avframe-'+f);
       });
     }
+    // Remove partículas de cena
+    page.querySelectorAll('.ea-lp-scene').forEach(el=>el.remove());
     delete page.dataset.lpApplied;
   }
 
@@ -31299,6 +31452,18 @@ window.oaNavigateFromHeader = function(){
       {id:'none',label:'Liso'},{id:'stars',label:'⭐ Estrelas'},
       {id:'waves',label:'🌊 Ondas'},{id:'grid',label:'▦ Grade'},{id:'circuit',label:'🔌 Circuito'}
     ];
+    const scenes = [
+      {id:'none',label:'Nenhum'},
+      {id:'snow',label:'❄ Neve'},
+      {id:'hearts',label:'💖 Corações'},
+      {id:'stars',label:'⭐ Estrelas caindo'},
+      {id:'bubbles',label:'🫧 Bolhas'},
+      {id:'leaves',label:'🍃 Folhas'},
+      {id:'rain',label:'🌧 Chuva'},
+      {id:'confetti',label:'🎉 Confetes'},
+      {id:'fire',label:'🔥 Faíscas'},
+      {id:'petals',label:'🌸 Pétalas'}
+    ];
     const bannerPresets = [
       {id:'linear-gradient(135deg,#0a0a2a,#1a0a3a,#0a1a2a)', label:'Padrão'},
       {id:'linear-gradient(180deg,#6ec8f0,#ffd47a,#ff9f68)', label:'🏖 Praia'},
@@ -31401,6 +31566,17 @@ window.oaNavigateFromHeader = function(){
           '</div>'+
         '</div>'+
 
+        '<!-- Efeito de cena (partículas animadas) -->'+
+        '<div class="lp-sect">'+
+          '<div class="lp-sect-title">🌟 Efeito Animado de Fundo</div>'+
+          '<div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;">Partículas animadas que caem ou flutuam pelo perfil inteiro.</div>'+
+          '<div class="lp-chip-row" id="lp-scene-chips">'+
+            scenes.map(s=>(
+              '<button class="lp-chip'+((L.scene||'none')===s.id?' selected':'')+'" data-scene="'+s.id+'">'+s.label+'</button>'
+            )).join('')+
+          '</div>'+
+        '</div>'+
+
         '<!-- Ações -->'+
         '<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;">'+
           '<button class="post-btn" style="flex:1;min-width:130px;background:var(--neon-cyan);color:var(--bg-deep);font-weight:700;" onclick="_lpSave()">💾 Salvar Layout</button>'+
@@ -31481,6 +31657,15 @@ window.oaNavigateFromHeader = function(){
         _refreshLayoutPreview();
       });
     });
+
+    // Cena animada
+    document.querySelectorAll('#lp-scene-chips .lp-chip').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        _lpState.scene = el.dataset.scene;
+        _updateChipSelections();
+        _refreshLayoutPreview();
+      });
+    });
   }
 
   function _updateChipSelections(){
@@ -31492,6 +31677,9 @@ window.oaNavigateFromHeader = function(){
     });
     document.querySelectorAll('#lp-phframe-chips .lp-chip').forEach(el=>{
       el.classList.toggle('selected', el.dataset.phframe === _lpState.photoFrame);
+    });
+    document.querySelectorAll('#lp-scene-chips .lp-chip').forEach(el=>{
+      el.classList.toggle('selected', el.dataset.scene === (_lpState.scene||'none'));
     });
   }
 
@@ -31539,6 +31727,39 @@ window.oaNavigateFromHeader = function(){
     // textos
     if(name) name.style.color = L.textColor;
     if(handle) handle.style.color = L.primary;
+
+    // Cena animada no preview — gera partículas mini dentro do card
+    card.querySelectorAll('.ea-lp-scene').forEach(el=>el.remove());
+    if(L.scene && L.scene !== 'none'){
+      const cfg = LP_SCENES[L.scene];
+      if(cfg){
+        let prefersReduced = false;
+        try{ prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(_){}
+        if(!prefersReduced){
+          const scene = document.createElement('div');
+          scene.className = 'ea-lp-scene ea-lp-scene-'+L.scene;
+          // Usa menos partículas no preview (é um card pequeno)
+          const count = Math.min(cfg.count, 12);
+          for(let i=0; i<count; i++){
+            const p = document.createElement('span');
+            p.className = 'ea-lp-scene-particle';
+            p.textContent = cfg.chars[Math.floor(Math.random()*cfg.chars.length)];
+            const left = Math.random()*100;
+            const delay = Math.random() * cfg.duration[1];
+            const dur = cfg.duration[0] + Math.random()*(cfg.duration[1]-cfg.duration[0]);
+            const size = 9 + Math.random()*7;
+            p.style.left = left+'%';
+            p.style.top = (L.scene==='hearts' || L.scene==='bubbles' || L.scene==='fire') ? (70 + Math.random()*30)+'%' : (-5 - Math.random()*20)+'%';
+            p.style.animationDelay = '-'+delay.toFixed(2)+'s';
+            p.style.animationDuration = dur.toFixed(2)+'s';
+            p.style.fontSize = size.toFixed(0)+'px';
+            scene.appendChild(p);
+          }
+          // Precisa que o card tenha position:relative (já tem)
+          card.appendChild(scene);
+        }
+      }
+    }
   }
 
   // Upload de banner
