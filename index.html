@@ -8743,7 +8743,8 @@ async function loadFeed(force=false){
 
   _hydrateAllReposts(feed);
   setTimeout(_hydrateBizCtaBtns, 200);
-  updateCommentCounts(filteredPosts.map(p=>p.id));
+  // updateCommentCounts omitido aqui: comments_count já vem no SEL do posts.
+  // É chamado apenas após mutações reais (novo comentário via addComment).
 
   // Hidrata avatares/nomes das comunidades em posts COMM_POST
   const commIdsInFeed=[];
@@ -8836,28 +8837,31 @@ function _initInfiniteScroll(){
 async function updateCommentCounts(postIds){
   if(!postIds?.length) return;
   try{
-    // ✅ OTIMIZAÇÃO EGRESS: busca contagens por post em paralelo usando {head:true}
-    // Cada query retorna apenas o número no header — zero bytes de dados no body.
-    const results = await Promise.all(
-      postIds.map(async id => {
-        try{
-          // Tenta com filtro de deleted primeiro
-          const r = await db.from('comments')
-            .select('id', {count:'exact', head:true})
-            .eq('post_id', id)
-            .eq('deleted', false);
-          if(r.error && /deleted|column|schema/i.test(r.error.message||'')){
-            // Fallback sem coluna deleted
-            const r2 = await db.from('comments')
-              .select('id', {count:'exact', head:true})
-              .eq('post_id', id);
-            return { id, count: r2.count ?? 0 };
-          }
-          return { id, count: r.count ?? 0 };
-        }catch(_){ return { id, count: 0 }; }
-      })
-    );
-    results.forEach(({id, count})=>{
+    // ✅ OTIMIZAÇÃO N+1 → 1: uma única query busca post_id + count para todos os posts
+    // em vez de N queries HEAD em paralelo (N SSL round-trips → 1).
+    // Supabase retorna post_id e o count agregado numa única resposta JSON.
+    let rows = null;
+    try{
+      const r = await db.from('comments')
+        .select('post_id, count:id.count()')
+        .in('post_id', postIds)
+        .eq('deleted', false);
+      if(!r.error) rows = r.data;
+    }catch(_){}
+    // Fallback: coluna 'deleted' inexistente
+    if(!rows){
+      try{
+        const r2 = await db.from('comments')
+          .select('post_id, count:id.count()')
+          .in('post_id', postIds);
+        if(!r2.error) rows = r2.data;
+      }catch(_){}
+    }
+    if(!rows) return;
+    // Mapeia post_id → count e atualiza o DOM
+    const countMap = Object.fromEntries((rows||[]).map(r=>[ r.post_id, r.count ?? 0 ]));
+    postIds.forEach(id=>{
+      const count = countMap[id] ?? 0;
       document.querySelectorAll('[id="cmtcnt-'+id+'"]').forEach(el=>{
         el.textContent = count;
       });
@@ -11275,7 +11279,7 @@ function handleMedia(inp){
     const isVid=mediaTypes[i]==='video';
     return`<div style="position:relative;border-radius:6px;overflow:hidden;background:#000;aspect-ratio:1;">
       ${isVid
-        ?`<video src="${url}" preload="metadata" style="width:100%;height:100%;object-fit:cover;" muted playsinline></video><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;"><span style="font-size:18px;filter:drop-shadow(0 1px 3px #000);">▶</span></div>`
+        ?`<video src="${url}" style="width:100%;height:100%;object-fit:cover;" muted playsinline></video><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;"><span style="font-size:18px;filter:drop-shadow(0 1px 3px #000);">▶</span></div>`
         :`<img loading="lazy" src="${url}" style="width:100%;height:100%;object-fit:cover;">`}
       <button onclick="removeMedia(${i})" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.75);border:none;color:#fff;width:20px;height:20px;border-radius:50%;cursor:pointer;font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:2;">×</button>
       ${i===0?`<span style="position:absolute;bottom:2px;left:4px;font-size:8px;color:rgba(255,255,255,.8);font-family:'Space Mono',monospace;">CAPA</span>`:''}
@@ -12627,7 +12631,6 @@ function ppPlayVideo(url, viewKey, gridIdx){
     vid = document.createElement('video');
     vid.id='lb-vid-player';
     vid.controls=true; vid.autoplay=true; vid.playsinline=true;
-    vid.preload='metadata'; // carrega só duração; autoplay inicia download completo ao play
     vid.style.cssText='max-width:96vw;max-height:90vh;border-radius:8px;display:block;outline:none;';
     lbImg.parentNode.insertBefore(vid, lbImg);
   }
@@ -13781,7 +13784,7 @@ async function loadProfilePage(userId){
           }
         });
 
-        updateCommentCounts(postIds);
+        // updateCommentCounts omitido: comments_count já vem no SEL dos posts.
       }
     }
 
@@ -14012,7 +14015,7 @@ async function loadMsgs(userId){
       const safeUrl = xss(m.media_url);
       const isVideo = (m.media_type||'').startsWith('video') || /\.(mp4|webm|mov)$/i.test(m.media_url);
       if(isVideo){
-        mediaHtml = '<div class="mb-media"><video src="'+safeUrl+'" controls playsinline preload="metadata" style="width:100%;max-height:200px;display:block;border-radius:8px;"></video></div>';
+        mediaHtml = '<div class="mb-media"><video src="'+safeUrl+'" controls playsinline style="width:100%;max-height:200px;display:block;border-radius:8px;"></video></div>';
       } else {
         mediaHtml = '<div class="mb-media" data-src="'+safeUrl+'" onclick="openLightbox(this.dataset.src)"><img loading="lazy" src="'+safeUrl+'" alt="imagem" style="display:block;width:100%;border-radius:8px;"></div>';
       }
@@ -14433,7 +14436,7 @@ function _appendChatBubble(msg, area){
     const safeUrl=xss(msg.media_url);
     const isVideo=(msg.media_type||'').startsWith('video')||/\.(mp4|webm|mov)$/i.test(msg.media_url);
     mediaHtml=isVideo
-      ?'<div class="mb-media"><video src="'+safeUrl+'" controls playsinline preload="metadata" style="width:100%;max-height:200px;display:block;border-radius:8px;"></video></div>'
+      ?'<div class="mb-media"><video src="'+safeUrl+'" controls playsinline style="width:100%;max-height:200px;display:block;border-radius:8px;"></video></div>'
       :'<div class="mb-media" data-src="'+safeUrl+'" onclick="openLightbox(this.dataset.src)"><img loading="lazy" src="'+safeUrl+'" alt="imagem" style="display:block;width:100%;border-radius:8px;"></div>';
   }
   const contentHtml = msg.content ? '<div class="mb-bubble">'+xss(msg.content)+'</div>' : '';
@@ -15147,7 +15150,7 @@ async function loadHomeMsgs(userId){
     let mh='';
     if(m.media_url){
       const isVid=(m.media_type||'').startsWith('video');
-      mh=isVid?'<div class="mb-media"><video src="'+xss(m.media_url)+'" controls preload="metadata" style="width:100%;max-height:160px;border-radius:8px;display:block;"></video></div>'
+      mh=isVid?'<div class="mb-media"><video src="'+xss(m.media_url)+'" controls style="width:100%;max-height:160px;border-radius:8px;display:block;"></video></div>'
               :'<div class="mb-media" data-src="'+xss(m.media_url)+'" onclick="openLightbox(this.dataset.src)"><img loading="lazy" src="'+xss(m.media_url)+'" style="width:100%;border-radius:8px;" class="img-safe"></div>';
     }
     const sharedPostId=_extractPostShareId(m.content);
@@ -18074,6 +18077,10 @@ async function syncStockFromSales(bizId, silent){
     let adjusted = 0;
     let errors = 0;
 
+    // IDs de purchases a marcar stock_synced=true num único batch no final
+    // (evita N+1: em vez de 1 update por compra, fazemos 1 update para todos)
+    const toMarkSynced = [];
+
     // 3. Para cada purchase pendente, acha o produto e decrementa
     for(const purch of pending){
       let prod = null;
@@ -18085,13 +18092,13 @@ async function syncStockFromSales(bizId, silent){
         prod = prods.find(p => (p.name||'').trim().toLowerCase() === needle) || null;
       }
       if(!prod || prod.stock == null){
-        // Produto sem controle de estoque — apenas marca como sincronizada
-        try{ await db.from('purchases').update({stock_synced:true}).eq('id', purch.id); }catch(_){}
+        // Produto sem controle de estoque — agenda para marcar sincronizada
+        toMarkSynced.push(purch.id);
         continue;
       }
       if(prod.stock <= 0){
-        // Já está em zero — marca como sincronizada sem mexer
-        try{ await db.from('purchases').update({stock_synced:true}).eq('id', purch.id); }catch(_){}
+        // Já está em zero — agenda para marcar sincronizada sem mexer no estoque
+        toMarkSynced.push(purch.id);
         continue;
       }
       // ✅ ATÔMICO: RPC — o banco resolve a operação sem race condition
@@ -18105,9 +18112,21 @@ async function syncStockFromSales(bizId, silent){
       }
       // Atualiza o objeto em memória com o valor real retornado pelo banco
       prod.stock = _syncRpc?.new_stock ?? prod.stock - 1;
-      // Marca purchase como sincronizada
-      try{ await db.from('purchases').update({stock_synced:true}).eq('id', purch.id); }catch(_){}
+      // Agenda para marcar como sincronizada
+      toMarkSynced.push(purch.id);
       adjusted++;
+    }
+
+    // ✅ BATCH UPDATE: 1 única query para marcar todas as purchases sincronizadas
+    // (substitui N updates individuais por 1 update com .in())
+    if(toMarkSynced.length){
+      try{
+        await db.from('purchases')
+          .update({stock_synced: true})
+          .in('id', toMarkSynced);
+      }catch(e){
+        console.error('[syncStock] erro ao marcar stock_synced em batch:', e);
+      }
     }
 
     if(adjusted > 0 && !silent){
@@ -18851,7 +18870,7 @@ async function loadBizMsgs(chatId){
     }
     let mediaHtml = '';
     if(isAudio && audioSrc) mediaHtml = renderAudioBubble(audioSrc);
-    else if(isVideo && m.media_url) mediaHtml = '<div class="mb-media"><video src="'+m.media_url+'" controls playsinline preload="metadata" style="width:100%;max-height:200px;display:block;border-radius:8px;"></video></div>';
+    else if(isVideo && m.media_url) mediaHtml = '<div class="mb-media"><video src="'+m.media_url+'" controls playsinline style="width:100%;max-height:200px;display:block;border-radius:8px;"></video></div>';
     else if(isImg && m.media_url){
       const _cap = m.content ? '<div style="font-size:11px;color:var(--text-muted);margin-top:5px;padding:0 2px;line-height:1.4;">'+linkify(m.content)+'</div>' : '';
       mediaHtml = '<div class="mb-media" onclick="openLightbox && openLightbox(this.querySelector(\'img\').src)" style="cursor:pointer;"><img loading="lazy" src="'+m.media_url+'" style="width:100%;border-radius:8px;" class="img-safe"></div>'+_cap;
@@ -20039,7 +20058,7 @@ function _appendBizMsgFromRealtime(m){
   if(!audioSrc&&m.content&&m.content.startsWith('🎙 [Áudio]')) audioSrc=m.content.replace('🎙 [Áudio] ','').trim();
   let mediaHtml='';
   if(isAudio&&audioSrc) mediaHtml=renderAudioBubble(audioSrc);
-  else if(isVideo&&m.media_url) mediaHtml='<div class="mb-media"><video src="'+m.media_url+'" controls playsinline preload="metadata" style="width:100%;max-height:200px;border-radius:8px;"></video></div>';
+  else if(isVideo&&m.media_url) mediaHtml='<div class="mb-media"><video src="'+m.media_url+'" controls playsinline style="width:100%;max-height:200px;border-radius:8px;"></video></div>';
   else if(isImg&&m.media_url) mediaHtml='<div class="mb-media"><img loading="lazy" src="'+m.media_url+'" style="width:100%;border-radius:8px;" class="img-safe"></div>';
   if(m.msg_type==='deal_proposal'||(m.content&&m.content.includes('[DEAL_PROPOSAL:'))){
     // Para propostas via Realtime, faz full reload para garantir os botões corretos
@@ -22532,7 +22551,7 @@ async function divulgarProduto(bizId, prodName, prodPrice, imgUrl, priceLabel){
       const isVid = _divulgTypes[i] === 'video';
       return `<div style="position:relative;border-radius:8px;overflow:hidden;background:#000;aspect-ratio:1;">
         ${isVid
-          ? `<video src="${url}" preload="metadata" style="width:100%;height:100%;object-fit:cover;" muted playsinline></video>
+          ? `<video src="${url}" style="width:100%;height:100%;object-fit:cover;" muted playsinline></video>
              <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;"><span style="font-size:18px;">▶</span></div>`
           : `<img loading="lazy" src="${url}" style="width:100%;height:100%;object-fit:cover;">`}
         <button onclick="divulgRemoveFile(${i})" style="position:absolute;top:3px;right:3px;background:rgba(0,0,0,.8);border:none;color:#fff;width:20px;height:20px;border-radius:50%;cursor:pointer;font-size:12px;z-index:2;display:flex;align-items:center;justify-content:center;">×</button>
@@ -23089,7 +23108,7 @@ function renderAudioBubble(url){
     +'<button onclick="toggleAudioPlay(this,\''+safeUrl+'\')" style="background:var(--neon-cyan);border:none;color:var(--bg-deep);width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">▶</button>'
     +'<div style="flex:1;"><div style="height:3px;background:rgba(255,255,255,.15);border-radius:2px;overflow:hidden;"><div class="audio-wave" style="height:100%;width:0%;background:var(--neon-cyan);border-radius:2px;transition:width .1s;"></div></div>'
     +'<div style="font-size:9px;color:var(--text-muted);margin-top:3px;font-family:VT323,monospace;" class="audio-dur">🎙 Áudio</div></div>'
-    +'<audio src="'+safeUrl+'" preload="metadata" style="display:none;" ontimeupdate="updateAudioBar(this)"></audio></div>';
+    +'<audio src="'+safeUrl+'" style="display:none;" ontimeupdate="updateAudioBar(this)"></audio></div>';
 }
 
 function toggleAudioPlay(btn,url){
@@ -24818,7 +24837,7 @@ function handleCommMedia(input, commId){
     const url=URL.createObjectURL(f);
     const isVid=f.type.startsWith('video');
     return`<div style="position:relative;width:60px;height:60px;border-radius:8px;overflow:hidden;background:#000;">
-      ${isVid?`<video src="${url}" preload="metadata" style="width:100%;height:100%;object-fit:cover;"></video>`:`<img loading="lazy" src="${url}" style="width:100%;height:100%;object-fit:cover;">`}
+      ${isVid?`<video src="${url}" style="width:100%;height:100%;object-fit:cover;"></video>`:`<img loading="lazy" src="${url}" style="width:100%;height:100%;object-fit:cover;">`}
       <button onclick="removeCommMedia('${commId}',${i})" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.7);border:none;color:#fff;width:16px;height:16px;border-radius:50%;cursor:pointer;font-size:10px;">×</button>
     </div>`;
   }).join('');
@@ -24953,7 +24972,7 @@ async function loadCommPostsV2(commId,isMember,isMod){
     return html.replace(`id="post-${p.id}"`,`id="post-${p.id}" data-commid="${commId}"`);
   }).join('');
   _hydrateAllReposts(el);
-  updateCommentCounts(postIds);
+  // updateCommentCounts omitido: comments_count já vem no SEL dos posts da comunidade.
   setTimeout(initFeedAutoplay, 100); // roda em todos (autoplay só mobile)
 }
 
@@ -29902,7 +29921,7 @@ async function oaEditorOpen(file, type) {
     _seLocalPreviewUrl = url2; // ← salvo para revogação no close/publish
     const v2 = document.createElement('video');
     v2.src = url2; v2.muted = _seMuteOrig; v2.loop = false;
-    v2.playsInline = true; v2.autoplay = true; v2.preload = 'metadata';
+    v2.playsInline = true; v2.autoplay = true;
     v2.style.cssText = 'width:100%;height:100%;object-fit:contain;';
     prev.appendChild(v2);
     _seVideoEl = v2;
