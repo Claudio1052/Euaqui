@@ -24613,7 +24613,12 @@ function toggleCallMinimize(){
   bubble.addEventListener('click', () => { if(!didDrag) _restoreCallFromBubble(); });
 
   // Drag (mouse + touch)
+  // ── GPU-friendly drag: lê dimensões UMA vez no pointerdown (batch read),
+  //    e usa requestAnimationFrame para isolar escritas de leituras.
   let dragging = false, startX=0, startY=0, baseX=0, baseY=0;
+  let _bubbleW=56, _bubbleH=56; // dimensões cacheadas — evita offsetWidth em cada move
+  let _rafDragPending = false, _rafDragX=0, _rafDragY=0;
+
   const getXY = e => e.touches ? {x:e.touches[0].clientX,y:e.touches[0].clientY}
                                 : {x:e.clientX,y:e.clientY};
 
@@ -24621,8 +24626,12 @@ function toggleCallMinimize(){
     const pt = getXY(e);
     dragging = true; didDrag = false;
     startX = pt.x; startY = pt.y;
+    // ── Batch READ: getBoundingClientRect + offsetWidth/Height em bloco, sem escrita antes ──
     const r = bubble.getBoundingClientRect();
     baseX = r.left; baseY = r.top;
+    _bubbleW = r.width  || bubble.offsetWidth  || 56;
+    _bubbleH = r.height || bubble.offsetHeight || 56;
+    // ── Batch WRITE após todas as leituras ──
     bubble.style.transition = 'none';
     bubble.style.animation = 'none';
     e.preventDefault(); // necessário para o drag, mas cancela 'click' no mobile
@@ -24632,12 +24641,20 @@ function toggleCallMinimize(){
     const pt = getXY(e);
     const dx = pt.x - startX, dy = pt.y - startY;
     if(Math.abs(dx)+Math.abs(dy) > 6) didDrag = true;
-    const nx = Math.max(4, Math.min(baseX+dx, window.innerWidth  - bubble.offsetWidth  - 4));
-    const ny = Math.max(4, Math.min(baseY+dy, window.innerHeight - bubble.offsetHeight - 4));
-    bubble.style.left   = nx + 'px';
-    bubble.style.top    = ny + 'px';
-    bubble.style.right  = 'auto';
-    bubble.style.bottom = 'auto';
+    // Usa dimensões cacheadas (zero leitura de layout aqui)
+    _rafDragX = Math.max(4, Math.min(baseX+dx, window.innerWidth  - _bubbleW - 4));
+    _rafDragY = Math.max(4, Math.min(baseY+dy, window.innerHeight - _bubbleH - 4));
+    if(!_rafDragPending){
+      _rafDragPending = true;
+      requestAnimationFrame(()=>{
+        // ── Batch WRITE no rAF — GPU processa numa única passagem ──
+        bubble.style.left   = _rafDragX + 'px';
+        bubble.style.top    = _rafDragY + 'px';
+        bubble.style.right  = 'auto';
+        bubble.style.bottom = 'auto';
+        _rafDragPending = false;
+      });
+    }
     if(e.cancelable) e.preventDefault();
   };
   const onUp = () => { dragging = false; };
@@ -30098,9 +30115,15 @@ function _oaEditorInitTrimDrag() {
   // Largura fixa da janela em segundos
   const winSec = () => Math.min(_seMaxTrim, _seMusicDur);
 
-  // Converte X do cliente para tempo na música
+  // Cache do rect da waveform — lido uma única vez no pointerdown (batch read).
+  // Re-lido apenas quando a janela é redimensionada, nunca durante o drag.
+  let _waveRect = null;
+  function _refreshWaveRect(){ _waveRect = wave.getBoundingClientRect(); }
+  window.addEventListener('resize', _refreshWaveRect, { passive:true });
+
+  // Converte X do cliente para tempo na música — usa rect cacheado (zero reflow)
   function xToTime(clientX) {
-    const rect = wave.getBoundingClientRect();
+    const rect = _waveRect || wave.getBoundingClientRect();
     return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * _seMusicDur;
   }
 
@@ -30112,34 +30135,47 @@ function _oaEditorInitTrimDrag() {
     start = Math.max(0, Math.min(_seMusicDur - winSec(), start));
     _seTrimStart = start;
     _seTrimEnd   = start + winSec();
-    _oaEditorUpdateRegion();
-    _oaEditorUpdateTrimLabels();
+    _scheduleRegionUpdate();
   }
 
   // Arrasto da janela
   let _dragActive  = false;
   let _dragOffsetSec = 0; // posição do clique dentro da janela em segundos
+  let _rafRegionPending = false;
+
+  // Aplica _seTrimStart/_seTrimEnd → DOM via rAF (batch write, nunca mistura com leitura)
+  function _scheduleRegionUpdate(){
+    if(_rafRegionPending) return;
+    _rafRegionPending = true;
+    requestAnimationFrame(()=>{
+      _oaEditorUpdateRegion();
+      _oaEditorUpdateTrimLabels();
+      _rafRegionPending = false;
+    });
+  }
 
   function onPointerDown(e) {
     e.preventDefault();
     _dragActive = true;
+    // ── Batch READ: lê rect aqui, antes de qualquer escrita ──
+    _refreshWaveRect();
     const clickTime  = xToTime(e.clientX);
     _dragOffsetSec   = clickTime - _seTrimStart; // onde na janela clicou
     // Captura o pointer para receber eventos fora do elemento
-    try { region.setPointerCapture(e.pointerId); } catch(_) {}
-  }
+    try { region.setPointerCapture(e.pointerId); } catch(_) {} }
 
   function onPointerMove(e) {
     if(!_dragActive) return;
     e.preventDefault();
+    // Apenas cálculo de estado — nenhuma leitura de layout aqui
     const clickTime = xToTime(e.clientX);
     // Mantém o ponto de clique na mesma posição relativa dentro da janela
     let newStart = clickTime - _dragOffsetSec;
     newStart = Math.max(0, Math.min(_seMusicDur - winSec(), newStart));
     _seTrimStart = newStart;
     _seTrimEnd   = newStart + winSec();
-    _oaEditorUpdateRegion();
-    _oaEditorUpdateTrimLabels();
+    // ── Batch WRITE via rAF — garante separação leitura/escrita ──
+    _scheduleRegionUpdate();
   }
 
   function onPointerUp(e) {
@@ -30155,6 +30191,8 @@ function _oaEditorInitTrimDrag() {
   wave.addEventListener('pointerdown', e => {
     if(e.target === region || region.contains(e.target)) return;
     e.preventDefault();
+    // ── Batch READ: rect antes de qualquer escrita ──
+    _refreshWaveRect();
     const t = xToTime(e.clientX);
     moveWindow(t);
 
@@ -30165,13 +30203,14 @@ function _oaEditorInitTrimDrag() {
 
     const onWaveMove = e2 => {
       if(!_dragActive) return;
+      // Apenas cálculo de estado — zero leitura de layout aqui
       const t2     = xToTime(e2.clientX);
       let newStart = t2 - _dragOffsetSec;
       newStart     = Math.max(0, Math.min(_seMusicDur - winSec(), newStart));
       _seTrimStart = newStart;
       _seTrimEnd   = newStart + winSec();
-      _oaEditorUpdateRegion();
-      _oaEditorUpdateTrimLabels();
+      // ── Batch WRITE via rAF ──
+      _scheduleRegionUpdate();
     };
     const onWaveUp = () => {
       _dragActive = false;
@@ -31078,8 +31117,21 @@ function _oaInitVideoTrimDrag() {
   const MAX_WIN = 30;  // máximo 30s
 
   function xToTime(clientX) {
-    const rect = timeline.getBoundingClientRect();
+    const rect = _tlRect || timeline.getBoundingClientRect();
     return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * _seMediaDur;
+  }
+
+  // Cache do rect da timeline — lido uma única vez no pointerdown, não em cada move
+  let _tlRect = null;
+  function _refreshTlRect(){ _tlRect = timeline.getBoundingClientRect(); }
+  window.addEventListener('resize', _refreshTlRect, { passive:true });
+
+  // rAF throttle para writes de região de vídeo
+  let _rafVidPending = false;
+  function _scheduleVideoTrimUpdate(){
+    if(_rafVidPending) return;
+    _rafVidPending = true;
+    requestAnimationFrame(()=>{ _oaUpdateVideoTrim(); _rafVidPending = false; });
   }
 
   // modo: 'move' | 'resize-l' | 'resize-r'
@@ -31108,7 +31160,7 @@ function _oaInitVideoTrimDrag() {
       if(e - _seVidTrimStart > MAX_WIN) e = _seVidTrimStart + MAX_WIN;
       _seVidTrimEnd = e;
     }
-    _oaUpdateVideoTrim();
+    _scheduleVideoTrimUpdate();
   }
 
   function onUp() { _mode = null; }
@@ -31116,6 +31168,7 @@ function _oaInitVideoTrimDrag() {
   // ── Alça esquerda (resize-l) ───────────────────────────────
   hl.addEventListener('pointerdown', e => {
     e.stopPropagation(); e.preventDefault();
+    _refreshTlRect(); // ── Batch READ: captura rect antes de qualquer write ──
     _mode = 'resize-l';
     try { hl.setPointerCapture(e.pointerId); } catch(_) {}
   }, { passive:false });
@@ -31126,6 +31179,7 @@ function _oaInitVideoTrimDrag() {
   // ── Alça direita (resize-r) ────────────────────────────────
   hr.addEventListener('pointerdown', e => {
     e.stopPropagation(); e.preventDefault();
+    _refreshTlRect(); // ── Batch READ: captura rect antes de qualquer write ──
     _mode = 'resize-r';
     try { hr.setPointerCapture(e.pointerId); } catch(_) {}
   }, { passive:false });
@@ -31137,6 +31191,7 @@ function _oaInitVideoTrimDrag() {
   region.addEventListener('pointerdown', e => {
     if(e.target === hl || e.target === hr) return;
     e.preventDefault();
+    _refreshTlRect(); // ── Batch READ: captura rect antes de qualquer write ──
     _mode    = 'move';
     _dragOff = xToTime(e.clientX) - _seVidTrimStart;
     try { region.setPointerCapture(e.pointerId); } catch(_) {}
@@ -31149,12 +31204,14 @@ function _oaInitVideoTrimDrag() {
   timeline.addEventListener('pointerdown', e => {
     if(e.target === region || region.contains(e.target)) return;
     e.preventDefault();
+    // ── Batch READ antes de qualquer escrita ──
+    _refreshTlRect();
     const t   = xToTime(e.clientX);
     const win = _seVidTrimEnd - _seVidTrimStart;
     let s = clamp(t - win/2, 0, _seMediaDur - win);
     _seVidTrimStart = s;
     _seVidTrimEnd   = s + win;
-    _oaUpdateVideoTrim();
+    _scheduleVideoTrimUpdate();
     _mode    = 'move';
     _dragOff = win / 2;
     try { timeline.setPointerCapture(e.pointerId); } catch(_) {}
