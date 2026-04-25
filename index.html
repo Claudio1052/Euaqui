@@ -1995,6 +1995,10 @@ body{
 /* Reduce motion */
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;}
+  /* Mantém as animações dos padrões de fundo mesmo com reduced-motion */
+  .ea-lp-bg-stars,.ea-lp-bg-waves,.ea-lp-bg-grid,.ea-lp-bg-circuit{
+    animation-duration:unset!important;
+  }
 }
 
 /* ===== EMOJI PICKER ===== */
@@ -5214,6 +5218,26 @@ body.day-mode::before{
 }
 
 /* Padrões de fundo decorativos */
+
+/* ── Keyframes de animação dos padrões ── */
+@keyframes ea-bg-stars-drift{
+  0%   { background-position: 0 0, 0 0, 0 0, 0 0, 0 0; }
+  100% { background-position: 200px 200px, -100px 150px, 80px -120px, -60px 200px, 150px -80px; }
+}
+@keyframes ea-bg-waves-shift{
+  0%   { background-position: 0 0, 0 0; }
+  100% { background-position: 40px 40px, -40px -40px; }
+}
+@keyframes ea-bg-grid-move{
+  0%   { background-position: 0 0, 0 0; }
+  100% { background-position: 32px 32px, 32px 32px; }
+}
+@keyframes ea-bg-circuit-pulse{
+  0%   { background-position: 0 0, 0 0, 0 0, 0 0; opacity:1; }
+  50%  { opacity:.75; }
+  100% { background-position: 40px 0, 0 40px, 80px 80px, -80px -80px; opacity:1; }
+}
+
 .ea-lp-bg-stars{
   background-image:
     radial-gradient(1px 1px at 20% 30%, #fff, transparent),
@@ -5223,17 +5247,20 @@ body.day-mode::before{
     radial-gradient(1.5px 1.5px at 90% 50%, rgba(255,255,255,.8), transparent);
   background-size:200px 200px;
   background-repeat:repeat;
+  animation: ea-bg-stars-drift 18s linear infinite;
 }
 .ea-lp-bg-waves{
   background-image:
     repeating-linear-gradient(45deg, rgba(255,255,255,.04) 0 2px, transparent 2px 20px),
     repeating-linear-gradient(-45deg, rgba(255,255,255,.03) 0 2px, transparent 2px 20px);
+  animation: ea-bg-waves-shift 8s linear infinite;
 }
 .ea-lp-bg-grid{
   background-image:
     linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px);
   background-size:32px 32px;
+  animation: ea-bg-grid-move 6s linear infinite;
 }
 .ea-lp-bg-circuit{
   background-image:
@@ -5242,6 +5269,17 @@ body.day-mode::before{
     radial-gradient(circle at 25% 25%, rgba(0,255,204,.1) 2px, transparent 3px),
     radial-gradient(circle at 75% 75%, rgba(255,51,102,.1) 2px, transparent 3px);
   background-size:40px 40px, 40px 40px, 80px 80px, 80px 80px;
+  animation: ea-bg-circuit-pulse 5s ease-in-out infinite;
+}
+
+/* Garante que a animação funcione mesmo dentro de iframes, posts ou containers com overflow:hidden */
+.ea-lp-bg-stars,
+.ea-lp-bg-waves,
+.ea-lp-bg-grid,
+.ea-lp-bg-circuit{
+  will-change: background-position;
+  -webkit-animation-fill-mode: both;
+  animation-fill-mode: both;
 }
 
 /* Molduras do avatar */
@@ -31949,29 +31987,27 @@ window.oaNavigateFromHeader = function(){
       'display:flex',
       'align-items:center',
       'justify-content:center',
-      'gap:6px',
-      'background:linear-gradient(135deg,rgba(191,95,255,.95),rgba(0,255,204,.95))',
-      'color:#0a0a2a',
-      'border:2px solid rgba(255,255,255,.4)',
-      'font-family:Silkscreen,monospace',
-      'font-size:10px',
-      'font-weight:700',
-      'letter-spacing:0.5px',
-      'padding:8px 12px',
-      'border-radius:20px',
+      'background:rgba(0,0,0,.45)',
+      'border:2px solid rgba(255,51,102,.7)',
+      'color:#ff3366',
+      'font-size:18px',
+      'width:36px',
+      'height:36px',
+      'padding:0',
+      'border-radius:50%',
       'cursor:pointer',
-      'box-shadow:0 2px 14px rgba(191,95,255,.55), 0 0 20px rgba(0,255,204,.3)',
+      'box-shadow:0 2px 10px rgba(255,51,102,.5)',
       'backdrop-filter:blur(4px)',
       'transition:transform .15s ease, box-shadow .15s ease'
     ].join(';');
-    lpBtn.innerHTML = '<span style="font-size:14px;">🎨</span><span>PERSONALIZAR</span>';
+    lpBtn.innerHTML = '<span style="font-size:18px;line-height:1;filter:drop-shadow(0 0 4px #ff3366);">🎨</span>';
     lpBtn.onmouseenter = function(){
-      this.style.transform = 'scale(1.05)';
-      this.style.boxShadow = '0 4px 20px rgba(191,95,255,.75), 0 0 30px rgba(0,255,204,.5)';
+      this.style.transform = 'scale(1.12)';
+      this.style.boxShadow = '0 4px 18px rgba(255,51,102,.75)';
     };
     lpBtn.onmouseleave = function(){
       this.style.transform = '';
-      this.style.boxShadow = '0 2px 14px rgba(191,95,255,.55), 0 0 20px rgba(0,255,204,.3)';
+      this.style.boxShadow = '0 2px 10px rgba(255,51,102,.5)';
     };
     lpBtn.onclick = function(e){
       e.preventDefault(); e.stopPropagation();
