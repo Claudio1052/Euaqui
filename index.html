@@ -30963,7 +30963,109 @@ if(typeof db !== 'undefined' && db?.auth?.onAuthStateChange){
 
 // ═══════════════════════════════════════════════════════════════════════
 // MODAL VISUALIZADORES — quem viu o story (dentro do IIFE = acessa tudo)
+// Paginação com infinite scroll: 20 por página, só busca mais ao rolar.
 // ═══════════════════════════════════════════════════════════════════════
+const _OA_VIEWERS_PAGE = 20; // registros por página
+let _oaViewersStoryId  = null;
+let _oaViewersPage     = 0;
+let _oaViewersTotal    = 0;
+let _oaViewersLoading  = false;
+let _oaViewersExhausted = false;
+
+function _oaViewerRowHTML(v, p){
+  const uid  = (v.user_id || '').replace(/'/g, '');
+  const av   = p.avatar_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+encodeURIComponent(p.username||uid||'u'));
+  const name = p.full_name || p.username || 'Usuário';
+  const user = p.username ? '@'+p.username : '';
+  const time = v.created_at ? _oaTimeAgo(v.created_at) : '';
+  return `<div class="oavm-item" onclick="window.oaViewerGoProfile('${uid}')">`
+    +`<img class="oavm-av" src="${av}" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=u'" alt="">`
+    +`<div style="flex:1;min-width:0;">`
+    +`<div class="oavm-name">${name}</div>`
+    +`<div class="oavm-user">${user}</div>`
+    +`</div>`
+    +`<div class="oavm-time">${time}</div>`
+    +`</div>`;
+}
+
+async function _oaViewersLoadPage(list){
+  if(_oaViewersLoading || _oaViewersExhausted) return;
+  _oaViewersLoading = true;
+
+  // Spinner de "carregando mais" no final da lista
+  let spinner = document.getElementById('oavm-spinner');
+  if(!spinner){
+    spinner = document.createElement('div');
+    spinner.id = 'oavm-spinner';
+    spinner.style.cssText = 'text-align:center;padding:16px;color:rgba(255,255,255,.4);font-family:VT323,monospace;font-size:20px;';
+    spinner.textContent = '⏳ Carregando...';
+    list.appendChild(spinner);
+  }
+
+  try{
+    const from = _oaViewersPage * _OA_VIEWERS_PAGE;
+    const to   = from + _OA_VIEWERS_PAGE - 1;
+
+    // 1) Só os campos necessários, paginado com range
+    const { data: views, error: vErr } = await db
+      .from('olha_aqui_views')
+      .select('user_id, created_at')
+      .eq('story_id', _oaViewersStoryId)
+      .order('created_at', { ascending: false })
+      .range(from, to);
+    if(vErr) throw vErr;
+
+    const batch = views || [];
+
+    // 2) Busca apenas os profiles desta página (máx 20 IDs)
+    const uids = [...new Set(batch.map(v=>v.user_id).filter(Boolean))];
+    let profMap = {};
+    if(uids.length){
+      const { data: profs } = await db
+        .from('profiles')
+        .select('id, username, full_name, avatar_url')
+        .in('id', uids);
+      (profs||[]).forEach(p => { profMap[p.id] = p; });
+    }
+
+    // Remove spinner antes de inserir novos itens
+    spinner.remove();
+
+    if(!batch.length){
+      _oaViewersExhausted = true;
+      if(_oaViewersPage === 0){
+        list.innerHTML = '<div style="text-align:center;padding:48px;color:rgba(255,255,255,.35);font-family:VT323,monospace;font-size:26px;">Ninguém viu ainda 👀</div>';
+      } else {
+        const fim = document.createElement('div');
+        fim.style.cssText = 'text-align:center;padding:12px;color:rgba(255,255,255,.25);font-family:VT323,monospace;font-size:16px;';
+        fim.textContent = '— fim da lista —';
+        list.appendChild(fim);
+      }
+    } else {
+      const frag = document.createDocumentFragment();
+      batch.forEach(v => {
+        const p = profMap[v.user_id] || {};
+        const el = document.createElement('div');
+        el.innerHTML = _oaViewerRowHTML(v, p);
+        frag.appendChild(el.firstChild);
+      });
+      list.appendChild(frag);
+      _oaViewersPage++;
+      // Se retornou menos que o tamanho da página, não há mais dados
+      if(batch.length < _OA_VIEWERS_PAGE) _oaViewersExhausted = true;
+    }
+  } catch(err){
+    console.error('[OA viewers erro]', err?.message || err);
+    if(spinner) spinner.remove();
+    const errEl = document.createElement('div');
+    errEl.style.cssText = 'text-align:center;padding:16px;color:#ff3366;font-size:11px;font-family:Space Mono,monospace;';
+    errEl.textContent = 'Erro: '+((err?.message||'').slice(0,80)||'Tente novamente');
+    list.appendChild(errEl);
+  } finally {
+    _oaViewersLoading = false;
+  }
+}
+
 window.oaOpenViewersSheet = async function(){
   const g  = oaGroups[oaViewer.groupIdx];
   const it = g?.items?.[oaViewer.itemIdx];
@@ -30982,59 +31084,33 @@ window.oaOpenViewersSheet = async function(){
   const list    = document.getElementById('oa-viewers-modal-list');
   const countEl = document.getElementById('oa-viewers-modal-count');
   if(!modal){ console.error('[OA] modal não encontrado'); return; }
+
+  // Reset estado de paginação para este story
+  _oaViewersStoryId   = it.id;
+  _oaViewersPage      = 0;
+  _oaViewersExhausted = false;
+  _oaViewersLoading   = false;
+  list.innerHTML      = '';
   modal.classList.add('on');
-  list.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,.4);font-family:VT323,monospace;font-size:22px;">⏳ Carregando...</div>';
   if(countEl) countEl.textContent = '...';
-  try{
-    // 1) Busca quem viu (sem join — FK aponta para auth.users, não profiles)
-    const { data: views, error: vErr } = await db
-      .from('olha_aqui_views')
-      .select('user_id, created_at')
-      .eq('story_id', it.id)
-      .order('created_at', { ascending: false })
-      .limit(200);
-    if(vErr) throw vErr;
 
-    const total = views?.length || 0;
-    if(countEl) countEl.textContent = total;
+  // Busca total (count sem dados) — só metadado, zero egress de linhas
+  const { count: total } = await db
+    .from('olha_aqui_views')
+    .select('id', { count: 'exact', head: true })
+    .eq('story_id', it.id);
+  _oaViewersTotal = total || 0;
+  if(countEl) countEl.textContent = _oaViewersTotal;
 
-    if(!total){
-      list.innerHTML = '<div style="text-align:center;padding:48px;color:rgba(255,255,255,.35);font-family:VT323,monospace;font-size:26px;">Ninguém viu ainda 👀</div>';
-      return;
-    }
+  // Carrega primeira página
+  await _oaViewersLoadPage(list);
 
-    // 2) Busca profiles separadamente pelos user_ids
-    const uids = [...new Set((views||[]).map(v=>v.user_id).filter(Boolean))];
-    let profMap = {};
-    if(uids.length){
-      const { data: profs } = await db
-        .from('profiles')
-        .select('id, username, full_name, avatar_url')
-        .in('id', uids);
-      (profs||[]).forEach(p => { profMap[p.id] = p; });
-    }
-
-    list.innerHTML = (views||[]).map(v => {
-      const p    = profMap[v.user_id] || {};
-      const uid  = v.user_id || '';
-      const av   = p.avatar_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+encodeURIComponent(p.username||uid||'u'));
-      const name = p.full_name || p.username || 'Usuário';
-      const user = p.username ? '@'+p.username : '';
-      const time = v.created_at ? _oaTimeAgo(v.created_at) : '';
-      const safeUid = uid.replace(/'/g, '');
-      return `<div class="oavm-item" onclick="window.oaViewerGoProfile('${safeUid}')">`
-        +`<img class="oavm-av" src="${av}" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=u'" alt="">`
-        +`<div style="flex:1;min-width:0;">`
-        +`<div class="oavm-name">${name}</div>`
-        +`<div class="oavm-user">${user}</div>`
-        +`</div>`
-        +`<div class="oavm-time">${time}</div>`
-        +`</div>`;
-    }).join('');
-  } catch(err){
-    console.error('[OA viewers erro]', err?.message || err);
-    list.innerHTML = '<div style="text-align:center;padding:24px;color:#ff3366;font-size:12px;font-family:Space Mono,monospace;">Erro: '+((err?.message||'').slice(0,80)||'Tente novamente')+'</div>';
-  }
+  // Infinite scroll: detecta quando o usuário chegou perto do fim da lista
+  list.onscroll = function(){
+    if(_oaViewersLoading || _oaViewersExhausted) return;
+    const distBottom = list.scrollHeight - list.scrollTop - list.clientHeight;
+    if(distBottom < 80) _oaViewersLoadPage(list);
+  };
 };
 
 window.oaCloseViewersModal = function(){
