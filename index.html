@@ -8353,7 +8353,8 @@ async function loadFeed(force=false){
   const ctx = _feedCtx;
 
   // Select seguro — sem colunas que podem não existir
-  const SEL='id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url)';
+  // OTIMIZAÇÃO: busca apenas profile_layout->>'avatarFrame' (1 campo do JSONB) em vez do JSONB completo
+  const SEL='id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame)';
 
   // Mostra indicador de "carregando mais" se não for primeira página
   if(feedPage>0 && feedEnd){
@@ -8739,7 +8740,14 @@ function renderPost(post,rxCounts={},myRx='',_origPostMap){
   const avBorderRgba = commMeta ? 'rgba(0,255,204,.55)' : (bizMeta?'rgba(255,204,0,.5)':'rgba(0,255,204,.25)');
   // Atributos extras para hidratação assíncrona dos dados da comunidade
   const commHydrAttr = (commMeta && !cachedComm) ? ` data-comm-avatar="${commMeta.id}"` : '';
-  const avHtml='<img src="'+xss(avUrl)+'"'+commHydrAttr+' data-uid="'+post.user_id+'" data-fb="https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u')+'" style="width:42px;height:42px;border-radius:'+avRadius+';object-fit:cover;border:2px solid '+avBorderRgba+';flex-shrink:0;cursor:pointer;background:#0a0e27;" onclick="'+(commMeta?`openCommDetail('${commMeta.id}')`:`loadProfilePage(this.dataset.uid)`)+'" onerror="this.onerror=null;this.src=this.dataset.fb">';
+  // OTIMIZAÇÃO: avatarFrame vem de profile_layout->>'avatarFrame' extraído no SELECT
+  const _avFrame = (!commMeta && !bizMeta) ? (prof.avatarFrame || null) : null;
+  const _avFrameClass = (_avFrame && _avFrame !== 'none') ? ('ea-lp-avframe ea-lp-avframe-'+_avFrame) : '';
+  const _avImgStyle = 'width:42px;height:42px;border-radius:'+avRadius+';object-fit:cover;border:2px solid '+avBorderRgba+';flex-shrink:0;cursor:pointer;background:#0a0e27;';
+  const _avImg = '<img src="'+xss(avUrl)+'"'+commHydrAttr+' data-uid="'+post.user_id+'" data-fb="https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u')+'" style="'+_avImgStyle+'" onclick="'+(commMeta?`openCommDetail('${commMeta.id}')`:`loadProfilePage(this.dataset.uid)`)+'" onerror="this.onerror=null;this.src=this.dataset.fb">';
+  const avHtml = _avFrameClass
+    ? '<div class="'+_avFrameClass+'" style="display:inline-flex;flex-shrink:0;" onclick="loadProfilePage(\''+post.user_id+'\')">'+ _avImg +'</div>'
+    : _avImg;
   const time=timeAgo(post.created_at);
   const content=linkify(displayContent);
   // Visibilidade (coluna pode não existir)
@@ -9002,7 +9010,7 @@ async function _hydrateRepostCard(repostPostId, originalPostId, originalAuthorId
     let op = null;
     try{
       const{data, error} = await db.from('posts')
-        .select('id,content,media_urls,media_types,user_id,profiles(id,username,full_name,avatar_url)')
+        .select('id,content,media_urls,media_types,user_id,profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame)')
         .eq('id', originalPostId).maybeSingle();
       if(!error) op = data;
     }catch(e){}
@@ -12586,7 +12594,7 @@ async function loadCapsules(){
 async function loadExploreFeed(){
   const feed=document.getElementById('explore-feed');
   feed.innerHTML='<h3 style="font-family:\'Silkscreen\',monospace;font-size:12px;color:var(--neon-cyan);margin-bottom:14px;margin-top:4px;">POSTS EM DESTAQUE</h3>'+skeletons(3);
-  const{data:posts,error:expErr}=await db.from('posts').select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url)').order('created_at',{ascending:false}).limit(20);
+  const{data:posts,error:expErr}=await db.from('posts').select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame)').order('created_at',{ascending:false}).limit(20);
   if(expErr){feed.innerHTML='<div style="color:var(--neon-pink);padding:20px;font-size:12px;">Erro: '+expErr.message+'</div>';return;}
   const postIds=(posts||[]).map(p=>p.id);
   const[rxData,myLikesData]=await Promise.all([
@@ -12624,7 +12632,7 @@ async function doSearch(){
   const seen=new Set();
   const users=[...(byUser||[]),...(byName||[])].filter(u=>{if(seen.has(u.id))return false;seen.add(u.id);return true;}).slice(0,8);
   const{data:posts}=await db.from('posts')
-    .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url)')
+    .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame)')
     .ilike('content','%'+q+'%').order('created_at',{ascending:false}).limit(10);
   let html='';
   if(users.length){
@@ -13428,7 +13436,7 @@ async function loadProfilePage(userId){
     if(postsPanel){
       // [FIX #1] Visitantes não veem posts privados — só o próprio dono vê os seus privados
       let postsQuery = db.from('posts')
-        .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url)')
+        .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame)')
         .eq('user_id',userId).order('created_at',{ascending:false}).limit(50);
       if(!isOwn) {
         // Usuário logado diferente do dono do perfil: excluir posts privados
@@ -13459,7 +13467,7 @@ async function loadProfilePage(userId){
           // Tentativa 1: com join de profiles
           try{
             const{data:origPosts, error:origErr} = await db.from('posts')
-              .select('id,content,media_urls,media_types,user_id,profiles(id,username,full_name,avatar_url)')
+              .select('id,content,media_urls,media_types,user_id,profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame)')
               .in('id', repostOrigIds);
             if(!origErr && origPosts){
               origPosts.forEach(op=>{ origPostMap[op.id]=op; });
@@ -13479,7 +13487,7 @@ async function loadProfilePage(userId){
             for(const oid of repostOrigIds){
               try{
                 const{data:op3} = await db.from('posts')
-                  .select('id,content,media_urls,media_types,user_id,profiles(id,username,full_name,avatar_url)')
+                  .select('id,content,media_urls,media_types,user_id,profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame)')
                   .eq('id', oid).maybeSingle();
                 if(op3) origPostMap[op3.id]=op3;
               }catch(e){}
@@ -13743,7 +13751,7 @@ async function loadMsgs(userId){
   if(postShareIds.length){
     try{
       const{data:sharedPosts} = await db.from('posts')
-        .select('id,content,media_urls,user_id,profiles(id,username,full_name,avatar_url)')
+        .select('id,content,media_urls,user_id,profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame)')
         .in('id', postShareIds);
       (sharedPosts||[]).forEach(p=>{ postShareMap[p.id]=p; });
     }catch(e){}
@@ -14880,7 +14888,7 @@ async function loadHomeMsgs(userId){
   const postShareMap={};
   if(postShareIds.length){
     try{
-      const{data:sp}=await db.from('posts').select('id,content,media_urls,user_id,profiles(id,username,full_name,avatar_url)').in('id',postShareIds);
+      const{data:sp}=await db.from('posts').select('id,content,media_urls,user_id,profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame)').in('id',postShareIds);
       (sp||[]).forEach(p=>{postShareMap[p.id]=p;});
     }catch(e){}
   }
@@ -14990,7 +14998,7 @@ async function loadHomeProfile(){
   const postsDiv=document.createElement('div');postsDiv.id='ht-my-posts';
   postsWrap.appendChild(postsDiv);el.appendChild(postsWrap);
   const{data:posts}=await db.from('posts')
-    .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url)')
+    .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame)')
     .eq('user_id',CU.id).order('created_at',{ascending:false}).limit(5);
   postsDiv.innerHTML=(posts||[]).map(p=>renderPost(p,{},'')).join('')
     ||'<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:20px;">Nenhum post ainda</div>';
@@ -15471,7 +15479,7 @@ async function _goToOriginalPost(postId){
   // 4. Post não está no feed — buscar e renderizar diretamente
   try{
     const{data:p} = await db.from('posts')
-      .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url,status_message)')
+      .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url,status_message,profile_layout->avatarFrame)')
       .eq('id', postId).maybeSingle();
     if(!p){ showToast('Post original não encontrado','error'); return; }
 
@@ -15633,7 +15641,7 @@ async function _shareOnEuAqui(postId, _ignored){
   if(!originalPost){
     try{
       const{data, error} = await db.from('posts')
-        .select('id,user_id,content,media_urls,media_types,visibility,profiles(id,username,full_name,avatar_url)')
+        .select('id,user_id,content,media_urls,media_types,visibility,profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame)')
         .eq('id', postId).maybeSingle();
       if(!error && data){ originalPost = data; }
       else if(error) console.warn('share q1:', error.message, error.code);
@@ -16881,7 +16889,7 @@ async function loadCommPosts(commId){
   const el = document.getElementById('cd-posts-list');
   if(!el) return;
   const{data:cps} = await db.from('community_posts')
-    .select('posts(id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url))')
+    .select('posts(id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame))')
     .eq('community_id',commId).order('created_at',{ascending:false}).limit(20);
   const posts = (cps||[]).map(cp=>cp.posts).filter(Boolean);
   // Popular cache de posts para o compartilhador
@@ -16905,7 +16913,7 @@ async function loadCommMembers(commId){
   const el = document.getElementById('cd-members-list');
   if(!el) return;
   const{data} = await db.from('community_members')
-    .select('user_id,role,joined_at,profiles(id,username,full_name,avatar_url)')
+    .select('user_id,role,joined_at,profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame)')
     .eq('community_id',commId).limit(50);
   el.innerHTML = `<div class="comm-members-grid">` + (data||[]).map(m=>`
     <div class="cmember" onclick="loadProfilePage('${m.user_id}')">
@@ -20431,7 +20439,7 @@ async function loadAppointments(asOwner){
       // FK com nome diferente — tenta join genérico
       console.warn('[appointments owner] fkey join falhou:', res.error?.message);
       const res2 = await db.from('appointments')
-        .select('*, profiles(id,username,full_name,avatar_url)')
+        .select('*, profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame)')
         .eq('business_id', myBusiness.id)
         .order('scheduled_date',{ascending:true});
 
@@ -21046,7 +21054,7 @@ async function loadPurchases(asOwner){
     } else {
       console.warn('[purchases owner] fkey join falhou:', res.error?.message);
       const res2 = await db.from('purchases')
-        .select('*, profiles(id,username,full_name,avatar_url)')
+        .select('*, profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame)')
         .eq('business_id', myBusiness.id)
         .order('created_at',{ascending:false});
 
@@ -24477,7 +24485,7 @@ async function searchHashtag(tag){
   if(!feed) return;
   feed.innerHTML='<h3 style="font-family:\'Silkscreen\',monospace;font-size:12px;color:var(--neon-cyan);margin-bottom:14px;">#'+tag+'</h3>'+skeletons(3);
   const{data:posts}=await db.from('posts')
-    .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url)')
+    .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame)')
     .ilike('content','%#'+tag+'%')
     .order('created_at',{ascending:false}).limit(20);
   if(!posts?.length){
@@ -24689,7 +24697,7 @@ async function loadCommPostsV2(commId,isMember,isMod){
     }catch(e){}
   }
   const{data:cps}=await db.from('community_posts')
-    .select('posts(id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url))')
+    .select('posts(id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,created_at,profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame))')
     .eq('community_id',commId).order('created_at',{ascending:false}).limit(20);
   const posts=(cps||[]).map(cp=>cp.posts).filter(Boolean);
   if(!posts.length){el.innerHTML='<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhum post ainda</div>';return;}
@@ -26173,7 +26181,7 @@ async function loadCommMembersPanel(commId,_ignoredIsMod,_ignoredIsOwner){
   const[{data:comm},{data:members}]=await Promise.all([
     db.from('communities').select('owner_id').eq('id',commId).maybeSingle(),
     db.from('community_members')
-      .select('id,user_id,role,banned_until,joined_at,profiles(id,username,full_name,avatar_url)')
+      .select('id,user_id,role,banned_until,joined_at,profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame)')
       .eq('community_id',commId).order('joined_at')
   ]);
   // ── Calcular isOwner/isMod do usuário logado ──
@@ -26954,7 +26962,7 @@ async function loadCommRanking(commId){
 
   // 1. Buscar TODOS os membros da comunidade
   const{data:members}=await db.from('community_members')
-    .select('user_id,role,profiles(id,username,full_name,avatar_url)')
+    .select('user_id,role,profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame)')
     .eq('community_id',commId).limit(50);
 
   if(!members?.length){
