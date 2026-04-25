@@ -8682,6 +8682,24 @@ async function loadFeed(force=false){
     feed.innerHTML = html || '<div style="text-align:center;padding:40px;color:var(--text-muted);"><div style="font-size:40px;margin-bottom:12px;">📭</div><div style="font-family:VT323,monospace;font-size:20px;">Nenhuma postagem ainda</div></div>';
   } else {
     feed.insertAdjacentHTML('beforeend', html);
+
+    // ── DOM PRUNING: evita vazamento de memória em sessões longas ──────────────
+    // Mantém no DOM no máximo MAX_FEED_NODES posts. Quando ultrapassar, remove
+    // os nós mais antigos do topo (já fora da viewport) e compensa o scroll
+    // para o usuário não sentir o salto visual.
+    const MAX_FEED_NODES = 40;
+    const feedChildren = Array.from(feed.children).filter(el=>el.id && el.id.startsWith('post-'));
+    if(feedChildren.length > MAX_FEED_NODES){
+      const excess = feedChildren.length - MAX_FEED_NODES;
+      let removedHeight = 0;
+      for(let i = 0; i < excess; i++){
+        removedHeight += feedChildren[i].offsetHeight || 0;
+        feedChildren[i].remove();
+      }
+      // Compensa o scroll para que a posição visual não salte
+      if(removedHeight > 0) window.scrollBy(0, -removedHeight);
+    }
+    // ─────────────────────────────────────────────────────────────────────────
   }
 
   _hydrateAllReposts(feed);
