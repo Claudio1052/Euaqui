@@ -7948,7 +7948,10 @@ function renderAvatar(profile,size=42,classes=''){
   if(av&&av.length<=4&&!av.startsWith('http')){
     return`<div class="${classes}" style="width:${size}px;height:${size}px;border-radius:50%;background:rgba(255,255,255,.06);border:2px solid rgba(0,255,204,.3);display:flex;align-items:center;justify-content:center;font-size:${Math.floor(size*.55)}px;flex-shrink:0;">${av}</div>`;
   }
-  return`<img class="${classes}" src="${xss(av)}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.src='${fallback}'">`;
+  // _avatarThumb: entrega WebP já cortado no tamanho exato via Cloudflare Image Resizing,
+  // evitando baixar a imagem original (ex: 3MB) só para exibir um avatar de 40px.
+  const src = _avatarThumb(av, size);
+  return`<img class="${classes}" src="${xss(src)}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.src='${fallback}'">`;
 }
 async function loadUserStats(){
   if(!CU)return;
@@ -10078,6 +10081,46 @@ function _toWorkerUrl(url){
 // Avatar proxy: Cloudflare Worker que cacheia Dicebear por 7 dias e serve avatares R2
 // Troque pela URL do seu Worker após criá-lo (ver comentário no final do script)
 const AVATAR_WORKER_URL = (window.AVATAR_WORKER_URL || 'https://media.euaqui.store');
+
+// ── Avatar Thumbnail — usa rota /avatar/thumb/ do Worker (v4) ───────
+// O Worker tem /avatar/thumb/:key?s=PX que usa Cloudflare Image
+// Resizing para entregar WebP cortado no tamanho exato.
+// Fallback automático no Worker: se Image Resizing não estiver ativo,
+// serve o original com cache de 7 dias (sem resize, mas sem egress repetido).
+//
+// Uso: _avatarThumb(url, 40) → WebP 40×40 via /avatar/thumb/ + cache 30d
+function _avatarThumb(url, size){
+  if(!url || typeof url !== 'string') return url;
+  // SVG Dicebear → leve por natureza, não precisa de resize
+  if(url.includes('dicebear.com') || url.includes('api.dicebear')) return url;
+  // Emoji / retro icon (não é URL)
+  if(!url.startsWith('http')) return url;
+  // Já está na rota de thumb → não mexe
+  if(url.includes('media.euaqui.store/avatar/thumb/')) return url;
+
+  const px  = Math.round((size || 40) * (window.devicePixelRatio || 1));
+  const dpr = window.devicePixelRatio || 1;
+
+  // Já está na rota /media/ ou /avatar/r2/ do Worker → extrai a key
+  if(url.startsWith('https://media.euaqui.store/')){
+    const key = url
+      .replace('https://media.euaqui.store/media/', '')
+      .replace('https://media.euaqui.store/avatar/r2/', '');
+    return `https://media.euaqui.store/avatar/thumb/${key}?s=${size || 40}&dpr=${dpr}`;
+  }
+
+  // Supabase Storage → extrai key e passa para /avatar/thumb/
+  if(url.includes('supabase.co') && url.includes('/storage/v1/object/public/')){
+    try{
+      const u = new URL(url);
+      const pathAfterPublic = u.pathname.replace(/^\/storage\/v1\/object\/public\//, '');
+      return `https://media.euaqui.store/avatar/thumb/${encodeURIComponent(pathAfterPublic)}?s=${size || 40}&dpr=${dpr}`;
+    }catch(e){ return url; }
+  }
+
+  // URL externa fora do nosso CDN → sem transformação
+  return url;
+}
 // ── Limites de mídia (ajuste conforme seu plano) ──
 const R2_MAX_IMAGE_DIM    = 1280;   // feed: máx 1280px no lado maior (era 1920 — economiza ~56% de espaço)
 const R2_THUMB_DIM        = 320;    // miniatura: 320px (para grid de perfil e preview)
@@ -30974,7 +31017,9 @@ let _oaViewersExhausted = false;
 
 function _oaViewerRowHTML(v, p){
   const uid  = (v.user_id || '').replace(/'/g, '');
-  const av   = p.avatar_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+encodeURIComponent(p.username||uid||'u'));
+  const rawAv = p.avatar_url || ('https://api.dicebear.com/7.x/pixel-art/svg?seed='+encodeURIComponent(p.username||uid||'u'));
+  // Entrega miniatura WebP 40×40 via Cloudflare Image Resizing em vez da imagem original
+  const av   = _avatarThumb(rawAv, 40);
   const name = p.full_name || p.username || 'Usuário';
   const user = p.username ? '@'+p.username : '';
   const time = v.created_at ? _oaTimeAgo(v.created_at) : '';
