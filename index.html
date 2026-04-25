@@ -37,6 +37,45 @@
   ══════════════════════════════════════════════════════════════
 
   ══════════════════════════════════════════════════════════════
+  ⚛️  MIGRAÇÃO SUPABASE — RPCs ATÔMICAS DE ESTOQUE (v66)
+  ══════════════════════════════════════════════════════════════
+  Execute no SQL Editor do Supabase ANTES de usar esta versão.
+  Essas funções eliminam race conditions: o banco usa FOR UPDATE
+  para garantir que dois clientes simultâneos nunca gravem o
+  mesmo valor. O JS só passa o product_uuid — o banco decide.
+
+  CREATE OR REPLACE FUNCTION decrement_stock(product_uuid uuid)
+  RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+  DECLARE _stock integer;
+  BEGIN
+    SELECT stock INTO _stock FROM business_products
+      WHERE id = product_uuid FOR UPDATE;
+    IF NOT FOUND THEN
+      RETURN jsonb_build_object('ok', false, 'reason', 'not_found');
+    END IF;
+    IF _stock IS NULL THEN
+      RETURN jsonb_build_object('ok', true, 'reason', 'unlimited');
+    END IF;
+    IF _stock <= 0 THEN
+      RETURN jsonb_build_object('ok', false, 'reason', 'out_of_stock');
+    END IF;
+    UPDATE business_products SET stock = stock - 1 WHERE id = product_uuid;
+    RETURN jsonb_build_object('ok', true, 'new_stock', _stock - 1);
+  END; $$;
+
+  CREATE OR REPLACE FUNCTION increment_stock(product_uuid uuid)
+  RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+  BEGIN
+    UPDATE business_products
+      SET stock = stock + 1
+      WHERE id = product_uuid AND stock IS NOT NULL;
+    IF NOT FOUND THEN
+      RETURN jsonb_build_object('ok', false, 'reason', 'not_found_or_unlimited');
+    END IF;
+    RETURN jsonb_build_object('ok', true);
+  END; $$;
+
+  ══════════════════════════════════════════════════════════════
   🎨 MIGRAÇÃO SUPABASE — LAYOUT PERSONALIZADO DE PERFIL (v60 → v61)
   ══════════════════════════════════════════════════════════════
   Execute no SQL Editor do Supabase ANTES de usar o Layout Personalizado:
@@ -17716,15 +17755,17 @@ async function syncStockFromSales(bizId, silent){
         try{ await db.from('purchases').update({stock_synced:true}).eq('id', purch.id); }catch(_){}
         continue;
       }
-      const newStk = prod.stock - 1;
-      const upd = await db.from('business_products').update({stock: newStk}).eq('id', prod.id);
-      if(upd.error){
+      // ✅ ATÔMICO: RPC — o banco resolve a operação sem race condition
+      const { data: _syncRpc, error: _syncRpcErr } = await db.rpc('decrement_stock', {
+        product_uuid: prod.id
+      });
+      if(_syncRpcErr || !_syncRpc?.ok){
         errors++;
-        console.error('[syncStock] erro ao atualizar:', prod.id, upd.error);
+        console.error('[syncStock] erro RPC decrement_stock:', prod.id, _syncRpcErr || _syncRpc?.reason);
         continue;
       }
-      // Atualiza o objeto em memória para próxima iteração
-      prod.stock = newStk;
+      // Atualiza o objeto em memória com o valor real retornado pelo banco
+      prod.stock = _syncRpc?.new_stock ?? prod.stock - 1;
       // Marca purchase como sincronizada
       try{ await db.from('purchases').update({stock_synced:true}).eq('id', purch.id); }catch(_){}
       adjusted++;
@@ -18107,12 +18148,17 @@ async function _restoreStockForPurchase(purchaseId){
     }
 
     // Só devolve se o produto tem controle de estoque (stock != null)
+    // ✅ ATÔMICO: RPC com UPDATE stock = stock + 1 no banco — imune a race condition
     if(_prod && _prod.stock != null){
-      await db.from('business_products')
-        .update({stock: (_prod.stock||0) + 1})
-        .eq('id', _prod.id);
-      console.log('[stock] devolvido +1 para produto', _prod.id, '| nova qtd:', (_prod.stock||0)+1);
-      return true;
+      const { data: _rpcRes, error: _rpcErr } = await db.rpc('increment_stock', {
+        product_uuid: _prod.id
+      });
+      if(!_rpcErr && _rpcRes?.ok){
+        console.log('[stock] devolvido +1 via RPC para produto', _prod.id);
+        return true;
+      }
+      console.warn('[stock] RPC increment_stock falhou:', _rpcErr || _rpcRes?.reason);
+      return false;
     }
     console.warn('[stock] _restoreStockForPurchase: produto não encontrado para purchase', purchaseId, purch);
   }catch(e){ console.warn('[_restoreStockForPurchase]', e?.message); }
@@ -20031,15 +20077,17 @@ async function acceptDealProposal(dealId, btn){
           } else if(_stkProd.stock <= 0){
             console.warn('[acceptDeal] ⚠️ Produto já está esgotado (stock=0).');
           } else {
-            const _newStk = _stkProd.stock - 1;
-            const _updRes = await db.from('business_products')
-              .update({stock: _newStk})
-              .eq('id', _stkProd.id);
-            if(_updRes.error){
-              console.error('[acceptDeal] ❌ Erro ao salvar novo estoque:', _updRes.error);
-              console.error('   ⚠️ Verifique se a coluna "stock" existe na tabela business_products. Execute no Supabase: ALTER TABLE business_products ADD COLUMN IF NOT EXISTS stock integer DEFAULT NULL;');
+            // ✅ ATÔMICO: RPC com FOR UPDATE no banco — imune a race condition
+            const { data: _rpcRes, error: _rpcErr } = await db.rpc('decrement_stock', {
+              product_uuid: _stkProd.id
+            });
+            if(_rpcErr){
+              console.error('[acceptDeal] ❌ Erro RPC decrement_stock:', _rpcErr);
+              console.error('   ⚠️ Execute no Supabase SQL Editor a função decrement_stock (ver comentário no topo do script v58).');
+            } else if(!_rpcRes?.ok){
+              console.warn('[acceptDeal] ⚠️ Estoque não reduzido via RPC. Motivo:', _rpcRes?.reason);
             } else {
-              console.log('[acceptDeal] ✅ Estoque reduzido:', _stkProd.name, _stkProd.stock, '→', _newStk);
+              console.log('[acceptDeal] ✅ Estoque reduzido atomicamente:', _stkProd.name, '→ novo estoque:', _rpcRes?.new_stock);
             }
           }
         } catch(e){ console.warn('[acceptDeal] stock decrement exception:', e.message); }
