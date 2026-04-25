@@ -8035,9 +8035,26 @@ async function handleLogout(){
     sessionStorage.removeItem('_cp_cache_at');
     sessionStorage.removeItem('_fctx_cache_at');
     _clearProfCache(); // ✅ limpa cache de perfis entre sessões
-    // Fechar canais realtime ativos
-    try{ if(window._callListenCh){ db.removeChannel(window._callListenCh); window._callListenCh=null; } }catch(e){}
-    try{ clearInterval(window._msgPollInterval); }catch(e){}
+
+    // ✅ LIFECYCLE: fecha TODOS os canais Realtime para não esgotar o Connection Pool
+    const _chToClose = [
+      '_callListenCh','_rtNotifCh','_rtMsgsCh','_unreadMsgChannel',
+      '_bizRealtimeCh','_bizListRealtimeCh','_oaRealtimeCh','_presenceChannel'
+    ];
+    _chToClose.forEach(k=>{
+      try{ if(window[k]){ db.removeChannel(window[k]); window[k]=null; } }catch(e){}
+    });
+    // Fecha canais de community chat
+    try{
+      Object.keys(window._commChatPolls||{}).forEach(id=>{
+        try{ db.removeChannel(window._commChatPolls[id]); }catch(e){}
+      });
+      window._commChatPolls = {};
+    }catch(e){}
+    // Para polls de intervalo
+    try{ clearInterval(window._msgPollInterval); window._msgPollInterval=null; }catch(e){}
+    try{ stopBizChatPoll(); }catch(e){}
+
     // Ir para a tela de login ANTES do signOut (garante velocidade)
     showAuth();
     showToast('Até logo! 👋','success');
@@ -14632,25 +14649,31 @@ function setupRealtime(){
   updateUnreadMsgBadge();
   setupUnreadMsgListener();
 
+  // ✅ LIFECYCLE: guardamos referências para removeChannel no logout/visibilitychange
   // Real-time notifications
-  db.channel('rt-notifs-'+CU.id)
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'user_id=eq.'+CU.id},(pl)=>{
-      showToast('🔔 '+pl.new.content,'success');
-      invalidateNotifCache(); // invalida cache para forçar atualização imediata
-      loadNotifCount(true);
-      if(document.getElementById('ht-alerts-list')?.children.length>0) loadHomeAlerts();
-    }).subscribe();
+  if(!window._rtNotifCh){
+    window._rtNotifCh = db.channel('rt-notifs-'+CU.id)
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'notifications',filter:'user_id=eq.'+CU.id},(pl)=>{
+        showToast('🔔 '+pl.new.content,'success');
+        invalidateNotifCache(); // invalida cache para forçar atualização imediata
+        loadNotifCount(true);
+        if(document.getElementById('ht-alerts-list')?.children.length>0) loadHomeAlerts();
+      }).subscribe();
+  }
 
   // Real-time messages via Supabase Realtime
-  db.channel('rt-msgs-'+CU.id)
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'receiver_id=eq.'+CU.id},(pl)=>{
-      handleIncomingMessage(pl.new);
-    })
-    // ── Listener de UPDATE: quando o destinatário marca nossa msg como lida/recebida,
-    //    atualiza os ticks em tempo real sem recarregar a conversa.
-    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'messages',filter:'sender_id=eq.'+CU.id},(pl)=>{
-      _updateMsgTicksLive(pl.new);
-    }).subscribe();
+  // (canal de chat — mantido vivo durante toda a sessão, necessário para tempo real)
+  if(!window._rtMsgsCh){
+    window._rtMsgsCh = db.channel('rt-msgs-'+CU.id)
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'receiver_id=eq.'+CU.id},(pl)=>{
+        handleIncomingMessage(pl.new);
+      })
+      // ── Listener de UPDATE: quando o destinatário marca nossa msg como lida/recebida,
+      //    atualiza os ticks em tempo real sem recarregar a conversa.
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'messages',filter:'sender_id=eq.'+CU.id},(pl)=>{
+        _updateMsgTicksLive(pl.new);
+      }).subscribe();
+  }
 
   // ✅ Polling a cada 3s — motor principal para msgs em tempo real
   // (Realtime com filter receiver_id falha sem RLS; polling é confiável)
@@ -27077,6 +27100,22 @@ if(!window._xpFlushBooted){
   window.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') _flushXpBuffer(); });
 }
 
+// ✅ LIFECYCLE: Fecha canais biz/deals ao fechar ou recarregar a página.
+// Evita conexões "penduradas" no PgBouncer/Supavisor.
+// Os canais de chat (rt-msgs, commChat) são geridos pelo próprio Supabase
+// ao encerrar a ligação WebSocket — não precisamos destruí-los manualmente aqui.
+function _closeNonChatChannels(){
+  try{ stopBizChatPoll(); }catch(e){}
+  try{
+    if(window._oaRealtimeCh){ db.removeChannel(window._oaRealtimeCh); window._oaRealtimeCh=null; }
+  }catch(e){}
+  try{
+    if(window._rtNotifCh){ db.removeChannel(window._rtNotifCh); window._rtNotifCh=null; }
+  }catch(e){}
+}
+window.addEventListener('beforeunload', _closeNonChatChannels);
+window.addEventListener('pagehide', _closeNonChatChannels);
+
 async function addCommXP(commId,userId,action,xpOverride){
   const uid=userId||CU?.id;
   if(!uid||!commId||commId==='undefined'||commId==='null') return;
@@ -27525,6 +27564,30 @@ function _showYTMuteIndicator(iframeEl){
 document.addEventListener('visibilitychange', ()=>{
   if(!document.hidden && window.innerWidth <= 768){
     setTimeout(initFeedAutoplay, 300);
+  }
+});
+
+// ✅ LIFECYCLE: Gestão de canais Realtime por visibilidade da aba/app.
+// Quando o utilizador bloqueia o ecrã ou muda de aba, destruímos os canais
+// de negócio (biz/deals) para não esgotar o Connection Pool do Supabase.
+// Os canais de CHAT (rt-msgs, commChat) são preservados intencionalmente —
+// eles precisam continuar ativos para receber mensagens em tempo real.
+document.addEventListener('visibilitychange', ()=>{
+  if(!CU) return;
+  if(document.hidden){
+    // App foi para background — fecha canais de biz/deals (órfãos silenciosos)
+    try{ stopBizChatPoll(); }catch(e){}
+    // Fecha canal de stories (baixa prioridade em background)
+    try{
+      if(window._oaRealtimeCh){ db.removeChannel(window._oaRealtimeCh); window._oaRealtimeCh=null; }
+    }catch(e){}
+  } else {
+    // App voltou ao foreground — reabre apenas o que for necessário
+    // O biz chat só reabre se o utilizador estiver ativamente num chat aberto
+    const bizPage = document.getElementById('page-businesses');
+    if(bizPage && bizPage.style.display !== 'none' && window.currentBizChat){
+      try{ startBizChatPoll(); }catch(e){}
+    }
   }
 });
 
