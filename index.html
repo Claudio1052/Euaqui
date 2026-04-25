@@ -7998,7 +7998,7 @@ function renderAvatar(profile,size=42,classes=''){
   // _avatarThumb: entrega WebP já cortado no tamanho exato via Cloudflare Image Resizing,
   // evitando baixar a imagem original (ex: 3MB) só para exibir um avatar de 40px.
   const src = _avatarThumb(av, size);
-  return`<img class="${classes}" src="${xss(src)}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.src='${fallback}'">`;
+  return`<img loading="lazy" class="${classes}" src="${xss(src)}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.src='${fallback}'">`;
 }
 async function loadUserStats(){
   if(!CU)return;
@@ -8752,7 +8752,7 @@ function renderPost(post,rxCounts={},myRx='',_origPostMap){
   const _avFrame = (!commMeta && !bizMeta) ? (prof.avatarFrame || null) : null;
   const _avFrameClass = (_avFrame && _avFrame !== 'none') ? ('ea-lp-avframe ea-lp-avframe-'+_avFrame) : '';
   const _avImgStyle = 'width:42px;height:42px;border-radius:'+avRadius+';object-fit:cover;border:2px solid '+avBorderRgba+';flex-shrink:0;cursor:pointer;background:#0a0e27;';
-  const _avImg = '<img src="'+xss(avUrl)+'"'+commHydrAttr+' data-uid="'+post.user_id+'" data-fb="https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u')+'" style="'+_avImgStyle+'" onclick="'+(commMeta?`openCommDetail('${commMeta.id}')`:`loadProfilePage(this.dataset.uid)`)+'" onerror="this.onerror=null;this.src=this.dataset.fb">';
+  const _avImg = '<img loading="lazy" src="'+xss(avUrl)+'"'+commHydrAttr+' data-uid="'+post.user_id+'" data-fb="https://api.dicebear.com/7.x/pixel-art/svg?seed='+(prof.username||'u')+'" style="'+_avImgStyle+'" onclick="'+(commMeta?`openCommDetail('${commMeta.id}')`:`loadProfilePage(this.dataset.uid)`)+'" onerror="this.onerror=null;this.src=this.dataset.fb">';
   const avHtml = _avFrameClass
     ? '<div class="'+_avFrameClass+'" style="display:inline-flex;flex-shrink:0;" onclick="loadProfilePage(\''+post.user_id+'\')">'+ _avImg +'</div>'
     : _avImg;
@@ -8793,7 +8793,7 @@ function renderPost(post,rxCounts={},myRx='',_origPostMap){
       const _isEmoji = _av && _av.length<=4 && !_av.startsWith('http');
       const _avHtml = _isEmoji
         ? `<span style="font-size:16px;">${_av}</span>`
-        : `<img src="${xss(_av)}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;display:block;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${_user}'">`;
+        : `<img loading="lazy" src="${xss(_av)}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;display:block;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${_user}'">`;
       let _clean = (_op.content||'')
         .replace(/^\[COMM_POST:[^\]]*\]\n?/,'')
         .replace(/^\[BIZ_PROMO:[^\]]*\]\n?/,'')
@@ -8978,7 +8978,7 @@ function _fillRepostCard(repostPostId, op, origId){
   }
 
   if(elAv){
-    elAv.innerHTML = `<img src="${xss(displayAv)}" style="width:28px;height:28px;border-radius:${displayRadius};object-fit:cover;display:block;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=x'">`;
+    elAv.innerHTML = `<img loading="lazy" src="${xss(displayAv)}" style="width:28px;height:28px;border-radius:${displayRadius};object-fit:cover;display:block;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=x'">`;
     elAv.style.cursor='pointer';
     elAv.onclick=clickFn;
   }
@@ -9073,7 +9073,7 @@ async function _hydrateRepostCard(repostPostId, originalPostId, originalAuthorId
 
     // Atualizar avatar
     if(elAv){
-      elAv.innerHTML = `<img src="${xss(displayAv)}" style="width:28px;height:28px;border-radius:${displayRadius};object-fit:cover;display:block;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=x'">`;
+      elAv.innerHTML = `<img loading="lazy" src="${xss(displayAv)}" style="width:28px;height:28px;border-radius:${displayRadius};object-fit:cover;display:block;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=x'">`;
       elAv.style.cursor = 'pointer';
       elAv.onclick = ()=>{ try{ eval(displayClick); }catch(e){} };
     }
@@ -9429,13 +9429,13 @@ function renderProdCarousel(images, height, forLightbox){
     const clickAttr = forLightbox
       ? `onclick="event.stopPropagation();ppOpenFotoCarousel(${urlsJson},0)" style="${imgStyle}cursor:zoom-in;border-radius:8px;"`
       : `style="${imgStyle}border-radius:8px;"`;
-    return `<div class="prod-carousel" style="margin-bottom:0;"><img src="${xss(images[0])}" ${clickAttr}></div>`;
+    return `<div class="prod-carousel" style="margin-bottom:0;"><img loading="lazy" src="${xss(images[0])}" ${clickAttr}></div>`;
   }
   const slides = images.map((url,si)=>{
     const clickAttr = forLightbox
       ? `onclick="event.stopPropagation();ppOpenFotoCarousel(${urlsJson},${si})" style="height:${h}px;cursor:zoom-in;"`
       : `style="height:${h}px;"`;
-    return `<div class="prod-carousel-slide"><img src="${xss(url)}" ${clickAttr}></div>`;
+    return `<div class="prod-carousel-slide"><img loading="lazy" src="${xss(url)}" ${clickAttr}></div>`;
   }).join('');
   const dots = images.map((_,i)=>`<div class="prod-carousel-dot${i===0?' active':''}" data-i="${i}"></div>`).join('');
   const uid = 'pc-'+Math.random().toString(36).slice(2,7);
@@ -9503,7 +9503,7 @@ function renderProdPhotosInput(containerId, existingUrls){
   while(urls.length < 3) urls.push(null);
   const slots = urls.slice(0,3).map((url,i)=>`
     <div class="prod-photo-slot" id="prod-slot-${containerId}-${i}" onclick="document.getElementById('prod-file-${containerId}-${i}').click()">
-      ${url?`<img src="${xss(url)}" id="prod-slot-img-${containerId}-${i}"><button class="prod-photo-remove" onclick="event.stopPropagation();removeProdPhoto('${containerId}',${i})">✕</button>`:`<span id="prod-slot-lbl-${containerId}-${i}" style="font-size:22px;">➕</span>`}
+      ${url?`<img loading="lazy" src="${xss(url)}" id="prod-slot-img-${containerId}-${i}"><button class="prod-photo-remove" onclick="event.stopPropagation();removeProdPhoto('${containerId}',${i})">✕</button>`:`<span id="prod-slot-lbl-${containerId}-${i}" style="font-size:22px;">➕</span>`}
     </div>
     <input type="file" id="prod-file-${containerId}-${i}" accept="image/*" style="display:none" data-slot="${i}" onchange="onProdPhotoChange('${containerId}',${i},this)">`
   ).join('');
@@ -9522,7 +9522,7 @@ function onProdPhotoChange(cid, idx, input){
   // Preview local
   const slot = document.getElementById('prod-slot-'+cid+'-'+idx);
   const objUrl = URL.createObjectURL(file);
-  if(slot) slot.innerHTML = `<img src="${objUrl}" id="prod-slot-img-${cid}-${idx}"><button class="prod-photo-remove" onclick="event.stopPropagation();removeProdPhoto('${cid}',${idx})">✕</button>`;
+  if(slot) slot.innerHTML = `<img loading="lazy" src="${objUrl}" id="prod-slot-img-${cid}-${idx}"><button class="prod-photo-remove" onclick="event.stopPropagation();removeProdPhoto('${cid}',${idx})">✕</button>`;
   // Remove URL existente para esse slot (será re-uploaded)
   if(window._prodPhotoUrls[cid]) window._prodPhotoUrls[cid][idx] = null;
 }
@@ -9721,7 +9721,7 @@ async function _cmtMentionCheck(inp, postId){
     const isE = av && av.length<=4 && !av.startsWith('http');
     const avEl = isE
       ? `<div style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">${av}</div>`
-      : `<img src="${xss(av)}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${u.username||'u'}'">`;
+      : `<img loading="lazy" src="${xss(av)}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${u.username||'u'}'">`;
     return `<div onclick="_insertMention('${postId}','${u.username}','${u.id}')"
       style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;transition:background .15s;"
       onmouseover="this.style.background='rgba(0,255,204,.08)'" onmouseout="this.style.background='transparent'">
@@ -9760,7 +9760,7 @@ function _closeMentionDropdown(postId){
 function renderComment(c,myVote,isPostOwner,postId){
   const prof=c.profiles||{};
   const avUrl=prof.avatar_url||`https://api.dicebear.com/7.x/pixel-art/svg?seed=${prof.username||'u'}`;
-  const avHtml=`<img class="cmt-av" src="${xss(avUrl)}" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${prof.username||'u'}'">`;
+  const avHtml=`<img loading="lazy" class="cmt-av" src="${xss(avUrl)}" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${prof.username||'u'}'">`;
   // hidden/deleted podem não existir na tabela — usa ?? false como fallback
   const isHidden=c.hidden??false;
   const isDeleted=c.deleted??false;
@@ -11043,7 +11043,7 @@ function handleMedia(inp){
     return`<div style="position:relative;border-radius:6px;overflow:hidden;background:#000;aspect-ratio:1;">
       ${isVid
         ?`<video src="${url}" style="width:100%;height:100%;object-fit:cover;" muted playsinline></video><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;"><span style="font-size:18px;filter:drop-shadow(0 1px 3px #000);">▶</span></div>`
-        :`<img src="${url}" style="width:100%;height:100%;object-fit:cover;">`}
+        :`<img loading="lazy" src="${url}" style="width:100%;height:100%;object-fit:cover;">`}
       <button onclick="removeMedia(${i})" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.75);border:none;color:#fff;width:20px;height:20px;border-radius:50%;cursor:pointer;font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:2;">×</button>
       ${i===0?`<span style="position:absolute;bottom:2px;left:4px;font-size:8px;color:rgba(255,255,255,.8);font-family:'Space Mono',monospace;">CAPA</span>`:''}
     </div>`;
@@ -11105,7 +11105,7 @@ function generateRetroAvatar(){
   const preview = document.getElementById('av-gen-preview');
   if(preview){
     // data-dicebear-direct: exclui do MutationObserver de proxy (usa Dicebear com estilo/bg customizados)
-    preview.innerHTML = `<img src="${url}" data-dicebear-direct="1" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='<span style=font-size:30px>🎮</span>'">`;
+    preview.innerHTML = `<img loading="lazy" src="${url}" data-dicebear-direct="1" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='<span style=font-size:30px>🎮</span>'">`;
   }
 }
 async function applyRetroAvatar(){
@@ -11168,7 +11168,7 @@ async function applyRetroAvatar(){
       if(el.tagName==='IMG'){ el.setAttribute('data-dicebear-direct','1'); el.src=r2Url; }
     });
     const prev=document.getElementById('av-current-preview');
-    if(prev) prev.innerHTML=`<img src="${r2Url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+    if(prev) prev.innerHTML=`<img loading="lazy" src="${r2Url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
 
     window._generatedAvatarUrl = null;
     avatarFile = null;
@@ -11308,7 +11308,7 @@ function previewAvatar(inp){
   const url=URL.createObjectURL(avatarFile);
   // Atualiza APENAS o preview "Avatar atual" — navbar/perfil só mudam após SALVAR
   const prev=document.getElementById('av-current-preview');
-  if(prev) prev.innerHTML=`<img src="${url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+  if(prev) prev.innerHTML=`<img loading="lazy" src="${url}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
   const fp=document.getElementById('av-file-preview');
   if(fp) fp.innerHTML=`<div style="font-size:10px;color:var(--neon-cyan);">✓ Foto selecionada — clique em SALVAR para confirmar</div>`;
 }
@@ -11581,7 +11581,7 @@ async function _loadBlockedList(){
   cont.innerHTML = rows.map(r=>{
     const p = r.profile||{};
     const av = p.avatar_url
-      ? `<img src="${p.avatar_url}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,51,102,.4);">`
+      ? `<img loading="lazy" src="${p.avatar_url}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,51,102,.4);">`
       : `<div style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;font-size:18px;">👤</div>`;
     const name = p.full_name||p.username||'Usuário';
     const uname = p.username||'';
@@ -12550,7 +12550,7 @@ async function saveSettings(){
 
   // Preview "Avatar atual" na aba editar
   const prev = document.getElementById('av-current-preview');
-  if(prev) prev.innerHTML = `<img src="${finalAv}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+  if(prev) prev.innerHTML = `<img loading="lazy" src="${finalAv}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
 
   refreshUI();
   avatarFile=null; retroIconSelected=null; window._generatedAvatarUrl=null;
@@ -13058,10 +13058,10 @@ async function openCommDetail(commId){
   const isBanned=bannedUntil&&bannedUntil>new Date();
   const isImgAvatar=comm.avatar_url&&comm.avatar_url.startsWith('http');
   const avatarHtml=isImgAvatar
-    ?`<img src="${xss(comm.avatar_url)}" class="comm-avatar-big" style="width:72px;height:72px;">`
+    ?`<img loading="lazy" src="${xss(comm.avatar_url)}" class="comm-avatar-big" style="width:72px;height:72px;">`
     :`<div class="comm-avatar-big">${comm.avatar_url||'🏘'}</div>`;
   const bannerHtml=comm.banner_url
-    ?`<div class="comm-banner"><img src="${xss(comm.banner_url)}"><div class="comm-banner-overlay"></div></div>`
+    ?`<div class="comm-banner"><img loading="lazy" src="${xss(comm.banner_url)}"><div class="comm-banner-overlay"></div></div>`
     :`<div class="comm-banner" style="display:flex;align-items:center;justify-content:center;font-size:64px;">${comm.avatar_url&&!isImgAvatar?comm.avatar_url:'🏘'}</div>`;
   el.innerHTML=`
     <div class="comm-detail-wrap">
@@ -13091,7 +13091,7 @@ async function openCommDetail(commId){
         ${isBanned?`<div style="background:rgba(255,51,102,.1);border:1px solid rgba(255,51,102,.3);border-radius:10px;padding:14px;margin-bottom:14px;text-align:center;font-size:12px;color:var(--neon-pink);">🚫 Banido até ${bannedUntil?.toLocaleDateString('pt-BR')}</div>`:''}
         ${isOwner?`<div style="background:var(--bg-card);border:1px solid var(--border-glow);border-radius:12px;padding:14px;margin-bottom:14px;box-sizing:border-box;width:100%;">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;min-width:0;">
-            ${isImgAvatar?`<img src="${xss(comm.avatar_url)}" style="width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid var(--neon-cyan)40;flex-shrink:0;">`:`<div style="width:36px;height:36px;border-radius:10px;background:rgba(0,255,204,.1);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${comm.avatar_url||'🏘'}</div>`}
+            ${isImgAvatar?`<img loading="lazy" src="${xss(comm.avatar_url)}" style="width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid var(--neon-cyan)40;flex-shrink:0;">`:`<div style="width:36px;height:36px;border-radius:10px;background:rgba(0,255,204,.1);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${comm.avatar_url||'🏘'}</div>`}
             <div style="min-width:0;flex:1;">
               <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${xss(comm.name)}</div>
               <div style="font-size:9px;color:var(--text-muted);">Postando como comunidade</div>
@@ -13780,7 +13780,7 @@ async function loadMsgs(userId){
       if(isVideo){
         mediaHtml = '<div class="mb-media"><video src="'+safeUrl+'" controls playsinline style="width:100%;max-height:200px;display:block;border-radius:8px;"></video></div>';
       } else {
-        mediaHtml = '<div class="mb-media" data-src="'+safeUrl+'" onclick="openLightbox(this.dataset.src)"><img src="'+safeUrl+'" alt="imagem" style="display:block;width:100%;border-radius:8px;"></div>';
+        mediaHtml = '<div class="mb-media" data-src="'+safeUrl+'" onclick="openLightbox(this.dataset.src)"><img loading="lazy" src="'+safeUrl+'" alt="imagem" style="display:block;width:100%;border-radius:8px;"></div>';
       }
     }
     // Verificar se é post compartilhado [POST_SHARE:id]
@@ -13903,7 +13903,7 @@ function _renderPostShareBubble(postId, post, extraMsg, isSent){
   const isEmoji = av && av.length<=4 && !av.startsWith('http');
   const avEl = isEmoji
     ? `<div style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;">${av}</div>`
-    : `<img src="${xss(av)}" style="width:26px;height:26px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${xss(authorUser||'u')}'">`;
+    : `<img loading="lazy" src="${xss(av)}" style="width:26px;height:26px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${xss(authorUser||'u')}'">`;
 
   // Conteúdo limpo
   let cleanContent = (post.content||'')
@@ -14200,7 +14200,7 @@ function _appendChatBubble(msg, area){
     const isVideo=(msg.media_type||'').startsWith('video')||/\.(mp4|webm|mov)$/i.test(msg.media_url);
     mediaHtml=isVideo
       ?'<div class="mb-media"><video src="'+safeUrl+'" controls playsinline style="width:100%;max-height:200px;display:block;border-radius:8px;"></video></div>'
-      :'<div class="mb-media" data-src="'+safeUrl+'" onclick="openLightbox(this.dataset.src)"><img src="'+safeUrl+'" alt="imagem" style="display:block;width:100%;border-radius:8px;"></div>';
+      :'<div class="mb-media" data-src="'+safeUrl+'" onclick="openLightbox(this.dataset.src)"><img loading="lazy" src="'+safeUrl+'" alt="imagem" style="display:block;width:100%;border-radius:8px;"></div>';
   }
   const contentHtml = msg.content ? '<div class="mb-bubble">'+xss(msg.content)+'</div>' : '';
   const div = document.createElement('div');
@@ -14776,7 +14776,7 @@ async function loadHomeComms(){
       const isMember=ms.has(c.id);
       const _coverUrl3 = (c.banner_url&&c.banner_url.startsWith('http')) ? c.banner_url
         : (c.avatar_url&&c.avatar_url.startsWith('http')) ? c.avatar_url : null;
-      card.innerHTML='<div class="comm-cover">'+(_coverUrl3?'<img src="'+xss(_coverUrl3)+'" style="width:100%;height:100%;object-fit:cover;">':xss(c.avatar_url||'🏘'))+'</div><div class="comm-info"><div class="comm-name">'+xss(c.name)+'</div><div class="comm-desc">'+xss(c.description||'')+'</div><div class="comm-meta"><span>👥 '+(c.members_count||0)+'</span></div><button class="comm-join '+(isMember?'joined':'')+'" style="margin-top:8px;width:100%;">'+(isMember?'✓ Membro':'+ Entrar')+'</button></div>';
+      card.innerHTML='<div class="comm-cover">'+(_coverUrl3?'<img loading="lazy" src="'+xss(_coverUrl3)+'" style="width:100%;height:100%;object-fit:cover;">':xss(c.avatar_url||'🏘'))+'</div><div class="comm-info"><div class="comm-name">'+xss(c.name)+'</div><div class="comm-desc">'+xss(c.description||'')+'</div><div class="comm-meta"><span>👥 '+(c.members_count||0)+'</span></div><button class="comm-join '+(isMember?'joined':'')+'" style="margin-top:8px;width:100%;">'+(isMember?'✓ Membro':'+ Entrar')+'</button></div>';
       card.onclick=()=>openCommDetail(c.id);
       card.querySelector('button').onclick=(e)=>{e.stopPropagation();toggleJoinComm(c.id,isMember,card.querySelector('button'));};
       grid.appendChild(card);
@@ -14908,7 +14908,7 @@ async function loadHomeMsgs(userId){
     if(m.media_url){
       const isVid=(m.media_type||'').startsWith('video');
       mh=isVid?'<div class="mb-media"><video src="'+xss(m.media_url)+'" controls style="width:100%;max-height:160px;border-radius:8px;display:block;"></video></div>'
-              :'<div class="mb-media" data-src="'+xss(m.media_url)+'" onclick="openLightbox(this.dataset.src)"><img src="'+xss(m.media_url)+'" style="width:100%;border-radius:8px;" class="img-safe"></div>';
+              :'<div class="mb-media" data-src="'+xss(m.media_url)+'" onclick="openLightbox(this.dataset.src)"><img loading="lazy" src="'+xss(m.media_url)+'" style="width:100%;border-radius:8px;" class="img-safe"></div>';
     }
     const sharedPostId=_extractPostShareId(m.content);
     let contentHtml='';
@@ -15744,14 +15744,14 @@ async function _shareOnEuAqui(postId, _ignored){
       <!-- Card do post original: mostra comunidade ou autor conforme origem -->
       <div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:12px;margin-bottom:16px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-          <img src="${xss(sourceAvUrl)}" style="width:34px;height:34px;border-radius:${sourceRadius};object-fit:cover;border:2px solid rgba(0,255,204,.35);" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=x'">
+          <img loading="lazy" src="${xss(sourceAvUrl)}" style="width:34px;height:34px;border-radius:${sourceRadius};object-fit:cover;border:2px solid rgba(0,255,204,.35);" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=x'">
           <div>
             <div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--neon-cyan);">${xss(sourceName)}</div>
             <div style="font-size:9px;color:var(--text-muted);">${xss(sourceSub)}</div>
           </div>
         </div>
         <div style="font-size:12px;color:var(--text-light);line-height:1.5;max-height:80px;overflow:hidden;word-break:break-word;">${xss(cleanContent || '(sem texto)')}</div>
-        ${(Array.isArray(originalPost.media_urls) && originalPost.media_urls[0]) ? `<div style="margin-top:8px;border-radius:8px;overflow:hidden;max-height:100px;"><img src="${xss(originalPost.media_urls[0])}" style="width:100%;height:100px;object-fit:cover;display:block;"></div>` : ''}
+        ${(Array.isArray(originalPost.media_urls) && originalPost.media_urls[0]) ? `<div style="margin-top:8px;border-radius:8px;overflow:hidden;max-height:100px;"><img loading="lazy" src="${xss(originalPost.media_urls[0])}" style="width:100%;height:100px;object-fit:cover;display:block;"></div>` : ''}
       </div>
 
       <div style="display:flex;gap:6px;margin-bottom:14px;">
@@ -15888,7 +15888,7 @@ async function openSendToFriendModal(postId){
     const isE = av && av.length<=4 && !av.startsWith('http');
     const avEl = isE
       ? `<div style="width:46px;height:46px;border-radius:50%;border:2px solid rgba(0,255,204,.3);background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;">${av}</div>`
-      : `<img src="${xss(av)}" style="width:46px;height:46px;border-radius:50%;object-fit:cover;border:2px solid rgba(0,255,204,.3);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${xss(f.username||'u')}'">`;
+      : `<img loading="lazy" src="${xss(av)}" style="width:46px;height:46px;border-radius:50%;object-fit:cover;border:2px solid rgba(0,255,204,.3);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${xss(f.username||'u')}'">`;
     return `<div style="display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;min-width:64px;padding:4px;" onclick="_sendPostToFriend('${postId}','${xss(f.id)}','${xss(f.username||'')}',this)">
       <div style="position:relative;">
         ${avEl}
@@ -15912,7 +15912,7 @@ async function openSendToFriendModal(postId){
       <!-- Preview mini do post -->
       <div style="display:flex;gap:10px;align-items:center;padding:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;margin-bottom:14px;">
         ${postMedia
-          ? `<img src="${xss(postMedia)}" style="width:48px;height:48px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">`
+          ? `<img loading="lazy" src="${xss(postMedia)}" style="width:48px;height:48px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">`
           : `<div style="width:48px;height:48px;border-radius:8px;background:linear-gradient(135deg,rgba(0,255,204,.15),rgba(191,95,255,.15));display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;">📝</div>`
         }
         <div style="flex:1;min-width:0;">
@@ -16593,7 +16593,7 @@ async function loadCommGrid(mode){
     card.className='comm-card';
     const _coverUrl2 = (comm.banner_url&&comm.banner_url.startsWith('http')) ? comm.banner_url
       : (comm.avatar_url&&comm.avatar_url.startsWith('http')) ? comm.avatar_url : null;
-    card.innerHTML='<div class="comm-cover">'+(_coverUrl2?'<img src="'+xss(_coverUrl2)+'" style="width:100%;height:100%;object-fit:cover;">':xss(comm.avatar_url||'🏘'))+'</div>'
+    card.innerHTML='<div class="comm-cover">'+(_coverUrl2?'<img loading="lazy" src="'+xss(_coverUrl2)+'" style="width:100%;height:100%;object-fit:cover;">':xss(comm.avatar_url||'🏘'))+'</div>'
       +'<div class="comm-info">'
         +'<div class="comm-name">'+xss(comm.name)+'</div>'
         +'<div class="comm-desc">'+xss(comm.description||'')+'</div>'
@@ -16687,7 +16687,7 @@ async function loadCommGridCreated(){
     card.className='comm-card';
     card.style.position='relative';
     const _coverUrl = (comm.banner_url&&comm.banner_url.startsWith('http'))?comm.banner_url:(comm.avatar_url&&comm.avatar_url.startsWith('http'))?comm.avatar_url:null;
-    card.innerHTML='<div class="comm-cover">'+(_coverUrl?'<img src="'+xss(_coverUrl)+'" style="width:100%;height:100%;object-fit:cover;">':xss(comm.avatar_url||'🏘'))+'</div>'
+    card.innerHTML='<div class="comm-cover">'+(_coverUrl?'<img loading="lazy" src="'+xss(_coverUrl)+'" style="width:100%;height:100%;object-fit:cover;">':xss(comm.avatar_url||'🏘'))+'</div>'
       +'<div class="comm-info">'
         +'<div class="comm-name" style="display:flex;align-items:center;gap:5px;"><span style="color:var(--neon-yellow);">👑</span>'+xss(comm.name)+'</div>'
         +'<div class="comm-desc">'+xss(comm.description||'')+'</div>'
@@ -16873,7 +16873,7 @@ function showProfileSavedPopup(){
     const av = getAvatar(CP);
     const isEmoji = av && av.length <= 4 && !av.startsWith('http');
     if(isEmoji){ avEl.textContent = av; avEl.style.fontSize='26px'; }
-    else { avEl.innerHTML = `<img src="${xss(av)}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.textContent='😊'"`; }
+    else { avEl.innerHTML = `<img loading="lazy" src="${xss(av)}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.textContent='😊'"`; }
   }
 
   // Fechar ao clicar fora
@@ -16890,7 +16890,7 @@ function updateAvPreview(){
   const av = getAvatar(CP);
   const isEmoji = av && av.length<=4 && !av.startsWith('http');
   if(isEmoji){ prev.innerHTML=''; prev.textContent=av; }
-  else{ prev.innerHTML=`<img src="${xss(av)}" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${CP.username||'u'}'">`; }
+  else{ prev.innerHTML=`<img loading="lazy" src="${xss(av)}" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${CP.username||'u'}'">`; }
 }
 
 async function loadCommPosts(commId){
@@ -17455,7 +17455,7 @@ async function loadNotifTab(tabId){
       const _oaBorderColor = _oaIsBiz ? 'rgba(255,204,0,.5)' : _oaIsComm ? 'rgba(0,255,204,.5)' : 'rgba(0,255,204,.5)';
       const _oaBadge = _oaIsBiz ? '🏪' : _oaIsComm ? '🏘️' : '👁️';
       const _oaErrIcon = _oaIsBiz ? '🏪' : _oaIsComm ? '🏘️' : '👁️';
-      niIconHtml = `<img src="${oaAvatar}" style="width:36px;height:36px;border-radius:${_oaRadius};object-fit:cover;border:2px solid ${_oaBorderColor};display:block;" onerror="this.parentElement.innerHTML='<span style=\\'font-size:20px\\'>${_oaErrIcon}</span>'"><span style="position:absolute;bottom:-3px;right:-3px;font-size:13px;line-height:1;">${_oaBadge}</span>`;
+      niIconHtml = `<img loading="lazy" src="${oaAvatar}" style="width:36px;height:36px;border-radius:${_oaRadius};object-fit:cover;border:2px solid ${_oaBorderColor};display:block;" onerror="this.parentElement.innerHTML='<span style=\\'font-size:20px\\'>${_oaErrIcon}</span>'"><span style="position:absolute;bottom:-3px;right:-3px;font-size:13px;line-height:1;">${_oaBadge}</span>`;
     } else if(isOaNotif){
       // Fallback sem imagem: emoji correto por tipo
       const _fbBadge = n.type==='olha_aqui_biz'?'🏪':n.type==='olha_aqui_comm'?'🏘️':'👁️';
@@ -17466,12 +17466,12 @@ async function loadNotifTab(tabId){
       const _isSystemBizN = n.type === 'system';
       const _bizRad = '10px'; // sempre quadrado
       const _bizBrd = (n.type === 'purchase_done' || n.type === 'biz_promo') ? 'rgba(255,204,0,.5)' : 'rgba(0,255,204,.5)';
-      niIconHtml = `<img src="${bizLogo}" style="width:36px;height:36px;border-radius:${_bizRad};object-fit:cover;border:2px solid ${_bizBrd};display:block;" onerror="this.parentElement.innerHTML='<span style=\'font-size:20px\'>🏪</span>'">`;
+      niIconHtml = `<img loading="lazy" src="${bizLogo}" style="width:36px;height:36px;border-radius:${_bizRad};object-fit:cover;border:2px solid ${_bizBrd};display:block;" onerror="this.parentElement.innerHTML='<span style=\'font-size:20px\'>🏪</span>'">`;
     } else if(isBizNotif){
       niIconHtml = `<span style="font-size:20px">🏪</span>`;
     } else if(hasCommImg){
       niIconStyle = 'style="background:transparent;padding:0;"';
-      niIconHtml = `<img src="${commAvatar}" style="width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid rgba(0,255,204,.35);">`;
+      niIconHtml = `<img loading="lazy" src="${commAvatar}" style="width:36px;height:36px;border-radius:10px;object-fit:cover;border:2px solid rgba(0,255,204,.35);">`;
     } else if(isCommunityNotif){
       niIconHtml = `<span style="font-size:20px">🏘️</span>`;
     }
@@ -17684,7 +17684,7 @@ function buildBizCard(biz, isFollowing){
   const div = document.createElement('div');
   div.className = 'biz-card';
   const logo = biz.logo_url
-    ? `<img src="${xss(biz.logo_url)}" style="width:100%;height:100%;object-fit:cover;">`
+    ? `<img loading="lazy" src="${xss(biz.logo_url)}" style="width:100%;height:100%;object-fit:cover;">`
     : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:28px;">${biz.category==='loja'?'🛍️':'🔧'}</div>`;
   // Rating stars helper
   function renderStarsDisp(ratingVal, countVal){
@@ -17707,7 +17707,7 @@ function buildBizCard(biz, isFollowing){
        </div>`;
   div.innerHTML = `
     <div class="biz-banner">
-      ${biz.banner_url?`<img src="${xss(biz.banner_url)}" style="width:100%;height:100%;object-fit:cover;">`:''}
+      ${biz.banner_url?`<img loading="lazy" src="${xss(biz.banner_url)}" style="width:100%;height:100%;object-fit:cover;">`:''}
       <div class="biz-logo">${logo}</div>
     </div>
     <div class="biz-body">
@@ -18007,12 +18007,12 @@ function openBizForm(edit=false){
     if(b.logo_url){
       document.getElementById('biz-logo-url').value = b.logo_url;
       const lp=document.getElementById('biz-logo-preview');
-      if(lp) lp.innerHTML=`<img src="${xss(b.logo_url)}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">`;
+      if(lp) lp.innerHTML=`<img loading="lazy" src="${xss(b.logo_url)}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">`;
     }
     if(b.banner_url){
       document.getElementById('biz-banner-url').value = b.banner_url;
       const bp=document.getElementById('biz-banner-preview');
-      if(bp) bp.innerHTML=`<img src="${xss(b.banner_url)}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">`;
+      if(bp) bp.innerHTML=`<img loading="lazy" src="${xss(b.banner_url)}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">`;
     }
   } else {
     document.getElementById('biz-edit-id').value = '';
@@ -18461,8 +18461,8 @@ async function loadBizChats(){
     const _ciRadius = isOwner ? '50%' : '10px';
     const _ciBorder = isOwner ? 'rgba(0,255,204,.35)' : 'rgba(255,204,0,.35)';
     const avatarTag = linkHref
-      ? `<a href="${linkHref}" onclick="event.stopPropagation();" style="flex-shrink:0;display:block;border-radius:${_ciRadius};" title="Ver perfil"><img src="${xss(avatarUrl)}" style="width:40px;height:40px;border-radius:${_ciRadius};object-fit:cover;border:2px solid ${_ciBorder};background:rgba(255,255,255,.06);display:block;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(label)}'"></a>`
-      : `<img src="${xss(avatarUrl)}" style="width:40px;height:40px;border-radius:${_ciRadius};object-fit:cover;border:2px solid ${_ciBorder};background:rgba(255,255,255,.06);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(label)}'">`;
+      ? `<a href="${linkHref}" onclick="event.stopPropagation();" style="flex-shrink:0;display:block;border-radius:${_ciRadius};" title="Ver perfil"><img loading="lazy" src="${xss(avatarUrl)}" style="width:40px;height:40px;border-radius:${_ciRadius};object-fit:cover;border:2px solid ${_ciBorder};background:rgba(255,255,255,.06);display:block;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(label)}'"></a>`
+      : `<img loading="lazy" src="${xss(avatarUrl)}" style="width:40px;height:40px;border-radius:${_ciRadius};object-fit:cover;border:2px solid ${_ciBorder};background:rgba(255,255,255,.06);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${encodeURIComponent(label)}'">`;
 
     ci.innerHTML = `${avatarTag}
       <div class="ci-info" style="flex:1;min-width:0;"><div class="ci-name">${xss(label)}</div>
@@ -18538,7 +18538,7 @@ async function openBizChat(chatId, label){
     const avatarRadius = isOwnerView ? '50%' : '10px';
     const avatarBorder = isOwnerView ? 'var(--border-glow)' : 'rgba(255,204,0,.5)';
     const avatarHdrHtml = avatarSrc
-      ? `<img src="${xss(avatarSrc)}" style="width:36px;height:36px;border-radius:${avatarRadius};object-fit:cover;border:2px solid ${avatarBorder};flex-shrink:0;margin-left:8px;" onerror="this.style.display='none'">`
+      ? `<img loading="lazy" src="${xss(avatarSrc)}" style="width:36px;height:36px;border-radius:${avatarRadius};object-fit:cover;border:2px solid ${avatarBorder};flex-shrink:0;margin-left:8px;" onerror="this.style.display='none'">`
       : `<div style="width:36px;height:36px;border-radius:${avatarRadius};background:rgba(0,255,204,.1);border:2px solid ${avatarBorder};display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;margin-left:8px;">${isOwnerView?'👤':'🏪'}</div>`;
     hdr.innerHTML = backBtn + avatarHdrHtml + `<div style="font-size:13px;color:var(--neon-cyan);font-family:Silkscreen,monospace;margin-left:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${xss(extraLabel||label)}</div>`;
     if(isOwnerView){
@@ -18614,7 +18614,7 @@ async function loadBizMsgs(chatId){
     else if(isVideo && m.media_url) mediaHtml = '<div class="mb-media"><video src="'+m.media_url+'" controls playsinline style="width:100%;max-height:200px;display:block;border-radius:8px;"></video></div>';
     else if(isImg && m.media_url){
       const _cap = m.content ? '<div style="font-size:11px;color:var(--text-muted);margin-top:5px;padding:0 2px;line-height:1.4;">'+linkify(m.content)+'</div>' : '';
-      mediaHtml = '<div class="mb-media" onclick="openLightbox && openLightbox(this.querySelector(\'img\').src)" style="cursor:pointer;"><img src="'+m.media_url+'" style="width:100%;border-radius:8px;" class="img-safe"></div>'+_cap;
+      mediaHtml = '<div class="mb-media" onclick="openLightbox && openLightbox(this.querySelector(\'img\').src)" style="cursor:pointer;"><img loading="lazy" src="'+m.media_url+'" style="width:100%;border-radius:8px;" class="img-safe"></div>'+_cap;
     }
     // Render especial para propostas e acordos
     if(m.msg_type === 'deal_proposal' || (m.content && m.content.includes('[DEAL_PROPOSAL:'))){
@@ -19462,7 +19462,7 @@ async function openBizDetail(biz){
     <div style="position:relative;margin:-28px -28px 0;border-radius:18px 18px 0 0;overflow:hidden;">
       ${biz.banner_url
         ? `<div style="height:140px;background:linear-gradient(135deg,var(--bg-mid),var(--bg-deep));overflow:hidden;">
-             <img src="${xss(biz.banner_url)}" style="width:100%;height:140px;object-fit:cover;display:block;" onerror="this.parentElement.style.background='linear-gradient(135deg,rgba(0,255,204,.08),rgba(191,95,255,.08))'">
+             <img loading="lazy" src="${xss(biz.banner_url)}" style="width:100%;height:140px;object-fit:cover;display:block;" onerror="this.parentElement.style.background='linear-gradient(135deg,rgba(0,255,204,.08),rgba(191,95,255,.08))'">
            </div>`
         : `<div style="height:100px;background:linear-gradient(135deg,rgba(0,255,204,.08),rgba(191,95,255,.08));"></div>`
       }
@@ -19470,7 +19470,7 @@ async function openBizDetail(biz){
     ${biz.logo_url
       ? `<div style="position:relative;margin:0 0 12px 16px;display:inline-block;">
            <div style="width:58px;height:58px;border-radius:12px;overflow:hidden;border:3px solid var(--bg-mid);box-shadow:0 4px 16px rgba(0,0,0,.6);background:var(--bg-mid);margin-top:-29px;position:relative;z-index:2;">
-             <img src="${xss(biz.logo_url)}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.parentElement.style.display='none'">
+             <img loading="lazy" src="${xss(biz.logo_url)}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.parentElement.style.display='none'">
            </div>
          </div>`
       : '<div style="height:14px;"></div>'
@@ -19800,7 +19800,7 @@ function _appendBizMsgFromRealtime(m){
   let mediaHtml='';
   if(isAudio&&audioSrc) mediaHtml=renderAudioBubble(audioSrc);
   else if(isVideo&&m.media_url) mediaHtml='<div class="mb-media"><video src="'+m.media_url+'" controls playsinline style="width:100%;max-height:200px;border-radius:8px;"></video></div>';
-  else if(isImg&&m.media_url) mediaHtml='<div class="mb-media"><img src="'+m.media_url+'" style="width:100%;border-radius:8px;" class="img-safe"></div>';
+  else if(isImg&&m.media_url) mediaHtml='<div class="mb-media"><img loading="lazy" src="'+m.media_url+'" style="width:100%;border-radius:8px;" class="img-safe"></div>';
   if(m.msg_type==='deal_proposal'||(m.content&&m.content.includes('[DEAL_PROPOSAL:'))){
     // Para propostas via Realtime, faz full reload para garantir os botões corretos
     loadBizMsgs(currentBizChat); return;
@@ -20571,7 +20571,7 @@ function renderAppointmentsList(el, list, isOwner, apptSearch='', apptStatus='',
       </div>` : '';
     return `<div style="background:var(--bg-card);border:1px solid ${isCancelled||isDone?'rgba(255,255,255,.08)':'var(--border-glow)'};border-radius:12px;padding:12px 14px;margin-bottom:10px;${isCancelled||isDone?'opacity:.7':''}">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-        <img src="${xss(avatar)}" style="width:40px;height:40px;border-radius:${isOwner?'50%':'8px'};object-fit:cover;border:2px solid var(--border-glow);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=user'">
+        <img loading="lazy" src="${xss(avatar)}" style="width:40px;height:40px;border-radius:${isOwner?'50%':'8px'};object-fit:cover;border:2px solid var(--border-glow);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=user'">
         <div style="flex:1;min-width:0;">
           <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(name)}</div>
           <div style="font-size:10px;color:var(--neon-cyan);margin-top:2px;">${xss(a.service_title||'Serviço')}</div>
@@ -21231,7 +21231,7 @@ function renderPurchasesList(el, list, isOwner, purchSearch='', purchStatus='', 
       : '';
     return `<div style="background:var(--bg-card);border:1px solid ${isCancelled||isDone?'rgba(255,255,255,.08)':'var(--border-glow)'};border-radius:12px;padding:12px 14px;margin-bottom:10px;${isCancelled||isDone?'opacity:.7':''}">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-        <img src="${xss(avatar)}" style="width:40px;height:40px;border-radius:${isOwner?'50%':'8px'};object-fit:cover;border:2px solid var(--border-glow);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=user'">
+        <img loading="lazy" src="${xss(avatar)}" style="width:40px;height:40px;border-radius:${isOwner?'50%':'8px'};object-fit:cover;border:2px solid var(--border-glow);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=user'">
         <div style="flex:1;min-width:0;">
           <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(name)}</div>
           <div style="font-size:10px;color:var(--neon-yellow);margin-top:2px;">🛒 ${xss(p.product_title||'Produto')}</div>
@@ -21964,7 +21964,7 @@ function selectBizProduct(bizId, bizName, prodName, prodPrice, priceLabel, categ
     ? 'R$ '+Number(prodPrice).toFixed(2).replace('.',',')
     : (priceLabel || 'Sob consulta');
   const imgHtml = imgUrl
-    ? `<img src="${imgUrl}" alt="${xss(prodName)}" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;margin-bottom:12px;border:2px solid var(--border-glow);">`
+    ? `<img loading="lazy" src="${imgUrl}" alt="${xss(prodName)}" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;margin-bottom:12px;border:2px solid var(--border-glow);">`
     : `<div style="font-size:48px;margin-bottom:12px;">${isLoja?'🛍️':'🔧'}</div>`;
   const descHtml = description
     ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;margin-bottom:8px;line-height:1.4;">${xss(description)}</div>`
@@ -22084,7 +22084,7 @@ function previewBizImage(input, previewId, hiddenId){
   reader.onload = e=>{
     const prev = document.getElementById(previewId);
     if(prev){
-      prev.innerHTML = `<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">`;
+      prev.innerHTML = `<img loading="lazy" src="${e.target.result}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">`;
       prev.style.border = '2px solid var(--neon-cyan)';
     }
     // Store file reference for upload
@@ -22185,7 +22185,7 @@ async function divulgarProduto(bizId, prodName, prodPrice, imgUrl, priceLabel){
       <!-- Preview do produto/serviço -->
       <div style="background:var(--bg-mid);border:1px solid var(--border-glow);border-radius:12px;padding:14px;margin-bottom:14px;display:flex;gap:12px;align-items:center;">
         ${imgUrl
-          ? `<img src="${xss(imgUrl)}" style="width:70px;height:70px;object-fit:cover;border-radius:8px;flex-shrink:0;">`
+          ? `<img loading="lazy" src="${xss(imgUrl)}" style="width:70px;height:70px;object-fit:cover;border-radius:8px;flex-shrink:0;">`
           : `<div style="width:70px;height:70px;border-radius:8px;background:rgba(255,255,255,.05);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;">${isServico?'🔧':'📦'}</div>`}
         <div style="flex:1;min-width:0;">
           <div style="font-family:Silkscreen,monospace;font-size:12px;color:var(--text-light);margin-bottom:3px;">${xss(prodName)}</div>
@@ -22215,7 +22215,7 @@ async function divulgarProduto(bizId, prodName, prodPrice, imgUrl, priceLabel){
       <div id="div-panel-padrao">
         ${imgUrl
           ? `<div style="border-radius:10px;overflow:hidden;margin-bottom:12px;border:1px solid var(--border-glow);">
-               <img src="${xss(imgUrl)}" style="width:100%;max-height:200px;object-fit:cover;display:block;">
+               <img loading="lazy" src="${xss(imgUrl)}" style="width:100%;max-height:200px;object-fit:cover;display:block;">
              </div>`
           : `<div style="border-radius:10px;border:1px dashed rgba(0,255,204,.2);padding:18px;text-align:center;margin-bottom:12px;color:var(--text-muted);font-size:11px;">Sem foto cadastrada — será publicado só com texto.</div>`}
       </div>
@@ -22311,7 +22311,7 @@ async function divulgarProduto(bizId, prodName, prodPrice, imgUrl, priceLabel){
         ${isVid
           ? `<video src="${url}" style="width:100%;height:100%;object-fit:cover;" muted playsinline></video>
              <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;"><span style="font-size:18px;">▶</span></div>`
-          : `<img src="${url}" style="width:100%;height:100%;object-fit:cover;">`}
+          : `<img loading="lazy" src="${url}" style="width:100%;height:100%;object-fit:cover;">`}
         <button onclick="divulgRemoveFile(${i})" style="position:absolute;top:3px;right:3px;background:rgba(0,0,0,.8);border:none;color:#fff;width:20px;height:20px;border-radius:50%;cursor:pointer;font-size:12px;z-index:2;display:flex;align-items:center;justify-content:center;">×</button>
         ${i===0 ? `<span style="position:absolute;bottom:2px;left:4px;font-size:8px;color:rgba(255,255,255,.8);font-family:'Space Mono',monospace;">CAPA</span>` : ''}
       </div>`;
@@ -22490,7 +22490,7 @@ async function gerarLinkConvite(bizId, bizName){
         ${friends.map(f=>`
           <div data-uid="${f.id}" data-selected="0" style="display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);cursor:pointer;transition:all .2s;"
             onclick="toggleBizInviteFriend(this)">
-            <img src="${xss(f.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(f.username||'u'))}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:1.5px solid rgba(0,255,204,.2);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=u'">
+            <img loading="lazy" src="${xss(f.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(f.username||'u'))}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:1.5px solid rgba(0,255,204,.2);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=u'">
             <div style="flex:1;min-width:0;">
               <div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(f.full_name||f.username||'')}</div>
               <div style="font-size:9px;color:var(--neon-cyan);">@${xss(f.username||'')}</div>
@@ -22508,10 +22508,10 @@ async function gerarLinkConvite(bizId, bizName){
 
       <!-- Card estilo loja -->
       <div style="background:linear-gradient(135deg,rgba(255,204,0,.06),rgba(255,51,102,.06));border:1px solid rgba(255,204,0,.2);border-radius:14px;overflow:hidden;margin-bottom:14px;text-align:left;">
-        ${bannerUrl ? `<div style="height:80px;overflow:hidden;"><img src="${xss(bannerUrl)}" style="width:100%;height:80px;object-fit:cover;display:block;"></div>` : ''}
+        ${bannerUrl ? `<div style="height:80px;overflow:hidden;"><img loading="lazy" src="${xss(bannerUrl)}" style="width:100%;height:80px;object-fit:cover;display:block;"></div>` : ''}
         <div style="display:flex;gap:10px;align-items:center;padding:12px;">
           ${logoUrl
-            ? `<img src="${xss(logoUrl)}" style="width:46px;height:46px;border-radius:10px;object-fit:cover;border:2px solid rgba(255,204,0,.35);flex-shrink:0;">`
+            ? `<img loading="lazy" src="${xss(logoUrl)}" style="width:46px;height:46px;border-radius:10px;object-fit:cover;border:2px solid rgba(255,204,0,.35);flex-shrink:0;">`
             : `<div style="width:46px;height:46px;border-radius:10px;background:rgba(255,204,0,.1);border:2px solid rgba(255,204,0,.2);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;">${isSvc?'🔧':'🛍️'}</div>`
           }
           <div style="flex:1;min-width:0;">
@@ -23794,7 +23794,7 @@ async function loadAboutCommunities(userId){
       comms.map(function(cm){
         const av = cm.avatar_url||cm.icon||'';
         const iconHtml = av
-          ? '<img src="'+xss(av)+'" style="width:42px;height:42px;border-radius:10px;object-fit:cover;flex-shrink:0;border:1px solid rgba(0,255,204,.2);">'
+          ? '<img loading="lazy" src="'+xss(av)+'" style="width:42px;height:42px;border-radius:10px;object-fit:cover;flex-shrink:0;border:1px solid rgba(0,255,204,.2);">'
           : '<div style="font-size:22px;width:42px;height:42px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:rgba(0,255,204,.07);border-radius:10px;">🏘</div>';
         return '<div style="display:flex;align-items:center;gap:10px;padding:10px;margin-bottom:6px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:10px;cursor:pointer;" onclick="openCommDetail(\''+xss(cm.id)+'\')">'+ 
           iconHtml+
@@ -23897,7 +23897,7 @@ async function loadAboutBusinesses(userId){
             ${bizs.map(b=>`
               <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06);">
                 <div style="width:38px;height:38px;border-radius:8px;overflow:hidden;background:rgba(0,255,204,.08);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:20px;">
-                  ${b.logo_url?`<img src="${xss(b.logo_url)}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.textContent='🏪'">`:'🏪'}
+                  ${b.logo_url?`<img loading="lazy" src="${xss(b.logo_url)}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.textContent='🏪'">`:'🏪'}
                 </div>
                 <div style="flex:1;min-width:0;">
                   <div style="font-size:12px;font-weight:600;color:var(--text-light);">${xss(b.name||'')}</div>
@@ -24319,7 +24319,7 @@ function _showCallUI(role,name,type,avatar){
   const ov=document.createElement('div');
   ov.id='call-overlay'; ov.className='call-overlay';
   const avH=(avatar&&avatar.startsWith('http'))
-    ?`<img class="call-avatar" src="${avatar}" onerror="this.outerHTML='<div class=\\'call-avatar\\'>📞</div>'">`
+    ?`<img loading="lazy" class="call-avatar" src="${avatar}" onerror="this.outerHTML='<div class=\\'call-avatar\\'>📞</div>'">`
     :`<div class="call-avatar">${isVideo?'📹':'📞'}</div>`;
   ov.innerHTML=`
     <button id="call-minimize-btn" class="call-minimize-btn" onclick="toggleCallMinimize()" title="Minimizar">
@@ -24572,7 +24572,7 @@ function previewCommBanner(input, prevId){
   const file = input.files[0]; if(!file) return;
   const url = URL.createObjectURL(file);
   const prev = document.getElementById(prevId);
-  if(prev) prev.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;">`;
+  if(prev) prev.innerHTML = `<img loading="lazy" src="${url}" style="width:100%;height:100%;object-fit:cover;">`;
   // Guardar arquivo para upload
   window._commBannerFiles = window._commBannerFiles || {};
   window._commBannerFiles[prevId] = file;
@@ -24583,7 +24583,7 @@ function previewCommImage(input){
   window._commImgFile=file;
   const url=URL.createObjectURL(file);
   const prev=document.getElementById('cm-icon-preview');
-  if(prev) prev.innerHTML=`<img src="${url}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;">`;
+  if(prev) prev.innerHTML=`<img loading="lazy" src="${url}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;">`;
 }
 
 function handleCommMedia(input, commId){
@@ -24595,7 +24595,7 @@ function handleCommMedia(input, commId){
     const url=URL.createObjectURL(f);
     const isVid=f.type.startsWith('video');
     return`<div style="position:relative;width:60px;height:60px;border-radius:8px;overflow:hidden;background:#000;">
-      ${isVid?`<video src="${url}" style="width:100%;height:100%;object-fit:cover;"></video>`:`<img src="${url}" style="width:100%;height:100%;object-fit:cover;">`}
+      ${isVid?`<video src="${url}" style="width:100%;height:100%;object-fit:cover;"></video>`:`<img loading="lazy" src="${url}" style="width:100%;height:100%;object-fit:cover;">`}
       <button onclick="removeCommMedia('${commId}',${i})" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.7);border:none;color:#fff;width:16px;height:16px;border-radius:50%;cursor:pointer;font-size:10px;">×</button>
     </div>`;
   }).join('');
@@ -24776,7 +24776,7 @@ function _renderCommMsg(m){
   const av = m.profiles?.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(m.profiles?.username||'u');
   const safeAv = xss(av);
   const fallback = 'https://api.dicebear.com/7.x/pixel-art/svg?seed=u';
-  const imgHtml = `<img src="${safeAv}" style="width:30px;height:30px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.src='${fallback}'">`;
+  const imgHtml = `<img loading="lazy" src="${safeAv}" style="width:30px;height:30px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.src='${fallback}'">`;
   const nameHtml = !isMine ? `<div style="font-size:9px;color:var(--neon-cyan);margin-bottom:3px;">@${xss(m.profiles?.username||'')}</div>` : '';
   // Detectar marker de GIF: [GIF:url]
   let bodyHtml = '';
@@ -25262,7 +25262,7 @@ function renderLiveRoom(commId, isOwner){
     const canManage = isOwner && uid!==CU?.id && p.role==='speaker';
     return `<div class="${classes.join(' ')}" onclick="${canManage?`openLiveUserMenu('${commId}','${uid}')`:''}">
       ${p.handRaised?'<div class="live-speaker-hand">✋</div>':''}
-      <img class="live-speaker-av" src="${xss(av)}" alt="${xss(p.username||'')}">
+      <img loading="lazy" class="live-speaker-av" src="${xss(av)}" alt="${xss(p.username||'')}">
       <div class="live-speaker-mic">${p.muted?'🔇':'🎙'}</div>
       <div class="live-speaker-name">${xss(p.username||'usuário')}</div>
       <div class="live-speaker-role ${p.role==='host'?'host':''}">${p.role==='host'?'👑 HOST':'🎙 ORADOR'}</div>
@@ -25273,7 +25273,7 @@ function renderLiveRoom(commId, isOwner){
     const canPromote = isOwner && uid!==CU?.id;
     const handIcon = p.handRaised ? '<span style="position:absolute;top:-2px;right:-2px;font-size:12px;">✋</span>' : '';
     return `<div class="live-listener" style="position:relative;" onclick="${canPromote?`promoteLiveToSpeaker('${commId}','${uid}')`:''}" title="${canPromote?'Promover a orador':''}">
-      <div style="position:relative;">${handIcon}<img src="${xss(av)}" alt="${xss(p.username||'')}"></div>
+      <div style="position:relative;">${handIcon}<img loading="lazy" src="${xss(av)}" alt="${xss(p.username||'')}"></div>
       <span>${xss(p.username||'?')}</span>
     </div>`;
   }).join('') : '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);font-size:10px;padding:10px;">Nenhum ouvinte ainda</div>';
@@ -25853,7 +25853,7 @@ function _appendLiveChatMsg(commId, msg){
   const div=document.createElement('div');
   div.className='live-chat-msg';
   const av = msg.avatar_url || 'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(msg.username||'u');
-  div.innerHTML=`<img src="${xss(av)}" alt=""><div><b>${xss(msg.username||'')}</b>${xss(msg.content||'')}</div>`;
+  div.innerHTML=`<img loading="lazy" src="${xss(av)}" alt=""><div><b>${xss(msg.username||'')}</b>${xss(msg.content||'')}</div>`;
   box.appendChild(div);
   box.scrollTop=box.scrollHeight;
   // Limitar a 50 msgs no DOM
@@ -26419,7 +26419,7 @@ async function copyCommInvite(commId, name){
         ${friends.map(f=>`
           <div data-uid="${f.id}" data-selected="0" style="display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);cursor:pointer;transition:all .2s;"
             onclick="toggleCommInviteFriend(this)">
-            <img src="${xss(f.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(f.username||'u'))}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:1.5px solid rgba(0,255,204,.2);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=u'">
+            <img loading="lazy" src="${xss(f.avatar_url||'https://api.dicebear.com/7.x/pixel-art/svg?seed='+(f.username||'u'))}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:1.5px solid rgba(0,255,204,.2);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=u'">
             <div style="flex:1;min-width:0;">
               <div style="font-family:Silkscreen,monospace;font-size:10px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(f.full_name||f.username||'')}</div>
               <div style="font-size:9px;color:var(--neon-cyan);">@${xss(f.username||'')}</div>
@@ -26437,7 +26437,7 @@ async function copyCommInvite(commId, name){
 
       <!-- Card estilo comunidade -->
       <div style="background:linear-gradient(135deg,rgba(0,255,204,.06),rgba(191,95,255,.06));border:1px solid var(--border-glow);border-radius:14px;padding:14px;margin-bottom:14px;text-align:left;display:flex;gap:12px;align-items:center;">
-        <img src="${xss(commAvUrl)}" style="width:52px;height:52px;border-radius:10px;object-fit:cover;border:2px solid rgba(0,255,204,.3);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=comm'">
+        <img loading="lazy" src="${xss(commAvUrl)}" style="width:52px;height:52px;border-radius:10px;object-fit:cover;border:2px solid rgba(0,255,204,.3);flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=comm'">
         <div style="flex:1;min-width:0;">
           <div style="font-family:Silkscreen,monospace;font-size:12px;color:var(--neon-cyan);margin-bottom:2px;">${xss(name)}</div>
           ${commDesc?`<div style="font-size:10px;color:var(--text-muted);line-height:1.4;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${xss(commDesc)}</div>`:''}
@@ -26723,7 +26723,7 @@ async function openEditComm(commId){
     <div class="igrp"><label class="ilbl">Nova imagem (opcional)</label>
       <div style="display:flex;gap:10px;align-items:center;">
         <div id="edit-comm-prev" style="width:60px;height:60px;border-radius:12px;border:2px solid var(--border-glow);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:28px;">
-          ${comm.avatar_url&&comm.avatar_url.startsWith('http')?`<img src="${xss(comm.avatar_url)}" style="width:100%;height:100%;object-fit:cover;">`:(comm.avatar_url||'🏘')}
+          ${comm.avatar_url&&comm.avatar_url.startsWith('http')?`<img loading="lazy" src="${xss(comm.avatar_url)}" style="width:100%;height:100%;object-fit:cover;">`:(comm.avatar_url||'🏘')}
         </div>
         <button type="button" class="tbtn" onclick="document.getElementById('edit-comm-file').click()">📷 Trocar foto</button>
         <input type="file" id="edit-comm-file" accept="image/*" style="display:none" onchange="previewEditCommImg(this)">
@@ -26734,7 +26734,7 @@ async function openEditComm(commId){
       <label class="ilbl">Banner (opcional)</label>
       <div style="position:relative;height:90px;border-radius:10px;overflow:hidden;border:2px dashed var(--border-glow);background:linear-gradient(135deg,#0a0a2a,#1a0a3a);cursor:pointer;" id="edit-comm-banner-prev" onclick="document.getElementById('edit-comm-banner-file').click()">
         ${comm.banner_url
-          ? `<img src="${xss(comm.banner_url)}" style="width:100%;height:100%;object-fit:cover;">`
+          ? `<img loading="lazy" src="${xss(comm.banner_url)}" style="width:100%;height:100%;object-fit:cover;">`
           : `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-muted);"><div style="font-size:20px;">🖼</div><div style="font-size:9px;margin-top:4px;">Clique para adicionar banner</div></div>`}
       </div>
       <input type="file" id="edit-comm-banner-file" accept="image/*" style="display:none" onchange="previewCommBanner(this,'edit-comm-banner-prev')">
@@ -26754,7 +26754,7 @@ function previewEditCommImg(input){
   const f=input.files[0];if(!f)return;
   window._editCommImgFile=f;
   const url=URL.createObjectURL(f);
-  document.getElementById('edit-comm-prev').innerHTML=`<img src="${url}" style="width:100%;height:100%;object-fit:cover;">`;
+  document.getElementById('edit-comm-prev').innerHTML=`<img loading="lazy" src="${url}" style="width:100%;height:100%;object-fit:cover;">`;
 }
 
 async function saveEditComm(commId,btn){
@@ -27079,7 +27079,7 @@ async function loadCommRanking(commId){
       const border=isMe?'rgba(0,255,204,.3)':'rgba(255,255,255,.08)';
       return `<div style="display:flex;flex-direction:row;align-items:center;gap:8px;padding:10px 12px;background:${bg};border:1px solid ${border};border-radius:12px;margin-bottom:8px;">
         <span style="font-size:16px;width:22px;flex-shrink:0;text-align:center;">${medal}</span>
-        <img src="${av}" style="width:38px;height:38px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid ${lvl.color}40;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=u'">
+        <img loading="lazy" src="${av}" style="width:38px;height:38px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid ${lvl.color}40;" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=u'">
         <div style="flex:1;min-width:0;">
           <div style="font-size:12px;color:var(--text-light);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${name}${roleIcon?` <span style="font-size:10px;">${roleIcon}</span>`:''} ${isMe?'<span style="font-size:9px;background:rgba(0,255,204,.15);color:var(--neon-cyan);padding:1px 5px;border-radius:5px;">você</span>':''}</div>
           <div style="font-size:9px;font-family:Silkscreen,monospace;color:${lvl.color};margin:2px 0;">${lvl.icon} ${lvl.name}</div>
@@ -27750,7 +27750,7 @@ function renderOaRail(groups){
     html += `
       <div class="oa-bubble" onclick="oaHandleMyBubbleClick(event)">
         <div class="oa-ring me">
-          <img src="${_oaEscape(myAv)}" alt="você" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${_oaEscape(CU.id||'me')}'" onclick="oaHandleMyAvatarClick(event)">
+          <img loading="lazy" src="${_oaEscape(myAv)}" alt="você" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${_oaEscape(CU.id||'me')}'" onclick="oaHandleMyAvatarClick(event)">
           <div class="oa-plus" onclick="oaHandleMyPlusClick(event)">+</div>
         </div>
         <div class="oa-name">Olha Aqui</div>
@@ -27773,7 +27773,7 @@ function renderOaRail(groups){
     html += `
       <div class="oa-bubble" onclick="oaOpenViewer(${realIdx})">
         <div class="${_ringClass}">
-          <img src="${_oaEscape(_av)}"
+          <img loading="lazy" src="${_oaEscape(_av)}"
                alt="${_oaEscape(g.username)}"
                onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=${_oaEscape(g.userId)}'">
         </div>
@@ -27837,7 +27837,7 @@ function oaDivulgarProduto(bizId, itemId, itemName, itemImgUrl, category, logoUr
 
       <!-- ── OPÇÃO 1: Usar foto do produto ── -->
       ${itemImgUrl ? `<button onclick="oaUseBizImage('${itemImgUrl.replace(/'/g,"&apos;")}')" style="width:100%;background:rgba(0,255,204,.08);border:1px solid var(--neon-cyan);border-radius:12px;padding:14px;margin-bottom:10px;cursor:pointer;display:flex;align-items:center;gap:12px;color:var(--text-light);font-family:'Space Mono',monospace;font-size:11px;">
-        <img src="${itemImgUrl}" style="width:48px;height:48px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">
+        <img loading="lazy" src="${itemImgUrl}" style="width:48px;height:48px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">
         <div style="text-align:left;">
           <div style="color:var(--neon-cyan);font-family:'Silkscreen',monospace;font-size:10px;margin-bottom:2px;">✅ Usar foto do produto</div>
           <div style="color:var(--text-muted);font-size:9px;">Publicação instantânea</div>
@@ -27954,7 +27954,7 @@ async function oaCtaAction(type){
         <!-- Imagem do produto clicável para ampliar -->
         <div style="position:relative;width:100%;background:#000;flex-shrink:0;cursor:zoom-in;"
              onclick="event.stopPropagation();openLightbox&&openLightbox('${itemImageUrl}')">
-          <img src="${itemImageUrl}" alt="${xss(itemName)}"
+          <img loading="lazy" src="${itemImageUrl}" alt="${xss(itemName)}"
             style="width:100%;max-height:260px;object-fit:cover;display:block;transition:opacity .15s;"
             onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
           <!-- Ícone de zoom no canto -->
@@ -29214,7 +29214,7 @@ async function searchMusic() {
         : `<span style="font-size:8px;background:rgba(0,255,204,.1);border:1px solid rgba(0,255,204,.3);color:var(--neon-cyan);border-radius:4px;padding:1px 4px;flex-shrink:0;">JM</span>`;
 
       item.innerHTML = `
-        <img class="music-capa" src="${t.capa_url || ''}" alt=""
+        <img loading="lazy" class="music-capa" src="${t.capa_url || ''}" alt=""
              onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1 1%22><rect fill=%22%230a0a2a%22/></svg>'">
         <div class="music-info" style="min-width:0;flex:1;">
           <div class="music-titulo" style="display:flex;align-items:center;gap:4px;">
@@ -29367,7 +29367,7 @@ function _renderMusicPill(ctx, m) {
   wrap.style.display = 'block';
   wrap.innerHTML = `
     <div class="music-pill" onclick="openMusicPicker('${ctx}')">
-      <img src="${m.capa_url}" alt="">
+      <img loading="lazy" src="${m.capa_url}" alt="">
       <span class="music-pill-name">🎵 ${xss(m.titulo)} — ${xss(m.artista)}</span>
       <span class="music-pill-rm" onclick="event.stopPropagation();removeMusicPill('${ctx}')">✕</span>
     </div>`;
@@ -29540,7 +29540,7 @@ function renderMusicBar(musicData) {
   const uid = 'pmb-' + Math.random().toString(36).slice(2,8);
   return `
     <div class="post-music-bar">
-      ${capa ? `<img class="post-music-capa" src="${capa}" alt="">` : ''}
+      ${capa ? `<img loading="lazy" class="post-music-capa" src="${capa}" alt="">` : ''}
       <div class="post-music-info">
         <div class="post-music-titulo">🎵 ${xss(m.titulo||'Música')}</div>
         <div class="post-music-artista">${xss(m.artista||'')}</div>
@@ -30449,7 +30449,7 @@ function _renderMusicHistoryItems(items, list, append=false) {
     item.style.cssText = 'position:relative;';
     if(_musicSelected?.external_id === extId) item.classList.add('selected');
     item.innerHTML = `
-      <img class="music-capa" src="${capaSrc}" alt=""
+      <img loading="lazy" class="music-capa" src="${capaSrc}" alt=""
            onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1 1%22><rect fill=%22%230a0a2a%22/></svg>'">
       <div class="music-info" style="flex:1;min-width:0;">
         <div class="music-titulo">${xss(m.titulo || '—')}</div>
@@ -31308,7 +31308,7 @@ function _oaViewerRowHTML(v, p){
   const user = p.username ? '@'+p.username : '';
   const time = v.created_at ? _oaTimeAgo(v.created_at) : '';
   return `<div class="oavm-item" onclick="window.oaViewerGoProfile('${uid}')">`
-    +`<img class="oavm-av" src="${av}" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=u'" alt="">`
+    +`<img loading="lazy" class="oavm-av" src="${av}" onerror="this.src='https://api.dicebear.com/7.x/pixel-art/svg?seed=u'" alt="">`
     +`<div style="flex:1;min-width:0;">`
     +`<div class="oavm-name">${name}</div>`
     +`<div class="oavm-user">${user}</div>`
@@ -32621,7 +32621,7 @@ export default {
   <div class="oa-v-stage" id="oa-v-stage">
     <div class="oa-v-bars" id="oa-v-bars"></div>
     <div class="oa-v-head">
-      <img class="oa-v-avatar" id="oa-v-avatar" src="" alt="" onclick="oaNavigateFromHeader()" style="cursor:pointer;" title="Ver perfil">
+      <img loading="lazy" class="oa-v-avatar" id="oa-v-avatar" src="" alt="" onclick="oaNavigateFromHeader()" style="cursor:pointer;" title="Ver perfil">
       <div class="oa-v-info" onclick="oaNavigateFromHeader()" style="cursor:pointer;" title="Ver perfil">
         <div class="oa-v-name" id="oa-v-name">-</div>
         <div class="oa-v-time" id="oa-v-time">agora</div>
@@ -32813,7 +32813,7 @@ export default {
 
     <!-- Badge de negócio (aparece só ao divulgar loja/serviço via foto/vídeo) -->
     <div id="oa-se-biz-badge" style="display:none;align-items:center;gap:8px;padding:6px 12px;background:rgba(0,255,204,.08);border-bottom:1px solid rgba(0,255,204,.18);">
-      <img class="oa-se-biz-logo" src="" alt="" style="width:28px;height:28px;border-radius:6px;object-fit:cover;flex-shrink:0;">
+      <img loading="lazy" class="oa-se-biz-logo" src="" alt="" style="width:28px;height:28px;border-radius:6px;object-fit:cover;flex-shrink:0;">
       <div style="flex:1;min-width:0;">
         <div class="oa-se-biz-name" style="font-family:'Silkscreen',monospace;font-size:9px;color:var(--neon-cyan);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
         <div style="font-size:8px;color:var(--text-muted);font-family:'Space Mono',monospace;">Story de negócio · expira em 24h</div>
