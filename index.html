@@ -28,6 +28,14 @@
   CREATE INDEX IF NOT EXISTS idx_business_products_stock 
     ON business_products(business_id, stock);
 
+  -- OTIMIZAÇÃO: Índice PARCIAL para sincronização de estoque.
+  -- Guarda apenas as linhas onde stock_synced = false (as pendentes).
+  -- Quando há 500k compras já sincronizadas (true), o Postgres ignora-as
+  -- completamente neste índice — zero Sequential Scan.
+  CREATE INDEX IF NOT EXISTS idx_purchases_pending_sync
+    ON purchases (id, business_id)
+    WHERE stock_synced = false;
+
   FLUXO DO ESTOQUE:
    1. Proposta (pending)      → NÃO mexe no estoque
    2. Cliente ACEITA (closed) → REDUZ estoque em 1
@@ -17806,18 +17814,18 @@ async function syncStockFromSales(bizId, silent){
     if(!prods?.length) return {adjusted:0, errors:0};
 
     // 2. Busca purchases ATIVAS (confirmed, shipped, delivered, done) deste negócio
-    //    que ainda NÃO foram sincronizadas (stock_synced != true)
-    let purchases = [];
+    //    que ainda NÃO foram sincronizadas (stock_synced = false)
+    //    OTIMIZAÇÃO: filtro .eq('stock_synced', false) aplicado no banco (usa índice parcial
+    //    idx_purchases_pending_sync) — evita Sequential Scan em 500k+ linhas já sincronizadas.
+    let pending = [];
     try{
       const {data:pRows} = await db.from('purchases')
         .select('id,product_id,product_title,status,stock_synced')
         .eq('business_id', bizId)
-        .neq('status', 'cancelled');
-      purchases = pRows || [];
-    }catch(_){ purchases = []; }
-
-    // Filtra apenas purchases ainda não sincronizadas
-    const pending = purchases.filter(p => !p.stock_synced);
+        .neq('status', 'cancelled')
+        .eq('stock_synced', false);
+      pending = pRows || [];
+    }catch(_){ pending = []; }
     if(!pending.length){
       if(!silent) console.log('[syncStock] Nada para sincronizar. Todas as vendas já estão refletidas.');
       return {adjusted:0, errors:0};
