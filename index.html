@@ -8294,7 +8294,7 @@ function nav(page){
     else if(page==='friends')        loadFriendsList('friends');
     else if(page==='communities')    { loadCommGrid('all'); setTimeout(buildCommIconGrid,200); }
     else if(page==='businesses')     initBusinessPage();
-    else if(page==='messages'){ loadConversations(); document.getElementById('bnav-msg-dot')?.classList.remove('active'); document.getElementById('msg-badge')?.remove(); db.from('messages').update({read:true}).eq('receiver_id',CU.id).eq('read',false).catch(()=>{}); }
+    else if(page==='messages'){ loadConversations(); document.getElementById('bnav-msg-dot')?.classList.remove('active'); document.getElementById('msg-badge')?.remove(); try{ db.from('messages').update({read:true}).eq('receiver_id',CU.id).eq('read',false); }catch(_){} }
     else if(page==='businesses'){ ['bn-biz-dot','nb-biz-dot'].forEach(id=>document.getElementById(id)?.classList.remove('active')); }
     else if(page==='communities'){ ['bn-comm-dot','nb-comm-dot'].forEach(id=>document.getElementById(id)?.classList.remove('active')); }
     else if(page==='notifications')  loadNotifTab('nt-all');
@@ -12493,7 +12493,7 @@ async function _incVideoViews(postId){
           .update({ video_views: db.raw ? undefined : null }) // placeholder
           .eq('id', postId);
         // Usa SQL raw via RPC genérica se disponível
-        await db.rpc('increment_video_views', {post_id: postId}).catch(()=>{});
+        try{ await db.rpc('increment_video_views', {post_id: postId}); }catch(_){}
       }
       console.log('[views] +1 gravado no Supabase para post', postId);
     }catch(e){
@@ -14696,7 +14696,7 @@ function handleIncomingMessage(msg){
     const area=document.getElementById('msgs-area');
     if(area) _appendChatBubble(msg,area);
     // Marcar como recebida em background
-    db.from('messages').update({received:true}).eq('id',msg.id).catch(()=>{});
+    try{ db.from('messages').update({received:true}).eq('id',msg.id); }catch(_){}
   }
 
   // Update home chat if open with this sender
@@ -14705,7 +14705,7 @@ function handleIncomingMessage(msg){
     if(win&&(win.classList.contains('chat-open')||window.innerWidth>768)){
       const areaHt=document.getElementById('ht-msgs-area');
       if(areaHt) _appendChatBubble(msg,areaHt);
-      db.from('messages').update({received:true}).eq('id',msg.id).catch(()=>{});
+      try{ db.from('messages').update({received:true}).eq('id',msg.id); }catch(_){}
     }
   }
 
@@ -23104,7 +23104,7 @@ async function rejectGameInvite(inviteId,el){
   const user=currentChatUser||homeChatUser;
   if(user){
     const content=`[GAME_REJECT:${inviteId}]`;
-    await db.from('messages').insert({sender_id:CU.id,receiver_id:user.id,content,read:false}).catch(()=>{});
+    try{ await db.from('messages').insert({sender_id:CU.id,receiver_id:user.id,content,read:false}); }catch(_){}
   }
   const card=el?.closest('.game-invite-msg');
   if(card){
