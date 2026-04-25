@@ -29119,6 +29119,15 @@ window.closeMusicPicker = closeMusicPicker;
 // ── Busca de músicas: Jamendo + Freesound em paralelo ─────────────────
 let _musicSearchSource = 'both'; // 'jamendo' | 'freesound' | 'both'
 
+// ✅ OTIMIZAÇÃO EGRESS: debounce 400ms na busca de músicas
+// "BEYONCE" = 7 teclas → sem debounce = 7 requisições à API. Com debounce = 1.
+let _musicSearchTimer = null;
+function searchMusicDebounced() {
+  clearTimeout(_musicSearchTimer);
+  _musicSearchTimer = setTimeout(searchMusic, 400);
+}
+window.searchMusicDebounced = searchMusicDebounced;
+
 function setMusicSource(src) {
   _musicSearchSource = src;
   // Atualiza visual dos botões
@@ -29131,9 +29140,9 @@ function setMusicSource(src) {
     btn.style.background = isActive ? colors[s] : 'transparent';
     btn.style.color      = isActive ? textColors[s] : 'var(--text-muted)';
   });
-  // Rebusca se já tem query
+  // Rebusca se já tem query — com debounce para não disparar ao trocar fonte rapidamente
   const q = document.getElementById('music-search-input')?.value.trim();
-  if(q) searchMusic();
+  if(q) searchMusicDebounced();
 }
 window.setMusicSource = setMusicSource;
 
@@ -32692,7 +32701,7 @@ export default {
     <div id="music-panel-search">
       <!-- Linha 1: input + buscar -->
       <div class="music-search-row">
-        <input class="music-search-input" id="music-search-input" placeholder="Buscar música ou artista..." onkeydown="if(event.key==='Enter')searchMusic()">
+        <input class="music-search-input" id="music-search-input" placeholder="Buscar música ou artista..." oninput="searchMusicDebounced()" onkeydown="if(event.key==='Enter'){clearTimeout(_musicSearchTimer);searchMusic();}">
         <button class="music-search-btn" onclick="searchMusic()">🔍 Buscar</button>
       </div>
       <!-- Linha 2: gênero + fonte -->
