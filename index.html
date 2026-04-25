@@ -5581,6 +5581,7 @@ body.day-mode .lp-chip{ background:rgba(0,0,0,.04); color:#1a1a2e; }
   <div class="slink" onclick="nav('home');toggleDrawer()"><span class="ic">🏠</span> Feed</div>
   <div class="slink" onclick="openTrendingModal();toggleDrawer()" style="color:var(--neon-pink);font-weight:700;"><span class="ic">🔥</span> Em Alta</div>
   <div class="slink" onclick="nav('profile');toggleDrawer()"><span class="ic">👤</span> Meu Perfil</div>
+  <div class="slink" onclick="openLayoutEditor();toggleDrawer()" style="background:linear-gradient(90deg,rgba(191,95,255,.15),rgba(0,255,204,.08));"><span class="ic">🎨</span> Personalizar Layout</div>
   <div class="slink" onclick="nav('friends');toggleDrawer()"><span class="ic">👥</span> Amigos</div>
   <div class="slink" onclick="nav('communities');toggleDrawer()"><span class="ic">🏘</span> Comunidades</div>
   <div class="slink" onclick="nav('businesses');toggleDrawer()" style="color:var(--neon-yellow);"><span class="ic">🏪</span> Lojas & Serviços</div>
@@ -5614,6 +5615,7 @@ body.day-mode .lp-chip{ background:rgba(0,0,0,.04); color:#1a1a2e; }
     <div class="slink" id="sl-home" onclick="nav('home')"><span class="ic">🏠</span> Feed</div>
     <div class="slink" onclick="openTrendingModal()" style="color:var(--neon-pink);"><span class="ic">🔥</span> Em Alta</div>
     <div class="slink" id="sl-profile" onclick="nav('profile')"><span class="ic">👤</span> Perfil</div>
+    <div class="slink" onclick="openLayoutEditor()" style="background:linear-gradient(90deg,rgba(191,95,255,.15),rgba(0,255,204,.08));"><span class="ic">🎨</span> Personalizar Layout</div>
     <div class="slink" id="sl-friends" onclick="nav('friends')"><span class="ic">👥</span> Amigos</div>
     <div class="slink" id="sl-communities" onclick="nav('communities')"><span class="ic">🏘</span> Comunidades</div>
     <div class="slink" id="sl-businesses" onclick="nav('businesses')" style="color:var(--neon-yellow);"><span class="ic">🏪</span> Lojas & Serviços</div>
@@ -10669,6 +10671,7 @@ function showSettings(){
     <div id="spanel-perfil" style="display:block;">
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">Edite seu perfil, bio, avatar e preferências.</div>
       <button class="post-btn" style="width:100%;" onclick="openProfileEditor()">✏️ Abrir editor de perfil</button>
+      <button class="post-btn" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#bf5fff,#00ffcc);color:#0a0a2a;border:none;font-weight:700;" onclick="document.getElementById('settings-modal-overlay')?.remove();openLayoutEditor()">🎨 Personalizar Layout do Perfil</button>
     </div>
 
     <!-- Aba Idioma -->
@@ -31138,29 +31141,52 @@ window.oaNavigateFromHeader = function(){
   // ─────────────────────────────────────────────────────────────
   function injectLayoutButton(){
     const page = document.getElementById('page-profile');
-    if(!page) return;
+    if(!page) return false;
+    if(!page.classList.contains('active')) return false;
     const coverBar = document.getElementById('profile-cover-bar');
-    if(!coverBar) return;
+    if(!coverBar) return false;
     const uid = coverBar.dataset.profileUid;
-    if(!uid || !window.CU || uid !== window.CU.id) return; // só no perfil do próprio
+    if(!uid || !window.CU || uid !== window.CU.id) return false; // só no perfil do próprio
     // Evita duplicar
-    if(page.querySelector('#lp-open-btn')) return;
-    // Encontra o container de botões (último div dentro de pbar)
-    const pbar = coverBar.querySelector('div:nth-child(2)');
-    if(!pbar) return;
-    const rightCol = pbar.querySelector('div:nth-child(2)');
-    if(!rightCol) return;
-    // Pega último filho (que deve ser o container de botões)
-    const btnContainer = rightCol.lastElementChild;
-    if(!btnContainer) return;
+    if(page.querySelector('#lp-open-btn')) return true;
+
+    // Estratégia 1: achar o botão "Editar Perfil" pelo texto e inserir ao lado
+    let editBtn = null;
+    const allBtns = coverBar.querySelectorAll('button.post-btn, button');
+    for(const b of allBtns){
+      const t = (b.textContent||'').trim();
+      if(t.includes('Editar Perfil') || t.startsWith('✏')){ editBtn = b; break; }
+    }
 
     const lpBtn = document.createElement('button');
     lpBtn.id = 'lp-open-btn';
     lpBtn.className = 'post-btn';
-    lpBtn.style.cssText = 'background:linear-gradient(135deg,#bf5fff,#00ffcc);color:#0a0a2a;border:none;font-size:11px;padding:7px 12px;font-weight:700;';
+    lpBtn.style.cssText = 'background:linear-gradient(135deg,#bf5fff,#00ffcc);color:#0a0a2a;border:none;font-size:11px;padding:7px 12px;font-weight:700;box-shadow:0 0 10px rgba(191,95,255,.4);';
     lpBtn.textContent = '🎨 Layout';
     lpBtn.onclick = ()=>window.openLayoutEditor();
-    btnContainer.appendChild(lpBtn);
+
+    if(editBtn && editBtn.parentNode){
+      // Inserir DEPOIS do botão Editar Perfil
+      if(editBtn.nextSibling) editBtn.parentNode.insertBefore(lpBtn, editBtn.nextSibling);
+      else editBtn.parentNode.appendChild(lpBtn);
+      return true;
+    }
+
+    // Estratégia 2: achar container flex de botões (div com display:flex e gap)
+    const divs = coverBar.querySelectorAll('div');
+    for(const d of divs){
+      const st = d.getAttribute('style')||'';
+      if(st.includes('display:flex') && st.includes('gap') && d.querySelector('button.post-btn')){
+        d.appendChild(lpBtn);
+        return true;
+      }
+    }
+
+    // Estratégia 3: fallback absoluto — criar botão flutuante no canto superior direito do perfil
+    lpBtn.style.cssText = 'position:absolute;top:10px;right:10px;z-index:10;background:linear-gradient(135deg,#bf5fff,#00ffcc);color:#0a0a2a;border:none;font-size:11px;padding:7px 12px;font-weight:700;border-radius:8px;cursor:pointer;box-shadow:0 2px 12px rgba(191,95,255,.5);';
+    coverBar.style.position = coverBar.style.position || 'relative';
+    coverBar.appendChild(lpBtn);
+    return true;
   }
 
   // Observador: toda vez que o coverBar mudar, tenta injetar o botão
@@ -31179,14 +31205,35 @@ window.oaNavigateFromHeader = function(){
   } else {
     _startObs();
   }
-  // Fallback adicional: tenta a cada navegação pro perfil
+
+  // Intercepta loadProfilePage: injeta o botão logo depois que o perfil carrega
+  // (backup extra caso o MutationObserver não dispare a tempo)
+  if(typeof window.loadProfilePage === 'function'){
+    const _origLoadBtn = window.loadProfilePage;
+    window.loadProfilePage = async function(){
+      const r = await _origLoadBtn.apply(this, arguments);
+      // Múltiplas tentativas escalonadas para garantir que o DOM esteja pronto
+      [200, 500, 1000, 2000].forEach(ms=>{
+        setTimeout(()=>{
+          try{ _startObs(); injectLayoutButton(); }catch(_){}
+        }, ms);
+      });
+      return r;
+    };
+  }
+
+  // Fallback contínuo: tenta a cada 2s enquanto o perfil estiver visível
   setInterval(()=>{
     const page = document.getElementById('page-profile');
     if(page && page.classList.contains('active')){
       _startObs();
-      injectLayoutButton();
+      if(!page.querySelector('#lp-open-btn')) injectLayoutButton();
     }
-  }, 1500);
+  }, 2000);
+
+  // Tentativa imediata após o script carregar (caso o perfil já esteja aberto)
+  setTimeout(()=>{ try{ _startObs(); injectLayoutButton(); }catch(_){} }, 500);
+  setTimeout(()=>{ try{ injectLayoutButton(); }catch(_){} }, 1500);
 
   // Exporta utilidades para testes/acesso externo
   window.EA_LAYOUT = {
