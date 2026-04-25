@@ -14168,12 +14168,36 @@ function _updateMsgTicksLive(updatedMsg){
   console.log('[chat] tick atualizado para', updatedMsg.id, '→', newCls);
 }
 
+// ── Helper: anexa uma única bolha na área de msgs (sem reload completo) ──
+function _appendChatBubble(msg, area){
+  if(!area) return;
+  const isSent = msg.sender_id === CU?.id;
+  const timeHtml = '<div class="mb-time">'+timeAgo(msg.created_at)+'<span class="mb-status sent" aria-label="enviado"><span class="tick tick-1">✓</span><span class="tick tick-2">✓</span></span></div>';
+  let mediaHtml = '';
+  if(msg.media_url){
+    const safeUrl=xss(msg.media_url);
+    const isVideo=(msg.media_type||'').startsWith('video')||/\.(mp4|webm|mov)$/i.test(msg.media_url);
+    mediaHtml=isVideo
+      ?'<div class="mb-media"><video src="'+safeUrl+'" controls playsinline style="width:100%;max-height:200px;display:block;border-radius:8px;"></video></div>'
+      :'<div class="mb-media" data-src="'+safeUrl+'" onclick="openLightbox(this.dataset.src)"><img src="'+safeUrl+'" alt="imagem" style="display:block;width:100%;border-radius:8px;"></div>';
+  }
+  const contentHtml = msg.content ? '<div class="mb-bubble">'+xss(msg.content)+'</div>' : '';
+  const div = document.createElement('div');
+  div.className='mb '+(isSent?'sent':'recv');
+  if(msg.id) div.dataset.msgId=msg.id;
+  div.innerHTML=mediaHtml+contentHtml+timeHtml;
+  // Remove placeholder "início de conversa" se existir
+  area.querySelector('.chat-empty')?.remove();
+  area.appendChild(div);
+  area.scrollTop=area.scrollHeight;
+}
+
 async function sendMsg(){
   // Close any open emoji picker
   document.querySelectorAll('.emoji-picker.open').forEach(p=>p.classList.remove('open'));
   if(!CU||!currentChatUser)return;
   const inp=document.getElementById('msg-in');const txt=inp.value.trim();if(!txt)return;
-  // PATCH 5: guard duplo clique
+  // Guard duplo clique
   const sendBtn=document.getElementById('chat-send-btn');
   if(sendBtn && sendBtn.disabled) return;
   if(sendBtn){ sendBtn.disabled=true; sendBtn.style.opacity='.5'; sendBtn.style.cursor='not-allowed'; }
@@ -14184,12 +14208,25 @@ async function sendMsg(){
       const mod=await moderateContent(txt);
       if(!mod.allowed){ showModerationError(mod.categories||[]); return; }
     }
-    const{error}=await db.from('messages').insert({sender_id:CU.id,receiver_id:currentChatUser.id,content:txt,read:false});
-    if(error)return showToast('Erro ao enviar: '+error.message,'error');
-    inp.value='';await loadMsgs(currentChatUser.id);
+    // ── Envio otimista: mostra bolha antes do round-trip ──
+    const area=document.getElementById('msgs-area');
+    const optimisticMsg={sender_id:CU.id,receiver_id:currentChatUser.id,content:txt,created_at:new Date().toISOString()};
+    _appendChatBubble(optimisticMsg,area);
+    inp.value='';
+    inp.style.height='auto';
+    // ── Insert no banco ──
+    const{data:inserted,error}=await db.from('messages').insert({sender_id:CU.id,receiver_id:currentChatUser.id,content:txt,read:false}).select('id').maybeSingle();
+    if(error){
+      showToast('Erro ao enviar: '+error.message,'error');
+      // Remove bolha otimista em caso de erro
+      area?.querySelector('.mb.sent:last-child')?.remove();
+    } else if(inserted?.id){
+      // Atualiza o data-msg-id da bolha otimista com o ID real
+      const lastBubble=area?.querySelector('.mb.sent:last-child');
+      if(lastBubble) lastBubble.dataset.msgId=inserted.id;
+    }
     try{await db.from('notifications').insert({user_id:currentChatUser.id,actor_id:CU.id,type:'message',content:`@${CP?.username||'alguém'} enviou uma mensagem`,read:false});}catch(e){}
   } finally {
-    // PATCH 5: restaurar sempre, independente de erro
     inp.disabled=false;
     if(sendBtn){ sendBtn.disabled=false; sendBtn.style.opacity=''; sendBtn.style.cursor=''; }
   }
@@ -14401,10 +14438,14 @@ function setupRealtime(){
       _updateMsgTicksLive(pl.new);
     }).subscribe();
 
-  // ✅ Fallback polling a cada 5min — o Realtime acima cobre msgs e notifs em tempo real.
-  // Este intervalo só existe como rede de segurança para casos de reconexão silenciosa.
+  // ✅ Polling a cada 3s — motor principal para msgs em tempo real
+  // (Realtime com filter receiver_id falha sem RLS; polling é confiável)
   clearInterval(_msgPollInterval);
-  _msgPollInterval = setInterval(()=>{ loadUnreadMsgCount(); loadNotifCount(); pollTickUpdates(); }, 300000); // 5min
+  _msgPollInterval = setInterval(()=>{ pollNewMessages(); pollTickUpdates(); }, 3000);
+
+  // ✅ Notificações e badge: atualização a cada 30s (menos crítico)
+  clearInterval(window._notifPollInterval);
+  window._notifPollInterval = setInterval(()=>{ loadUnreadMsgCount?.(); loadNotifCount(); }, 30000);
 
   // ✅ Rail do OlhaAqui a cada 5 minutos (stories expiram em 24h — não precisa ser mais frequente)
   clearInterval(window._oaRailInterval);
@@ -14464,16 +14505,21 @@ async function pollNewMessages(){
 function handleIncomingMessage(msg){
   const senderId=msg.sender_id;
 
-  // Update messages page if open with this sender
+  // Update messages page if open with this sender — append só a bolha nova
   if(currentChatUser?.id===senderId){
-    loadMsgs(senderId);
+    const area=document.getElementById('msgs-area');
+    if(area) _appendChatBubble(msg,area);
+    // Marcar como recebida em background
+    db.from('messages').update({received:true}).eq('id',msg.id).catch(()=>{});
   }
 
   // Update home chat if open with this sender
   if(homeChatUser?.id===senderId){
     const win=document.getElementById('ht-chat-window');
     if(win&&(win.classList.contains('chat-open')||window.innerWidth>768)){
-      loadHomeMsgs(senderId);
+      const areaHt=document.getElementById('ht-msgs-area');
+      if(areaHt) _appendChatBubble(msg,areaHt);
+      db.from('messages').update({received:true}).eq('id',msg.id).catch(()=>{});
     }
   }
 
@@ -14488,6 +14534,7 @@ function handleIncomingMessage(msg){
     // Ativar bolinha no bottom nav
     const bnDot = document.getElementById('bnav-msg-dot');
     if(bnDot) bnDot.classList.add('active');
+    updateUnreadMsgBadge();
   }
 
   // Refresh conversation list
@@ -14859,10 +14906,22 @@ async function sendHomeMsg(){
     }catch(e){}
     msgAttachFiles=[];renderMsgAttachPrev();
   }
-  const{error}=await db.from('messages').insert({sender_id:CU.id,receiver_id:homeChatUser.id,content:txt||null,media_url:mediaUrl,media_type:mediaType,read:false});
-  if(error){showToast('Erro: '+error.message,'error');return;}
+  // ── Envio otimista: mostra bolha antes do round-trip ──
+  const areaHt=document.getElementById('ht-msgs-area');
+  const optimisticHt={sender_id:CU.id,receiver_id:homeChatUser.id,content:txt||null,media_url:mediaUrl,media_type:mediaType,created_at:new Date().toISOString()};
+  _appendChatBubble(optimisticHt,areaHt);
   if(inp){inp.value='';inp.style.height='auto';}
-  await loadHomeMsgs(homeChatUser.id);
+  // ── Insert no banco ──
+  const{data:insertedHt,error}=await db.from('messages').insert({sender_id:CU.id,receiver_id:homeChatUser.id,content:txt||null,media_url:mediaUrl,media_type:mediaType,read:false}).select('id').maybeSingle();
+  if(error){
+    showToast('Erro: '+error.message,'error');
+    areaHt?.querySelector('.mb.sent:last-child')?.remove();
+    return;
+  }
+  if(insertedHt?.id){
+    const lastBubbleHt=areaHt?.querySelector('.mb.sent:last-child');
+    if(lastBubbleHt) lastBubbleHt.dataset.msgId=insertedHt.id;
+  }
   try{await db.from('notifications').insert({user_id:homeChatUser.id,actor_id:CU.id,type:'message',content:'@'+(CP?.username||'alguém')+' enviou uma mensagem',read:false});}catch(e){}
 }
 
