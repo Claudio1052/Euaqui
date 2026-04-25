@@ -6209,7 +6209,7 @@ body.day-mode .lp-chip{ background:rgba(0,0,0,.04); color:#1a1a2e; }
       <button class="theme-toggle" id="trending-nav-btn" onclick="openTrendingModal()" title="Em Alta" style="color:var(--neon-pink);font-weight:700;font-size:15px;">🔥</button>
       <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()" title="Alternar Dia/Noite">🌙</button>
       <button class="theme-toggle" id="header-notif-btn" onclick="nav('notifications')" title="Notificações" style="position:relative;">🔔<span class="nbadge" id="header-notif-badge" style="display:none;position:absolute;top:-4px;right:-4px;">0</span></button>
-      <img class="nav-av" loading="lazy" id="nav-av" src="https://api.dicebear.com/7.x/pixel-art/svg?seed=default" data-dicebear-direct="1" onclick="nav('profile')">
+      <img class="nav-av" id="nav-av" src="https://api.dicebear.com/7.x/pixel-art/svg?seed=default" data-dicebear-direct="1" onclick="nav('profile')">
       <button class="hamburger" onclick="toggleDrawer()">☰</button>
     </div>
   </div>
@@ -19735,21 +19735,20 @@ function startBizChatPoll(){
   }, 3000);
 
   // ══════════════════════════════════════════════════════════════
-  // BÔNUS: Realtime SEM filtro — dispara instantaneamente quando
-  // funcionar. Verifica o chat_id manualmente no callback.
-  // Não depende de RLS, funciona em qualquer configuração.
+  // REALTIME com filtro rigoroso por chat_id (Room-scoped).
+  // Garante que o servidor só entrega eventos do chat atual,
+  // eliminando tráfego desnecessário de outros lojistas/chats.
   // ══════════════════════════════════════════════════════════════
   try{
-    _bizRealtimeCh = db.channel('biz-rt-'+currentBizChat+'-'+Date.now())
+    _bizRealtimeCh = db.channel('biz-rt-'+currentBizChat)
       .on('postgres_changes',{
         event:'INSERT',
         schema:'public',
-        table:'business_messages'
+        table:'business_messages',
+        filter:'chat_id=eq.'+currentBizChat   // ✅ filtro server-side: só mensagens deste chat
       },(pl)=>{
         if(!pl?.new) return;
         const msg = pl.new;
-        // Filtra manualmente pelo chat correto
-        if(msg.chat_id !== currentBizChat) return;
         // Se chegou pelo Realtime antes do poll, processa imediatamente
         if(msg.created_at <= _bizLastMsgTs) return; // poll já pegou
         _bizLastMsgTs = msg.created_at;
@@ -19765,11 +19764,17 @@ function startBizChatPoll(){
   }catch(e){ console.warn('[biz-realtime] não disponível, usando só polling:', e.message); }
 
   // Canal da sidebar (novos chats chegando para o dono do negócio)
+  // ✅ filtro server-side por business_id — não recebe chats de outros negócios
   if(!_bizListRealtimeCh && myBusiness){
     try{
-      _bizListRealtimeCh = db.channel('biz-list-'+myBusiness.id+'-'+Date.now())
-        .on('postgres_changes',{event:'*',schema:'public',table:'business_chats'},(pl)=>{
-          if(pl?.new?.business_id === myBusiness.id) loadBizChats();
+      _bizListRealtimeCh = db.channel('biz-list-'+myBusiness.id)
+        .on('postgres_changes',{
+          event:'*',
+          schema:'public',
+          table:'business_chats',
+          filter:'business_id=eq.'+myBusiness.id   // ✅ filtro server-side
+        },(pl)=>{
+          loadBizChats();
         }).subscribe();
     }catch(e){}
   }
@@ -29045,16 +29050,26 @@ function oaBoot(){
   oaLoadRail();
 
   // ✅ REALTIME: ouve novos stories inseridos — recarrega rail instantaneamente
+  // Throttle de 2s para evitar múltiplos reloads quando vários stories chegam juntos.
   if(!window._oaRealtimeCh && window.db){
-    window._oaRealtimeCh = window.db.channel('oa-stories-rt')
+    let _oaRtThrottle = null;
+    function _oaRtReload(){
+      if(_oaRtThrottle) return; // já agendado, ignora
+      _oaRtThrottle = setTimeout(()=>{
+        _oaRtThrottle = null;
+        if(!document.getElementById('oa-rail') || oaViewer.open) return;
+        oaLoadRail();
+      }, 2000);
+    }
+    window._oaRealtimeCh = window.db.channel('oa-stories-rt-'+CU.id)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'oa_posts'},(pl)=>{
         if(!pl?.new) return;
         if(!document.getElementById('oa-rail') || oaViewer.open) return;
-        oaLoadRail();
+        _oaRtReload();
       })
       .on('postgres_changes',{event:'DELETE',schema:'public',table:'oa_posts'},(pl)=>{
         if(!document.getElementById('oa-rail') || oaViewer.open) return;
-        oaLoadRail(); // atualiza quando story expira/é removido
+        _oaRtReload(); // atualiza quando story expira/é removido
       })
       .subscribe();
   }
@@ -29199,7 +29214,7 @@ async function searchMusic() {
         : `<span style="font-size:8px;background:rgba(0,255,204,.1);border:1px solid rgba(0,255,204,.3);color:var(--neon-cyan);border-radius:4px;padding:1px 4px;flex-shrink:0;">JM</span>`;
 
       item.innerHTML = `
-        <img class="music-capa" loading="lazy" src="${t.capa_url || ''}" alt=""
+        <img class="music-capa" src="${t.capa_url || ''}" alt=""
              onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1 1%22><rect fill=%22%230a0a2a%22/></svg>'">
         <div class="music-info" style="min-width:0;flex:1;">
           <div class="music-titulo" style="display:flex;align-items:center;gap:4px;">
@@ -29525,7 +29540,7 @@ function renderMusicBar(musicData) {
   const uid = 'pmb-' + Math.random().toString(36).slice(2,8);
   return `
     <div class="post-music-bar">
-      ${capa ? `<img class="post-music-capa" loading="lazy"  src="${capa}" alt="">` : ''}
+      ${capa ? `<img class="post-music-capa" src="${capa}" alt="">` : ''}
       <div class="post-music-info">
         <div class="post-music-titulo">🎵 ${xss(m.titulo||'Música')}</div>
         <div class="post-music-artista">${xss(m.artista||'')}</div>
@@ -30434,7 +30449,7 @@ function _renderMusicHistoryItems(items, list, append=false) {
     item.style.cssText = 'position:relative;';
     if(_musicSelected?.external_id === extId) item.classList.add('selected');
     item.innerHTML = `
-      <img class="music-capa" loading="lazy" src="${capaSrc}" alt=""
+      <img class="music-capa" src="${capaSrc}" alt=""
            onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1 1%22><rect fill=%22%230a0a2a%22/></svg>'">
       <div class="music-info" style="flex:1;min-width:0;">
         <div class="music-titulo">${xss(m.titulo || '—')}</div>
