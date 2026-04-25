@@ -4856,11 +4856,16 @@ body.day-mode::before{
 .oa-v-bar > i{
   display:block;
   height:100%;
-  width:0%;
+  width:100%;
+  /* ✅ GPU ANIMATION: transform:scaleX() é processado pela GPU (compositor thread).
+     Nunca altera width via JS — isso força layout + paint no CPU a cada frame. */
+  transform:scaleX(0);
+  transform-origin:left center;
   background:linear-gradient(90deg,var(--neon-cyan),var(--neon-pink));
   box-shadow:0 0 6px var(--neon-cyan);
+  will-change:transform;
 }
-.oa-v-bar.done > i{ width:100%; }
+.oa-v-bar.done > i{ transform:scaleX(1); }
 
 /* Cabeçalho do viewer (avatar + nome + tempo) */
 .oa-v-head{
@@ -8717,18 +8722,20 @@ async function loadFeed(force=false){
 
     // ── DOM PRUNING: evita vazamento de memória em sessões longas ──────────────
     // Mantém no DOM no máximo MAX_FEED_NODES posts. Quando ultrapassar, remove
-    // os nós mais antigos do topo (já fora da viewport) e compensa o scroll
-    // para o usuário não sentir o salto visual.
+    // os nós mais antigos do topo (já fora da viewport) e compensa o scroll.
+    // ✅ ANTI-THRASHING: lemos TODAS as alturas primeiro (fase de leitura),
+    // depois removemos todos os nós (fase de escrita). Nunca intercalar
+    // leitura e escrita de layout no mesmo loop — isso força reflow a cada iteração.
     const MAX_FEED_NODES = 40;
     const feedChildren = Array.from(feed.children).filter(el=>el.id && el.id.startsWith('post-'));
     if(feedChildren.length > MAX_FEED_NODES){
       const excess = feedChildren.length - MAX_FEED_NODES;
-      let removedHeight = 0;
-      for(let i = 0; i < excess; i++){
-        removedHeight += feedChildren[i].offsetHeight || 0;
-        feedChildren[i].remove();
-      }
-      // Compensa o scroll para que a posição visual não salte
+      const toRemove = feedChildren.slice(0, excess);
+      // FASE 1 — apenas leituras (um único reflow)
+      const heights = toRemove.map(el => el.offsetHeight || 0);
+      const removedHeight = heights.reduce((a, b) => a + b, 0);
+      // FASE 2 — apenas escritas (zero reflow adicional)
+      toRemove.forEach(el => el.remove());
       if(removedHeight > 0) window.scrollBy(0, -removedHeight);
     }
     // ─────────────────────────────────────────────────────────────────────────
@@ -28924,8 +28931,10 @@ function _oaStartTimer(){
     if(!oaViewer.open) return;
     if(oaViewer.paused){ oaViewer.timer = requestAnimationFrame(tick); return; }
     const elapsed = Date.now() - oaViewer.startedAt;
-    const pct = Math.min(100, (elapsed / oaViewer.duration) * 100);
-    if(fill) fill.style.width = pct + '%';
+    const pct = Math.min(1, elapsed / oaViewer.duration);
+    // ✅ GPU ANIMATION: scaleX() é composto na GPU — zero layout thrashing.
+    // Nunca usar style.width em requestAnimationFrame (força CPU layout a cada frame).
+    if(fill) fill.style.transform = 'scaleX(' + pct + ')';
     if(elapsed >= oaViewer.duration){
       oaNext();
       return;
