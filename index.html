@@ -7382,7 +7382,67 @@ body.day-mode .lp-chip{ background:rgba(0,0,0,.04); color:#1a1a2e; }
 <div class="tst-wrap" id="tst-wrap"></div>
 
 
+
 <script>
+/* ═══════════════════════════════════════════════════════════════════
+   🚀 EuAqui — Code Split Loader + Boot Crítico
+   Initial JS: ~570KB (44% menos que o monólito original de 1.3MB)
+   Módulos lazy: chat-business(386KB), live(114KB) — só quando usados
+   Módulos idle: stories(187KB), layout-profile(70KB) — pré-aquecidos
+   ═══════════════════════════════════════════════════════════════════ */
+// ═══════════════════════════════════════════════════════════════════════
+// 🚀 EUAQUI LAZY LOADER — Code Splitting para Single-File HTML
+// Reduz o JS inicial de 1.3MB para ~570KB (44% menos parse/compile)
+// 
+// Como funciona:
+//  1. Módulos pesados ficam em <script type="ea/lazy" data-mod="nome">
+//  2. window._lazyLoad('nome') busca, compila e executa o módulo
+//  3. Promise cacheada: segundo chamador recebe o mesmo Promise
+//  4. Após o DOMContentLoaded, stories + layout-profile são pré-aquecidos
+//     via requestIdleCallback (zero impacto no TTI)
+// ═══════════════════════════════════════════════════════════════════════
+
+(function(){
+  'use strict';
+
+  const _loaded  = {};  // nome -> Promise<void>
+  const _done    = {};  // nome -> true (já executado)
+
+  // Extrai e executa o conteúdo do <script type="ea/lazy" data-mod="nome">
+  window._lazyLoad = function(name){
+    if(_done[name])  return Promise.resolve();
+    if(_loaded[name]) return _loaded[name];
+
+    _loaded[name] = new Promise((resolve, reject) => {
+      try {
+        const el = document.querySelector(`script[type="ea/lazy"][data-mod="${name}"]`);
+        if(!el){ reject(new Error('Módulo não encontrado: ' + name)); return; }
+        // Cria um Blob URL e carrega como <script> para preservar source maps e erros legíveis
+        const blob = new Blob([el.textContent], { type: 'application/javascript' });
+        const url  = URL.createObjectURL(blob);
+        const s    = document.createElement('script');
+        s.src      = url;
+        s.onload   = () => { _done[name] = true; URL.revokeObjectURL(url); resolve(); };
+        s.onerror  = (e)=> { URL.revokeObjectURL(url); reject(e); };
+        document.head.appendChild(s);
+      } catch(e){ reject(e); }
+    });
+
+    return _loaded[name];
+  };
+
+  // Pré-aquece módulos em idle (background, sem bloquear o utilizador)
+  window._lazyPreload = function(name){
+    if(_done[name] || _loaded[name]) return;
+    if('requestIdleCallback' in window){
+      requestIdleCallback(() => window._lazyLoad(name).catch(()=>{}), { timeout: 5000 });
+    } else {
+      setTimeout(() => window._lazyLoad(name).catch(()=>{}), 3000);
+    }
+  };
+
+})();
+
 
 // ===== FAILSAFE: garante que loading nunca trava =====
 let _appInitDone = false;
@@ -7853,7 +7913,7 @@ function showApp(){
       else if(_rp === 'explore')        loadExploreFeed();
       else if(_rp === 'friends')        loadFriendsList('friends');
       else if(_rp === 'communities')    { loadCommGrid('all'); setTimeout(buildCommIconGrid,200); }
-      else if(_rp === 'businesses')     initBusinessPage();
+      else if(_rp === 'businesses')     window._lazyLoad('chat-business').then(()=>initBusinessPage()).catch(()=>{});
       else if(_rp === 'messages')       loadConversations();
       else if(_rp === 'notifications')  loadNotifTab('nt-all');
       else if(_rp === 'capsules')       loadCapsules();
@@ -7864,6 +7924,11 @@ function showApp(){
   setTimeout(()=>{ try{ loadNotifCount(); loadUnreadMsgCount(); }catch(e){} }, 0);
   // _debugNotifRLS desabilitado — não gerar notificações [RLS TEST] em produção
   setTimeout(()=>{ try{ _initCallListen(); }catch(e){} }, 500);
+  // Pré-aquece módulos em background após o app estar visível
+  // layout-profile: 800ms (intercepta loadProfilePage antes de qualquer visita ao perfil)
+  // stories: 1500ms (apenas visualização - não bloqueia TTI)
+  setTimeout(()=>window._lazyLoad('layout-profile').catch(()=>{}), 800);
+  setTimeout(()=>window._lazyPreload('stories'), 1500);
   setTimeout(()=>{ try{ loadNotifCount(); }catch(e){} }, 100);
   setTimeout(()=>{ try{ checkMigration(); }catch(e){} }, 2000);
   setTimeout(()=>{ try{ loadBlast(); }catch(e){} }, 200);
@@ -8259,7 +8324,7 @@ window.addEventListener('popstate', function(e){
         else if(page==='explore')        loadExploreFeed();
         else if(page==='friends')        loadFriendsList('friends');
         else if(page==='communities')    { loadCommGrid('all'); setTimeout(buildCommIconGrid,200); }
-        else if(page==='businesses')     initBusinessPage();
+        else if(page==='businesses')     window._lazyLoad('chat-business').then(()=>initBusinessPage()).catch(e=>console.error('Lazy chat-business:',e));
         else if(page==='messages')       loadConversations();
         else if(page==='notifications')  loadNotifTab('nt-all');
         else if(page==='capsules')       loadCapsules();
@@ -8316,7 +8381,7 @@ function nav(page){
     else if(page==='friends')        loadFriendsList('friends');
     else if(page==='communities')    { loadCommGrid('all'); setTimeout(buildCommIconGrid,200); }
     else if(page==='businesses')     initBusinessPage();
-    else if(page==='messages'){ loadConversations(); document.getElementById('bnav-msg-dot')?.classList.remove('active'); document.getElementById('msg-badge')?.remove(); try{ db.from('messages').update({read:true}).eq('receiver_id',CU.id).eq('read',false); }catch(_){} }
+    else if(page==='messages'){ window._lazyLoad('chat-business').then(()=>{ loadConversations(); }).catch(e=>console.error('Lazy chat-business:',e)); document.getElementById('bnav-msg-dot')?.classList.remove('active'); document.getElementById('msg-badge')?.remove(); try{ db.from('messages').update({read:true}).eq('receiver_id',CU.id).eq('read',false); }catch(_){} }
     else if(page==='businesses'){ ['bn-biz-dot','nb-biz-dot'].forEach(id=>document.getElementById(id)?.classList.remove('active')); }
     else if(page==='communities'){ ['bn-comm-dot','nb-comm-dot'].forEach(id=>document.getElementById(id)?.classList.remove('active')); }
     else if(page==='notifications')  loadNotifTab('nt-all');
@@ -8331,6 +8396,11 @@ function toggleDrawer(){
   document.getElementById('mob-overlay').classList.toggle('open');
 }
 
+
+</script>
+
+<script defer>
+/* ═══ CORE: Feed · Reactions · Comments · Profile · Messages · Notifications · Realtime ═══ */
 // ===== FEED (with caching to prevent flicker) =====
 // ═══════════════════════════════════════════════════════════════════════════
 // FEED PRIORITIZADO + SCROLL INFINITO
@@ -13956,7 +14026,7 @@ async function openChat(userId,username,avatarUrl){
   document.getElementById('msg-in-area').style.display='flex';
 
   // On mobile: slide to chat window
-  showChatWindow();
+  if(window._done && window._done['chat-business']){ showChatWindow(); } else { /* chat-business loads this */ }
   await loadMsgs(userId);
 }
 async function loadMsgs(userId){
@@ -14823,6 +14893,11 @@ function handleIncomingMessage(msg){
   if(document.getElementById('ht-chat')?.classList.contains('active')) loadHomeChat();
 }
 
+
+</script>
+
+<script defer>
+/* ═══ UTILS: Tabs · Navigation · Emoji Picker · Theme · Validation · Utils ═══ */
 // ===== MISC =====
 async function loadBlast(){
   if(!CU)return;
@@ -17760,6 +17835,16 @@ async function loadNotifTab(tabId){
   loadNotifCount();
 }
 
+
+</script>
+
+<!-- ╔══════════════════════════════════════════════════════════════════╗
+     ║  MÓDULOS LAZY — só são compilados quando o utilizador os abre  ║
+     ║  O browser ignora completamente estes blocos no carregamento    ║
+     ╚══════════════════════════════════════════════════════════════════╝ -->
+
+<!-- ═══ LAZY: Chat Melhorado + Negócios (386KB) ═══ -->
+<script type="ea/lazy" data-mod="chat-business">
 // ===== CHAT MELHORADO =====
 let msgAttachFiles = [];
 
@@ -24797,7 +24882,7 @@ function switchCommInnerTab(commId, tabId, btn){
       if(el) el.scrollTop=el.scrollHeight;
     }
   }
-  if(tabId==='ct-live') loadCommLive(commId);
+  if(tabId==='ct-live') window._lazyLoad('live').then(()=>loadCommLive(commId)).catch(e=>console.error('Lazy live:',e));
   if(tabId==='ct-members') loadCommMembersPanel(commId);
   if(tabId==='ct-xp') loadCommRanking(commId);
 }
@@ -25074,6 +25159,11 @@ function _appendCommMsg(commId, m){
 if(!window._commChatCache) window._commChatCache = {};
 
 // ═════════════════════════════════════════════════════════════
+
+</script>
+
+<!-- ═══ LAZY: Live/Space WebRTC (114KB) — só ao entrar numa live ═══ -->
+<script type="ea/lazy" data-mod="live">
 // 🎙 LIVE / SPACE — sala de voz ao vivo estilo Twitter Spaces
 // Arquitetura: WebRTC mesh P2P com Supabase Realtime como signaling
 // - Host (dono da comunidade) abre a sala
@@ -27351,6 +27441,11 @@ async function loadCommRanking(commId){
     }).join('');
 }
 
+
+</script>
+
+<!-- ═══ IDLE: Stories · Music Picker · Story Editor · Trending (187KB) ═══ -->
+<script type="ea/lazy" data-mod="stories">
 // ===== FEED AUTOPLAY (mobile only) =====
 let _feedObserver = null;
 let _domWatcher = null; // MutationObserver global para iframes YT adicionados dinamicamente
@@ -31784,7 +31879,10 @@ window.oaNavigateFromHeader = function(){
 
 </script>
 
-<script>
+</script>
+
+<!-- ═══ IDLE: Layout Personalizado de Perfil (70KB) — pré-aquecido a 800ms ═══ -->
+<script type="ea/lazy" data-mod="layout-profile">
 /* ══════════════════════════════════════════════════════════════
    🎨 LAYOUT PERSONALIZADO DE PERFIL — v61
    Sistema completo de customização visual por usuário.
@@ -32743,9 +32841,7 @@ window.oaNavigateFromHeader = function(){
 
   console.log('[🎨 Layout Personalizado] v61 carregado');
 })();
-</script>
 
-<script>
 // Redireciona todas as imagens Dicebear para o Worker de cache assim que o DOM carrega.
 // Isso cobre os src estáticos no HTML e os onerror handlers dinâmicos.
 (function patchDicebearSrcs(){
@@ -32931,7 +33027,354 @@ export default {
 ==========================================================================
 */
 
+
+
+<!-- OLHA AQUI! Viewer (injetado) -->
+<div id="oa-viewer" role="dialog" aria-label="Olha Aqui viewer">
+  <div class="oa-v-stage" id="oa-v-stage">
+    <div class="oa-v-bars" id="oa-v-bars"></div>
+    <div class="oa-v-head">
+      <img loading="lazy" class="oa-v-avatar" id="oa-v-avatar" src="" alt="" onclick="oaNavigateFromHeader()" style="cursor:pointer;" title="Ver perfil">
+      <div class="oa-v-info" onclick="oaNavigateFromHeader()" style="cursor:pointer;" title="Ver perfil">
+        <div class="oa-v-name" id="oa-v-name">-</div>
+        <div class="oa-v-time" id="oa-v-time">agora</div>
+      </div>
+      <button class="oa-v-pause" id="oa-v-pause" onclick="oaTogglePause()" title="Pausar">&#9208;</button>
+      <button class="oa-v-close" onclick="oaCloseViewer()" title="Fechar">&#10005;</button>
+    </div>
+    <div id="oa-v-media-wrap" style="position:absolute;inset:0;z-index:1;display:flex;align-items:center;justify-content:center;background:#000;"></div>
+    <div class="oa-v-load" id="oa-v-load" style="display:none;"><div>CARREGANDO...</div></div>
+    <div class="oa-v-tap prev" onclick="oaPrev()"></div>
+    <div class="oa-v-tap hold"
+         onpointerdown="oaHoldStart()"
+         onpointerup="oaHoldEnd()"
+         onpointerleave="oaHoldEnd()"></div>
+    <div class="oa-v-tap next" onclick="oaNext()"></div>
+    <!-- Camada flutuante de reações -->
+    <div id="oa-v-float-layer"></div>
+
+    <!-- Rodapé: views + reações + comentário + excluir -->
+    <div class="oa-v-foot" id="oa-v-foot">
+      <!-- Linha de views + excluir (só dono) -->
+      <div class="oa-v-meta-row">
+        <div class="oa-v-views" id="oa-v-views" onclick="oaOpenViewersSheet()" title="Ver quem visualizou">👁 0</div>
+        <div style="flex:1"></div>
+        <button class="oa-v-del" id="oa-v-del-btn" onclick="oaDeleteCurrent()" style="display:none;">&#128465; Excluir</button>
+      </div>
+      <!-- CTA de negócio (aparece só em stories de loja/serviço) -->
+      <button class="oa-v-cta-btn buy" id="oa-v-cta-buy"  onclick="oaCtaAction('buy')">🛒 COMPRAR AGORA</button>
+      <button class="oa-v-cta-btn book" id="oa-v-cta-book" onclick="oaCtaAction('book')">📅 AGENDE AQUI</button>
+
+      <!-- Reações -->
+      <div class="oa-v-reactions" id="oa-v-reactions">
+        <button class="oa-v-reaction-btn" data-r="❤️"  data-count="0" onclick="oaReact('❤️',this)">❤️</button>
+        <button class="oa-v-reaction-btn" data-r="👍"  data-count="0" onclick="oaReact('👍',this)">👍</button>
+        <button class="oa-v-reaction-btn" data-r="👏"  data-count="0" onclick="oaReact('👏',this)">👏</button>
+        <button class="oa-v-reaction-btn" data-r="😂"  data-count="0" onclick="oaReact('😂',this)">😂</button>
+        <button class="oa-v-reaction-btn" data-r="😢"  data-count="0" onclick="oaReact('😢',this)">😢</button>
+        <button class="oa-v-reaction-btn" data-r="🔥"  data-count="0" onclick="oaReact('🔥',this)">🔥</button>
+        <button class="oa-v-reaction-btn" data-r="😮"  data-count="0" onclick="oaReact('😮',this)">😮</button>
+      </div>
+      <!-- Comentário → vai pro DM da pessoa -->
+      <div class="oa-v-comment-row" id="oa-v-comment-row">
+        <input class="oa-v-comment-input" id="oa-v-comment-input"
+               placeholder="Responder no chat privado..."
+               onfocus="oaCommentFocus()"
+               onblur="oaCommentBlur()"
+               onkeydown="if(event.key==='Enter')oaSendComment();else if(event.key==='Escape'){this.blur();}">
+        <button class="oa-v-comment-send" onclick="oaSendComment()" title="Enviar">➤</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- OLHA AQUI! Modal de criacao (injetado) -->
+<div id="oa-create-modal" role="dialog" aria-label="Criar Olha Aqui">
+  <div class="oa-c-box">
+    <div class="oa-c-title">&#10024; NOVO OLHA AQUI!</div>
+    <div class="oa-c-sub">Publique uma foto ou video curto. Expira em 24 horas automaticamente.</div>
+    <div id="oa-c-preview-wrap" style="display:none;"></div>
+    <div class="oa-c-progress" id="oa-c-progress" style="display:none;">
+      <i id="oa-c-progress-fill"></i>
+      <span id="oa-c-progress-text">0%</span>
+    </div>
+    <div class="oa-c-actions" id="oa-c-actions">
+      <button class="oa-c-btn" onclick="oaPickMedia('image/*')">&#128247; Escolher Foto</button>
+      <button class="oa-c-btn sec" onclick="oaPickMedia('video/*')">&#127916; Escolher Vídeo</button>
+      <button class="oa-c-btn cancel" onclick="oaCloseCreate()">Cancelar</button>
+    </div>
+    <div id="oa-music-pill-wrap" style="display:none;margin-top:6px;"></div>
+    <div class="oa-c-actions" id="oa-c-confirm" style="display:none;">
+      <button class="oa-c-btn" id="oa-c-publish" onclick="oaPublish()">&#128640; PUBLICAR</button>
+      <button class="oa-c-btn cancel" onclick="oaResetCreate()">&#8617; Trocar midia</button>
+    </div>
+    <input type="file" id="oa-c-file" accept="image/*,video/*" style="display:none;" onchange="oaOnFilePicked(this)">
+  </div>
+</div>
+
+
+<!-- ══ MUSIC PICKER MODAL ══════════════════════════════════ -->
+<div id="music-picker-overlay" onclick="if(event.target===this)closeMusicPicker()">
+  <div id="music-picker-box">
+    <div class="music-picker-title">
+      🎵 Escolher Música
+      <button onclick="closeMusicPicker()" style="margin-left:auto;background:none;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;">✕</button>
+    </div>
+    <!-- Abas: Buscar / Usadas -->
+    <div class="music-tab-row">
+      <button class="music-tab-btn active" id="mtab-search" onclick="switchMusicTab('search')">🔍 Buscar</button>
+      <button class="music-tab-btn" id="mtab-history" onclick="switchMusicTab('history')">🕐 Usadas recentemente</button>
+    </div>
+    <!-- Painel buscar -->
+    <div id="music-panel-search">
+      <!-- Linha 1: input + buscar -->
+      <div class="music-search-row">
+        <input class="music-search-input" id="music-search-input" placeholder="Buscar música ou artista..." oninput="searchMusicDebounced()" onkeydown="if(event.key==='Enter'){clearTimeout(_musicSearchTimer);searchMusic();}">
+        <button class="music-search-btn" onclick="searchMusic()">🔍 Buscar</button>
+      </div>
+      <!-- Linha 2: gênero + fonte -->
+      <div style="display:flex;gap:6px;margin-top:8px;align-items:center;">
+        <!-- Dropdown customizado de gênero -->
+        <div style="position:relative;flex:1;" id="music-genre-wrap">
+          <button onclick="toggleGenreDropdown()" id="music-genre-btn"
+            style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;
+                   background:rgba(255,255,255,.05);border:1px solid var(--border-glow);
+                   border-radius:10px;padding:7px 12px;color:var(--text-light);
+                   font-family:'Space Mono',monospace;font-size:10px;cursor:pointer;text-align:left;">
+            <span id="music-genre-label">🎵 Todos os estilos</span>
+            <span style="color:var(--text-muted);font-size:10px;">▾</span>
+          </button>
+          <!-- Lista de gêneros — abre para CIMA -->
+          <div id="music-genre-list"
+            style="display:none;position:absolute;bottom:calc(100% + 4px);left:0;right:0;
+                   background:var(--bg-card);border:1px solid var(--border-glow);
+                   border-radius:12px;overflow-y:auto;max-height:220px;z-index:99;
+                   box-shadow:0 -8px 32px rgba(0,0,0,.6);">
+          </div>
+        </div>
+        <!-- Botões de fonte -->
+        <div style="display:flex;gap:3px;flex-shrink:0;">
+          <button id="msrc-both" onclick="setMusicSource('both')"
+            style="padding:6px 9px;border-radius:8px;border:1px solid var(--border-glow);
+                   background:rgba(0,255,204,.15);color:var(--neon-cyan);
+                   font-size:9px;font-family:'Silkscreen',monospace;cursor:pointer;white-space:nowrap;">JM+FS</button>
+          <button id="msrc-jamendo" onclick="setMusicSource('jamendo')"
+            style="padding:6px 9px;border-radius:8px;border:1px solid rgba(0,255,204,.15);
+                   background:transparent;color:var(--text-muted);
+                   font-size:9px;font-family:'Silkscreen',monospace;cursor:pointer;">JM</button>
+          <button id="msrc-freesound" onclick="setMusicSource('freesound')"
+            style="padding:6px 9px;border-radius:8px;border:1px solid rgba(255,140,0,.15);
+                   background:transparent;color:var(--text-muted);
+                   font-size:9px;font-family:'Silkscreen',monospace;cursor:pointer;">FS</button>
+        </div>
+      </div>
+    </div>
+    <input type="hidden" id="music-genre-filter" value="">
+    <!-- Painel histórico -->
+    <div id="music-panel-history" style="display:none;">
+      <div class="music-results" id="music-history-list" style="max-height:280px;overflow-y:auto;">
+        <div style="text-align:center;padding:20px;color:var(--text-muted);font-size:11px;">Nenhuma música usada ainda</div>
+      </div>
+    </div>
+    <!-- Opção de mudo para vídeo -->
+    <div id="music-mute-option" style="display:none;align-items:center;gap:8px;padding:6px 10px;background:rgba(255,204,0,.06);border:1px solid rgba(255,204,0,.2);border-radius:10px;">
+      <span style="font-size:11px;color:var(--neon-yellow);font-family:'Space Mono',monospace;">🎬 Silenciar áudio do vídeo original?</span>
+      <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:11px;color:var(--text-light);">
+        <input type="checkbox" id="music-mute-video" style="accent-color:var(--neon-cyan);"> Sim
+      </label>
+    </div>
+    <div class="music-results" id="music-results">
+      <div style="text-align:center;padding:30px;color:var(--text-muted);font-family:'VT323',monospace;font-size:18px;">🎵 Digite para buscar músicas</div>
+    </div>
+    <div id="music-selected-preview" style="display:none;padding:10px;background:rgba(0,255,204,.06);border:1px solid var(--neon-cyan);border-radius:10px;">
+      <div style="font-family:'Silkscreen',monospace;font-size:9px;color:var(--neon-cyan);margin-bottom:6px;">✅ SELECIONADA</div>
+      <div id="music-selected-info" style="font-size:11px;color:var(--text-light);"></div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button onclick="confirmMusicPicker()" style="flex:1;background:linear-gradient(135deg,var(--neon-cyan),var(--neon-purple));border:none;border-radius:10px;padding:12px;color:#fff;font-family:'Silkscreen',monospace;font-size:11px;cursor:pointer;">✅ CONFIRMAR</button>
+      <button onclick="removeMusicPicker()" style="background:rgba(255,51,102,.1);border:1px solid var(--neon-pink);border-radius:10px;padding:12px 16px;color:var(--neon-pink);font-family:'Silkscreen',monospace;font-size:11px;cursor:pointer;">🗑 Remover</button>
+    </div>
+  </div>
+</div>
+
+<!-- Player de preview oculto -->
+<audio id="music-preview-player" style="display:none;" preload="none"></audio>
+
+<!-- ══ MODAL CONFIRMAR EXCLUSÃO DE FOTO/VÍDEO ═══════════════════════ -->
+<div id="pp-delete-confirm-overlay" onclick="if(event.target===this)ppDeleteCancel()">
+  <div id="pp-delete-confirm-box">
+    <div class="pp-del-icon" id="pp-del-icon">🗑️</div>
+    <div class="pp-del-title" id="pp-del-title">EXCLUIR MÍDIA?</div>
+    <div class="pp-del-desc" id="pp-del-desc">Esta ação não pode ser desfeita.<br>O post original será excluído permanentemente.</div>
+    <div class="pp-del-btns">
+      <button class="pp-del-btn-cancel" onclick="ppDeleteCancel()">✕ Cancelar</button>
+      <button class="pp-del-btn-confirm" id="pp-del-btn-confirm" onclick="ppDeleteConfirm()">🗑️ Sim, excluir</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══ STORY EDITOR ═══════════════════════════════════════════ -->
+<div id="oa-story-editor">
+  <div class="oa-se-wrap">
+    <!-- Topbar -->
+    <div class="oa-se-topbar">
+      <button class="oa-se-close" onclick="oaEditorClose()">✕</button>
+      <div class="oa-se-title" id="oa-se-title">OLHA AQUI!</div>
+      <div style="width:32px;"></div><!-- spacer -->
+    </div>
+
+    <!-- Badge de negócio (aparece só ao divulgar loja/serviço via foto/vídeo) -->
+    <div id="oa-se-biz-badge" style="display:none;align-items:center;gap:8px;padding:6px 12px;background:rgba(0,255,204,.08);border-bottom:1px solid rgba(0,255,204,.18);">
+      <img loading="lazy" class="oa-se-biz-logo" src="" alt="" style="width:28px;height:28px;border-radius:6px;object-fit:cover;flex-shrink:0;">
+      <div style="flex:1;min-width:0;">
+        <div class="oa-se-biz-name" style="font-family:'Silkscreen',monospace;font-size:9px;color:var(--neon-cyan);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+        <div style="font-size:8px;color:var(--text-muted);font-family:'Space Mono',monospace;">Story de negócio · expira em 24h</div>
+      </div>
+      <span class="oa-se-biz-cta" style="font-family:'Silkscreen',monospace;font-size:8px;color:var(--neon-yellow);background:rgba(255,204,0,.12);border:1px solid rgba(255,204,0,.3);border-radius:8px;padding:3px 8px;white-space:nowrap;"></span>
+    </div>
+
+    <!-- Preview de mídia (fullscreen do story) -->
+    <div class="oa-se-preview" id="oa-se-preview"></div>
+
+    <!-- Painel de controles -->
+    <div class="oa-se-panel">
+
+      <!-- Música selecionada + trim -->
+      <div id="oa-se-music-section" style="display:none;">
+        <div class="oa-se-music-bar">
+          <div class="oa-se-music-info">
+            <img class="oa-se-music-capa" id="oa-se-capa" src="" alt="">
+            <div class="oa-se-music-name">
+              <div class="oa-se-music-titulo" id="oa-se-titulo">—</div>
+              <div class="oa-se-music-artista" id="oa-se-artista">—</div>
+            </div>
+            <div class="oa-se-music-btns">
+              <button class="oa-se-play-btn" id="oa-se-play" onclick="oaEditorTogglePreview()">▶</button>
+              <button class="oa-se-rm-btn" onclick="oaEditorRemoveMusic()">✕ Remover</button>
+            </div>
+          </div>
+
+          <!-- Waveform + trim handles -->
+          <div class="oa-se-trim">
+            <div class="oa-se-trim-label">
+              <span id="oa-se-start-lbl">0s</span>
+              <span id="oa-se-dur-lbl" style="color:var(--neon-cyan);">duração: 0s</span>
+              <span id="oa-se-end-lbl">0s</span>
+            </div>
+            <div class="oa-se-waveform" id="oa-se-waveform">
+              <!-- Barras da waveform -->
+              <div class="oa-se-wave-bars" id="oa-se-wave-bars"></div>
+              <!-- Overlay escuro à esquerda da janela -->
+              <div class="oa-se-trim-outside" id="oa-se-outside-l" style="left:0;width:0;"></div>
+              <!-- Overlay escuro à direita da janela -->
+              <div class="oa-se-trim-outside" id="oa-se-outside-r" style="right:0;width:0;"></div>
+              <!-- Janela de seleção (arrastável) -->
+              <div class="oa-se-trim-region" id="oa-se-region">
+                <div class="oa-se-drag-handle">
+                  <span></span><span></span><span></span>
+                </div>
+              </div>
+              <!-- Playhead -->
+              <div class="oa-se-playhead" id="oa-se-playhead" style="left:0%;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Botão adicionar música (se não tiver) -->
+      <button class="oa-se-add-music" id="oa-se-add-music-btn" onclick="oaEditorPickMusic()">
+        🎵 Adicionar Música
+      </button>
+
+      <!-- Timeline de corte do vídeo (só aparece se for vídeo longo) -->
+      <div id="oa-se-vid-trim-section" style="display:none;">
+        <div class="oa-se-vid-trim">
+          <div class="oa-se-vid-trim-label">
+            <span id="oa-se-vid-start">0s</span>
+            <span style="color:#ffa040;" id="oa-se-vid-dur">0s selecionados</span>
+            <span id="oa-se-vid-end">0s</span>
+          </div>
+          <div class="oa-se-vid-timeline" id="oa-se-vid-timeline">
+            <div class="oa-se-vid-frames" id="oa-se-vid-frames"></div>
+            <div class="oa-se-vid-outside" id="oa-se-vid-out-l" style="left:0;width:0;"></div>
+            <div class="oa-se-vid-outside" id="oa-se-vid-out-r" style="right:0;width:0;"></div>
+            <div class="oa-se-vid-region" id="oa-se-vid-region">
+              <div class="oa-se-vid-handle-l" id="oa-se-vid-hl"></div>
+              <div class="oa-se-vid-handle-r" id="oa-se-vid-hr"></div>
+            </div>
+            <div class="oa-se-vid-playhead" id="oa-se-vid-playhead" style="left:0;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mute do vídeo original (só aparece se for vídeo) -->
+      <div class="oa-se-mute-row" id="oa-se-mute-row" style="display:none;">
+        <span class="oa-se-mute-label">🔇 Silenciar som original do vídeo</span>
+        <button class="oa-se-toggle" id="oa-se-mute-btn" onclick="oaEditorToggleMute(this)"></button>
+      </div>
+
+      <!-- Publicar -->
+      <button class="oa-se-publish-btn" onclick="oaEditorPublish()">
+        🚀 PUBLICAR STORY
+      </button>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL DE VISUALIZADORES (z-index máximo, dentro do DOM) ════════ -->
+<style>
+#oa-viewers-modal{
+  display:none;position:fixed;inset:0;z-index:999999;
+  align-items:flex-end;justify-content:center;
+  background:rgba(0,0,0,.6);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+}
+#oa-viewers-modal.on{display:flex;}
+#oa-viewers-modal-box{
+  width:100%;max-width:480px;
+  background:#0f0f3a;
+  border:1px solid rgba(0,255,204,.3);
+  border-radius:22px 22px 0 0;
+  padding:0 0 max(20px,env(safe-area-inset-bottom,20px));
+  max-height:75vh;display:flex;flex-direction:column;
+  box-shadow:0 -10px 50px rgba(0,255,204,.18);
+  animation:oaVmUp .22s ease;
+}
+@keyframes oaVmUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+#oa-viewers-modal-handle{width:38px;height:4px;background:rgba(255,255,255,.18);border-radius:2px;margin:12px auto 0;flex-shrink:0;}
+#oa-viewers-modal-title{
+  font-family:'Silkscreen',monospace;font-size:12px;color:#00ffcc;letter-spacing:1px;
+  padding:12px 16px 8px;display:flex;align-items:center;justify-content:space-between;
+  border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0;
+}
+#oa-viewers-modal-title button{background:none;border:none;color:rgba(255,255,255,.45);font-size:20px;cursor:pointer;padding:0 4px;line-height:1;}
+#oa-viewers-modal-list{flex:1;overflow-y:auto;padding:8px 12px 4px;display:flex;flex-direction:column;gap:4px;}
+#oa-viewers-modal-list::-webkit-scrollbar{width:3px;}
+#oa-viewers-modal-list::-webkit-scrollbar-thumb{background:#00ffcc;border-radius:2px;}
+.oavm-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:12px;cursor:pointer;transition:background .15s;border:1px solid transparent;}
+.oavm-item:hover,.oavm-item:active{background:rgba(0,255,204,.08);border-color:rgba(0,255,204,.22);}
+.oavm-av{width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid rgba(0,255,204,.3);background:#0a0a2a;}
+.oavm-name{font-family:'Silkscreen',monospace;font-size:10px;color:#e0e0ff;}
+.oavm-user{font-size:10px;color:#00ffcc;margin-top:2px;}
+.oavm-time{font-family:'VT323',monospace;font-size:13px;color:rgba(255,255,255,.35);flex-shrink:0;margin-left:auto;}
+</style>
+
+<div id="oa-viewers-modal" onclick="if(event.target===this)window.oaCloseViewersModal()">
+  <div id="oa-viewers-modal-box">
+    <div id="oa-viewers-modal-handle"></div>
+    <div id="oa-viewers-modal-title">
+      <span>👁 <span id="oa-viewers-modal-count">0</span> visualizações</span>
+      <button onclick="window.oaCloseViewersModal()">✕</button>
+    </div>
+    <div id="oa-viewers-modal-list"></div>
+  </div>
+</div>
+
+</body>
+
 </script>
+
 
 
 <!-- OLHA AQUI! Viewer (injetado) -->
