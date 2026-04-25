@@ -13213,6 +13213,7 @@ async function loadProfilePage(userId){
 
       // ── Avatar — tamanho fixo, sem margin-top negativo ──
       const avWrapEl = document.createElement('div');
+      avWrapEl.setAttribute('data-ea-avwrap','1');
       avWrapEl.style.cssText = 'flex-shrink:0;width:72px;height:72px;';
 
       if(isEmoji){
@@ -31296,7 +31297,7 @@ window.oaNavigateFromHeader = function(){
     page.style.setProperty('--lp-bg', L.bg);
     page.style.setProperty('--lp-text', L.textColor);
 
-    // Banner (cover)
+    // Banner (cover) — sem capa separada; aplica padrão de fundo no pbar
     const cover = page.querySelector('#profile-cover-bar > div:first-child');
     if(cover){
       cover.classList.add('ea-lp-cover');
@@ -31317,15 +31318,15 @@ window.oaNavigateFromHeader = function(){
       }
     }
 
-    // Barra do perfil (com nome/stats) recebe cor da borda
-    const pbar = page.querySelector('#profile-cover-bar > div:nth-child(2)');
+    // Barra do perfil (pbar é agora o único / primeiro filho do coverBar)
+    const pbar = page.querySelector('#profile-cover-bar > div:first-child');
     if(pbar){
       pbar.classList.add('ea-lp-profilebar');
       pbar.style.borderTopColor = L.primary;
     }
 
-    // Moldura do avatar
-    const avWrap = pbar ? pbar.querySelector('div:first-child') : null;
+    // Moldura do avatar — usa data-ea-avwrap para seleção confiável
+    const avWrap = pbar ? pbar.querySelector('[data-ea-avwrap]') : null;
     if(avWrap){
       // limpa molduras anteriores
       LP_AV_FRAMES.forEach(f=>{
@@ -31415,18 +31416,16 @@ window.oaNavigateFromHeader = function(){
     ['ea-lp-photoframe-none','ea-lp-photoframe-neon','ea-lp-photoframe-gold',
      'ea-lp-photoframe-polaroid','ea-lp-photoframe-pixel']
       .forEach(c=>page.classList.remove(c));
-    const cover = page.querySelector('#profile-cover-bar > div:first-child');
-    if(cover){
-      ['ea-lp-cover','ea-lp-bg-stars','ea-lp-bg-waves','ea-lp-bg-grid','ea-lp-bg-circuit']
-        .forEach(c=>cover.classList.remove(c));
-      cover.style.background = '';
-    }
-    const pbar = page.querySelector('#profile-cover-bar > div:nth-child(2)');
+    const pbar = page.querySelector('#profile-cover-bar > div:first-child');
     if(pbar){
       pbar.classList.remove('ea-lp-profilebar');
       pbar.style.borderTopColor = '';
+      // limpa padrão de fundo aplicado no pbar
+      ['ea-lp-cover','ea-lp-bg-stars','ea-lp-bg-waves','ea-lp-bg-grid','ea-lp-bg-circuit']
+        .forEach(c=>pbar.classList.remove(c));
+      pbar.style.background = '';
     }
-    const avWrap = pbar ? pbar.querySelector('div:first-child') : null;
+    const avWrap = pbar ? pbar.querySelector('[data-ea-avwrap]') : null;
     if(avWrap){
       avWrap.classList.remove('ea-lp-avframe');
       LP_AV_FRAMES.forEach(f=>{
