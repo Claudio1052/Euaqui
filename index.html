@@ -20121,7 +20121,11 @@ async function acceptDealProposal(dealId, btn){
           const purchPayload = {
             business_id: deal.business_id,
             customer_id: CU.id,
-            status: 'confirmed'
+            status: 'confirmed',
+            // ✅ Já marca como sincronizada: o estoque foi reduzido pela RPC acima
+            // neste mesmo fluxo. Sem isso, syncStockFromSales (chamado ao abrir o
+            // painel) descontaria novamente, causando duplo decremento.
+            stock_synced: true
           };
           if(deal.title)           purchPayload.product_title   = deal.title;
           if(deal.value)           purchPayload.value            = deal.value;
