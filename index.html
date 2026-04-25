@@ -35,6 +35,36 @@
    4. Concluir venda (done)   → mantém (já foi reduzido no passo 2)
    5. Venda manual direta     → REDUZ estoque em 1
   ══════════════════════════════════════════════════════════════
+
+  ══════════════════════════════════════════════════════════════
+  🎨 MIGRAÇÃO SUPABASE — LAYOUT PERSONALIZADO DE PERFIL (v60 → v61)
+  ══════════════════════════════════════════════════════════════
+  Execute no SQL Editor do Supabase ANTES de usar o Layout Personalizado:
+
+  ALTER TABLE profiles
+    ADD COLUMN IF NOT EXISTS profile_layout jsonb DEFAULT NULL;
+
+  COMMENT ON COLUMN profiles.profile_layout IS
+    'Configurações de layout personalizado do perfil. JSON contendo: preset, primary, secondary, bg, banner, avatarFrame, photoFrame, etc. NULL = layout padrão.';
+
+  CREATE INDEX IF NOT EXISTS idx_profiles_has_layout
+    ON profiles((profile_layout IS NOT NULL));
+
+  ESTRUTURA DO JSON profile_layout:
+  {
+    "preset": "tech" | "beach" | "cyber" | "pink" | "nature" | "retro" | "gold" | "minimal" | "custom",
+    "primary": "#00ffcc",         // cor neon principal
+    "secondary": "#bf5fff",       // cor neon secundária
+    "accent": "#ff3366",          // cor de destaque
+    "bg": "#0a0a2a",              // cor de fundo profundo
+    "bgPattern": "none"|"stars"|"waves"|"grid"|"circuit",
+    "banner": "<url ou gradient>", // imagem ou gradiente CSS
+    "avatarFrame": "none"|"neon"|"gold"|"flower"|"pixel"|"fire"|"ice",
+    "photoFrame": "none"|"neon"|"gold"|"polaroid"|"pixel",
+    "font": "default"|"silkscreen"|"syne"|"mono",
+    "textColor": "#e0e0ff"
+  }
+  ══════════════════════════════════════════════════════════════
 -->
 
 <meta charset="UTF-8">
@@ -5105,6 +5135,316 @@ body.day-mode::before{
   .oa-bubble{ width:68px; }
   .oa-ring{ width:58px; height:58px; }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   🎨 LAYOUT PERSONALIZADO DE PERFIL — v61
+   ══════════════════════════════════════════════════════════════ */
+
+/* Container escopado para aplicar tema personalizado sem poluir o global */
+.ea-layout-scope{
+  --lp-primary:var(--neon-cyan);
+  --lp-secondary:var(--neon-purple);
+  --lp-accent:var(--neon-pink);
+  --lp-bg:var(--bg-deep);
+  --lp-text:var(--text-light);
+}
+
+/* Banner da capa — suporta imagem, gradiente ou padrão */
+.ea-lp-cover{
+  height:180px !important;
+  position:relative;
+  overflow:hidden;
+  background-size:cover !important;
+  background-position:center !important;
+  background-repeat:no-repeat !important;
+  transition:all .3s ease;
+}
+.ea-lp-cover::after{
+  content:'';
+  position:absolute;inset:0;
+  background:linear-gradient(to bottom,transparent 55%,rgba(0,0,0,.35));
+  pointer-events:none;
+}
+
+/* Padrões de fundo decorativos */
+.ea-lp-bg-stars{
+  background-image:
+    radial-gradient(1px 1px at 20% 30%, #fff, transparent),
+    radial-gradient(1px 1px at 60% 70%, #fff, transparent),
+    radial-gradient(2px 2px at 80% 20%, rgba(255,255,255,.7), transparent),
+    radial-gradient(1px 1px at 40% 80%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 90% 50%, rgba(255,255,255,.8), transparent);
+  background-size:200px 200px;
+  background-repeat:repeat;
+}
+.ea-lp-bg-waves{
+  background-image:
+    repeating-linear-gradient(45deg, rgba(255,255,255,.04) 0 2px, transparent 2px 20px),
+    repeating-linear-gradient(-45deg, rgba(255,255,255,.03) 0 2px, transparent 2px 20px);
+}
+.ea-lp-bg-grid{
+  background-image:
+    linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px);
+  background-size:32px 32px;
+}
+.ea-lp-bg-circuit{
+  background-image:
+    linear-gradient(90deg, rgba(0,255,204,.08) 1px, transparent 1px),
+    linear-gradient(rgba(191,95,255,.06) 1px, transparent 1px),
+    radial-gradient(circle at 25% 25%, rgba(0,255,204,.1) 2px, transparent 3px),
+    radial-gradient(circle at 75% 75%, rgba(255,51,102,.1) 2px, transparent 3px);
+  background-size:40px 40px, 40px 40px, 80px 80px, 80px 80px;
+}
+
+/* Molduras do avatar */
+.ea-lp-avframe{ position:relative; display:inline-block; }
+.ea-lp-avframe-neon img,
+.ea-lp-avframe-neon .pbav{
+  border:3px solid var(--lp-primary,#00ffcc) !important;
+  box-shadow:0 0 20px var(--lp-primary,#00ffcc), 0 0 40px rgba(0,255,204,.4), inset 0 0 12px rgba(0,255,204,.3) !important;
+}
+.ea-lp-avframe-gold img,
+.ea-lp-avframe-gold .pbav{
+  border:4px solid #f9d423 !important;
+  box-shadow:0 0 14px #f9d423, 0 0 28px rgba(249,212,35,.5), inset 0 0 10px rgba(249,212,35,.25) !important;
+}
+.ea-lp-avframe-fire img,
+.ea-lp-avframe-fire .pbav{
+  border:3px solid #ff6b1a !important;
+  box-shadow:0 0 14px #ff6b1a, 0 0 28px #ff3366, 0 0 44px rgba(255,204,0,.5) !important;
+  animation: ea-lp-fire 2.5s ease-in-out infinite alternate;
+}
+@keyframes ea-lp-fire{
+  from{ box-shadow:0 0 14px #ff6b1a, 0 0 28px #ff3366, 0 0 44px rgba(255,204,0,.4); }
+  to{ box-shadow:0 0 18px #ffcc00, 0 0 32px #ff6b1a, 0 0 50px rgba(255,51,102,.6); }
+}
+.ea-lp-avframe-ice img,
+.ea-lp-avframe-ice .pbav{
+  border:3px solid #a0e8ff !important;
+  box-shadow:0 0 16px #a0e8ff, 0 0 30px rgba(160,232,255,.5), inset 0 0 10px rgba(255,255,255,.3) !important;
+}
+.ea-lp-avframe-pixel img,
+.ea-lp-avframe-pixel .pbav{
+  border:4px solid var(--lp-primary,#00ffcc) !important;
+  border-radius:8px !important;
+  box-shadow: 4px 4px 0 var(--lp-secondary,#bf5fff), 8px 8px 0 var(--lp-accent,#ff3366) !important;
+  image-rendering:pixelated;
+}
+.ea-lp-avframe-flower{
+  padding:0; position:relative;
+}
+.ea-lp-avframe-flower::before{
+  content:'🌸 🌺 🌼 🌷'; position:absolute; inset:-10px;
+  font-size:14px; letter-spacing:2px; text-align:center;
+  pointer-events:none; opacity:.7;
+  animation: ea-lp-spin 14s linear infinite;
+}
+.ea-lp-avframe-flower img,
+.ea-lp-avframe-flower .pbav{
+  border:3px solid #ff99cc !important;
+  box-shadow:0 0 12px #ff99cc !important;
+}
+@keyframes ea-lp-spin{ to{ transform:rotate(360deg); } }
+
+/* Molduras de fotos (cartões de post) */
+.ea-lp-photoframe-neon .post-card,
+.ea-lp-photoframe-neon .repost-card{
+  border:1px solid var(--lp-primary,#00ffcc) !important;
+  box-shadow:0 0 12px rgba(0,255,204,.2), inset 0 0 8px rgba(0,255,204,.05);
+}
+.ea-lp-photoframe-gold .post-card,
+.ea-lp-photoframe-gold .repost-card{
+  border:2px solid rgba(249,212,35,.6) !important;
+  box-shadow:0 0 12px rgba(249,212,35,.3);
+}
+.ea-lp-photoframe-polaroid .post-card,
+.ea-lp-photoframe-polaroid .repost-card{
+  background: #fff !important;
+  border:1px solid #e5e5e5 !important;
+  border-bottom-width:32px !important;
+  color:#222 !important;
+  box-shadow:0 6px 20px rgba(0,0,0,.5);
+}
+.ea-lp-photoframe-pixel .post-card,
+.ea-lp-photoframe-pixel .repost-card{
+  border:2px solid var(--lp-primary,#00ffcc) !important;
+  border-radius:6px !important;
+  box-shadow: 3px 3px 0 var(--lp-secondary,#bf5fff);
+}
+
+/* Barra de header colorida do perfil — aplicada pelo JS */
+.ea-lp-profilebar{
+  border-top:2px solid var(--lp-primary,#00ffcc);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--lp-primary,#00ffcc) 6%, var(--bg-card)),
+    var(--bg-card)
+  ) !important;
+}
+@supports not (background: color-mix(in srgb, red, blue)){
+  .ea-lp-profilebar{ background:var(--bg-card) !important; }
+}
+
+/* Modal do editor de layout */
+#lp-editor-overlay{
+  position:fixed; inset:0;
+  background:rgba(0,0,0,.88);
+  backdrop-filter:blur(10px);
+  z-index:5100;
+  display:flex; align-items:flex-start; justify-content:center;
+  padding:16px; overflow-y:auto;
+}
+#lp-editor-modal{
+  background:var(--bg-card);
+  border:1px solid var(--border-glow);
+  border-radius:14px;
+  max-width:720px; width:100%; margin:auto;
+  padding:18px;
+  box-shadow:0 0 40px rgba(0,255,204,.25);
+}
+.lp-sect{
+  background:rgba(0,255,204,.04);
+  border:1px solid var(--border-glow);
+  border-radius:10px;
+  padding:12px;
+  margin-bottom:12px;
+}
+.lp-sect-title{
+  font-family:Silkscreen,monospace;
+  font-size:10px;
+  color:var(--neon-yellow);
+  letter-spacing:1.5px;
+  margin-bottom:10px;
+}
+.lp-preset-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(130px, 1fr));
+  gap:8px;
+}
+.lp-preset-card{
+  position:relative;
+  height:78px;
+  border-radius:10px;
+  cursor:pointer;
+  overflow:hidden;
+  border:2px solid transparent;
+  transition:all .2s;
+  display:flex; align-items:flex-end;
+  padding:6px 8px;
+}
+.lp-preset-card:hover{ transform:translateY(-2px); }
+.lp-preset-card.selected{
+  border-color:#fff;
+  box-shadow:0 0 16px rgba(255,255,255,.5);
+}
+.lp-preset-label{
+  position:relative; z-index:2;
+  font-family:Silkscreen,monospace;
+  font-size:9px;
+  color:#fff;
+  text-shadow:0 1px 3px rgba(0,0,0,.8);
+  letter-spacing:1px;
+}
+.lp-color-row{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px; margin-bottom:8px;
+}
+.lp-color-input{
+  display:flex; align-items:center; gap:8px;
+  background:rgba(0,0,0,.3);
+  border:1px solid var(--border-glow);
+  border-radius:8px;
+  padding:6px 8px;
+}
+.lp-color-input input[type=color]{
+  width:32px; height:32px; border:none;
+  background:none; cursor:pointer;
+  padding:0; border-radius:6px;
+}
+.lp-color-input label{
+  font-size:10px; color:var(--text-muted);
+  flex:1;
+}
+.lp-chip-row{
+  display:flex; flex-wrap:wrap; gap:6px;
+}
+.lp-chip{
+  padding:6px 10px;
+  border-radius:18px;
+  border:1px solid var(--border-glow);
+  background:rgba(255,255,255,.03);
+  color:var(--text-light);
+  font-size:10px;
+  font-family:Space Mono,monospace;
+  cursor:pointer;
+  transition:all .15s;
+}
+.lp-chip:hover{ border-color:var(--neon-cyan); }
+.lp-chip.selected{
+  background:var(--neon-cyan);
+  color:var(--bg-deep);
+  border-color:var(--neon-cyan);
+  font-weight:700;
+}
+.lp-banner-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(120px, 1fr));
+  gap:8px;
+}
+.lp-banner-card{
+  height:54px; border-radius:8px; cursor:pointer;
+  border:2px solid transparent;
+  transition:all .15s;
+  background-size:cover; background-position:center;
+  display:flex; align-items:center; justify-content:center;
+  font-family:Silkscreen,monospace; font-size:9px; color:#fff;
+  text-shadow:0 1px 3px rgba(0,0,0,.8);
+}
+.lp-banner-card:hover{ transform:scale(1.03); }
+.lp-banner-card.selected{
+  border-color:#fff;
+  box-shadow:0 0 14px rgba(255,255,255,.5);
+}
+.lp-preview-card{
+  background:var(--lp-bg, var(--bg-deep));
+  border:1px solid var(--border-glow);
+  border-radius:10px;
+  overflow:hidden;
+  margin-bottom:12px;
+}
+.lp-preview-banner{
+  height:70px;
+  background-size:cover; background-position:center;
+  position:relative;
+}
+.lp-preview-body{
+  padding:14px;
+  display:flex; align-items:center; gap:10px;
+  margin-top:-22px; position:relative;
+}
+.lp-preview-av{
+  width:46px; height:46px; border-radius:50%;
+  background:rgba(255,255,255,.1);
+  border:2px solid var(--lp-primary,#00ffcc);
+  flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+  font-size:22px;
+}
+.lp-preview-info{ flex:1; }
+.lp-preview-name{
+  font-family:Syne,sans-serif; font-weight:800; font-size:13px;
+  color:var(--lp-text,#e0e0ff);
+}
+.lp-preview-handle{
+  font-size:10px; color:var(--lp-primary,#00ffcc);
+}
+
+/* Day-mode compat */
+body.day-mode #lp-editor-modal{ background:#ffffff; color:#1a1a2e; }
+body.day-mode .lp-sect{ background:rgba(0,0,0,.03); }
+body.day-mode .lp-color-input{ background:rgba(0,0,0,.05); }
+body.day-mode .lp-chip{ background:rgba(0,0,0,.04); color:#1a1a2e; }
 
 </style>
 </head>
@@ -30108,6 +30448,758 @@ window.oaNavigateFromHeader = function(){
 
 </script>
 
+<script>
+/* ══════════════════════════════════════════════════════════════
+   🎨 LAYOUT PERSONALIZADO DE PERFIL — v61
+   Sistema completo de customização visual por usuário.
+   - Salva em profiles.profile_layout (jsonb)
+   - Aplica automaticamente ao carregar um perfil
+   - Remove ao sair do perfil (não "contamina" outras páginas)
+   ══════════════════════════════════════════════════════════════ */
+(function(){
+  'use strict';
+
+  // ─────────────────────────────────────────────────────────────
+  // PRESETS DE LAYOUT — temas prontos que o usuário pode escolher
+  // ─────────────────────────────────────────────────────────────
+  const LP_PRESETS = {
+    tech: {
+      name: '🚀 Moderno / Tecnológico',
+      primary:'#00ffcc', secondary:'#bf5fff', accent:'#ff3366',
+      bg:'#0a0a2a', textColor:'#e0e0ff',
+      bgPattern:'circuit',
+      banner:'linear-gradient(135deg,#0a0a2a 0%,#1a0a4a 50%,#0a3a5a 100%)',
+      avatarFrame:'neon', photoFrame:'neon'
+    },
+    beach: {
+      name: '🏖 Praia / Verão',
+      primary:'#ffd47a', secondary:'#5ac8fa', accent:'#ff9f68',
+      bg:'#05446f', textColor:'#fff6e0',
+      bgPattern:'waves',
+      banner:'linear-gradient(180deg,#6ec8f0 0%,#ffd47a 60%,#ff9f68 100%)',
+      avatarFrame:'gold', photoFrame:'polaroid'
+    },
+    cyber: {
+      name: '🤖 Cyberpunk',
+      primary:'#ff007a', secondary:'#00e5ff', accent:'#ffea00',
+      bg:'#0a0014', textColor:'#ffeaff',
+      bgPattern:'grid',
+      banner:'linear-gradient(135deg,#0a0014 0%,#2a0038 40%,#ff007a 100%)',
+      avatarFrame:'neon', photoFrame:'neon'
+    },
+    pink: {
+      name: '🌸 Rosa / Cute',
+      primary:'#ff85c1', secondary:'#ffc0e0', accent:'#ff4da6',
+      bg:'#2b1626', textColor:'#ffe5f0',
+      bgPattern:'stars',
+      banner:'linear-gradient(135deg,#ff85c1 0%,#ffc0e0 50%,#ffe5f0 100%)',
+      avatarFrame:'flower', photoFrame:'gold'
+    },
+    nature: {
+      name: '🌿 Natureza',
+      primary:'#8cd867', secondary:'#4a8a3f', accent:'#f7c843',
+      bg:'#102010', textColor:'#e7f5d7',
+      bgPattern:'none',
+      banner:'linear-gradient(180deg,#4a8a3f 0%,#8cd867 50%,#d7f0a5 100%)',
+      avatarFrame:'flower', photoFrame:'polaroid'
+    },
+    retro: {
+      name: '🎮 Retrô / 8-bit',
+      primary:'#ff006e', secondary:'#3a86ff', accent:'#ffbe0b',
+      bg:'#1a1a40', textColor:'#fff',
+      bgPattern:'grid',
+      banner:'linear-gradient(135deg,#8338ec 0%,#3a86ff 50%,#ff006e 100%)',
+      avatarFrame:'pixel', photoFrame:'pixel'
+    },
+    gold: {
+      name: '👑 Dourado / Luxo',
+      primary:'#f9d423', secondary:'#d4a017', accent:'#ff8c00',
+      bg:'#140a00', textColor:'#fff4cc',
+      bgPattern:'none',
+      banner:'linear-gradient(135deg,#000 0%,#3a2400 40%,#f9d423 100%)',
+      avatarFrame:'gold', photoFrame:'gold'
+    },
+    fire: {
+      name: '🔥 Fogo',
+      primary:'#ff6b1a', secondary:'#ff3366', accent:'#ffcc00',
+      bg:'#200800', textColor:'#ffe0b8',
+      bgPattern:'none',
+      banner:'linear-gradient(180deg,#200800 0%,#8b1a00 40%,#ff6b1a 80%,#ffcc00 100%)',
+      avatarFrame:'fire', photoFrame:'neon'
+    },
+    ice: {
+      name: '❄ Gelo / Neve',
+      primary:'#a0e8ff', secondary:'#6fc0ff', accent:'#e0f7ff',
+      bg:'#0a1a2a', textColor:'#e0f7ff',
+      bgPattern:'stars',
+      banner:'linear-gradient(180deg,#0a1a2a 0%,#2a5a8a 50%,#a0e8ff 100%)',
+      avatarFrame:'ice', photoFrame:'neon'
+    },
+    minimal: {
+      name: '⚪ Minimalista',
+      primary:'#a0a0c0', secondary:'#606080', accent:'#d0d0e0',
+      bg:'#0a0a14', textColor:'#e8e8f0',
+      bgPattern:'none',
+      banner:'linear-gradient(135deg,#0a0a14 0%,#1a1a2a 100%)',
+      avatarFrame:'none', photoFrame:'none'
+    },
+    default: {
+      name: '🌙 Padrão EuAqui',
+      primary:'#00ffcc', secondary:'#bf5fff', accent:'#ff3366',
+      bg:'#0a0a2a', textColor:'#e0e0ff',
+      bgPattern:'none',
+      banner:'linear-gradient(135deg,#0a0a2a,#1a0a3a,#0a1a2a)',
+      avatarFrame:'none', photoFrame:'none'
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  // UTILITÁRIOS
+  // ─────────────────────────────────────────────────────────────
+  function _lpClone(p){ return JSON.parse(JSON.stringify(p||{})); }
+
+  function _lpSanitize(layout){
+    if(!layout || typeof layout !== 'object') return null;
+    const clean = {};
+    const hex = /^#[0-9a-fA-F]{3,8}$/;
+    if(typeof layout.preset === 'string' && layout.preset.length < 24) clean.preset = layout.preset;
+    ['primary','secondary','accent','bg','textColor'].forEach(k=>{
+      if(typeof layout[k]==='string' && hex.test(layout[k])) clean[k]=layout[k];
+    });
+    const validPatterns = ['none','stars','waves','grid','circuit'];
+    if(validPatterns.includes(layout.bgPattern)) clean.bgPattern = layout.bgPattern;
+    if(typeof layout.banner === 'string' && layout.banner.length < 2000){
+      // aceita URL (http/https), data: (imagem), ou gradiente CSS
+      const b = layout.banner.trim();
+      const ok = b.startsWith('http://') || b.startsWith('https://')
+              || b.startsWith('data:image/')
+              || b.startsWith('linear-gradient(') || b.startsWith('radial-gradient(');
+      if(ok) clean.banner = b;
+    }
+    const validAv = ['none','neon','gold','flower','pixel','fire','ice'];
+    const validPh = ['none','neon','gold','polaroid','pixel'];
+    if(validAv.includes(layout.avatarFrame)) clean.avatarFrame = layout.avatarFrame;
+    if(validPh.includes(layout.photoFrame)) clean.photoFrame = layout.photoFrame;
+    return clean;
+  }
+
+  function _lpMerged(layout){
+    // Mescla com o preset default para preencher campos faltantes
+    const base = _lpClone(LP_PRESETS.default);
+    if(!layout) return base;
+    if(layout.preset && LP_PRESETS[layout.preset]){
+      Object.assign(base, _lpClone(LP_PRESETS[layout.preset]));
+    }
+    Object.keys(layout).forEach(k=>{
+      if(layout[k] !== undefined && layout[k] !== null && layout[k] !== '') base[k] = layout[k];
+    });
+    return base;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // APLICAR LAYOUT ao DOM do perfil
+  // ─────────────────────────────────────────────────────────────
+  function applyProfileLayout(layout){
+    const page = document.getElementById('page-profile');
+    if(!page) return;
+    const L = _lpMerged(layout);
+
+    // Variáveis CSS escopadas no container
+    page.classList.add('ea-layout-scope');
+    page.style.setProperty('--lp-primary', L.primary);
+    page.style.setProperty('--lp-secondary', L.secondary);
+    page.style.setProperty('--lp-accent', L.accent);
+    page.style.setProperty('--lp-bg', L.bg);
+    page.style.setProperty('--lp-text', L.textColor);
+
+    // Banner (cover)
+    const cover = page.querySelector('#profile-cover-bar > div:first-child');
+    if(cover){
+      cover.classList.add('ea-lp-cover');
+      // Limpa classes de padrão anteriores
+      ['ea-lp-bg-stars','ea-lp-bg-waves','ea-lp-bg-grid','ea-lp-bg-circuit']
+        .forEach(c=>cover.classList.remove(c));
+      // Aplica padrão se houver
+      if(L.bgPattern && L.bgPattern !== 'none'){
+        cover.classList.add('ea-lp-bg-'+L.bgPattern);
+      }
+      // Banner
+      if(L.banner){
+        if(L.banner.startsWith('http') || L.banner.startsWith('data:')){
+          cover.style.background = 'url("'+L.banner.replace(/"/g,'%22')+'") center/cover no-repeat';
+        } else {
+          cover.style.background = L.banner;
+        }
+      }
+    }
+
+    // Barra do perfil (com nome/stats) recebe cor da borda
+    const pbar = page.querySelector('#profile-cover-bar > div:nth-child(2)');
+    if(pbar){
+      pbar.classList.add('ea-lp-profilebar');
+      pbar.style.borderTopColor = L.primary;
+    }
+
+    // Moldura do avatar
+    const avWrap = pbar ? pbar.querySelector('div:first-child') : null;
+    if(avWrap){
+      // limpa molduras anteriores
+      ['none','neon','gold','flower','pixel','fire','ice'].forEach(f=>{
+        avWrap.classList.remove('ea-lp-avframe-'+f);
+      });
+      avWrap.classList.add('ea-lp-avframe');
+      if(L.avatarFrame && L.avatarFrame !== 'none'){
+        avWrap.classList.add('ea-lp-avframe-'+L.avatarFrame);
+      }
+    }
+
+    // Moldura dos posts/fotos (aplicada no container do perfil para efeito local)
+    ['none','neon','gold','polaroid','pixel'].forEach(f=>{
+      page.classList.remove('ea-lp-photoframe-'+f);
+    });
+    if(L.photoFrame && L.photoFrame !== 'none'){
+      page.classList.add('ea-lp-photoframe-'+L.photoFrame);
+    }
+
+    // Guarda o layout aplicado para limpeza posterior
+    page.dataset.lpApplied = '1';
+  }
+
+  function clearProfileLayout(){
+    const page = document.getElementById('page-profile');
+    if(!page) return;
+    page.classList.remove('ea-layout-scope');
+    ['--lp-primary','--lp-secondary','--lp-accent','--lp-bg','--lp-text']
+      .forEach(v=>page.style.removeProperty(v));
+    ['ea-lp-photoframe-none','ea-lp-photoframe-neon','ea-lp-photoframe-gold',
+     'ea-lp-photoframe-polaroid','ea-lp-photoframe-pixel']
+      .forEach(c=>page.classList.remove(c));
+    const cover = page.querySelector('#profile-cover-bar > div:first-child');
+    if(cover){
+      ['ea-lp-cover','ea-lp-bg-stars','ea-lp-bg-waves','ea-lp-bg-grid','ea-lp-bg-circuit']
+        .forEach(c=>cover.classList.remove(c));
+      cover.style.background = '';
+    }
+    const pbar = page.querySelector('#profile-cover-bar > div:nth-child(2)');
+    if(pbar){
+      pbar.classList.remove('ea-lp-profilebar');
+      pbar.style.borderTopColor = '';
+    }
+    const avWrap = pbar ? pbar.querySelector('div:first-child') : null;
+    if(avWrap){
+      avWrap.classList.remove('ea-lp-avframe');
+      ['none','neon','gold','flower','pixel','fire','ice'].forEach(f=>{
+        avWrap.classList.remove('ea-lp-avframe-'+f);
+      });
+    }
+    delete page.dataset.lpApplied;
+  }
+
+  // Limpa o layout quando navegar para outra página
+  if(typeof window.nav === 'function'){
+    const _origNav = window.nav;
+    window.nav = function(p){
+      if(p !== 'profile') clearProfileLayout();
+      return _origNav.apply(this, arguments);
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // CARREGAR LAYOUT do banco (quando o perfil é aberto)
+  // ─────────────────────────────────────────────────────────────
+  async function fetchAndApplyLayout(userId){
+    try{
+      if(!userId || !window.db) return;
+      const {data, error} = await window.db
+        .from('profiles')
+        .select('profile_layout')
+        .eq('id', userId)
+        .maybeSingle();
+      if(error){
+        // Coluna não existe ainda — silencia
+        if(String(error.message||'').toLowerCase().includes('profile_layout')) return;
+        console.warn('[LP] fetch error:', error.message);
+        return;
+      }
+      const layout = data && data.profile_layout ? data.profile_layout : null;
+      if(layout){
+        applyProfileLayout(layout);
+      } else {
+        clearProfileLayout();
+      }
+    }catch(err){
+      console.warn('[LP] fetchAndApplyLayout:', err?.message);
+    }
+  }
+
+  // Intercepta loadProfilePage para aplicar o layout depois que o DOM do perfil é montado
+  if(typeof window.loadProfilePage === 'function'){
+    const _origLoad = window.loadProfilePage;
+    window.loadProfilePage = async function(userId){
+      const r = await _origLoad.apply(this, arguments);
+      // Esperar o DOM do perfil ser renderizado
+      setTimeout(()=>fetchAndApplyLayout(userId), 120);
+      return r;
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // EDITOR DE LAYOUT — UI do modal
+  // ─────────────────────────────────────────────────────────────
+  let _lpState = null; // layout em edição
+
+  window.openLayoutEditor = async function(){
+    if(!window.CU){
+      if(typeof showToast==='function') showToast('Faça login para personalizar','warning');
+      return;
+    }
+    // Buscar layout atual
+    let current = null;
+    try{
+      const {data} = await window.db.from('profiles').select('profile_layout').eq('id', CU.id).maybeSingle();
+      current = data && data.profile_layout ? data.profile_layout : null;
+    }catch(_){}
+    _lpState = current ? _lpClone(current) : _lpClone(LP_PRESETS.default);
+    if(!_lpState.preset) _lpState.preset = 'default';
+
+    // Remover modal anterior se existir
+    document.getElementById('lp-editor-overlay')?.remove();
+
+    const over = document.createElement('div');
+    over.id = 'lp-editor-overlay';
+    over.onclick = (e)=>{ if(e.target===over) over.remove(); };
+
+    over.innerHTML = _renderLayoutEditorHTML();
+    document.body.appendChild(over);
+    _wireLayoutEditor();
+    _refreshLayoutPreview();
+  };
+
+  function _renderLayoutEditorHTML(){
+    const presetsHtml = Object.keys(LP_PRESETS).map(key=>{
+      const p = LP_PRESETS[key];
+      const bg = p.banner || ('linear-gradient(135deg,'+p.primary+','+p.secondary+')');
+      return '<div class="lp-preset-card" data-preset="'+key+'" style="background:'+bg.replace(/"/g,'&quot;')+';">'+
+        '<span class="lp-preset-label">'+p.name+'</span>'+
+      '</div>';
+    }).join('');
+
+    const avFrames = [
+      {id:'none',label:'Nenhum'},{id:'neon',label:'💎 Neon'},{id:'gold',label:'👑 Dourada'},
+      {id:'flower',label:'🌸 Flores'},{id:'pixel',label:'🎮 Pixel'},{id:'fire',label:'🔥 Fogo'},
+      {id:'ice',label:'❄ Gelo'}
+    ];
+    const phFrames = [
+      {id:'none',label:'Nenhuma'},{id:'neon',label:'💎 Neon'},{id:'gold',label:'👑 Dourada'},
+      {id:'polaroid',label:'📸 Polaroid'},{id:'pixel',label:'🎮 Pixel'}
+    ];
+    const bgPatterns = [
+      {id:'none',label:'Liso'},{id:'stars',label:'⭐ Estrelas'},
+      {id:'waves',label:'🌊 Ondas'},{id:'grid',label:'▦ Grade'},{id:'circuit',label:'🔌 Circuito'}
+    ];
+    const bannerPresets = [
+      {id:'linear-gradient(135deg,#0a0a2a,#1a0a3a,#0a1a2a)', label:'Padrão'},
+      {id:'linear-gradient(180deg,#6ec8f0,#ffd47a,#ff9f68)', label:'🏖 Praia'},
+      {id:'linear-gradient(135deg,#0a0014,#2a0038,#ff007a)', label:'🤖 Cyber'},
+      {id:'linear-gradient(135deg,#ff85c1,#ffc0e0,#ffe5f0)', label:'🌸 Rosa'},
+      {id:'linear-gradient(180deg,#4a8a3f,#8cd867,#d7f0a5)', label:'🌿 Natureza'},
+      {id:'linear-gradient(135deg,#000,#3a2400,#f9d423)', label:'👑 Dourado'},
+      {id:'linear-gradient(180deg,#200800,#8b1a00,#ff6b1a,#ffcc00)', label:'🔥 Fogo'},
+      {id:'linear-gradient(180deg,#0a1a2a,#2a5a8a,#a0e8ff)', label:'❄ Gelo'},
+      {id:'linear-gradient(135deg,#0f2027,#203a43,#2c5364)', label:'🌌 Espaço'},
+      {id:'linear-gradient(135deg,#fc466b,#3f5efb)', label:'🎨 Vibrante'}
+    ];
+    const L = _lpMerged(_lpState);
+
+    return (
+      '<div id="lp-editor-modal">'+
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">'+
+          '<div style="font-family:Silkscreen,monospace;font-size:14px;color:var(--neon-cyan);flex:1;">🎨 Personalizar Perfil</div>'+
+          '<button class="tbtn" onclick="document.getElementById(\'lp-editor-overlay\').remove()">✕</button>'+
+        '</div>'+
+        '<div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;">Deixe seu perfil com a sua cara. Escolha um preset pronto ou customize cada detalhe. As mudanças só aparecem no <b>seu</b> perfil.</div>'+
+
+        '<!-- Preview ao vivo -->'+
+        '<div class="lp-preview-card" id="lp-preview-card">'+
+          '<div class="lp-preview-banner" id="lp-preview-banner"></div>'+
+          '<div class="lp-preview-body">'+
+            '<div class="lp-preview-av" id="lp-preview-av">👤</div>'+
+            '<div class="lp-preview-info">'+
+              '<div class="lp-preview-name" id="lp-preview-name">'+((window.CU&&window.CP&&(CP.full_name||CP.username))||'Seu Nome')+'</div>'+
+              '<div class="lp-preview-handle" id="lp-preview-handle">@'+((window.CP&&CP.username)||'voce')+'</div>'+
+            '</div>'+
+          '</div>'+
+        '</div>'+
+
+        '<!-- Presets -->'+
+        '<div class="lp-sect">'+
+          '<div class="lp-sect-title">🎯 Temas Prontos</div>'+
+          '<div class="lp-preset-grid" id="lp-preset-grid">'+presetsHtml+'</div>'+
+        '</div>'+
+
+        '<!-- Cores -->'+
+        '<div class="lp-sect">'+
+          '<div class="lp-sect-title">🌈 Cores</div>'+
+          '<div class="lp-color-row">'+
+            '<div class="lp-color-input"><input type="color" id="lp-col-primary" value="'+L.primary+'"><label>Primária</label></div>'+
+            '<div class="lp-color-input"><input type="color" id="lp-col-secondary" value="'+L.secondary+'"><label>Secundária</label></div>'+
+            '<div class="lp-color-input"><input type="color" id="lp-col-accent" value="'+L.accent+'"><label>Destaque</label></div>'+
+            '<div class="lp-color-input"><input type="color" id="lp-col-bg" value="'+L.bg+'"><label>Fundo</label></div>'+
+          '</div>'+
+        '</div>'+
+
+        '<!-- Banner -->'+
+        '<div class="lp-sect">'+
+          '<div class="lp-sect-title">🖼 Banner / Capa</div>'+
+          '<div class="lp-banner-grid" id="lp-banner-grid">'+
+            bannerPresets.map(b=>(
+              '<div class="lp-banner-card" data-banner="'+b.id.replace(/"/g,'&quot;')+'" style="background:'+b.id+';">'+b.label+'</div>'
+            )).join('')+
+          '</div>'+
+          '<div style="margin-top:10px;">'+
+            '<label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:4px;">Ou envie sua própria imagem:</label>'+
+            '<input type="file" id="lp-banner-file" accept="image/*" style="display:none;" onchange="_lpHandleBannerUpload(this)">'+
+            '<button class="tbtn" onclick="document.getElementById(\'lp-banner-file\').click()" style="width:100%;justify-content:center;padding:8px;">📷 Upload de imagem</button>'+
+            '<div id="lp-banner-file-info" style="margin-top:6px;font-size:10px;color:var(--neon-cyan);text-align:center;"></div>'+
+          '</div>'+
+        '</div>'+
+
+        '<!-- Padrão de fundo -->'+
+        '<div class="lp-sect">'+
+          '<div class="lp-sect-title">✨ Padrão Decorativo</div>'+
+          '<div class="lp-chip-row" id="lp-bgpattern-chips">'+
+            bgPatterns.map(p=>(
+              '<button class="lp-chip'+(L.bgPattern===p.id?' selected':'')+'" data-bgpat="'+p.id+'">'+p.label+'</button>'
+            )).join('')+
+          '</div>'+
+        '</div>'+
+
+        '<!-- Moldura do avatar -->'+
+        '<div class="lp-sect">'+
+          '<div class="lp-sect-title">👤 Moldura da Foto de Perfil</div>'+
+          '<div class="lp-chip-row" id="lp-avframe-chips">'+
+            avFrames.map(f=>(
+              '<button class="lp-chip'+(L.avatarFrame===f.id?' selected':'')+'" data-avframe="'+f.id+'">'+f.label+'</button>'
+            )).join('')+
+          '</div>'+
+        '</div>'+
+
+        '<!-- Moldura das fotos dos posts -->'+
+        '<div class="lp-sect">'+
+          '<div class="lp-sect-title">🖼 Moldura dos Posts</div>'+
+          '<div class="lp-chip-row" id="lp-phframe-chips">'+
+            phFrames.map(f=>(
+              '<button class="lp-chip'+(L.photoFrame===f.id?' selected':'')+'" data-phframe="'+f.id+'">'+f.label+'</button>'
+            )).join('')+
+          '</div>'+
+        '</div>'+
+
+        '<!-- Ações -->'+
+        '<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;">'+
+          '<button class="post-btn" style="flex:1;min-width:130px;background:var(--neon-cyan);color:var(--bg-deep);font-weight:700;" onclick="_lpSave()">💾 Salvar Layout</button>'+
+          '<button class="post-btn" style="flex:1;min-width:100px;background:none;border:1px solid rgba(255,255,255,.15);color:var(--text-muted);" onclick="_lpReset()">↺ Restaurar padrão</button>'+
+          '<button class="post-btn" style="flex:1;min-width:80px;background:none;border:1px solid rgba(255,255,255,.15);color:var(--text-muted);" onclick="document.getElementById(\'lp-editor-overlay\').remove()">Cancelar</button>'+
+        '</div>'+
+      '</div>'
+    );
+  }
+
+  function _wireLayoutEditor(){
+    // Preset click
+    document.querySelectorAll('#lp-preset-grid .lp-preset-card').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        const key = el.dataset.preset;
+        if(!LP_PRESETS[key]) return;
+        _lpState = _lpClone(LP_PRESETS[key]);
+        _lpState.preset = key;
+        // Re-renderiza marcando o selecionado
+        document.querySelectorAll('#lp-preset-grid .lp-preset-card').forEach(c=>c.classList.remove('selected'));
+        el.classList.add('selected');
+        // Atualiza inputs de cor e chips
+        document.getElementById('lp-col-primary').value = _lpState.primary;
+        document.getElementById('lp-col-secondary').value = _lpState.secondary;
+        document.getElementById('lp-col-accent').value = _lpState.accent;
+        document.getElementById('lp-col-bg').value = _lpState.bg;
+        _updateChipSelections();
+        _refreshLayoutPreview();
+      });
+      if(el.dataset.preset === _lpState.preset) el.classList.add('selected');
+    });
+
+    // Cores
+    ['primary','secondary','accent','bg'].forEach(k=>{
+      const inp = document.getElementById('lp-col-'+k);
+      if(inp){
+        inp.addEventListener('input', ()=>{
+          _lpState[k] = inp.value;
+          _lpState.preset = 'custom';
+          _refreshLayoutPreview();
+        });
+      }
+    });
+
+    // Banner presets
+    document.querySelectorAll('#lp-banner-grid .lp-banner-card').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        _lpState.banner = el.dataset.banner;
+        document.querySelectorAll('#lp-banner-grid .lp-banner-card').forEach(c=>c.classList.remove('selected'));
+        el.classList.add('selected');
+        _refreshLayoutPreview();
+      });
+    });
+
+    // Padrões
+    document.querySelectorAll('#lp-bgpattern-chips .lp-chip').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        _lpState.bgPattern = el.dataset.bgpat;
+        _updateChipSelections();
+        _refreshLayoutPreview();
+      });
+    });
+
+    // Moldura avatar
+    document.querySelectorAll('#lp-avframe-chips .lp-chip').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        _lpState.avatarFrame = el.dataset.avframe;
+        _updateChipSelections();
+        _refreshLayoutPreview();
+      });
+    });
+
+    // Moldura fotos
+    document.querySelectorAll('#lp-phframe-chips .lp-chip').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        _lpState.photoFrame = el.dataset.phframe;
+        _updateChipSelections();
+        _refreshLayoutPreview();
+      });
+    });
+  }
+
+  function _updateChipSelections(){
+    document.querySelectorAll('#lp-bgpattern-chips .lp-chip').forEach(el=>{
+      el.classList.toggle('selected', el.dataset.bgpat === _lpState.bgPattern);
+    });
+    document.querySelectorAll('#lp-avframe-chips .lp-chip').forEach(el=>{
+      el.classList.toggle('selected', el.dataset.avframe === _lpState.avatarFrame);
+    });
+    document.querySelectorAll('#lp-phframe-chips .lp-chip').forEach(el=>{
+      el.classList.toggle('selected', el.dataset.phframe === _lpState.photoFrame);
+    });
+  }
+
+  function _refreshLayoutPreview(){
+    const card = document.getElementById('lp-preview-card');
+    const banner = document.getElementById('lp-preview-banner');
+    const av = document.getElementById('lp-preview-av');
+    const name = document.getElementById('lp-preview-name');
+    const handle = document.getElementById('lp-preview-handle');
+    if(!card || !banner || !av) return;
+
+    const L = _lpMerged(_lpState);
+    card.style.background = L.bg;
+    card.style.setProperty('--lp-primary', L.primary);
+    card.style.setProperty('--lp-secondary', L.secondary);
+    card.style.setProperty('--lp-accent', L.accent);
+    card.style.setProperty('--lp-bg', L.bg);
+    card.style.setProperty('--lp-text', L.textColor);
+
+    // banner
+    if(L.banner){
+      if(L.banner.startsWith('http') || L.banner.startsWith('data:')){
+        banner.style.background = 'url("'+L.banner.replace(/"/g,'%22')+'") center/cover no-repeat';
+      } else {
+        banner.style.background = L.banner;
+      }
+    }
+    // padrão no banner
+    ['ea-lp-bg-stars','ea-lp-bg-waves','ea-lp-bg-grid','ea-lp-bg-circuit']
+      .forEach(c=>banner.classList.remove(c));
+    if(L.bgPattern && L.bgPattern !== 'none'){
+      banner.classList.add('ea-lp-bg-'+L.bgPattern);
+    }
+
+    // moldura avatar
+    ['none','neon','gold','flower','pixel','fire','ice'].forEach(f=>{
+      av.classList.remove('ea-lp-avframe-'+f);
+    });
+    av.classList.add('ea-lp-avframe');
+    if(L.avatarFrame && L.avatarFrame !== 'none'){
+      av.classList.add('ea-lp-avframe-'+L.avatarFrame);
+    }
+
+    // textos
+    if(name) name.style.color = L.textColor;
+    if(handle) handle.style.color = L.primary;
+  }
+
+  // Upload de banner
+  window._lpHandleBannerUpload = async function(input){
+    const file = input.files && input.files[0];
+    if(!file) return;
+    if(file.size > 5*1024*1024){
+      if(typeof showToast==='function') showToast('Imagem muito grande (máx 5MB)','error');
+      return;
+    }
+    const info = document.getElementById('lp-banner-file-info');
+    if(info) info.textContent = '⏳ Enviando...';
+
+    // Tenta upload pro Supabase Storage; se falhar, fallback pra data URL
+    let bannerUrl = null;
+    try{
+      if(window.db && window.db.storage){
+        const ext = (file.name.split('.').pop()||'jpg').toLowerCase();
+        const path = 'layout-banners/'+CU.id+'-'+Date.now()+'.'+ext;
+        // Tenta os buckets mais comuns do projeto
+        const buckets = ['avatars','media','posts','public'];
+        let uploaded = false;
+        for(const bk of buckets){
+          try{
+            const {data:upData, error:upErr} = await window.db.storage.from(bk).upload(path, file, {upsert:true});
+            if(!upErr && upData){
+              const {data:urlData} = window.db.storage.from(bk).getPublicUrl(path);
+              if(urlData && urlData.publicUrl){ bannerUrl = urlData.publicUrl; uploaded = true; break; }
+            }
+          }catch(_){}
+        }
+        if(!uploaded) throw new Error('Upload falhou em todos os buckets');
+      } else {
+        throw new Error('Storage indisponível');
+      }
+    }catch(err){
+      console.warn('[LP] upload erro, usando dataURL:', err?.message);
+      // Fallback: lê como dataURL (só bom para imagens pequenas)
+      bannerUrl = await new Promise((res,rej)=>{
+        const r = new FileReader();
+        r.onload = ()=>res(r.result);
+        r.onerror = ()=>rej(r.error);
+        r.readAsDataURL(file);
+      });
+    }
+    if(bannerUrl){
+      _lpState.banner = bannerUrl;
+      _lpState.preset = 'custom';
+      if(info) info.textContent = '✓ Banner carregado';
+      _refreshLayoutPreview();
+    } else if(info){
+      info.textContent = '❌ Erro ao carregar imagem';
+    }
+  };
+
+  // Salvar
+  window._lpSave = async function(){
+    if(!window.CU || !window.db){
+      if(typeof showToast==='function') showToast('Erro: sessão expirada','error');
+      return;
+    }
+    const clean = _lpSanitize(_lpState);
+    try{
+      const {error} = await window.db.from('profiles')
+        .update({profile_layout: clean})
+        .eq('id', CU.id);
+      if(error){
+        if(String(error.message||'').toLowerCase().includes('profile_layout')){
+          if(typeof showToast==='function') showToast('⚠ Execute a migração SQL no Supabase primeiro (veja o cabeçalho do arquivo)','error');
+        } else {
+          if(typeof showToast==='function') showToast('Erro ao salvar: '+error.message,'error');
+        }
+        return;
+      }
+      if(typeof showToast==='function') showToast('🎨 Layout salvo! Visite seu perfil.','success');
+      document.getElementById('lp-editor-overlay')?.remove();
+      // Recarregar o perfil para aplicar
+      if(typeof window.loadProfilePage==='function'){
+        setTimeout(()=>window.loadProfilePage(CU.id), 200);
+      }
+    }catch(err){
+      console.error('[LP] save:', err);
+      if(typeof showToast==='function') showToast('Erro ao salvar layout','error');
+    }
+  };
+
+  // Resetar para padrão
+  window._lpReset = async function(){
+    if(!confirm('Restaurar layout padrão? Suas personalizações serão apagadas.')) return;
+    try{
+      await window.db.from('profiles').update({profile_layout: null}).eq('id', CU.id);
+      if(typeof showToast==='function') showToast('Layout restaurado','success');
+      document.getElementById('lp-editor-overlay')?.remove();
+      clearProfileLayout();
+      if(typeof window.loadProfilePage==='function'){
+        setTimeout(()=>window.loadProfilePage(CU.id), 200);
+      }
+    }catch(err){
+      console.error('[LP] reset:', err);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  // INJEÇÃO DO BOTÃO 🎨 LAYOUT — na barra do perfil do próprio usuário
+  // ─────────────────────────────────────────────────────────────
+  function injectLayoutButton(){
+    const page = document.getElementById('page-profile');
+    if(!page) return;
+    const coverBar = document.getElementById('profile-cover-bar');
+    if(!coverBar) return;
+    const uid = coverBar.dataset.profileUid;
+    if(!uid || !window.CU || uid !== window.CU.id) return; // só no perfil do próprio
+    // Evita duplicar
+    if(page.querySelector('#lp-open-btn')) return;
+    // Encontra o container de botões (último div dentro de pbar)
+    const pbar = coverBar.querySelector('div:nth-child(2)');
+    if(!pbar) return;
+    const rightCol = pbar.querySelector('div:nth-child(2)');
+    if(!rightCol) return;
+    // Pega último filho (que deve ser o container de botões)
+    const btnContainer = rightCol.lastElementChild;
+    if(!btnContainer) return;
+
+    const lpBtn = document.createElement('button');
+    lpBtn.id = 'lp-open-btn';
+    lpBtn.className = 'post-btn';
+    lpBtn.style.cssText = 'background:linear-gradient(135deg,#bf5fff,#00ffcc);color:#0a0a2a;border:none;font-size:11px;padding:7px 12px;font-weight:700;';
+    lpBtn.textContent = '🎨 Layout';
+    lpBtn.onclick = ()=>window.openLayoutEditor();
+    btnContainer.appendChild(lpBtn);
+  }
+
+  // Observador: toda vez que o coverBar mudar, tenta injetar o botão
+  const _mo = new MutationObserver(()=>{
+    try{ injectLayoutButton(); }catch(_){}
+  });
+  const _startObs = ()=>{
+    const cover = document.getElementById('profile-cover-bar');
+    if(cover && !cover.dataset.lpObs){
+      _mo.observe(cover, {childList:true, subtree:true});
+      cover.dataset.lpObs = '1';
+    }
+  };
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', _startObs);
+  } else {
+    _startObs();
+  }
+  // Fallback adicional: tenta a cada navegação pro perfil
+  setInterval(()=>{
+    const page = document.getElementById('page-profile');
+    if(page && page.classList.contains('active')){
+      _startObs();
+      injectLayoutButton();
+    }
+  }, 1500);
+
+  // Exporta utilidades para testes/acesso externo
+  window.EA_LAYOUT = {
+    apply: applyProfileLayout,
+    clear: clearProfileLayout,
+    fetchAndApply: fetchAndApplyLayout,
+    PRESETS: LP_PRESETS,
+    openEditor: ()=>window.openLayoutEditor()
+  };
+
+  console.log('[🎨 Layout Personalizado] v61 carregado');
+})();
+</script>
 
 <script>
 // Redireciona todas as imagens Dicebear para o Worker de cache assim que o DOM carrega.
