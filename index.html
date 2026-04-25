@@ -5147,6 +5147,53 @@ body.day-mode::before{
   --lp-accent:var(--neon-pink);
   --lp-bg:var(--bg-deep);
   --lp-text:var(--text-light);
+
+  /* ⚡ Sobrescreve as variáveis GLOBAIS dentro do perfil, para que
+     todo o estilo inline pré-existente (pname, phandle, stats, botões,
+     molduras, abas, conteúdo de Sobre/Fotos/Vídeos) use o tema */
+  --neon-cyan: var(--lp-primary);
+  --neon-purple: var(--lp-secondary);
+  --neon-pink: var(--lp-accent);
+  --text-light: var(--lp-text);
+  --border-glow: color-mix(in srgb, var(--lp-primary) 45%, transparent);
+  --bg-card: color-mix(in srgb, var(--lp-bg) 92%, transparent);
+  --glass: color-mix(in srgb, var(--lp-primary) 6%, transparent);
+}
+/* Fallback para navegadores sem suporte a color-mix */
+@supports not (background: color-mix(in srgb, red, blue)){
+  .ea-layout-scope{
+    --border-glow: rgba(0,255,204,0.3);
+    --bg-card: rgba(15,15,58,0.92);
+    --glass: rgba(255,255,255,0.05);
+  }
+}
+
+/* Estender o tema para as abas de conteúdo do perfil */
+.ea-layout-scope .profile-page-tabs{
+  border-bottom-color: var(--border-glow) !important;
+}
+.ea-layout-scope .pptab.active{
+  color: var(--lp-primary) !important;
+  border-bottom-color: var(--lp-primary) !important;
+}
+.ea-layout-scope .edit-section{
+  background: color-mix(in srgb, var(--lp-primary) 5%, transparent) !important;
+  border-color: var(--border-glow) !important;
+}
+.ea-layout-scope .edit-section-title{
+  color: var(--lp-primary) !important;
+}
+.ea-layout-scope #profile-about a{
+  color: var(--lp-primary) !important;
+}
+.ea-layout-scope .pp-empty{
+  color: var(--lp-text) !important;
+  opacity: .75;
+}
+
+/* Forçar o background geral do perfil a usar a cor do tema */
+.ea-layout-scope{
+  background: var(--lp-bg) !important;
 }
 
 /* Banner da capa — suporta imagem, gradiente ou padrão */
