@@ -10823,7 +10823,18 @@ async function r2GetPresign(file){
     r = await fetch(R2_BACKEND_URL+'/api/r2/presign', {
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+(CU?.id||'')},
-      body: JSON.stringify({ filename:safeName, contentType:file.type, size:file.size, userId:CU?.id, context: window._oaUploadContext || undefined })
+      // ✅ CACHE AGRESSIVO: passa cacheControl ao backend para que ele configure
+      // os metadados HTTP do objeto R2. O backend deve incluir este header no
+      // PUT presignado. Ficheiros de mídia são imutáveis após upload —
+      // max-age=31536000 (1 ano) + immutable elimina 100% do egress em revisitas.
+      body: JSON.stringify({
+        filename: safeName,
+        contentType: file.type,
+        size: file.size,
+        userId: CU?.id,
+        context: window._oaUploadContext || undefined,
+        cacheControl: 'public, max-age=31536000, immutable'
+      })
     });
   }catch(netErr){
     const e = new Error('BACKEND_OFFLINE');
@@ -10839,7 +10850,13 @@ async function r2GetPresign(file){
   return r.json(); // { uploadUrl, key, publicUrl, headers? }
 }
 async function r2UploadToPresigned(uploadUrl, file, extraHeaders){
-  const headers = Object.assign({'Content-Type':file.type}, extraHeaders||{});
+  // ✅ CACHE AGRESSIVO: injeta Cache-Control no PUT direto ao R2.
+  // O Cloudflare R2 respeita este header e serve-o nas respostas subsequentes,
+  // instruindo o browser a guardar o ficheiro por 1 ano sem nova requisição.
+  const headers = Object.assign({
+    'Content-Type': file.type,
+    'Cache-Control': 'public, max-age=31536000, immutable'
+  }, extraHeaders||{});
   let r;
   try{
     r = await fetch(uploadUrl, { method:'PUT', headers, body:file });
@@ -30497,7 +30514,8 @@ async function _uploadAudioDirectR2(audioFile) {
     // 2) PUT direto no R2
     const r = await fetch(pres.uploadUrl, {
       method:  'PUT',
-      headers: { 'Content-Type': ct },
+      // ✅ CACHE AGRESSIVO: ficheiros de música são imutáveis após upload
+      headers: { 'Content-Type': ct, 'Cache-Control': 'public, max-age=31536000, immutable' },
       body:    namedFile
     });
     if(!r.ok) {
@@ -32816,7 +32834,34 @@ async function handleR2Avatar(request, env) {
 
   const headers = new Headers();
   headers.set('Content-Type', object.httpMetadata?.contentType || 'image/jpeg');
-  headers.set('Cache-Control', 'public, max-age=2592000, s-maxage=2592000'); // 30 dias
+  // ✅ CACHE AGRESSIVO: avatares são imutáveis (URL muda quando o utilizador troca a foto)
+  headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+  headers.set('Access-Control-Allow-Origin', '*');
+
+  response = new Response(object.body, { headers });
+  await cache.put(request, response.clone());
+  return response;
+}
+
+// ── ROTA: /media/r2/:path* ─────────────────────────────────────────────
+// Serve qualquer mídia do R2 (posts, stories, banners, áudio) com cache agressivo.
+// Todos os ficheiros de média são imutáveis após upload — a URL muda se o conteúdo mudar.
+
+async function handleR2Media(request, env) {
+  const url = new URL(request.url);
+  const key = url.pathname.replace('/media/r2/', '');
+
+  const cache = caches.default;
+  let response = await cache.match(request);
+  if (response) return response;
+
+  const object = await env.EUAQUI_BUCKET.get(key);
+  if (!object) return new Response('Not found', { status: 404 });
+
+  const headers = new Headers();
+  headers.set('Content-Type', object.httpMetadata?.contentType || 'application/octet-stream');
+  // ✅ CACHE AGRESSIVO: 1 ano + immutable → egress zero em revisitas
+  headers.set('Cache-Control', 'public, max-age=31536000, immutable');
   headers.set('Access-Control-Allow-Origin', '*');
 
   response = new Response(object.body, { headers });
@@ -32841,9 +32886,10 @@ export default {
       });
     }
 
-    // Rotas de avatar
+    // Rotas de avatar e media
     if (url.pathname === '/avatar/dicebear') return handleDicebearAvatar(request);
     if (url.pathname.startsWith('/avatar/r2/'))  return handleR2Avatar(request, env);
+    if (url.pathname.startsWith('/media/r2/'))   return handleR2Media(request, env);
 
     // ... resto do seu Worker existente (presign, finalize, etc.) ...
   }
