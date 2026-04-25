@@ -17044,34 +17044,53 @@ async function saveBusiness(){
 // ═══════════════════════════════════════════════════════════════════
 // 📦 HELPER: Devolver item ao estoque (usado em cancelamentos)
 // ═══════════════════════════════════════════════════════════════════
-// Busca o produto (via product_id, ou por nome em product_title) e 
-// incrementa stock +1. Silencioso em caso de erro.
+// Busca o produto (via product_id, deal_id→product_id, ou por nome)
+// e incrementa stock +1. Silencioso em caso de erro.
 async function _restoreStockForPurchase(purchaseId){
   try{
     const {data:purch} = await db.from('purchases')
-      .select('business_id, product_title, product_id')
+      .select('business_id, product_title, product_id, deal_id')
       .eq('id', purchaseId).maybeSingle();
     if(!purch) return false;
     let _prod = null;
+
+    // 1ª tentativa: product_id direto na purchase
     if(purch.product_id){
       const r = await db.from('business_products')
         .select('id,stock').eq('id', purch.product_id).maybeSingle();
       if(!r.error && r.data) _prod = r.data;
     }
+
+    // 2ª tentativa: busca product_id pelo deal vinculado (caso fallback sem product_id)
+    if(!_prod && purch.deal_id){
+      try{
+        const {data:deal} = await db.from('business_deals')
+          .select('product_id').eq('id', purch.deal_id).maybeSingle();
+        if(deal?.product_id){
+          const r3 = await db.from('business_products')
+            .select('id,stock').eq('id', deal.product_id).maybeSingle();
+          if(!r3.error && r3.data) _prod = r3.data;
+        }
+      }catch(_){}
+    }
+
+    // 3ª tentativa: fallback por nome (ilike = case-insensitive)
     if(!_prod && purch.product_title && purch.business_id){
       const r2 = await db.from('business_products')
         .select('id,stock').eq('business_id', purch.business_id)
-        .eq('name', purch.product_title).maybeSingle();
+        .ilike('name', purch.product_title.trim()).maybeSingle();
       if(!r2.error && r2.data) _prod = r2.data;
     }
+
     // Só devolve se o produto tem controle de estoque (stock != null)
     if(_prod && _prod.stock != null){
       await db.from('business_products')
         .update({stock: (_prod.stock||0) + 1})
         .eq('id', _prod.id);
-      console.log('[stock] devolvido +1 para produto', _prod.id);
+      console.log('[stock] devolvido +1 para produto', _prod.id, '| nova qtd:', (_prod.stock||0)+1);
       return true;
     }
+    console.warn('[stock] _restoreStockForPurchase: produto não encontrado para purchase', purchaseId, purch);
   }catch(e){ console.warn('[_restoreStockForPurchase]', e?.message); }
   return false;
 }
