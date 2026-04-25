@@ -18387,6 +18387,7 @@ async function loadBizChats(){
 
 async function openBizChat(chatId, label){
   currentBizChat = chatId;
+  _bizLastMsgTs = null; // ✅ será preenchido pelo loadBizMsgs com o ts real do banco
   document.querySelectorAll('#biz-chat-list .ci').forEach(c=>c.classList.remove('active'));
   const ci = document.getElementById('biz-ci-'+chatId);
   if(ci) ci.classList.add('active');
@@ -18488,11 +18489,10 @@ async function loadBizMsgs(chatId){
   const {data}=await db.from('business_messages')
     .select('*').eq('chat_id',chatId).order('created_at',{ascending:true});
   if(!data?.length){ area.innerHTML='<div class="chat-empty-txt">Início do atendimento</div>'; return; }
-  // Atualiza o timestamp de referência do poll com a mensagem mais recente
-  if(data.length > 0 && data[data.length-1].created_at){
-    const lastTs = data[data.length-1].created_at;
-    if(!_bizLastMsgTs || lastTs > _bizLastMsgTs) _bizLastMsgTs = lastTs;
-  }
+  // ✅ Sempre atualiza o timestamp de referência com a última msg real do banco
+  // Isso garante que o poll busque só msgs FUTURAS a essa, nunca ficando preso
+  const lastTs = data[data.length-1].created_at;
+  _bizLastMsgTs = lastTs;
   const wasAtBottom = area.scrollHeight - area.scrollTop - area.clientHeight < 60;
   area.innerHTML='';
   data.forEach(m=>{
@@ -18622,7 +18622,9 @@ async function sendBizMsg(){
   // ✅ INSERÇÃO OTIMISTA: mostra a mensagem na tela imediatamente, sem esperar o banco
   _appendBizMsgOptimistic(txt);
 
-  const {error}=await db.from('business_messages').insert({chat_id:currentBizChat,sender_id:CU.id,content:txt});
+  const {data:inserted, error}=await db.from('business_messages')
+    .insert({chat_id:currentBizChat,sender_id:CU.id,content:txt})
+    .select('id,created_at').single();
   if(error){
     showToast('Erro ao enviar','error');
     // Remove a bolha otimista em caso de erro
@@ -18630,7 +18632,9 @@ async function sendBizMsg(){
     area?.querySelector('.mb-optimistic')?.remove();
     _bizMsgSending=false; if(sendBtn){sendBtn.disabled=false;sendBtn.style.opacity='';} return;
   }
-  // Remove flag otimista (o Realtime vai confirmar com o dado real do banco)
+  // ✅ Atualiza o timestamp para que o poll não reprocesse esta mensagem
+  if(inserted?.created_at) _bizLastMsgTs = inserted.created_at;
+  // Remove flag otimista (confirmado pelo banco)
   document.querySelector('.mb-optimistic')?.classList.remove('mb-optimistic');
   await db.from('business_chats').update({updated_at:new Date().toISOString()}).eq('id',currentBizChat);
   loadBizChats(); // traz conversa ao topo da sidebar
@@ -19598,7 +19602,11 @@ function startBizChatPoll(){
   stopBizChatPoll();
   if(!currentBizChat||!CU) return;
 
-  _bizLastMsgTs = new Date().toISOString();
+  // ⚠️ NÃO usa new Date() aqui — o timestamp vem do loadBizMsgs (última msg do banco).
+  // Se ainda não foi carregado, usa 10 minutos atrás como margem de segurança.
+  if(!_bizLastMsgTs){
+    _bizLastMsgTs = new Date(Date.now() - 600000).toISOString();
+  }
 
   // ══════════════════════════════════════════════════════════════
   // MOTOR PRINCIPAL: Polling a cada 3s — simples, confiável,
