@@ -5235,10 +5235,11 @@ body.day-mode::before{
   padding:0; position:relative;
 }
 .ea-lp-avframe-flower::before{
-  content:'🌸 🌺 🌼 🌷'; position:absolute; inset:-10px;
-  font-size:14px; letter-spacing:2px; text-align:center;
-  pointer-events:none; opacity:.7;
+  content:'🌸 🌺 🌼 🌷 🌹 🌻'; position:absolute; inset:-14px;
+  font-size:13px; letter-spacing:4px; text-align:center;
+  pointer-events:none; opacity:.85;
   animation: ea-lp-spin 14s linear infinite;
+  display:flex; align-items:center; justify-content:center;
 }
 .ea-lp-avframe-flower img,
 .ea-lp-avframe-flower .pbav{
@@ -5246,6 +5247,328 @@ body.day-mode::before{
   box-shadow:0 0 12px #ff99cc !important;
 }
 @keyframes ea-lp-spin{ to{ transform:rotate(360deg); } }
+@keyframes ea-lp-spin-rev{ to{ transform:rotate(-360deg); } }
+
+/* ⚡ RAIOS orbitando */
+.ea-lp-avframe-thunder{ padding:0; position:relative; }
+.ea-lp-avframe-thunder::before{
+  content:'⚡ ⚡ ⚡ ⚡ ⚡ ⚡'; position:absolute; inset:-14px;
+  font-size:14px; letter-spacing:6px; text-align:center;
+  pointer-events:none;
+  animation: ea-lp-spin 6s linear infinite;
+  filter: drop-shadow(0 0 6px #ffea00);
+  display:flex; align-items:center; justify-content:center;
+}
+.ea-lp-avframe-thunder img,
+.ea-lp-avframe-thunder .pbav{
+  border:3px solid #ffea00 !important;
+  box-shadow:0 0 18px #ffea00, 0 0 32px rgba(255,234,0,.4) !important;
+  animation: ea-lp-flicker 1.8s ease-in-out infinite;
+}
+@keyframes ea-lp-flicker{
+  0%,100%{ box-shadow:0 0 18px #ffea00, 0 0 32px rgba(255,234,0,.4); }
+  45%{ box-shadow:0 0 6px #ffea00, 0 0 14px rgba(255,234,0,.25); }
+  50%{ box-shadow:0 0 26px #fff, 0 0 40px #ffea00; }
+}
+
+/* ⭐ ESTRELAS pulsantes */
+.ea-lp-avframe-stars{ padding:0; position:relative; }
+.ea-lp-avframe-stars::before{
+  content:'⭐ ✨ 💫 ⭐ ✨ 💫'; position:absolute; inset:-15px;
+  font-size:13px; letter-spacing:5px; text-align:center;
+  pointer-events:none;
+  animation: ea-lp-spin 18s linear infinite;
+  display:flex; align-items:center; justify-content:center;
+}
+.ea-lp-avframe-stars::after{
+  content:'✨'; position:absolute; top:-8px; left:50%;
+  font-size:18px; pointer-events:none;
+  animation: ea-lp-twinkle 2s ease-in-out infinite;
+  filter: drop-shadow(0 0 4px #fff);
+}
+@keyframes ea-lp-twinkle{
+  0%,100%{ opacity:1; transform:translateX(-50%) scale(1); }
+  50%{ opacity:.4; transform:translateX(-50%) scale(.7); }
+}
+.ea-lp-avframe-stars img,
+.ea-lp-avframe-stars .pbav{
+  border:3px solid #c7b8ff !important;
+  box-shadow:0 0 16px #c7b8ff, 0 0 30px rgba(199,184,255,.4) !important;
+}
+
+/* 💖 CORAÇÕES flutuando */
+.ea-lp-avframe-hearts{ padding:0; position:relative; }
+.ea-lp-avframe-hearts::before{
+  content:'💖 💕 💗 💓 💖 💕'; position:absolute; inset:-14px;
+  font-size:13px; letter-spacing:4px; text-align:center;
+  pointer-events:none; opacity:.9;
+  animation: ea-lp-spin 10s linear infinite;
+  display:flex; align-items:center; justify-content:center;
+}
+.ea-lp-avframe-hearts img,
+.ea-lp-avframe-hearts .pbav{
+  border:3px solid #ff6ba8 !important;
+  box-shadow:0 0 16px #ff6ba8, 0 0 28px rgba(255,107,168,.45) !important;
+  animation: ea-lp-pulse 1.4s ease-in-out infinite;
+}
+@keyframes ea-lp-pulse{
+  0%,100%{ transform:scale(1); }
+  50%{ transform:scale(1.04); }
+}
+
+/* 🦋 BORBOLETAS */
+.ea-lp-avframe-butterflies{ padding:0; position:relative; }
+.ea-lp-avframe-butterflies::before{
+  content:'🦋 🌸 🦋 🌼 🦋 🌺'; position:absolute; inset:-14px;
+  font-size:13px; letter-spacing:4px; text-align:center;
+  pointer-events:none;
+  animation: ea-lp-spin-rev 12s linear infinite;
+  display:flex; align-items:center; justify-content:center;
+}
+.ea-lp-avframe-butterflies img,
+.ea-lp-avframe-butterflies .pbav{
+  border:3px solid #b8f7d4 !important;
+  box-shadow:0 0 14px #b8f7d4 !important;
+}
+
+/* 🍃 FOLHAS — natureza */
+.ea-lp-avframe-leaves{ padding:0; position:relative; }
+.ea-lp-avframe-leaves::before{
+  content:'🍃 🌿 🍀 🌱 🍃 🌿'; position:absolute; inset:-14px;
+  font-size:13px; letter-spacing:4px; text-align:center;
+  pointer-events:none;
+  animation: ea-lp-spin 16s linear infinite;
+  display:flex; align-items:center; justify-content:center;
+}
+.ea-lp-avframe-leaves img,
+.ea-lp-avframe-leaves .pbav{
+  border:3px solid #8cd867 !important;
+  box-shadow:0 0 14px #8cd867, 0 0 24px rgba(140,216,103,.35) !important;
+}
+
+/* 🔥 FOGO ORBITAL (diferente do 'fire' padrão) */
+.ea-lp-avframe-flames{ padding:0; position:relative; }
+.ea-lp-avframe-flames::before{
+  content:'🔥 🔥 🔥 🔥 🔥 🔥 🔥'; position:absolute; inset:-14px;
+  font-size:14px; letter-spacing:3px; text-align:center;
+  pointer-events:none;
+  animation: ea-lp-spin 7s linear infinite;
+  filter: drop-shadow(0 0 4px #ff6b1a);
+  display:flex; align-items:center; justify-content:center;
+}
+.ea-lp-avframe-flames img,
+.ea-lp-avframe-flames .pbav{
+  border:3px solid #ff6b1a !important;
+  box-shadow:0 0 22px #ff6b1a, 0 0 40px #ff3366 !important;
+  animation: ea-lp-fire 2.5s ease-in-out infinite alternate;
+}
+
+/* 💰 MOEDAS — luxo */
+.ea-lp-avframe-coins{ padding:0; position:relative; }
+.ea-lp-avframe-coins::before{
+  content:'💰 ✨ 💎 💰 ✨ 💎'; position:absolute; inset:-14px;
+  font-size:13px; letter-spacing:4px; text-align:center;
+  pointer-events:none;
+  animation: ea-lp-spin 11s linear infinite;
+  filter: drop-shadow(0 0 4px #f9d423);
+  display:flex; align-items:center; justify-content:center;
+}
+.ea-lp-avframe-coins img,
+.ea-lp-avframe-coins .pbav{
+  border:3px solid #f9d423 !important;
+  box-shadow:0 0 18px #f9d423, 0 0 32px rgba(249,212,35,.5) !important;
+}
+
+/* 🌈 ARCO-ÍRIS rotativo */
+.ea-lp-avframe-rainbow{
+  padding:0; position:relative;
+}
+.ea-lp-avframe-rainbow::before{
+  content:''; position:absolute; inset:-5px;
+  border-radius:50%;
+  background: conic-gradient(from 0deg,
+    #ff4d4d, #ffb347, #ffea00, #7ed957, #4ecdc4, #5f8bff, #b35cff, #ff4d9d, #ff4d4d);
+  animation: ea-lp-spin 5s linear infinite;
+  z-index:-1;
+  mask: radial-gradient(circle, transparent 60%, #000 63%);
+  -webkit-mask: radial-gradient(circle, transparent 60%, #000 63%);
+}
+.ea-lp-avframe-rainbow img,
+.ea-lp-avframe-rainbow .pbav{
+  border:3px solid transparent !important;
+  background-origin:border-box !important;
+  box-shadow:0 0 14px rgba(255,255,255,.3) !important;
+}
+
+/* 🌌 GALÁXIA — roxo+estrelas girando */
+.ea-lp-avframe-galaxy{ padding:0; position:relative; }
+.ea-lp-avframe-galaxy::before{
+  content:'✨ ⭐ · ✨ ⭐ · ✨ ⭐ ·';
+  position:absolute; inset:-16px;
+  font-size:11px; letter-spacing:3px; text-align:center;
+  pointer-events:none;
+  animation: ea-lp-spin 20s linear infinite;
+  color:#fff;
+  text-shadow:0 0 6px #bf5fff;
+  display:flex; align-items:center; justify-content:center;
+}
+.ea-lp-avframe-galaxy::after{
+  content:''; position:absolute; inset:-3px;
+  border-radius:50%;
+  background: conic-gradient(from 0deg, transparent, #bf5fff, transparent, #5f8bff, transparent);
+  animation: ea-lp-spin 8s linear infinite;
+  z-index:-1;
+  mask: radial-gradient(circle, transparent 62%, #000 66%);
+  -webkit-mask: radial-gradient(circle, transparent 62%, #000 66%);
+}
+.ea-lp-avframe-galaxy img,
+.ea-lp-avframe-galaxy .pbav{
+  border:3px solid #bf5fff !important;
+  box-shadow:0 0 20px #bf5fff, 0 0 36px rgba(95,139,255,.5) !important;
+}
+
+/* ⚡ ELÉTRICO — raios SVG ao redor */
+.ea-lp-avframe-electric{ padding:0; position:relative; }
+.ea-lp-avframe-electric::before,
+.ea-lp-avframe-electric::after{
+  content:''; position:absolute; inset:-6px;
+  border-radius:50%;
+  border:2px dashed #00e5ff;
+  animation: ea-lp-spin 3s linear infinite;
+  opacity:.75;
+  pointer-events:none;
+}
+.ea-lp-avframe-electric::after{
+  inset:-12px;
+  border-style:dotted;
+  border-color:#a0f4ff;
+  animation: ea-lp-spin-rev 5s linear infinite;
+  opacity:.55;
+}
+.ea-lp-avframe-electric img,
+.ea-lp-avframe-electric .pbav{
+  border:3px solid #00e5ff !important;
+  box-shadow:0 0 18px #00e5ff, 0 0 32px rgba(0,229,255,.4) !important;
+}
+
+/* 🫧 BOLHAS subindo */
+.ea-lp-avframe-bubbles{ padding:0; position:relative; }
+.ea-lp-avframe-bubbles::before{
+  content:'🫧 ○ 🫧 ○ 🫧 ○'; position:absolute; inset:-14px;
+  font-size:13px; letter-spacing:4px; text-align:center;
+  pointer-events:none;
+  animation: ea-lp-spin-rev 14s linear infinite;
+  display:flex; align-items:center; justify-content:center;
+}
+.ea-lp-avframe-bubbles img,
+.ea-lp-avframe-bubbles .pbav{
+  border:3px solid #a0e8ff !important;
+  box-shadow:0 0 14px #a0e8ff !important;
+}
+
+/* 🎃 HALLOWEEN — morcegos/abóboras */
+.ea-lp-avframe-halloween{ padding:0; position:relative; }
+.ea-lp-avframe-halloween::before{
+  content:'🎃 🦇 👻 🎃 🦇 👻'; position:absolute; inset:-14px;
+  font-size:13px; letter-spacing:4px; text-align:center;
+  pointer-events:none;
+  animation: ea-lp-spin 12s linear infinite;
+  display:flex; align-items:center; justify-content:center;
+}
+.ea-lp-avframe-halloween img,
+.ea-lp-avframe-halloween .pbav{
+  border:3px solid #ff8c00 !important;
+  box-shadow:0 0 16px #ff8c00, 0 0 28px rgba(147,0,211,.5) !important;
+}
+
+/* 🎄 NATAL */
+.ea-lp-avframe-xmas{ padding:0; position:relative; }
+.ea-lp-avframe-xmas::before{
+  content:'🎄 ❄ 🎁 🎄 ❄ 🎁'; position:absolute; inset:-14px;
+  font-size:13px; letter-spacing:4px; text-align:center;
+  pointer-events:none;
+  animation: ea-lp-spin 13s linear infinite;
+  display:flex; align-items:center; justify-content:center;
+}
+.ea-lp-avframe-xmas img,
+.ea-lp-avframe-xmas .pbav{
+  border:3px solid #ff3333 !important;
+  box-shadow:0 0 16px #ff3333, 0 0 28px rgba(34,139,34,.5) !important;
+}
+
+/* 🌀 NEON PULSANTE */
+.ea-lp-avframe-neonpulse{ padding:0; position:relative; }
+.ea-lp-avframe-neonpulse::before{
+  content:''; position:absolute; inset:-8px;
+  border-radius:50%;
+  border:2px solid var(--lp-primary,#00ffcc);
+  animation: ea-lp-pulsering 1.8s ease-out infinite;
+  pointer-events:none;
+}
+.ea-lp-avframe-neonpulse::after{
+  content:''; position:absolute; inset:-8px;
+  border-radius:50%;
+  border:2px solid var(--lp-primary,#00ffcc);
+  animation: ea-lp-pulsering 1.8s ease-out .9s infinite;
+  pointer-events:none;
+}
+@keyframes ea-lp-pulsering{
+  0%{ transform:scale(.85); opacity:1; }
+  100%{ transform:scale(1.5); opacity:0; }
+}
+.ea-lp-avframe-neonpulse img,
+.ea-lp-avframe-neonpulse .pbav{
+  border:3px solid var(--lp-primary,#00ffcc) !important;
+  box-shadow:0 0 20px var(--lp-primary,#00ffcc) !important;
+}
+
+/* 💎 CRISTAL — facetas girando */
+.ea-lp-avframe-crystal{ padding:0; position:relative; }
+.ea-lp-avframe-crystal::before{
+  content:'💎 🔹 💎 🔹 💎 🔹'; position:absolute; inset:-14px;
+  font-size:12px; letter-spacing:4px; text-align:center;
+  pointer-events:none;
+  animation: ea-lp-spin 9s linear infinite;
+  filter: drop-shadow(0 0 4px #a0f4ff);
+  display:flex; align-items:center; justify-content:center;
+}
+.ea-lp-avframe-crystal img,
+.ea-lp-avframe-crystal .pbav{
+  border:3px solid #a0f4ff !important;
+  box-shadow:0 0 18px #a0f4ff, 0 0 32px rgba(191,95,255,.4) !important;
+}
+
+/* 🌊 ONDAS — praia */
+.ea-lp-avframe-waves{ padding:0; position:relative; }
+.ea-lp-avframe-waves::before{
+  content:'🌊 🐚 🌴 🌊 🐚 🌴'; position:absolute; inset:-14px;
+  font-size:12px; letter-spacing:4px; text-align:center;
+  pointer-events:none;
+  animation: ea-lp-spin 15s linear infinite;
+  display:flex; align-items:center; justify-content:center;
+}
+.ea-lp-avframe-waves img,
+.ea-lp-avframe-waves .pbav{
+  border:3px solid #5ac8fa !important;
+  box-shadow:0 0 14px #5ac8fa, 0 0 24px rgba(255,212,122,.3) !important;
+}
+
+/* 🎵 MUSICAL */
+.ea-lp-avframe-music{ padding:0; position:relative; }
+.ea-lp-avframe-music::before{
+  content:'🎵 🎶 ♪ 🎵 🎶 ♪'; position:absolute; inset:-14px;
+  font-size:13px; letter-spacing:4px; text-align:center;
+  pointer-events:none;
+  animation: ea-lp-spin-rev 10s linear infinite;
+  color:#ff6bcb;
+  filter: drop-shadow(0 0 3px #ff6bcb);
+  display:flex; align-items:center; justify-content:center;
+}
+.ea-lp-avframe-music img,
+.ea-lp-avframe-music .pbav{
+  border:3px solid #ff6bcb !important;
+  box-shadow:0 0 16px #ff6bcb !important;
+}
 
 /* Molduras de fotos (cartões de post) */
 .ea-lp-photoframe-neon .post-card,
@@ -5411,7 +5734,30 @@ body.day-mode::before{
   border:1px solid var(--border-glow);
   border-radius:10px;
   overflow:hidden;
-  margin-bottom:12px;
+  margin-bottom:14px;
+  /* CONGELAR preview no topo enquanto rola */
+  position:sticky;
+  top:-2px;
+  z-index:50;
+  box-shadow:0 4px 20px rgba(0,0,0,.5), 0 0 24px rgba(0,255,204,.15);
+  backdrop-filter:blur(8px);
+}
+.lp-preview-card::before{
+  content:'🔴 PREVIEW AO VIVO';
+  position:absolute;
+  top:6px; right:8px; z-index:5;
+  font-family:Silkscreen,monospace;
+  font-size:8px;
+  color:#ff4466;
+  background:rgba(0,0,0,.55);
+  padding:3px 8px;
+  border-radius:10px;
+  letter-spacing:1px;
+  animation: ea-lp-blink 1.6s ease-in-out infinite;
+}
+@keyframes ea-lp-blink{
+  0%,100%{ opacity:1; }
+  50%{ opacity:.4; }
 }
 .lp-preview-banner{
   height:70px;
@@ -5419,19 +5765,26 @@ body.day-mode::before{
   position:relative;
 }
 .lp-preview-body{
-  padding:14px;
+  padding:14px 14px 14px 60px;
   display:flex; align-items:center; gap:10px;
   margin-top:-22px; position:relative;
+  min-height:70px;
+}
+.lp-preview-av-wrap{
+  position:absolute;
+  left:14px; top:-8px;
+  width:52px; height:52px;
+  z-index:3;
 }
 .lp-preview-av{
-  width:46px; height:46px; border-radius:50%;
+  width:52px; height:52px; border-radius:50%;
   background:rgba(255,255,255,.1);
   border:2px solid var(--lp-primary,#00ffcc);
   flex-shrink:0;
   display:flex; align-items:center; justify-content:center;
-  font-size:22px;
+  font-size:24px;
 }
-.lp-preview-info{ flex:1; }
+.lp-preview-info{ flex:1; min-width:0; }
 .lp-preview-name{
   font-family:Syne,sans-serif; font-weight:800; font-size:13px;
   color:var(--lp-text,#e0e0ff);
@@ -5445,6 +5798,95 @@ body.day-mode #lp-editor-modal{ background:#ffffff; color:#1a1a2e; }
 body.day-mode .lp-sect{ background:rgba(0,0,0,.03); }
 body.day-mode .lp-color-input{ background:rgba(0,0,0,.05); }
 body.day-mode .lp-chip{ background:rgba(0,0,0,.04); color:#1a1a2e; }
+
+/* ── PREVIEW: aplica as molduras também ao .lp-preview-av dentro dos wraps ── */
+.ea-lp-avframe-neon .lp-preview-av,
+.ea-lp-avframe-neonpulse .lp-preview-av{
+  border:3px solid var(--lp-primary,#00ffcc) !important;
+  box-shadow:0 0 20px var(--lp-primary,#00ffcc), inset 0 0 12px rgba(0,255,204,.3) !important;
+}
+.ea-lp-avframe-gold .lp-preview-av,
+.ea-lp-avframe-coins .lp-preview-av{
+  border:4px solid #f9d423 !important;
+  box-shadow:0 0 14px #f9d423, 0 0 28px rgba(249,212,35,.5) !important;
+}
+.ea-lp-avframe-fire .lp-preview-av,
+.ea-lp-avframe-flames .lp-preview-av{
+  border:3px solid #ff6b1a !important;
+  box-shadow:0 0 14px #ff6b1a, 0 0 28px #ff3366 !important;
+  animation: ea-lp-fire 2.5s ease-in-out infinite alternate;
+}
+.ea-lp-avframe-ice .lp-preview-av{
+  border:3px solid #a0e8ff !important;
+  box-shadow:0 0 16px #a0e8ff !important;
+}
+.ea-lp-avframe-pixel .lp-preview-av{
+  border:4px solid var(--lp-primary,#00ffcc) !important;
+  border-radius:8px !important;
+  box-shadow: 4px 4px 0 var(--lp-secondary,#bf5fff), 8px 8px 0 var(--lp-accent,#ff3366) !important;
+}
+.ea-lp-avframe-flower .lp-preview-av{
+  border:3px solid #ff99cc !important;
+  box-shadow:0 0 12px #ff99cc !important;
+}
+.ea-lp-avframe-thunder .lp-preview-av{
+  border:3px solid #ffea00 !important;
+  box-shadow:0 0 18px #ffea00 !important;
+  animation: ea-lp-flicker 1.8s ease-in-out infinite;
+}
+.ea-lp-avframe-stars .lp-preview-av{
+  border:3px solid #c7b8ff !important;
+  box-shadow:0 0 16px #c7b8ff !important;
+}
+.ea-lp-avframe-hearts .lp-preview-av{
+  border:3px solid #ff6ba8 !important;
+  box-shadow:0 0 16px #ff6ba8 !important;
+  animation: ea-lp-pulse 1.4s ease-in-out infinite;
+}
+.ea-lp-avframe-butterflies .lp-preview-av{
+  border:3px solid #b8f7d4 !important;
+  box-shadow:0 0 14px #b8f7d4 !important;
+}
+.ea-lp-avframe-leaves .lp-preview-av{
+  border:3px solid #8cd867 !important;
+  box-shadow:0 0 14px #8cd867 !important;
+}
+.ea-lp-avframe-rainbow .lp-preview-av{
+  border:3px solid transparent !important;
+  box-shadow:0 0 14px rgba(255,255,255,.3) !important;
+}
+.ea-lp-avframe-galaxy .lp-preview-av{
+  border:3px solid #bf5fff !important;
+  box-shadow:0 0 20px #bf5fff !important;
+}
+.ea-lp-avframe-electric .lp-preview-av{
+  border:3px solid #00e5ff !important;
+  box-shadow:0 0 18px #00e5ff !important;
+}
+.ea-lp-avframe-bubbles .lp-preview-av{
+  border:3px solid #a0e8ff !important;
+  box-shadow:0 0 14px #a0e8ff !important;
+}
+.ea-lp-avframe-halloween .lp-preview-av{
+  border:3px solid #ff8c00 !important;
+  box-shadow:0 0 16px #ff8c00 !important;
+}
+.ea-lp-avframe-xmas .lp-preview-av{
+  border:3px solid #ff3333 !important;
+  box-shadow:0 0 16px #ff3333 !important;
+}
+.ea-lp-avframe-crystal .lp-preview-av{
+  border:3px solid #a0f4ff !important;
+  box-shadow:0 0 18px #a0f4ff !important;
+}
+.ea-lp-avframe-waves .lp-preview-av{
+  border:3px solid #5ac8fa !important;
+  box-shadow:0 0 14px #5ac8fa !important;
+}
+.ea-lp-avframe-music .lp-preview-av{
+  border:3px solid #ff6bcb !important;
+  box-shadow:0 0 16px #ff6bcb !important;
+}
 
 </style>
 </head>
@@ -30486,6 +30928,13 @@ window.oaNavigateFromHeader = function(){
   // ─────────────────────────────────────────────────────────────
   // PRESETS DE LAYOUT — temas prontos que o usuário pode escolher
   // ─────────────────────────────────────────────────────────────
+
+  // Todas as molduras disponíveis (para limpar classes ao trocar)
+  const LP_AV_FRAMES = ['none','neon','gold','flower','pixel','fire','ice',
+    'thunder','stars','hearts','butterflies','leaves','flames','coins',
+    'rainbow','galaxy','electric','bubbles','halloween','xmas',
+    'neonpulse','crystal','waves','music'];
+  const LP_PH_FRAMES = ['none','neon','gold','polaroid','pixel'];
   const LP_PRESETS = {
     tech: {
       name: '🚀 Moderno / Tecnológico',
@@ -30600,7 +31049,10 @@ window.oaNavigateFromHeader = function(){
               || b.startsWith('linear-gradient(') || b.startsWith('radial-gradient(');
       if(ok) clean.banner = b;
     }
-    const validAv = ['none','neon','gold','flower','pixel','fire','ice'];
+    const validAv = ['none','neon','gold','flower','pixel','fire','ice',
+      'thunder','stars','hearts','butterflies','leaves','flames','coins',
+      'rainbow','galaxy','electric','bubbles','halloween','xmas',
+      'neonpulse','crystal','waves','music'];
     const validPh = ['none','neon','gold','polaroid','pixel'];
     if(validAv.includes(layout.avatarFrame)) clean.avatarFrame = layout.avatarFrame;
     if(validPh.includes(layout.photoFrame)) clean.photoFrame = layout.photoFrame;
@@ -30668,7 +31120,7 @@ window.oaNavigateFromHeader = function(){
     const avWrap = pbar ? pbar.querySelector('div:first-child') : null;
     if(avWrap){
       // limpa molduras anteriores
-      ['none','neon','gold','flower','pixel','fire','ice'].forEach(f=>{
+      LP_AV_FRAMES.forEach(f=>{
         avWrap.classList.remove('ea-lp-avframe-'+f);
       });
       avWrap.classList.add('ea-lp-avframe');
@@ -30712,7 +31164,7 @@ window.oaNavigateFromHeader = function(){
     const avWrap = pbar ? pbar.querySelector('div:first-child') : null;
     if(avWrap){
       avWrap.classList.remove('ea-lp-avframe');
-      ['none','neon','gold','flower','pixel','fire','ice'].forEach(f=>{
+      LP_AV_FRAMES.forEach(f=>{
         avWrap.classList.remove('ea-lp-avframe-'+f);
       });
     }
@@ -30814,9 +31266,30 @@ window.oaNavigateFromHeader = function(){
     }).join('');
 
     const avFrames = [
-      {id:'none',label:'Nenhum'},{id:'neon',label:'💎 Neon'},{id:'gold',label:'👑 Dourada'},
-      {id:'flower',label:'🌸 Flores'},{id:'pixel',label:'🎮 Pixel'},{id:'fire',label:'🔥 Fogo'},
-      {id:'ice',label:'❄ Gelo'}
+      {id:'none',label:'Nenhum'},
+      {id:'neon',label:'💎 Neon'},
+      {id:'neonpulse',label:'🌀 Neon Pulsante'},
+      {id:'gold',label:'👑 Dourada'},
+      {id:'coins',label:'💰 Moedas'},
+      {id:'crystal',label:'💎 Cristal'},
+      {id:'pixel',label:'🎮 Pixel'},
+      {id:'flower',label:'🌸 Flores'},
+      {id:'hearts',label:'💖 Corações'},
+      {id:'butterflies',label:'🦋 Borboletas'},
+      {id:'leaves',label:'🍃 Folhas'},
+      {id:'waves',label:'🌊 Ondas'},
+      {id:'bubbles',label:'🫧 Bolhas'},
+      {id:'fire',label:'🔥 Fogo (glow)'},
+      {id:'flames',label:'🔥 Chamas orbitais'},
+      {id:'ice',label:'❄ Gelo'},
+      {id:'thunder',label:'⚡ Raios'},
+      {id:'electric',label:'⚡ Elétrico'},
+      {id:'stars',label:'⭐ Estrelas'},
+      {id:'galaxy',label:'🌌 Galáxia'},
+      {id:'rainbow',label:'🌈 Arco-íris'},
+      {id:'music',label:'🎵 Musical'},
+      {id:'halloween',label:'🎃 Halloween'},
+      {id:'xmas',label:'🎄 Natal'}
     ];
     const phFrames = [
       {id:'none',label:'Nenhuma'},{id:'neon',label:'💎 Neon'},{id:'gold',label:'👑 Dourada'},
@@ -30855,7 +31328,9 @@ window.oaNavigateFromHeader = function(){
         '<div class="lp-preview-card" id="lp-preview-card">'+
           '<div class="lp-preview-banner" id="lp-preview-banner"></div>'+
           '<div class="lp-preview-body">'+
-            '<div class="lp-preview-av" id="lp-preview-av">👤</div>'+
+            '<div class="lp-preview-av-wrap" id="lp-preview-av-wrap">'+
+              '<div class="lp-preview-av" id="lp-preview-av">👤</div>'+
+            '</div>'+
             '<div class="lp-preview-info">'+
               '<div class="lp-preview-name" id="lp-preview-name">'+previewName+'</div>'+
               '<div class="lp-preview-handle" id="lp-preview-handle">@'+previewHandle+'</div>'+
@@ -31024,6 +31499,7 @@ window.oaNavigateFromHeader = function(){
     const card = document.getElementById('lp-preview-card');
     const banner = document.getElementById('lp-preview-banner');
     const av = document.getElementById('lp-preview-av');
+    const avWrap = document.getElementById('lp-preview-av-wrap') || av;
     const name = document.getElementById('lp-preview-name');
     const handle = document.getElementById('lp-preview-handle');
     if(!card || !banner || !av) return;
@@ -31051,13 +31527,13 @@ window.oaNavigateFromHeader = function(){
       banner.classList.add('ea-lp-bg-'+L.bgPattern);
     }
 
-    // moldura avatar
-    ['none','neon','gold','flower','pixel','fire','ice'].forEach(f=>{
-      av.classList.remove('ea-lp-avframe-'+f);
+    // moldura avatar — aplicada no wrap para que ::before/::after orbitem ao redor
+    LP_AV_FRAMES.forEach(f=>{
+      avWrap.classList.remove('ea-lp-avframe-'+f);
     });
-    av.classList.add('ea-lp-avframe');
+    avWrap.classList.add('ea-lp-avframe');
     if(L.avatarFrame && L.avatarFrame !== 'none'){
-      av.classList.add('ea-lp-avframe-'+L.avatarFrame);
+      avWrap.classList.add('ea-lp-avframe-'+L.avatarFrame);
     }
 
     // textos
