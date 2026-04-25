@@ -6209,7 +6209,7 @@ body.day-mode .lp-chip{ background:rgba(0,0,0,.04); color:#1a1a2e; }
       <button class="theme-toggle" id="trending-nav-btn" onclick="openTrendingModal()" title="Em Alta" style="color:var(--neon-pink);font-weight:700;font-size:15px;">🔥</button>
       <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()" title="Alternar Dia/Noite">🌙</button>
       <button class="theme-toggle" id="header-notif-btn" onclick="nav('notifications')" title="Notificações" style="position:relative;">🔔<span class="nbadge" id="header-notif-badge" style="display:none;position:absolute;top:-4px;right:-4px;">0</span></button>
-      <img class="nav-av" id="nav-av" src="https://api.dicebear.com/7.x/pixel-art/svg?seed=default" data-dicebear-direct="1" onclick="nav('profile')">
+      <img class="nav-av" loading="lazy" id="nav-av" src="https://api.dicebear.com/7.x/pixel-art/svg?seed=default" data-dicebear-direct="1" onclick="nav('profile')">
       <button class="hamburger" onclick="toggleDrawer()">☰</button>
     </div>
   </div>
@@ -29199,7 +29199,7 @@ async function searchMusic() {
         : `<span style="font-size:8px;background:rgba(0,255,204,.1);border:1px solid rgba(0,255,204,.3);color:var(--neon-cyan);border-radius:4px;padding:1px 4px;flex-shrink:0;">JM</span>`;
 
       item.innerHTML = `
-        <img class="music-capa" src="${t.capa_url || ''}" alt=""
+        <img class="music-capa" loading="lazy" src="${t.capa_url || ''}" alt=""
              onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1 1%22><rect fill=%22%230a0a2a%22/></svg>'">
         <div class="music-info" style="min-width:0;flex:1;">
           <div class="music-titulo" style="display:flex;align-items:center;gap:4px;">
@@ -29525,7 +29525,7 @@ function renderMusicBar(musicData) {
   const uid = 'pmb-' + Math.random().toString(36).slice(2,8);
   return `
     <div class="post-music-bar">
-      ${capa ? `<img class="post-music-capa" src="${capa}" alt="">` : ''}
+      ${capa ? `<img class="post-music-capa" loading="lazy"  src="${capa}" alt="">` : ''}
       <div class="post-music-info">
         <div class="post-music-titulo">🎵 ${xss(m.titulo||'Música')}</div>
         <div class="post-music-artista">${xss(m.artista||'')}</div>
@@ -30434,7 +30434,7 @@ function _renderMusicHistoryItems(items, list, append=false) {
     item.style.cssText = 'position:relative;';
     if(_musicSelected?.external_id === extId) item.classList.add('selected');
     item.innerHTML = `
-      <img class="music-capa" src="${capaSrc}" alt=""
+      <img class="music-capa" loading="lazy" src="${capaSrc}" alt=""
            onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1 1%22><rect fill=%22%230a0a2a%22/></svg>'">
       <div class="music-info" style="flex:1;min-width:0;">
         <div class="music-titulo">${xss(m.titulo || '—')}</div>
