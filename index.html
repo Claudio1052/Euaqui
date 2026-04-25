@@ -8317,7 +8317,12 @@ function toggleDrawer(){
 // Limite por página: 20  |  Scroll infinito via IntersectionObserver
 // ═══════════════════════════════════════════════════════════════════════════
 const FEED_PAGE_SIZE = 10; // ✅ OTIMIZAÇÃO: 10 posts por página reduz egress no scroll inicial
-let feedPage = 0;
+// ✅ CURSOR PAGINATION: em vez de feedPage (offset), guardamos o cursor do último
+// post carregado. Para "recentes" e "friends" usamos created_at; para "popular"
+// usamos {likes_count, id} como cursor composto. Isso elimina o OFFSET devastador
+// (que obrigava o PostgreSQL a ler e descartar N linhas antes de retornar os 10 desejados).
+let feedCursor = null;       // { created_at } | { likes_count, id } | null (primeira página)
+let feedPage = 0;            // mantido apenas para compatibilidade com _feedPageCache key
 let feedHasMore = true;
 let feedLoading = false;
 let feedScrollObserver = null;
@@ -8474,6 +8479,7 @@ async function loadFeed(force=false){
 
   if(force){
     feedPage = 0;
+    feedCursor = null; // ✅ CURSOR PAGINATION: reset do cursor ao recarregar
     feedHasMore = true;
     feedLoading = false;
     _feedEmptyRetries = 0;
@@ -8531,11 +8537,18 @@ async function loadFeed(force=false){
     if(feedHasMore) loadFeed(false);
     return;
   }
-  const from = feedPage * FEED_PAGE_SIZE;
-  const to   = from + FEED_PAGE_SIZE - 1;
+  // ✅ CURSOR PAGINATION: em vez de calcular from/to por offset (devastador para o PostgreSQL
+  // em páginas profundas), usamos o created_at ou likes_count do último post como âncora.
+  // A query WHERE created_at < cursor usa o índice e executa em milissegundos, independente
+  // do tamanho total da tabela.
   let q;
   if(feedTab==='popular'){
-    q=db.from('posts').select(SEL).order('likes_count',{ascending:false}).range(from,to);
+    // Para popular, o cursor composto é { likes_count, id } (evita empates quebrarem a paginação)
+    q = db.from('posts').select(SEL).order('likes_count',{ascending:false}).order('id',{ascending:false}).limit(FEED_PAGE_SIZE);
+    if(feedCursor){
+      // Filtra posts com likes_count menor que o cursor, ou igual mas com id menor (tiebreak)
+      q = q.or(`likes_count.lt.${feedCursor.likes_count},and(likes_count.eq.${feedCursor.likes_count},id.lt.${feedCursor.id})`);
+    }
   } else if(feedTab==='friends'&&CU){
     const ids=[...ctx.friends, ...ctx.following];
     if(!ids.length){
@@ -8546,10 +8559,12 @@ async function loadFeed(force=false){
       if(feedEnd){ feedEnd.style.display='block'; feedEnd.textContent='— FIM DO FEED —'; }
       return;
     }
-    q=db.from('posts').select(SEL).in('user_id',[...ids,CU.id]).order('created_at',{ascending:false}).range(from,to);
+    q = db.from('posts').select(SEL).in('user_id',[...ids,CU.id]).order('created_at',{ascending:false}).limit(FEED_PAGE_SIZE);
+    if(feedCursor) q = q.lt('created_at', feedCursor.created_at);
   } else {
     // Aba "Recentes" — ordena por recência; classificação de prioridade é aplicada in-memory
-    q=db.from('posts').select(SEL).order('created_at',{ascending:false}).range(from,to);
+    q = db.from('posts').select(SEL).order('created_at',{ascending:false}).limit(FEED_PAGE_SIZE);
+    if(feedCursor) q = q.lt('created_at', feedCursor.created_at);
   }
   const{data:posts,error:fetchErr}=await q;
   if(fetchErr){
@@ -8733,6 +8748,17 @@ async function loadFeed(force=false){
 
   feedPage++;
   feedLoading=false;
+
+  // ✅ CURSOR PAGINATION: avança o cursor para o último post retornado.
+  // Na próxima chamada, a query usará este valor como âncora (WHERE created_at < cursor).
+  if(filteredPosts.length){
+    const lastPost = filteredPosts[filteredPosts.length - 1];
+    if(feedTab==='popular'){
+      feedCursor = { likes_count: lastPost.likes_count, id: lastPost.id };
+    } else {
+      feedCursor = { created_at: lastPost.created_at };
+    }
+  }
 
   // Ativa observer de scroll infinito (primeira vez)
   _initInfiniteScroll();
@@ -31444,6 +31470,7 @@ if(typeof db !== 'undefined' && db?.auth?.onAuthStateChange){
 const _OA_VIEWERS_PAGE = 20; // registros por página
 let _oaViewersStoryId  = null;
 let _oaViewersPage     = 0;
+let _oaViewersCursor   = null; // ✅ CURSOR PAGINATION: created_at do último viewer carregado
 let _oaViewersTotal    = 0;
 let _oaViewersLoading  = false;
 let _oaViewersExhausted = false;
@@ -31481,16 +31508,18 @@ async function _oaViewersLoadPage(list){
   }
 
   try{
-    const from = _oaViewersPage * _OA_VIEWERS_PAGE;
-    const to   = from + _OA_VIEWERS_PAGE - 1;
-
-    // 1) Só os campos necessários, paginado com range
-    const { data: views, error: vErr } = await db
+    // ✅ CURSOR PAGINATION: em vez de .range(from, to) que força o PostgreSQL a escanear
+    // e descartar N linhas, usamos created_at do último viewer como âncora.
+    // WHERE created_at < cursor usa o índice e é O(log N), não O(N).
+    let viewsQ = db
       .from('olha_aqui_views')
       .select('user_id, created_at')
       .eq('story_id', _oaViewersStoryId)
       .order('created_at', { ascending: false })
-      .range(from, to);
+      .limit(_OA_VIEWERS_PAGE);
+    if(_oaViewersCursor) viewsQ = viewsQ.lt('created_at', _oaViewersCursor);
+
+    const { data: views, error: vErr } = await viewsQ;
     if(vErr) throw vErr;
 
     const batch = views || [];
@@ -31529,6 +31558,8 @@ async function _oaViewersLoadPage(list){
       });
       list.appendChild(frag);
       _oaViewersPage++;
+      // ✅ Avança o cursor para o created_at do último viewer desta página
+      if(batch.length) _oaViewersCursor = batch[batch.length - 1].created_at;
       // Se retornou menos que o tamanho da página, não há mais dados
       if(batch.length < _OA_VIEWERS_PAGE) _oaViewersExhausted = true;
     }
