@@ -13163,9 +13163,7 @@ async function loadProfilePage(userId){
     // Build cover bar with DOM
     if(coverBar){
       coverBar.innerHTML = '';
-      const cov = document.createElement('div');
-      cov.style.cssText = 'height:120px;background:linear-gradient(135deg,#0a0a2a,#1a0a3a);';
-      coverBar.appendChild(cov);
+      // Sem capa — perfil começa direto no topo, alinhado com a navbar
 
       const pbar = document.createElement('div');
       // Layout inline 100% — imune a CSS externo
@@ -13272,6 +13270,14 @@ async function loadProfilePage(userId){
       btns.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;';
 
       if(isOwn){
+        // Botão Personalizar — acima do Editar Perfil
+        const lpInlineBtn = document.createElement('button'); lpInlineBtn.className='post-btn';
+        lpInlineBtn.style.cssText='background:none;border:1px solid rgba(255,51,102,.6);color:#ff3366;font-size:18px;padding:5px 10px;min-width:36px;display:flex;align-items:center;justify-content:center;border-radius:50%;width:36px;height:36px;';
+        lpInlineBtn.title='Personalizar Layout';
+        lpInlineBtn.innerHTML='<span style="filter:drop-shadow(0 0 4px #ff3366);line-height:1;">🎨</span>';
+        lpInlineBtn.onclick=()=>{ if(typeof window.openLayoutEditor==='function') window.openLayoutEditor(); };
+        btns.appendChild(lpInlineBtn);
+
         const b = document.createElement('button'); b.className='post-btn';
         b.style.cssText='background:none;border:1px solid var(--border-glow);color:var(--neon-cyan);font-size:11px;padding:7px 12px;';
         b.textContent='✏ Editar Perfil'; b.onclick=()=>showSettings();
@@ -31953,67 +31959,10 @@ window.oaNavigateFromHeader = function(){
   };
 
   // ─────────────────────────────────────────────────────────────
-  // INJEÇÃO DO BOTÃO 🎨 LAYOUT — na barra do perfil do próprio usuário
+  // INJEÇÃO DO BOTÃO 🎨 LAYOUT — desabilitada (botão agora inline na barra de botões)
   // ─────────────────────────────────────────────────────────────
   function injectLayoutButton(){
-    const page = document.getElementById('page-profile');
-    if(!page) return false;
-    if(!page.classList.contains('active')) return false;
-    const coverBar = document.getElementById('profile-cover-bar');
-    if(!coverBar) return false;
-    const uid = coverBar.dataset.profileUid;
-    const currentUser = _cu();
-    if(!uid || !currentUser || uid !== currentUser.id) return false; // só no perfil do próprio
-    // Evita duplicar
-    if(page.querySelector('#lp-open-btn')) return true;
-
-    // Pega a div da CAPA (primeiro filho do coverBar — o banner em si)
-    const coverEl = coverBar.querySelector('div:first-child');
-    if(!coverEl) return false;
-
-    // Garante position:relative no cover para posicionar o botão flutuante
-    if(!coverEl.style.position) coverEl.style.position = 'relative';
-
-    const lpBtn = document.createElement('button');
-    lpBtn.id = 'lp-open-btn';
-    lpBtn.type = 'button';
-    lpBtn.title = 'Personalizar Layout do Perfil';
-    lpBtn.setAttribute('aria-label','Personalizar Layout');
-    lpBtn.style.cssText = [
-      'position:absolute',
-      'top:12px',
-      'right:12px',
-      'z-index:20',
-      'display:flex',
-      'align-items:center',
-      'justify-content:center',
-      'background:rgba(0,0,0,.45)',
-      'border:2px solid rgba(255,51,102,.7)',
-      'color:#ff3366',
-      'font-size:18px',
-      'width:36px',
-      'height:36px',
-      'padding:0',
-      'border-radius:50%',
-      'cursor:pointer',
-      'box-shadow:0 2px 10px rgba(255,51,102,.5)',
-      'backdrop-filter:blur(4px)',
-      'transition:transform .15s ease, box-shadow .15s ease'
-    ].join(';');
-    lpBtn.innerHTML = '<span style="font-size:18px;line-height:1;filter:drop-shadow(0 0 4px #ff3366);">🎨</span>';
-    lpBtn.onmouseenter = function(){
-      this.style.transform = 'scale(1.12)';
-      this.style.boxShadow = '0 4px 18px rgba(255,51,102,.75)';
-    };
-    lpBtn.onmouseleave = function(){
-      this.style.transform = '';
-      this.style.boxShadow = '0 2px 10px rgba(255,51,102,.5)';
-    };
-    lpBtn.onclick = function(e){
-      e.preventDefault(); e.stopPropagation();
-      if(typeof window.openLayoutEditor === 'function') window.openLayoutEditor();
-    };
-    coverEl.appendChild(lpBtn);
+    // Botão 🎨 já é criado inline em renderProfile() junto ao "Editar Perfil"
     return true;
   }
 
