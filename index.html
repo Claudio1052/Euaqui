@@ -7584,6 +7584,188 @@ SELECT cron.schedule(
 
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdwdXN0bm13eGxvbGd5ZXZqanRmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NDMyMDksImV4cCI6MjA5MDMxOTIwOX0.0-8H5lQkbyholETlTyvfhmUnOOQKY7678hLCCLtjaNA';
 
+// ══════════════════════════════════════════════════════════════════════════════
+// 🛰️  EUAQUI TELEMETRIA v1 — Observabilidade de Frontend (v79)
+// ══════════════════════════════════════════════════════════════════════════════
+// Captura erros invisíveis (Promise rejections, JS runtime errors) e envia
+// uma notificação silenciosa para o utilizador kodash1 via tabela notifications.
+// Coleta: modelo do aparelho, trilha de cliques (breadcrumbs), linha do erro.
+// ══════════════════════════════════════════════════════════════════════════════
+(function _euaquiTelemetria() {
+  // ── Configuração ────────────────────────────────────────────────────────────
+  const ADMIN_USERNAME   = 'kodash1';          // utilizador que recebe alertas
+  const MAX_ERRORS_HOUR  = 10;                 // anti-spam: máx erros enviados/hora
+  const BREADCRUMB_LIMIT = 20;                 // últimas N interações registradas
+  const IGNORE_PATTERNS  = [                   // erros externos ruidosos
+    /Script error/i,
+    /ResizeObserver loop/i,
+    /Non-Error promise rejection/i,
+    /Loading chunk/i,
+  ];
+
+  // ── Estado interno ──────────────────────────────────────────────────────────
+  let _breadcrumbs   = [];    // trilha de cliques [{t, tag, text, page}]
+  let _errCount      = 0;     // erros enviados na hora corrente
+  let _errWindowStart= Date.now();
+  let _adminUserId   = null;  // UUID do kodash1 (resolvido na 1ª sessão)
+  let _resolving     = false; // lock para não resolver 2× em paralelo
+
+  // ── Coleta info do dispositivo ──────────────────────────────────────────────
+  function _deviceInfo() {
+    const ua = navigator.userAgent || '';
+    // Extrai modelo Android (ex: "Xiaomi Redmi Note 8" de "... (Linux; Android 10; Redmi Note 8)")
+    const modelMatch = ua.match(/;\s*([^;)]+)\s*Build\//);
+    const model = modelMatch ? modelMatch[1].trim() : 'desconhecido';
+    return {
+      model,
+      ua: ua.slice(0, 200),
+      screen: `${screen.width}×${screen.height}`,
+      lang: navigator.language,
+      online: navigator.onLine,
+      memory: navigator.deviceMemory ? `${navigator.deviceMemory}GB` : '?',
+      cores: navigator.hardwareConcurrency || '?',
+      platform: navigator.platform || '?',
+    };
+  }
+
+  // ── Trilha de cliques (breadcrumbs) ─────────────────────────────────────────
+  document.addEventListener('click', function(e) {
+    const el   = e.target;
+    const tag  = el.tagName || '';
+    const text = (el.textContent || el.title || el.alt || '').trim().slice(0, 60);
+    const id   = el.id ? `#${el.id}` : '';
+    _breadcrumbs.push({
+      t:    new Date().toISOString(),
+      tag:  tag + id,
+      text: text || '(sem texto)',
+      page: window._eaCurrentPage || document.title,
+    });
+    if (_breadcrumbs.length > BREADCRUMB_LIMIT) _breadcrumbs.shift();
+  }, true);
+
+  // ── Resolve UUID do admin uma única vez ─────────────────────────────────────
+  async function _resolveAdminId() {
+    if (_adminUserId)   return _adminUserId;
+    if (_resolving)     return null;
+    _resolving = true;
+    try {
+      const res = await fetch(
+        `${SB_URL}/rest/v1/profiles?username=eq.${ADMIN_USERNAME}&select=id&limit=1`,
+        { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } }
+      );
+      const rows = await res.json();
+      _adminUserId = rows?.[0]?.id || null;
+    } catch (_) { /* sem rede: fica null, tenta na próxima */ }
+    _resolving = false;
+    return _adminUserId;
+  }
+
+  // ── Envia notificação para kodash1 ──────────────────────────────────────────
+  async function _sendErrorAlert(label, message, stack, source, lineno) {
+    // Anti-spam: reseta contador a cada hora
+    const now = Date.now();
+    if (now - _errWindowStart > 3600000) { _errCount = 0; _errWindowStart = now; }
+    if (_errCount >= MAX_ERRORS_HOUR) return;
+
+    // Filtra erros conhecidos e sem importância
+    for (const p of IGNORE_PATTERNS) if (p.test(message)) return;
+
+    _errCount++;
+
+    const adminId = await _resolveAdminId();
+    if (!adminId) return; // kodash1 não encontrado, abandona silenciosamente
+
+    const device    = _deviceInfo();
+    const crumbs    = _breadcrumbs.slice(-10); // últimas 10 interações
+    const pageNow   = window._eaCurrentPage || document.title;
+    const userLabel = (typeof CU !== 'undefined' && CU?.email)
+      ? CU.email
+      : 'anônimo';
+
+    // Monta conteúdo da notificação (deve caber no campo content)
+    const summary = [
+      `🛰️ [ERRO] ${label}`,
+      `📱 ${device.model} | ${device.screen} | ${device.lang}`,
+      `👤 Usuário: ${userLabel}`,
+      `📄 Página: ${pageNow}`,
+      `💬 ${message}`.slice(0, 120),
+      stack ? `🔍 ${stack.split('\n')[0]}`.slice(0, 120) : '',
+      source ? `📌 ${source}:${lineno}` : '',
+      `🖱️ Cliques: ${crumbs.map(c => c.text).join(' → ')}`.slice(0, 200),
+    ].filter(Boolean).join('\n');
+
+    try {
+      await fetch(`${SB_URL}/rest/v1/notifications`, {
+        method : 'POST',
+        headers: {
+          apikey        : SB_KEY,
+          Authorization : `Bearer ${SB_KEY}`,
+          'Content-Type': 'application/json',
+          Prefer        : 'return=minimal',
+        },
+        body: JSON.stringify({
+          user_id  : adminId,
+          actor_id : adminId,  // sistema → notif de si mesmo
+          type     : 'system',
+          content  : summary.slice(0, 500),
+          read     : false,
+        }),
+      });
+    } catch (_) { /* falha silenciosa — não queremos loop de erros */ }
+  }
+
+  // ── Intercepta erros JS síncronos ───────────────────────────────────────────
+  window.addEventListener('error', function(e) {
+    _sendErrorAlert(
+      'JS Runtime Error',
+      e.message || 'Erro sem mensagem',
+      e.error?.stack || '',
+      e.filename || '',
+      e.lineno  || 0
+    );
+  });
+
+  // ── Intercepta Promises rejeitadas sem .catch() ──────────────────────────────
+  window.addEventListener('unhandledrejection', function(e) {
+    const reason = e.reason;
+    const msg    = reason?.message || String(reason) || 'Promise rejeitada';
+    const stack  = reason?.stack   || '';
+    _sendErrorAlert('Unhandled Promise Rejection', msg, stack, '', 0);
+  });
+
+  // ── Patch em fetch() para capturar falhas de rede silenciosas ────────────────
+  const _origFetch = window.fetch;
+  window.fetch = async function(...args) {
+    try {
+      const res = await _origFetch.apply(this, args);
+      // Erros HTTP 5xx do Supabase (ex: limite de DB excedido)
+      if (!res.ok && res.status >= 500) {
+        const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+        // Evita loop: não reporta erro na própria chamada de telemetria
+        if (!url.includes('/rest/v1/notifications')) {
+          _sendErrorAlert(
+            `HTTP ${res.status} Error`,
+            `Falha em: ${url.replace(SB_URL, '[SB]').slice(0, 120)}`,
+            '',
+            url.slice(0, 120),
+            0
+          );
+        }
+      }
+      return res;
+    } catch (err) {
+      const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+      if (!url.includes('/rest/v1/notifications')) {
+        _sendErrorAlert('Network Error', err.message || 'Falha de rede', err.stack || '', url.slice(0, 120), 0);
+      }
+      throw err; // re-lança para não quebrar o fluxo normal
+    }
+  };
+
+  console.log('[EuAqui] 🛰️ Telemetria de erros ativa → alertas enviados para @' + ADMIN_USERNAME);
+})();
+// ══════════════════════════════════════════════════════════════════════════════
+
 // ===== STATE =====
 let CU=null,CP=null;
 let feedTab='recent',friendTab='friends',commTab='all';
