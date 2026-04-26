@@ -266,20 +266,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="theme-color" content="#0a0a2a">
 <title>EuAqui — Sua rede, seu mundo</title>
-
-<!-- ══ OPEN GRAPH — padrão da plataforma (sobrescrito por JS ao carregar conteúdo) ══ -->
-<meta id="og-title"       property="og:title"       content="EuAqui — Sua rede, seu mundo">
-<meta id="og-description" property="og:description" content="Descubra lojas, produtos e pessoas perto de você no EuAqui.">
-<meta id="og-image"       property="og:image"       content="https://gpustnmwxlolgyevjjtf.supabase.co/storage/v1/object/public/media/og-default.png">
-<meta id="og-url"         property="og:url"         content="https://euaqui.app/">
-<meta id="og-type"        property="og:type"        content="website">
-<meta id="og-site-name"   property="og:site_name"   content="EuAqui">
-<!-- Twitter Card -->
-<meta id="tw-card"        name="twitter:card"        content="summary_large_image">
-<meta id="tw-title"       name="twitter:title"       content="EuAqui — Sua rede, seu mundo">
-<meta id="tw-description" name="twitter:description" content="Descubra lojas, produtos e pessoas perto de você no EuAqui.">
-<meta id="tw-image"       name="twitter:image"       content="https://gpustnmwxlolgyevjjtf.supabase.co/storage/v1/object/public/media/og-default.png">
-<!-- ══════════════════════════════════════════════════════════════════════════════ -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link href="https://fonts.googleapis.com/css2?family=VT323&family=Silkscreen:wght@400;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
 <link id="ea-custom-font-link" rel="stylesheet" href="">
@@ -7917,104 +7903,6 @@ const db = createClient(SB_URL, SB_KEY, {
    ══════════════════════════════════════════════════════════════════════════
 ─────────────────────────────────────────────────────────────────────────── */
 
-// ══════════════════════════════════════════════════════════════
-// 🔗 OPEN GRAPH — Atualização dinâmica das meta tags
-// Bots que executam JS (Telegram, LinkedIn, Google) verão as
-// tags corretas. Para WhatsApp/Facebook (bots sem JS) o
-// Cloudflare Worker em worker-og.js faz a injeção server-side.
-// ══════════════════════════════════════════════════════════════
-function _setMeta(id, value) {
-  const el = document.getElementById(id);
-  if (el && value) el.setAttribute('content', value);
-}
-
-/**
- * Atualiza todas as meta Open Graph + Twitter Card da página.
- * Chame sempre que navegar para um produto, loja, post ou perfil.
- *
- * @param {Object} opts
- * @param {string} opts.title       - Título do cartão
- * @param {string} opts.description - Descrição curta
- * @param {string} opts.image       - URL absoluta da imagem (mín. 600×315 px)
- * @param {string} opts.url         - URL canônica compartilhável
- * @param {string} [opts.type]      - 'website' | 'product' | 'profile' (default: 'website')
- */
-function updateOGTags({ title, description, image, url, type = 'website' } = {}) {
-  try {
-    const safeTitle = title || 'EuAqui — Sua rede, seu mundo';
-    const safeDesc  = description || 'Descubra lojas, produtos e pessoas perto de você no EuAqui.';
-    const safeImg   = image || 'https://gpustnmwxlolgyevjjtf.supabase.co/storage/v1/object/public/media/og-default.png';
-    const safeUrl   = url || window.location.href;
-
-    document.title = safeTitle;
-    _setMeta('og-title',       safeTitle);
-    _setMeta('og-description', safeDesc);
-    _setMeta('og-image',       safeImg);
-    _setMeta('og-url',         safeUrl);
-    _setMeta('og-type',        type);
-    _setMeta('tw-title',       safeTitle);
-    _setMeta('tw-description', safeDesc);
-    _setMeta('tw-image',       safeImg);
-  } catch(e) { console.warn('[OG] updateOGTags:', e); }
-}
-
-/**
- * Lê os query params da URL ao abrir a página e pre-carrega as
- * OG tags antes mesmo do utilizador fazer login.
- * Cobre: ?post=<id>  ?biz=<id>  ?comm=<id>
- */
-async function _bootOGFromUrl() {
-  try {
-    const params = new URLSearchParams(location.search);
-    const postId = params.get('post');
-    const bizId  = params.get('biz');
-    const commId = params.get('comm');
-    const baseUrl = location.origin + location.pathname;
-
-    if (postId) {
-      const { data: post } = await db.from('posts')
-        .select('content, media_url, user_id, profiles(full_name, username, avatar_url)')
-        .eq('id', postId).maybeSingle();
-      if (post) {
-        const author = post.profiles?.full_name || post.profiles?.username || 'Alguém';
-        const snippet = (post.content || '').slice(0, 120).replace(/\n/g, ' ');
-        updateOGTags({
-          title: `${author} no EuAqui`,
-          description: snippet || 'Veja este post no EuAqui.',
-          image: post.media_url || undefined,
-          url: baseUrl + '?post=' + postId,
-        });
-      }
-    } else if (bizId) {
-      const { data: biz } = await db.from('businesses')
-        .select('name, description, logo_url, category')
-        .eq('id', bizId).maybeSingle();
-      if (biz) {
-        updateOGTags({
-          title: biz.name + ' — EuAqui',
-          description: biz.description || ('Conheça ' + biz.name + ' no EuAqui e siga para novidades!'),
-          image: biz.logo_url || undefined,
-          url: baseUrl + '?biz=' + bizId,
-          type: 'website',
-        });
-      }
-    } else if (commId) {
-      const { data: comm } = await db.from('communities')
-        .select('name, description, avatar_url')
-        .eq('id', commId).maybeSingle();
-      if (comm) {
-        updateOGTags({
-          title: comm.name + ' — Comunidade no EuAqui',
-          description: comm.description || ('Junte-se à comunidade ' + comm.name + ' no EuAqui!'),
-          image: comm.avatar_url || undefined,
-          url: baseUrl + '?comm=' + commId,
-        });
-      }
-    }
-  } catch(e) { console.warn('[OG] _bootOGFromUrl:', e); }
-}
-// ══════════════════════════════════════════════════════════════
-
 // ===== BOOT — simples e direto =====
 function hideLS(){
   const ls=document.getElementById('loading-screen');
@@ -8088,9 +7976,8 @@ function showApp(){
   setTimeout(()=>{ try{ initTheme(); }catch(e){} }, 50);
   setTimeout(()=>{ try{ checkBizInviteUrl(); }catch(e){} }, 1200);
   setTimeout(()=>{ try{ checkCommInviteUrl(); }catch(e){} }, 1400);
+  setTimeout(()=>{ try{ checkPostUrl(); }catch(e){} }, 1600);
   setTimeout(()=>{ try{ checkAppointmentDayNotifications(); }catch(e){} }, 3000);
-  // Atualiza OG tags com base na URL (para bots JS-capable como Telegram/LinkedIn)
-  setTimeout(()=>{ try{ _bootOGFromUrl(); }catch(e){} }, 300);
 }
 function showAuth(){
   _appInitDone = true;
@@ -15984,14 +15871,6 @@ async function _goToOriginalPost(postId){
 }
 
 function openShareModal(postId, authorName, preview){
-  // ── Open Graph: atualiza meta tags para este post ──
-  try {
-    updateOGTags({
-      title: (authorName ? authorName + ' no EuAqui' : 'Post no EuAqui'),
-      description: preview || 'Veja este post no EuAqui!',
-      url: window.location.origin + window.location.pathname + '?post=' + postId,
-    });
-  } catch(e) {}
   // Remove modal anterior se existir
   document.getElementById('share-modal-overlay')?.remove();
 
@@ -19911,15 +19790,6 @@ async function followBizFromNotif(bizId, notifId, btn){
 }
 
 async function openBizDetail(biz){
-  // ── Open Graph: atualiza meta tags para esta loja ──
-  try {
-    updateOGTags({
-      title: (biz.name || 'Loja') + ' — EuAqui',
-      description: biz.description || ('Conheça ' + (biz.name||'esta loja') + ' no EuAqui e siga para novidades!'),
-      image: biz.logo_url || biz.banner_url || undefined,
-      url: location.origin + location.pathname + '?biz=' + biz.id,
-    });
-  } catch(e) {}
   // Prevenir abertura de múltiplos modais — fecha o anterior antes de abrir
   const existing = document.querySelector('[data-biz-overlay]');
   if(existing){ existing.remove(); }
@@ -23206,6 +23076,90 @@ function checkBizInviteUrl(){
       if(biz) openBizDetail(biz);
     }, 800);
   }
+}
+
+// ── checkPostUrl: abre o post directamente quando a URL tem ?post=<id> ──────
+// Chamado no showApp() — garante que links partilhados no WhatsApp/redes
+// abrem o post específico em vez de ir para a página inicial.
+async function checkPostUrl(){
+  const params = new URLSearchParams(window.location.search);
+  const postId = params.get('post');
+  if(!postId) return;
+
+  // Limpa o param da URL sem recarregar
+  history.replaceState(null, '', window.location.pathname);
+
+  // Garante que estamos na home
+  nav('home');
+
+  // Aguarda o feed carregar
+  await new Promise(r => setTimeout(r, 800));
+
+  // Tenta encontrar o post já no DOM
+  let postEl = document.getElementById('post-' + postId);
+
+  if(postEl){
+    // Post já está no feed — faz scroll e destaca
+    _scrollAndHighlightPost(postEl);
+    return;
+  }
+
+  // Post não está no feed — busca no Supabase e insere no topo
+  try{
+    const SEL = 'id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame)';
+    const {data: post} = await db.from('posts').select(SEL).eq('id', postId).maybeSingle();
+    if(!post){ showToast('Post não encontrado','error'); return; }
+
+    // Insere o post no topo do feed com destaque visual
+    const feedEl = document.getElementById('feed');
+    if(!feedEl) return;
+
+    const html = renderPost(post, {}, '');
+    if(!html) return;
+
+    // Cria wrapper com destaque neon
+    const wrapper = document.createElement('div');
+    wrapper.id = 'post-share-highlight';
+    wrapper.style.cssText = 'border:2px solid var(--neon-cyan);border-radius:16px;box-shadow:0 0 24px rgba(0,255,204,.25);margin-bottom:12px;animation:postHighlight 0.5s ease;';
+    wrapper.innerHTML = html;
+
+    // Insere estilo de animação se não existir
+    if(!document.getElementById('post-highlight-style')){
+      const style = document.createElement('style');
+      style.id = 'post-highlight-style';
+      style.textContent = '@keyframes postHighlight{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:translateY(0)}}';
+      document.head.appendChild(style);
+    }
+
+    feedEl.insertBefore(wrapper, feedEl.firstChild);
+
+    // Scroll para o topo e destaca
+    window.scrollTo({top: 0, behavior: 'smooth'});
+    showToast('📌 Post partilhado aberto!', 'success');
+
+    // Remove o destaque após 4 segundos
+    setTimeout(()=>{
+      wrapper.style.transition = 'border-color 1s, box-shadow 1s';
+      wrapper.style.borderColor = 'transparent';
+      wrapper.style.boxShadow = 'none';
+    }, 4000);
+
+  }catch(e){
+    console.warn('[checkPostUrl]', e);
+  }
+}
+
+function _scrollAndHighlightPost(el){
+  el.scrollIntoView({behavior: 'smooth', block: 'center'});
+  el.style.transition = 'box-shadow 0.3s, border 0.3s';
+  el.style.boxShadow  = '0 0 24px rgba(0,255,204,.4)';
+  el.style.border     = '2px solid var(--neon-cyan)';
+  el.style.borderRadius = '16px';
+  showToast('📌 Post partilhado!', 'success');
+  setTimeout(()=>{
+    el.style.boxShadow = '';
+    el.style.border    = '';
+  }, 4000);
 }
 
 
@@ -26868,15 +26822,6 @@ async function copyCommInvite(commId, name){
     commData = cd;
     realMemberCount = mc || 0;
     if(cd){ if(!window._commCache)window._commCache={}; window._commCache[commId]=cd; }
-    // ── Open Graph: atualiza meta tags para esta comunidade ──
-    if(cd){
-      updateOGTags({
-        title: (cd.name||name) + ' — Comunidade no EuAqui',
-        description: cd.description || ('Junte-se à comunidade ' + (cd.name||name) + ' no EuAqui!'),
-        image: cd.avatar_url || cd.banner_url || undefined,
-        url: url,
-      });
-    }
   }catch(e){}
 
   // Buscar amigos
