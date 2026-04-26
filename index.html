@@ -265,6 +265,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="theme-color" content="#0a0a2a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="EuAqui">
+<link rel="manifest" id="ea-pwa-manifest">
 <title>EuAqui — Sua rede, seu mundo</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link href="https://fonts.googleapis.com/css2?family=VT323&family=Silkscreen:wght@400;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
@@ -8949,6 +8954,10 @@ async function loadFeed(force=false){
   // Cache de posts para o compartilhador
   if(!window._postCache) window._postCache = {};
   filteredPosts.forEach(p=>{ window._postCache[p.id] = p; });
+  // 🗄️ PWA: persiste posts no IndexedDB para leitura offline (só primeira página)
+  if(feedPage === 0 && typeof window._eaCachePosts === 'function'){
+    window._eaCachePosts(filteredPosts).catch(()=>{});
+  }
 
   const html = rendered.join('');
 
@@ -33504,6 +33513,11 @@ export default {
 <audio id="music-preview-player" style="display:none;" preload="none"></audio>
 
 <!-- ══ MODAL CONFIRMAR EXCLUSÃO DE FOTO/VÍDEO ═══════════════════════ -->
+<!-- ══ PWA OFFLINE BANNER ══════════════════════════════════════════ -->
+<div id="ea-offline-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:999999;background:#ef4444;color:#fff;font-family:'Space Mono',monospace;font-size:12px;text-align:center;padding:8px 16px;letter-spacing:.5px;">
+  📡 Sem conexão — exibindo dados salvos. Reconectando...
+</div>
+
 <div id="pp-delete-confirm-overlay" onclick="if(event.target===this)ppDeleteCancel()">
   <div id="pp-delete-confirm-box">
     <div class="pp-del-icon" id="pp-del-icon">🗑️</div>
@@ -33673,6 +33687,171 @@ export default {
     <div id="oa-viewers-modal-list"></div>
   </div>
 </div>
+
+
+<!-- ══ PWA — MANIFEST + SERVICE WORKER + OFFLINE RESILIENCE ═══════════════
+     Estratégia: Stale-While-Revalidate + IndexedDB cache do feed
+     O SW é registrado via Blob URL (single-file HTML sem servidor próprio)
+══════════════════════════════════════════════════════════════════════════ -->
+<script>
+(function(){
+  // ── Gera e injeta o Web App Manifest dinamicamente ──────────────────────
+  const manifest = {
+    name: 'EuAqui',
+    short_name: 'EuAqui',
+    description: 'Sua rede, seu mundo',
+    start_url: '/',
+    display: 'standalone',
+    background_color: '#0a0a2a',
+    theme_color: '#0a0a2a',
+    orientation: 'portrait-primary',
+    icons: [
+      { src: 'https://gpustnmwxlolgyevjjtf.supabase.co/storage/v1/object/public/avatars/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+      { src: 'https://gpustnmwxlolgyevjjtf.supabase.co/storage/v1/object/public/avatars/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+    ]
+  };
+  const mBlob = new Blob([JSON.stringify(manifest)], {type:'application/json'});
+  const mUrl  = URL.createObjectURL(mBlob);
+  document.getElementById('ea-pwa-manifest').href = mUrl;
+
+  // ── IndexedDB helpers para cache do feed ─────────────────────────────────
+  const _IDB_NAME    = 'euaqui-cache';
+  const _IDB_VERSION = 1;
+  const _STORE_FEED  = 'feed-posts';
+
+  function _openIDB(){
+    return new Promise((res, rej)=>{
+      const req = indexedDB.open(_IDB_NAME, _IDB_VERSION);
+      req.onupgradeneeded = e => {
+        const db = e.target.result;
+        if(!db.objectStoreNames.contains(_STORE_FEED)){
+          db.createObjectStore(_STORE_FEED, {keyPath:'id'});
+        }
+      };
+      req.onsuccess = e => res(e.target.result);
+      req.onerror   = e => rej(e.target.error);
+    });
+  }
+
+  // Salva array de posts no IndexedDB
+  window._eaCachePosts = async function(posts){
+    if(!posts?.length) return;
+    try{
+      const db = await _openIDB();
+      const tx = db.transaction(_STORE_FEED, 'readwrite');
+      const st = tx.objectStore(_STORE_FEED);
+      posts.forEach(p => st.put({...p, _cachedAt: Date.now()}));
+    }catch(e){ console.warn('[PWA] cache write:', e); }
+  };
+
+  // Lê posts do IndexedDB (ordenados por created_at desc)
+  window._eaReadCachedPosts = async function(){
+    try{
+      const db = await _openIDB();
+      return new Promise((res, rej)=>{
+        const tx = db.transaction(_STORE_FEED, 'readonly');
+        const st = tx.objectStore(_STORE_FEED);
+        const req = st.getAll();
+        req.onsuccess = ()=> res((req.result||[]).sort((a,b)=>b.created_at>a.created_at?1:-1).slice(0,30));
+        req.onerror   = ()=> res([]);
+      });
+    }catch(e){ return []; }
+  };
+
+  // ── Detector online/offline ───────────────────────────────────────────────
+  const _banner = document.getElementById('ea-offline-banner');
+  let   _wasOffline = false;
+
+  function _setOffline(offline){
+    if(!_banner) return;
+    _banner.style.display = offline ? 'block' : 'none';
+    if(offline && !_wasOffline){
+      _wasOffline = true;
+      // Mostra feed cacheado se o feed estiver vazio
+      const feed = document.getElementById('feed');
+      if(feed && feed.children.length === 0){
+        window._eaReadCachedPosts().then(posts=>{
+          if(!posts.length) return;
+          // Usa renderPost existente para exibir posts cacheados
+          let html = '';
+          posts.forEach(p=>{
+            try{ html += (renderPost(p, {}, '') || ''); }catch(e){}
+          });
+          if(html){
+            feed.innerHTML = html +
+              '<div style="text-align:center;padding:16px;font-size:11px;font-family:Space Mono,monospace;color:rgba(255,255,255,.35);">📦 Dados salvos — sem conexão</div>';
+          }
+        });
+      }
+    } else if(!offline && _wasOffline){
+      _wasOffline = false;
+      // Quando voltar online, recarrega silenciosamente
+      setTimeout(()=>{
+        try{
+          cachedPostIds.clear(); cachedPosts={}; lastFeedLoad=0;
+          loadFeed(true);
+        }catch(e){}
+      }, 800);
+    }
+  }
+
+  window.addEventListener('online',  ()=> _setOffline(false));
+  window.addEventListener('offline', ()=> _setOffline(true));
+  if(!navigator.onLine) _setOffline(true);
+
+  // ── Service Worker via Blob URL (single-file) ─────────────────────────────
+  if('serviceWorker' in navigator){
+    const SW_CODE = `
+const CACHE = 'euaqui-sw-v1';
+const PRECACHE = ['/'];
+
+// Instala e pré-cacheia o shell
+self.addEventListener('install', e => {
+  self.skipWaiting();
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(PRECACHE).catch(()=>{})));
+});
+
+self.addEventListener('activate', e => {
+  e.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))
+    ).then(()=> self.clients.claim())
+  );
+});
+
+// Stale-While-Revalidate para GET de assets e da própria página
+self.addEventListener('fetch', e => {
+  const url = new URL(e.request.url);
+
+  // Ignora Supabase API, auth, realtime WebSockets — sempre vai à rede
+  if(url.hostname.includes('supabase.co') ||
+     url.hostname.includes('googleapis.com') ||
+     url.protocol === 'blob:' ||
+     e.request.method !== 'GET') return;
+
+  // Para a própria página e assets estáticos: Stale-While-Revalidate
+  e.respondWith(
+    caches.open(CACHE).then(async cache => {
+      const cached = await cache.match(e.request);
+      const fetchPromise = fetch(e.request).then(res => {
+        if(res.ok) cache.put(e.request, res.clone());
+        return res;
+      }).catch(()=> null);
+
+      // Retorna cache imediatamente; atualiza em background
+      return cached || fetchPromise || new Response('Offline', {status:503});
+    })
+  );
+});
+`;
+    const swBlob = new Blob([SW_CODE], {type:'application/javascript'});
+    const swUrl  = URL.createObjectURL(swBlob);
+    navigator.serviceWorker.register(swUrl, {scope:'/'})
+      .then(()=> console.log('[PWA] Service Worker registrado'))
+      .catch(e => console.warn('[PWA] SW registro falhou (normal em file://):', e.message));
+  }
+})();
+</script>
 
 </body>
 </html>
