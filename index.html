@@ -18344,7 +18344,10 @@ async function _updateBizSalesCounts(bizList){
   const servicos = bizList.filter(b => b.category !== 'loja').map(b => b.id);
 
   // Mapa: business_id → contagem real
+  // Inicializa todos os IDs com 0 — assim negócios sem vendas também entram no mapa
+  // e o hasOwnProperty distingue "zero real" de "query não encontrou"
   const countMap = {};
+  bizList.forEach(b => { countMap[b.id] = 0; });
 
   try{
     // ── Lojas: purchases concluídas agrupadas por business_id ─────────────────
@@ -18385,12 +18388,25 @@ async function _updateBizSalesCounts(bizList){
   }
 
   // ── Atualiza spans e sincroniza banco silenciosamente ─────────────────────
+  // IMPORTANTE: só atualiza se o ID existir no countMap.
+  // Se não existir, significa que a query não retornou linhas para esse negócio
+  // (zero vendas real) — aí sim gravamos 0. Mas não confundimos "ausente do mapa"
+  // com "zero": usamos hasOwnProperty para distinguir os dois casos.
   bizList.forEach(biz=>{
-    const realCount = countMap[biz.id] || 0;
+    // Negócio não apareceu em nenhuma query → sem dados = não toca no span nem no banco
+    if(!Object.prototype.hasOwnProperty.call(countMap, biz.id)) return;
+
+    const realCount = countMap[biz.id]; // já é número >= 0
     const span = document.getElementById('biz-card-sales-' + biz.id);
-    if(span && parseInt(span.textContent) !== realCount){
+    if(!span) return;
+
+    // Só atualiza o DOM se o valor realmente mudou
+    if(parseInt(span.textContent) !== realCount){
       span.textContent = realCount;
-      // Sincroniza o contador no banco (silencioso, sem esperar resposta)
+    }
+
+    // Sincroniza banco apenas se diferente do que estava salvo
+    if(realCount !== (biz.sales_done||0)){
       db.from('businesses')
         .update({sales_done: realCount})
         .eq('id', biz.id)
