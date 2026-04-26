@@ -7976,8 +7976,8 @@ function showApp(){
   setTimeout(()=>{ try{ initTheme(); }catch(e){} }, 50);
   setTimeout(()=>{ try{ checkBizInviteUrl(); }catch(e){} }, 1200);
   setTimeout(()=>{ try{ checkCommInviteUrl(); }catch(e){} }, 1400);
-  // checkPostUrl: chamado após feed inicial carregar (loadFeed demora ~500ms)
-  setTimeout(()=>{ try{ checkPostUrl(); }catch(e){} }, 900);
+  // checkPostUrl: abre modal do post imediatamente — não depende do feed
+  setTimeout(()=>{ try{ checkPostUrl(); }catch(e){} }, 300);
   setTimeout(()=>{ try{ checkAppointmentDayNotifications(); }catch(e){} }, 3000);
 }
 function showAuth(){
@@ -23079,79 +23079,69 @@ function checkBizInviteUrl(){
   }
 }
 
-// ── checkPostUrl: abre o post directamente quando a URL tem ?post=<id> ──────
+// ── checkPostUrl: abre o post em modal quando a URL tem ?post=<id> ──────────
+// Usa modal flutuante — independente do feed ter carregado ou não.
 async function checkPostUrl(){
   const params = new URLSearchParams(window.location.search);
   const postId = params.get('post');
   if(!postId) return;
 
-  // Limpa o param da URL
+  // Limpa o param da URL imediatamente
   history.replaceState(null, '', window.location.pathname);
 
-  // Busca o post directamente no Supabase — não depende do feed ter carregado
   try{
+    // Mostra overlay de loading imediatamente
+    const loadOverlay = document.createElement('div');
+    loadOverlay.id = 'post-url-overlay';
+    loadOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(8px);z-index:9000;display:flex;align-items:center;justify-content:center;';
+    loadOverlay.innerHTML = '<div style="color:var(--neon-cyan);font-family:Silkscreen,monospace;font-size:13px;text-align:center;"><div style="font-size:32px;margin-bottom:12px;">⏳</div>A carregar post...</div>';
+    document.body.appendChild(loadOverlay);
+
+    // Busca o post no Supabase
     const SEL = 'id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame)';
     const {data: post, error} = await db.from('posts').select(SEL).eq('id', postId).maybeSingle();
+
+    loadOverlay.remove();
 
     if(error || !post){
       showToast('Post não encontrado','error');
       return;
     }
 
-    // Garante que estamos na home
-    nav('home');
-
-    // Aguarda o DOM da home estar pronto
-    await new Promise(r => setTimeout(r, 400));
-
-    const feedEl = document.getElementById('feed');
-    if(!feedEl) return;
-
     // Renderiza o post
     const html = renderPost(post, {}, '');
     if(!html) return;
 
-    // Injeta estilo de animação
-    if(!document.getElementById('post-highlight-style')){
-      const s = document.createElement('style');
-      s.id = 'post-highlight-style';
-      s.textContent = '@keyframes postHighlightIn{from{opacity:0;transform:translateY(-16px)}to{opacity:1;transform:translateY(0)}}';
-      document.head.appendChild(s);
-    }
+    // Cria modal com o post
+    const overlay = document.createElement('div');
+    overlay.id = 'post-url-modal';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(10px);z-index:9000;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;';
 
-    // Remove destaque anterior se existir
-    document.getElementById('post-share-highlight')?.remove();
+    const box = document.createElement('div');
+    box.style.cssText = 'width:100%;max-width:600px;margin:auto;';
+    box.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding:0 2px;">
+        <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);">📌 Post partilhado</div>
+        <button onclick="document.getElementById('post-url-modal').remove()" style="background:none;border:1px solid rgba(255,255,255,.15);color:var(--text-muted);width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;line-height:1;">✕</button>
+      </div>
+      ${html}
+    `;
 
-    // Cria wrapper com destaque neon cyan
-    const wrapper = document.createElement('div');
-    wrapper.id = 'post-share-highlight';
-    wrapper.style.cssText = [
-      'border:2px solid var(--neon-cyan)',
-      'border-radius:16px',
-      'box-shadow:0 0 32px rgba(0,255,204,.3)',
-      'margin-bottom:14px',
-      'animation:postHighlightIn .4s ease',
-      'overflow:hidden'
-    ].join(';');
-    wrapper.innerHTML = html;
+    overlay.appendChild(box);
+    overlay.onclick = e => { if(e.target === overlay) overlay.remove(); };
+    document.body.appendChild(overlay);
 
-    // Insere no topo do feed
-    feedEl.insertBefore(wrapper, feedEl.firstChild);
-
-    // Scroll para o topo
-    window.scrollTo({top: 0, behavior: 'smooth'});
-    showToast('📌 Post aberto!', 'success');
-
-    // Remove destaque neon após 5 segundos
-    setTimeout(()=>{
-      if(wrapper){
-        wrapper.style.transition = 'border-color 1.5s ease, box-shadow 1.5s ease';
-        wrapper.style.borderColor = 'transparent';
-        wrapper.style.boxShadow = 'none';
-      }
-    }, 5000);
+    // Animação de entrada
+    box.style.transform = 'translateY(30px)';
+    box.style.opacity   = '0';
+    box.style.transition = 'transform .3s ease, opacity .3s ease';
+    requestAnimationFrame(()=>{
+      box.style.transform = 'translateY(0)';
+      box.style.opacity   = '1';
+    });
 
   }catch(e){
+    document.getElementById('post-url-overlay')?.remove();
     console.warn('[checkPostUrl]', e);
   }
 }
