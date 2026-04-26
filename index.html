@@ -33513,11 +33513,6 @@ export default {
 <audio id="music-preview-player" style="display:none;" preload="none"></audio>
 
 <!-- ══ MODAL CONFIRMAR EXCLUSÃO DE FOTO/VÍDEO ═══════════════════════ -->
-<!-- ══ PWA OFFLINE BANNER ══════════════════════════════════════════ -->
-<div id="ea-offline-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:999999;background:#ef4444;color:#fff;font-family:'Space Mono',monospace;font-size:12px;text-align:center;padding:8px 16px;letter-spacing:.5px;">
-  📡 Sem conexão — exibindo dados salvos. Reconectando...
-</div>
-
 <div id="pp-delete-confirm-overlay" onclick="if(event.target===this)ppDeleteCancel()">
   <div id="pp-delete-confirm-box">
     <div class="pp-del-icon" id="pp-del-icon">🗑️</div>
@@ -33759,12 +33754,9 @@ export default {
   };
 
   // ── Detector online/offline ───────────────────────────────────────────────
-  const _banner = document.getElementById('ea-offline-banner');
-  let   _wasOffline = false;
+  let _wasOffline = false;
 
   function _setOffline(offline){
-    if(!_banner) return;
-    _banner.style.display = offline ? 'block' : 'none';
     if(offline && !_wasOffline){
       _wasOffline = true;
       // Mostra feed cacheado se o feed estiver vazio
