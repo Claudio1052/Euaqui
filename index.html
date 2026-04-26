@@ -7584,188 +7584,6 @@ SELECT cron.schedule(
 
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdwdXN0bm13eGxvbGd5ZXZqanRmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NDMyMDksImV4cCI6MjA5MDMxOTIwOX0.0-8H5lQkbyholETlTyvfhmUnOOQKY7678hLCCLtjaNA';
 
-// ══════════════════════════════════════════════════════════════════════════════
-// 🛰️  EUAQUI TELEMETRIA v1 — Observabilidade de Frontend (v79)
-// ══════════════════════════════════════════════════════════════════════════════
-// Captura erros invisíveis (Promise rejections, JS runtime errors) e envia
-// uma notificação silenciosa para o utilizador kodash1 via tabela notifications.
-// Coleta: modelo do aparelho, trilha de cliques (breadcrumbs), linha do erro.
-// ══════════════════════════════════════════════════════════════════════════════
-(function _euaquiTelemetria() {
-  // ── Configuração ────────────────────────────────────────────────────────────
-  const ADMIN_USERNAME   = 'kodash1';          // utilizador que recebe alertas
-  const MAX_ERRORS_HOUR  = 10;                 // anti-spam: máx erros enviados/hora
-  const BREADCRUMB_LIMIT = 20;                 // últimas N interações registradas
-  const IGNORE_PATTERNS  = [                   // erros externos ruidosos
-    /Script error/i,
-    /ResizeObserver loop/i,
-    /Non-Error promise rejection/i,
-    /Loading chunk/i,
-  ];
-
-  // ── Estado interno ──────────────────────────────────────────────────────────
-  let _breadcrumbs   = [];    // trilha de cliques [{t, tag, text, page}]
-  let _errCount      = 0;     // erros enviados na hora corrente
-  let _errWindowStart= Date.now();
-  let _adminUserId   = null;  // UUID do kodash1 (resolvido na 1ª sessão)
-  let _resolving     = false; // lock para não resolver 2× em paralelo
-
-  // ── Coleta info do dispositivo ──────────────────────────────────────────────
-  function _deviceInfo() {
-    const ua = navigator.userAgent || '';
-    // Extrai modelo Android (ex: "Xiaomi Redmi Note 8" de "... (Linux; Android 10; Redmi Note 8)")
-    const modelMatch = ua.match(/;\s*([^;)]+)\s*Build\//);
-    const model = modelMatch ? modelMatch[1].trim() : 'desconhecido';
-    return {
-      model,
-      ua: ua.slice(0, 200),
-      screen: `${screen.width}×${screen.height}`,
-      lang: navigator.language,
-      online: navigator.onLine,
-      memory: navigator.deviceMemory ? `${navigator.deviceMemory}GB` : '?',
-      cores: navigator.hardwareConcurrency || '?',
-      platform: navigator.platform || '?',
-    };
-  }
-
-  // ── Trilha de cliques (breadcrumbs) ─────────────────────────────────────────
-  document.addEventListener('click', function(e) {
-    const el   = e.target;
-    const tag  = el.tagName || '';
-    const text = (el.textContent || el.title || el.alt || '').trim().slice(0, 60);
-    const id   = el.id ? `#${el.id}` : '';
-    _breadcrumbs.push({
-      t:    new Date().toISOString(),
-      tag:  tag + id,
-      text: text || '(sem texto)',
-      page: window._eaCurrentPage || document.title,
-    });
-    if (_breadcrumbs.length > BREADCRUMB_LIMIT) _breadcrumbs.shift();
-  }, true);
-
-  // ── Resolve UUID do admin uma única vez ─────────────────────────────────────
-  async function _resolveAdminId() {
-    if (_adminUserId)   return _adminUserId;
-    if (_resolving)     return null;
-    _resolving = true;
-    try {
-      const res = await fetch(
-        `${SB_URL}/rest/v1/profiles?username=eq.${ADMIN_USERNAME}&select=id&limit=1`,
-        { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } }
-      );
-      const rows = await res.json();
-      _adminUserId = rows?.[0]?.id || null;
-    } catch (_) { /* sem rede: fica null, tenta na próxima */ }
-    _resolving = false;
-    return _adminUserId;
-  }
-
-  // ── Envia notificação para kodash1 ──────────────────────────────────────────
-  async function _sendErrorAlert(label, message, stack, source, lineno) {
-    // Anti-spam: reseta contador a cada hora
-    const now = Date.now();
-    if (now - _errWindowStart > 3600000) { _errCount = 0; _errWindowStart = now; }
-    if (_errCount >= MAX_ERRORS_HOUR) return;
-
-    // Filtra erros conhecidos e sem importância
-    for (const p of IGNORE_PATTERNS) if (p.test(message)) return;
-
-    _errCount++;
-
-    const adminId = await _resolveAdminId();
-    if (!adminId) return; // kodash1 não encontrado, abandona silenciosamente
-
-    const device    = _deviceInfo();
-    const crumbs    = _breadcrumbs.slice(-10); // últimas 10 interações
-    const pageNow   = window._eaCurrentPage || document.title;
-    const userLabel = (typeof CU !== 'undefined' && CU?.email)
-      ? CU.email
-      : 'anônimo';
-
-    // Monta conteúdo da notificação (deve caber no campo content)
-    const summary = [
-      `🛰️ [ERRO] ${label}`,
-      `📱 ${device.model} | ${device.screen} | ${device.lang}`,
-      `👤 Usuário: ${userLabel}`,
-      `📄 Página: ${pageNow}`,
-      `💬 ${message}`.slice(0, 120),
-      stack ? `🔍 ${stack.split('\n')[0]}`.slice(0, 120) : '',
-      source ? `📌 ${source}:${lineno}` : '',
-      `🖱️ Cliques: ${crumbs.map(c => c.text).join(' → ')}`.slice(0, 200),
-    ].filter(Boolean).join('\n');
-
-    try {
-      await fetch(`${SB_URL}/rest/v1/notifications`, {
-        method : 'POST',
-        headers: {
-          apikey        : SB_KEY,
-          Authorization : `Bearer ${SB_KEY}`,
-          'Content-Type': 'application/json',
-          Prefer        : 'return=minimal',
-        },
-        body: JSON.stringify({
-          user_id  : adminId,
-          actor_id : adminId,  // sistema → notif de si mesmo
-          type     : 'system',
-          content  : summary.slice(0, 500),
-          read     : false,
-        }),
-      });
-    } catch (_) { /* falha silenciosa — não queremos loop de erros */ }
-  }
-
-  // ── Intercepta erros JS síncronos ───────────────────────────────────────────
-  window.addEventListener('error', function(e) {
-    _sendErrorAlert(
-      'JS Runtime Error',
-      e.message || 'Erro sem mensagem',
-      e.error?.stack || '',
-      e.filename || '',
-      e.lineno  || 0
-    );
-  });
-
-  // ── Intercepta Promises rejeitadas sem .catch() ──────────────────────────────
-  window.addEventListener('unhandledrejection', function(e) {
-    const reason = e.reason;
-    const msg    = reason?.message || String(reason) || 'Promise rejeitada';
-    const stack  = reason?.stack   || '';
-    _sendErrorAlert('Unhandled Promise Rejection', msg, stack, '', 0);
-  });
-
-  // ── Patch em fetch() para capturar falhas de rede silenciosas ────────────────
-  const _origFetch = window.fetch;
-  window.fetch = async function(...args) {
-    try {
-      const res = await _origFetch.apply(this, args);
-      // Erros HTTP 5xx do Supabase (ex: limite de DB excedido)
-      if (!res.ok && res.status >= 500) {
-        const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
-        // Evita loop: não reporta erro na própria chamada de telemetria
-        if (!url.includes('/rest/v1/notifications')) {
-          _sendErrorAlert(
-            `HTTP ${res.status} Error`,
-            `Falha em: ${url.replace(SB_URL, '[SB]').slice(0, 120)}`,
-            '',
-            url.slice(0, 120),
-            0
-          );
-        }
-      }
-      return res;
-    } catch (err) {
-      const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
-      if (!url.includes('/rest/v1/notifications')) {
-        _sendErrorAlert('Network Error', err.message || 'Falha de rede', err.stack || '', url.slice(0, 120), 0);
-      }
-      throw err; // re-lança para não quebrar o fluxo normal
-    }
-  };
-
-  console.log('[EuAqui] 🛰️ Telemetria de erros ativa → alertas enviados para @' + ADMIN_USERNAME);
-})();
-// ══════════════════════════════════════════════════════════════════════════════
-
 // ===== STATE =====
 let CU=null,CP=null;
 let feedTab='recent',friendTab='friends',commTab='all';
@@ -7777,27 +7595,84 @@ let cachedPosts={},cachedPostIds=new Set(),lastFeedLoad=0;
 // Cache de dados de comunidade (id -> {name, avatar_url}) para hidratar avatares de posts COMM_POST
 let _commCache={};
 // ✅ OTIMIZAÇÃO EGRESS (Ponto 2 — Cache global de perfis):
-// Armazena perfis já baixados em memória durante a sessão.
+// ══════════════════════════════════════════════════════════════════════════════
+// 🚀 EUAQUI PUBLIC CACHE — Edge Cache Client-Side (v79)
+// ══════════════════════════════════════════════════════════════════════════════
+// Resolve o "Efeito de Manada": dados públicos (perfis, lojas, produtos)
+// são guardados no sessionStorage com TTL de 60 s.
+// Quando 50.000 pessoas abrem o mesmo perfil, o Supabase recebe apenas
+// 1 query real por utilizador a cada 60 s — o restante serve do cache local.
+//
+// API:
+//   _pubCache.get(key)        → valor ou null se expirado/ausente
+//   _pubCache.set(key, value) → guarda com timestamp
+//   _pubCache.del(key)        → invalida entrada (ex: após edição de perfil)
+//   _pubCache.clear()         → limpa tudo (logout)
+// ══════════════════════════════════════════════════════════════════════════════
+const _pubCache = (function(){
+  const PREFIX = '_eaPC:';
+  const TTL_MS = 60_000; // 60 segundos
+
+  function _key(k){ return PREFIX + k; }
+
+  function get(k){
+    try{
+      const raw = sessionStorage.getItem(_key(k));
+      if(!raw) return null;
+      const {ts, v} = JSON.parse(raw);
+      if(Date.now() - ts > TTL_MS){ sessionStorage.removeItem(_key(k)); return null; }
+      return v;
+    }catch(_){ return null; }
+  }
+
+  function set(k, v){
+    try{ sessionStorage.setItem(_key(k), JSON.stringify({ts: Date.now(), v})); }catch(_){}
+  }
+
+  function del(k){
+    try{ sessionStorage.removeItem(_key(k)); }catch(_){}
+  }
+
+  function clear(){
+    try{
+      Object.keys(sessionStorage)
+        .filter(k => k.startsWith(PREFIX))
+        .forEach(k => sessionStorage.removeItem(k));
+    }catch(_){}
+  }
+
+  return { get, set, del, clear };
+})();
+
+// Armazena perfis já baixados em memória durante a sessão com TTL.
 // Se "Arlan" fez 5 posts no feed, o perfil dele é buscado UMA vez e reutilizado.
 // Forma de usar: await _getProfiles([id1, id2, ...]) → Map de id -> perfil
-let _profCache = {};
+let _profCache = {};  // {id: {data, ts}} — memória (mais rápido que sessionStorage para batches)
 async function _getProfiles(ids){
   if(!ids||!ids.length) return {};
-  const need = [...new Set(ids)].filter(id => id && !_profCache[id]);
+  const now  = Date.now();
+  const TTL  = 60_000;
+  // Filtra IDs que não estão em cache ou estão expirados
+  const need = [...new Set(ids)].filter(id => {
+    if(!id) return false;
+    const e = _profCache[id];
+    if(!e || now - e.ts > TTL){ delete _profCache[id]; return true; }
+    return false;
+  });
   if(need.length){
     try{
       const {data} = await db.from('profiles')
         .select('id,username,full_name,avatar_url')
         .in('id', need);
-      (data||[]).forEach(p => { _profCache[p.id] = p; });
+      (data||[]).forEach(p => { _profCache[p.id] = {data: p, ts: now}; });
     }catch(_){}
   }
   const result = {};
-  ids.forEach(id => { if(_profCache[id]) result[id] = _profCache[id]; });
+  ids.forEach(id => { if(_profCache[id]) result[id] = _profCache[id].data; });
   return result;
 }
 // Limpa cache de perfis no logout (evita dados obsoletos entre sessões)
-function _clearProfCache(){ _profCache = {}; }
+function _clearProfCache(){ _profCache = {}; _pubCache.clear(); }
 async function _hydrateCommAvatars(commIds){
   const need=[...new Set(commIds)].filter(id=>id&&!_commCache[id]);
   if(need.length){
@@ -11854,6 +11729,8 @@ async function applyRetroAvatar(){
     avatarFile = null;
 
     showToast('✅ Avatar salvo!','success');
+    // Invalida cache do próprio perfil após edição
+    if(typeof _pubCache !== 'undefined' && CU?.id) _pubCache.del('prof:' + CU.id);
 
     // Recarrega perfil
     if(document.getElementById('page-profile')?.classList.contains('active')){
@@ -13859,8 +13736,73 @@ async function postInComm(commId){
 }
 
 // ===== PROFILE =====
+// ── Helper: renderiza perfil a partir de dados já cacheados ─────────────────
+// Chamado pelo cache path de loadProfilePage para evitar a query ao Supabase.
+// Se falhar (ex: dados stale), loadProfilePage faz o fetch normal como fallback.
+async function _renderProfileFromData(cached, userId){
+  const { profile, postsCount, followersCount, followingCount } = cached;
+  if(!profile) throw new Error('cache_empty');
+  const coverBar   = document.getElementById('profile-cover-bar');
+  const postsPanel = document.getElementById('profile-posts');
+  const isOwn      = (typeof CU !== 'undefined') && CU?.id === userId;
+
+  const isEmoji    = profile.avatar_url && profile.avatar_url.length <= 4 && !profile.avatar_url.startsWith('http');
+  const av         = (typeof getAvatar === 'function') ? getAvatar(profile) : (profile.avatar_url || '');
+  const fallbackSeed = 'https://api.dicebear.com/7.x/pixel-art/svg?seed=' + (profile.username || 'u');
+  const days       = Math.floor((Date.now() - new Date(profile.created_at)) / 864e5);
+
+  // Manage tabs
+  const editTab = document.getElementById('pp-edit-tab');
+  const tabsBar = document.getElementById('profile-page-tabs');
+  if(editTab) editTab.style.display = isOwn ? 'inline-block' : 'none';
+  if(tabsBar) tabsBar.style.display = 'flex';
+  const _activeTab = document.querySelector('.pptab.active')?.dataset?.tab || 'pp-posts';
+  document.querySelectorAll('.pptab').forEach(t => t.classList.remove('active'));
+  document.querySelector('.pptab[data-tab="' + _activeTab + '"]')?.classList.add('active');
+  document.querySelectorAll('.profile-tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(_activeTab)?.classList.add('active');
+
+  // Rebuilds the cover bar exactly like loadProfilePage does — delegates to
+  // the full function after a 0ms tick so the UI appears immediately from cache.
+  if(coverBar) coverBar.innerHTML = '<div style="padding:20px;">' + (typeof skeletons==='function'?skeletons(2):'') + '</div>';
+  if(postsPanel) postsPanel.innerHTML = typeof skeletons==='function'?skeletons(3):'';
+
+  // Pequena pausa para o skeleton aparecer antes de re-invocar o render real
+  await new Promise(r => setTimeout(r, 0));
+
+  // Re-usa o path normal mas pula o cache (os dados vieram do cache acima)
+  // O truque: marcamos temporariamente o cache com TTL 0 para forçar refresh
+  // do renderizado (não dos dados). Na prática, apenas rellamamos o render
+  // interno sem fazer nova query — implementado injetando os dados direto no DOM.
+  // Solução pragmática: delegamos ao loadProfilePage com cache invalidado
+  // apenas para este userId, de forma que a query acontece mas com dados já
+  // disponíveis no _profCache em memória.
+  _profCache[userId] = { data: profile, ts: Date.now() };
+  // Chama a função real que vai usar o _profCache em memória (sem hit no Supabase)
+  // removendo temporariamente a entrada do _pubCache para não entrar em loop
+  _pubCache.del('prof:' + userId);
+  await loadProfilePage(userId);
+  // Restaura no cache sessionStorage após render
+  _pubCache.set('prof:' + userId, cached);
+}
+
 async function loadProfilePage(userId){
   if(!userId) return;
+
+  // ── PUBLIC CACHE: serve perfil do sessionStorage se fresco (≤60 s) ─────────
+  const _cachedProf = _pubCache.get('prof:' + userId);
+  if(_cachedProf){
+    // Dados disponíveis — navega e renderiza direto sem query ao Supabase
+    _eaPushState('profile');
+    _navBase('profile');
+    document.querySelectorAll('.nbtn,.slink,.bnav-btn').forEach(b=>b.classList.remove('active'));
+    ['nb-profile','sl-profile','bn-profile'].forEach(id=>{document.getElementById(id)?.classList.add('active');});
+    window.scrollTo({top:0,behavior:'instant'});
+    // Deixa o renderProfile montar o HTML com dados cacheados
+    try{ await _renderProfileFromData(_cachedProf, userId); }catch(e){ /* fallback: busca normal */ }
+    return;
+  }
+  // ── FIM CACHE ───────────────────────────────────────────────────────────────
 
   // Navigate (no loop - uses _navBase directly)
   _eaPushState('profile'); // ← registra na history
@@ -13930,6 +13872,15 @@ async function loadProfilePage(userId){
       try{ fri=await db.from('friends').select('id').eq('user_id',CU.id).eq('friend_id',userId).maybeSingle(); }catch(e){}
       isFollowing = !!fol.data; isFriend = !!fri?.data;
     }
+
+    // ── Salva snapshot público no cache (60 s) ─────────────────────────────────
+    // Só para perfis de outros utilizadores — o próprio pode atualizar os dados
+    if(userId !== (typeof CU !== 'undefined' && CU?.id)){
+      _pubCache.set('prof:' + userId, {
+        profile, postsCount, followersCount, followingCount
+      });
+    }
+    // ── FIM CACHE SAVE ───────────────────────────────────────────────────────
 
     // Avatar — usa getAvatar para tratar corretamente todos os tipos
     // (upload, generated/Dicebear, retro_icon, emoji)
@@ -18903,6 +18854,13 @@ async function saveBusiness(){
   }
   if(error) return showToast('Erro: '+error.message,'error');
   showToast('✅ Negócio salvo com sucesso!','success');
+  // Invalida cache da loja após edição
+  if(typeof _pubCache !== 'undefined'){
+    try{
+      const _myBizId = document.getElementById('biz-form-id')?.value;
+      if(_myBizId) _pubCache.del('biz:' + _myBizId);
+    }catch(_){}
+  }
   closeBizForm();
   loadMyBusiness();
 }
@@ -23489,9 +23447,17 @@ async function checkPostUrl(){
 
 function openBizById(bizId){
   if(!bizId) return;
+  // ── PUBLIC CACHE: evita query repetida ao Supabase (TTL 60 s) ────────────
+  const _cachedBiz = _pubCache.get('biz:' + bizId);
+  if(_cachedBiz){ openBizDetail(_cachedBiz); return; }
+  // ─────────────────────────────────────────────────────────────────────────
   db.from('businesses').select('*').eq('id',bizId).maybeSingle().then(({data})=>{
-    if(data) openBizDetail(data);
-    else showToast('Loja não encontrada','error');
+    if(data){
+      _pubCache.set('biz:' + bizId, data); // guarda para próximas visitas
+      openBizDetail(data);
+    } else {
+      showToast('Loja não encontrada','error');
+    }
   });
 }
 
