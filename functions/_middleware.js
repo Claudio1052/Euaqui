@@ -1,4 +1,4 @@
-// functions/_middleware.js
+// functions/_middleware.js 
 // ══════════════════════════════════════════════════════════════
 // EuAqui — Cloudflare Pages Middleware
 // Injeta Open Graph tags para bots (WhatsApp, Facebook, etc.)
