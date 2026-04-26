@@ -18367,35 +18367,16 @@ async function _updateBizSalesCounts(bizList){
       });
     }
 
-    // ── Serviços: agendamentos concluídos + deals concluídos (sem agendamento) ──
-    // Alguns serviços são fechados via closeDeal (sem data) → ficam em business_deals
-    // Outros têm data agendada → criam appointment e são concluídos via eaDoMarkDone
-    // Precisamos contar AMBOS e desduplicar pelo deal_id (evitar dupla contagem)
+    // ── Serviços: conta APENAS appointments com status='done' ───────────────────
+    // Fluxo correto: deal aceito → cria appointment 'confirmed' → dono conclui → 'done'
+    // deals com status 'closed' = apenas aceito, ainda não concluído → não conta
     if(servicos.length){
-      // 1) Agendamentos concluídos
       const {data:apptRows} = await db.from('appointments')
-        .select('business_id, deal_id')
+        .select('business_id')
         .in('business_id', servicos)
         .eq('status', 'done');
-
-      // Registra quais deal_ids já foram contados via appointment
-      const countedDealIds = new Set();
       (apptRows||[]).forEach(r=>{
         countMap[r.business_id] = (countMap[r.business_id]||0) + 1;
-        if(r.deal_id) countedDealIds.add(r.deal_id);
-      });
-
-      // 2) Deals de serviço concluídos que NÃO geraram appointment (closeDeal sem data)
-      const {data:svcDealRows} = await db.from('business_deals')
-        .select('business_id, id, status')
-        .in('business_id', servicos)
-        .in('status', ['done', 'closed'])
-        .eq('is_service', true);
-      (svcDealRows||[]).forEach(r=>{
-        // Só conta se este deal não foi já contado via appointment
-        if(!countedDealIds.has(r.id)){
-          countMap[r.business_id] = (countMap[r.business_id]||0) + 1;
-        }
       });
     }
   }catch(e){
