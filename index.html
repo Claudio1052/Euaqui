@@ -8795,6 +8795,32 @@ async function _toggleBlock(userId, username){
   }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// 🚀 EUAQUI FEED — Fan-out on Write híbrido (v79)
+// ══════════════════════════════════════════════════════════════════════════════
+// Estratégia:
+//   1. Tenta ler o feed pré-computado da tabela user_feed (Fan-out on Write)
+//      → leitura por índice puro, ~5ms, zero JOIN em tempo real
+//   2. Se user_feed estiver vazia ou o utilizador não tiver seguidores,
+//      cai no Fan-out on Read clássico (comportamento anterior)
+//   3. Para a aba "popular", usa user_feed_popular (view já ordenada)
+//
+// Requer: tabela user_feed + trigger fan_out_post_trigger no Supabase
+// SQL: fanout_migration.sql
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Flag: detecta se user_feed existe (evita erro em instâncias sem a migração)
+let _fanoutAvailable = null; // null=desconhecido, true/false após 1ª query
+
+async function _checkFanoutAvailable() {
+  if (_fanoutAvailable !== null) return _fanoutAvailable;
+  try {
+    const { error } = await db.from('user_feed').select('id').limit(1);
+    _fanoutAvailable = !error;
+  } catch(_) { _fanoutAvailable = false; }
+  return _fanoutAvailable;
+}
+
 async function loadFeed(force=false){
   const feed=document.getElementById('feed');
   if(!feed)return;
@@ -8802,7 +8828,7 @@ async function loadFeed(force=false){
 
   if(force){
     feedPage = 0;
-    feedCursor = null; // ✅ CURSOR PAGINATION: reset do cursor ao recarregar
+    feedCursor = null;
     feedHasMore = true;
     feedLoading = false;
     _feedEmptyRetries = 0;
@@ -8814,22 +8840,18 @@ async function loadFeed(force=false){
     if(feedEnd) feedEnd.style.display='none';
   }
 
-  // ✅ OTIMIZAÇÃO EGRESS: evita recarregar o feed ao voltar do Perfil/outra página.
-  // Só aplica se for a primeira página (feedPage===0) e o feed já tiver conteúdo recente.
-  // NÃO bloqueia o scroll infinito (que avança feedPage normalmente).
-  const _FEED_STALE_MS = 120000; // 2 minutos
+  const _FEED_STALE_MS = 120000;
   if(!force && feedPage === 0 && feed.children.length > 0
      && lastFeedLoad > 0 && (Date.now() - lastFeedLoad) < _FEED_STALE_MS){
     setTimeout(_hydrateBizCtaBtns, 100);
-    return; // feed ainda fresco, não refaz query da página inicial
+    return;
   }
 
   if(feedLoading || !feedHasMore) return;
   feedLoading = true;
-  if(feedPage === 0) lastFeedLoad = Date.now(); // só marca tempo na 1ª página
+  if(feedPage === 0) lastFeedLoad = Date.now();
 
-  // Monta contexto de prioridade uma vez por sessão
-  // Cache do contexto do feed por 5 minutos
+  // Monta contexto (amigos, seguidores, comunidades) — cache 5 min
   const _fctxAt=parseInt(sessionStorage.getItem('_fctx_cache_at')||'0');
   if(!_feedCtx || (Date.now()-_fctxAt)>300000){
     _feedCtx = await _buildFeedContext();
@@ -8837,78 +8859,121 @@ async function loadFeed(force=false){
   }
   const ctx = _feedCtx;
 
-  // Select seguro — sem colunas que podem não existir
-  // OTIMIZAÇÃO: busca apenas profile_layout->>'avatarFrame' (1 campo do JSONB) em vez do JSONB completo
   const SEL='id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame)';
 
-  // Mostra indicador de "carregando mais" se não for primeira página
   if(feedPage>0 && feedEnd){
     feedEnd.style.display='block';
     feedEnd.textContent='⟳ carregando mais...';
   }
 
-  // Query de busca — mantém comportamento das abas, mas com paginação real
-  // Cache local: se os posts desta página já foram carregados, não refaz a query
+  // ── Cache local de página (zero egress em re-visita) ─────────────────────
   const _cacheKey = feedTab+'_p'+feedPage;
   if(window._feedPageCache && window._feedPageCache[_cacheKey] && !force){
-    // Usa cache — zero egress
     const cached = window._feedPageCache[_cacheKey];
-    // Adiciona ao cachedPostIds para não duplicar
     (cached||[]).forEach(p=>{ if(p?.id) cachedPostIds.add(p.id); });
     feedPage++; feedLoading=false;
-    // Tenta próxima página pois esta já foi renderizada
     if(feedHasMore) loadFeed(false);
     return;
   }
-  // ✅ CURSOR PAGINATION: em vez de calcular from/to por offset (devastador para o PostgreSQL
-  // em páginas profundas), usamos o created_at ou likes_count do último post como âncora.
-  // A query WHERE created_at < cursor usa o índice e executa em milissegundos, independente
-  // do tamanho total da tabela.
-  let q;
-  if(feedTab==='popular'){
-    // Para popular, o cursor composto é { likes_count, id } (evita empates quebrarem a paginação)
-    q = db.from('posts').select(SEL).order('likes_count',{ascending:false}).order('id',{ascending:false}).limit(FEED_PAGE_SIZE);
-    if(feedCursor){
-      // Filtra posts com likes_count menor que o cursor, ou igual mas com id menor (tiebreak)
-      q = q.or(`likes_count.lt.${feedCursor.likes_count},and(likes_count.eq.${feedCursor.likes_count},id.lt.${feedCursor.id})`);
-    }
-  } else if(feedTab==='friends'&&CU){
-    const ids=[...ctx.friends, ...ctx.following];
-    if(!ids.length){
-      if(feed.children.length===0 || feedPage===0){
-        feed.innerHTML='<div style="text-align:center;padding:40px;color:var(--text-muted);font-family:\'VT323\',monospace;font-size:20px;">Adicione amigos para ver os posts deles aqui!</div>';
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 🚀 FAN-OUT ON WRITE — Lê feed pré-computado (user_feed)
+  // ══════════════════════════════════════════════════════════════════════════
+  let posts = null;
+  let usedFanout = false;
+
+  if(CU && feedTab !== 'popular') {
+    const fanoutOk = await _checkFanoutAvailable();
+    if(fanoutOk) {
+      try {
+        // Lê da tabela user_feed já pré-computada — índice puro, sem JOIN em follows/friends
+        let fq = db.from('user_feed')
+          .select(`post_id, score, created_at, posts!inner(${SEL})`)
+          .eq('user_id', CU.id)
+          .order('created_at', {ascending: false})
+          .limit(FEED_PAGE_SIZE);
+
+        if(feedCursor) fq = fq.lt('created_at', feedCursor.created_at);
+
+        // Aba "Amigos" — filtra apenas tier 1 (amigos e seguidores)
+        if(feedTab === 'friends') fq = fq.lte('score', 1);
+
+        const { data: feedRows, error: feedErr } = await fq;
+
+        if(!feedErr && feedRows && feedRows.length > 0) {
+          // Extrai os posts do JOIN e mantém score para sort
+          posts = feedRows
+            .filter(r => r.posts)
+            .map(r => ({ ...r.posts, _fanout_score: r.score }));
+          usedFanout = true;
+        } else if(feedErr) {
+          // Tabela pode não existir ainda — marca como indisponível e usa fallback
+          console.warn('[Feed] user_feed indisponível, usando Fan-out on Read:', feedErr.message);
+          _fanoutAvailable = false;
+        }
+      } catch(e) {
+        console.warn('[Feed] Fan-out falhou, usando fallback:', e.message);
       }
-      feedHasMore=false; feedLoading=false;
-      if(feedEnd){ feedEnd.style.display='block'; feedEnd.textContent='— FIM DO FEED —'; }
-      return;
     }
-    q = db.from('posts').select(SEL).in('user_id',[...ids,CU.id]).order('created_at',{ascending:false}).limit(FEED_PAGE_SIZE);
-    if(feedCursor) q = q.lt('created_at', feedCursor.created_at);
-  } else {
-    // Aba "Recentes" — ordena por recência; classificação de prioridade é aplicada in-memory
-    q = db.from('posts').select(SEL).order('created_at',{ascending:false}).limit(FEED_PAGE_SIZE);
-    if(feedCursor) q = q.lt('created_at', feedCursor.created_at);
-  }
-  const{data:posts,error:fetchErr}=await q;
-  if(fetchErr){
-    console.error('Feed error:',fetchErr.message);
-    if(feed.children.length===0)feed.innerHTML='<div style="text-align:center;padding:30px;color:var(--neon-pink);font-size:12px;">Erro ao carregar feed.<br>'+fetchErr.message+'</div>';
-    feedLoading=false;
-    // Restaura o sentinel para não ficar preso em "carregando..."
-    if(feedEnd){
-      feedEnd.style.display='block';
-      feedEnd.innerHTML='<span style="font-family:Space Mono,monospace;font-size:10px;color:var(--text-muted);cursor:pointer;" onclick="loadFeed(false)">↻ Tentar novamente</span>';
-    }
-    return;
   }
 
-  // Salva no cache local (evita refetch na mesma sessão)
+  // ══════════════════════════════════════════════════════════════════════════
+  // 🔄 FALLBACK — Fan-out on Read (comportamento original)
+  // Usado quando: user_feed vazia, utilizador não logado, ou aba "popular"
+  // ══════════════════════════════════════════════════════════════════════════
+  if(!posts) {
+    let q;
+    if(feedTab==='popular'){
+      q = db.from('posts').select(SEL).order('likes_count',{ascending:false}).order('id',{ascending:false}).limit(FEED_PAGE_SIZE);
+      if(feedCursor){
+        q = q.or(`likes_count.lt.${feedCursor.likes_count},and(likes_count.eq.${feedCursor.likes_count},id.lt.${feedCursor.id})`);
+      }
+    } else if(feedTab==='friends'&&CU){
+      const ids=[...ctx.friends, ...ctx.following];
+      if(!ids.length){
+        if(feed.children.length===0 || feedPage===0){
+          feed.innerHTML='<div style="text-align:center;padding:40px;color:var(--text-muted);font-family:\'VT323\',monospace;font-size:20px;">Adicione amigos para ver os posts deles aqui!</div>';
+        }
+        feedHasMore=false; feedLoading=false;
+        if(feedEnd){ feedEnd.style.display='block'; feedEnd.textContent='— FIM DO FEED —'; }
+        return;
+      }
+      q = db.from('posts').select(SEL).in('user_id',[...ids,CU.id]).order('created_at',{ascending:false}).limit(FEED_PAGE_SIZE);
+      if(feedCursor) q = q.lt('created_at', feedCursor.created_at);
+    } else {
+      q = db.from('posts').select(SEL).order('created_at',{ascending:false}).limit(FEED_PAGE_SIZE);
+      if(feedCursor) q = q.lt('created_at', feedCursor.created_at);
+    }
+
+    const{data:fetchedPosts,error:fetchErr}=await q;
+    if(fetchErr){
+      console.error('Feed error:',fetchErr.message);
+      if(feed.children.length===0)feed.innerHTML='<div style="text-align:center;padding:30px;color:var(--neon-pink);font-size:12px;">Erro ao carregar feed.<br>'+fetchErr.message+'</div>';
+      feedLoading=false;
+      if(feedEnd){
+        feedEnd.style.display='block';
+        feedEnd.innerHTML='<span style="font-family:Space Mono,monospace;font-size:10px;color:var(--text-muted);cursor:pointer;" onclick="loadFeed(false)">↻ Tentar novamente</span>';
+      }
+      return;
+    }
+    posts = fetchedPosts;
+  }
+
+  // Salva no cache local
   if(!window._feedPageCache) window._feedPageCache = {};
   if(posts && posts.length) window._feedPageCache[feedTab+'_p'+feedPage] = posts;
 
   // Detecta fim do feed
-  if(!posts || posts.length < FEED_PAGE_SIZE){
-    feedHasMore = false;
+  if(!posts || posts.length < FEED_PAGE_SIZE){ feedHasMore = false; }
+
+  // ── Atualiza cursor para próxima página ────────────────────────────────────
+  if(posts && posts.length > 0){
+    const last = posts[posts.length-1];
+    if(feedTab==='popular'){
+      feedCursor = { likes_count: last.likes_count || 0, id: last.id };
+    } else {
+      feedCursor = { created_at: last.created_at };
+    }
   }
 
   // ── FILTRO DE VISIBILIDADE ──────────────────────────────────────────────────
@@ -11430,6 +11495,7 @@ async function createPost(){
   mediaFiles=[];mediaTypes=[];
   const mp=document.getElementById('media-prev');mp.style.display='none';mp.innerHTML='';
   cachedPostIds.clear(); cachedPosts = {}; window._feedPageCache = {};
+  feedCursor = null; // Fan-out: reseta cursor para incluir o novo post
   showToast('Post publicado! ✨','success');
   // Rola ao topo para o usuário ver o post novo
   window.scrollTo({top:0, behavior:'smooth'});
