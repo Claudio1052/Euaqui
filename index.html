@@ -7976,7 +7976,8 @@ function showApp(){
   setTimeout(()=>{ try{ initTheme(); }catch(e){} }, 50);
   setTimeout(()=>{ try{ checkBizInviteUrl(); }catch(e){} }, 1200);
   setTimeout(()=>{ try{ checkCommInviteUrl(); }catch(e){} }, 1400);
-  setTimeout(()=>{ try{ checkPostUrl(); }catch(e){} }, 1600);
+  // checkPostUrl: chamado após feed inicial carregar (loadFeed demora ~500ms)
+  setTimeout(()=>{ try{ checkPostUrl(); }catch(e){} }, 900);
   setTimeout(()=>{ try{ checkAppointmentDayNotifications(); }catch(e){} }, 3000);
 }
 function showAuth(){
@@ -23079,87 +23080,80 @@ function checkBizInviteUrl(){
 }
 
 // ── checkPostUrl: abre o post directamente quando a URL tem ?post=<id> ──────
-// Chamado no showApp() — garante que links partilhados no WhatsApp/redes
-// abrem o post específico em vez de ir para a página inicial.
 async function checkPostUrl(){
   const params = new URLSearchParams(window.location.search);
   const postId = params.get('post');
   if(!postId) return;
 
-  // Limpa o param da URL sem recarregar
+  // Limpa o param da URL
   history.replaceState(null, '', window.location.pathname);
 
-  // Garante que estamos na home
-  nav('home');
-
-  // Aguarda o feed carregar
-  await new Promise(r => setTimeout(r, 800));
-
-  // Tenta encontrar o post já no DOM
-  let postEl = document.getElementById('post-' + postId);
-
-  if(postEl){
-    // Post já está no feed — faz scroll e destaca
-    _scrollAndHighlightPost(postEl);
-    return;
-  }
-
-  // Post não está no feed — busca no Supabase e insere no topo
+  // Busca o post directamente no Supabase — não depende do feed ter carregado
   try{
     const SEL = 'id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url,profile_layout->avatarFrame)';
-    const {data: post} = await db.from('posts').select(SEL).eq('id', postId).maybeSingle();
-    if(!post){ showToast('Post não encontrado','error'); return; }
+    const {data: post, error} = await db.from('posts').select(SEL).eq('id', postId).maybeSingle();
 
-    // Insere o post no topo do feed com destaque visual
+    if(error || !post){
+      showToast('Post não encontrado','error');
+      return;
+    }
+
+    // Garante que estamos na home
+    nav('home');
+
+    // Aguarda o DOM da home estar pronto
+    await new Promise(r => setTimeout(r, 400));
+
     const feedEl = document.getElementById('feed');
     if(!feedEl) return;
 
+    // Renderiza o post
     const html = renderPost(post, {}, '');
     if(!html) return;
 
-    // Cria wrapper com destaque neon
-    const wrapper = document.createElement('div');
-    wrapper.id = 'post-share-highlight';
-    wrapper.style.cssText = 'border:2px solid var(--neon-cyan);border-radius:16px;box-shadow:0 0 24px rgba(0,255,204,.25);margin-bottom:12px;animation:postHighlight 0.5s ease;';
-    wrapper.innerHTML = html;
-
-    // Insere estilo de animação se não existir
+    // Injeta estilo de animação
     if(!document.getElementById('post-highlight-style')){
-      const style = document.createElement('style');
-      style.id = 'post-highlight-style';
-      style.textContent = '@keyframes postHighlight{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:translateY(0)}}';
-      document.head.appendChild(style);
+      const s = document.createElement('style');
+      s.id = 'post-highlight-style';
+      s.textContent = '@keyframes postHighlightIn{from{opacity:0;transform:translateY(-16px)}to{opacity:1;transform:translateY(0)}}';
+      document.head.appendChild(s);
     }
 
+    // Remove destaque anterior se existir
+    document.getElementById('post-share-highlight')?.remove();
+
+    // Cria wrapper com destaque neon cyan
+    const wrapper = document.createElement('div');
+    wrapper.id = 'post-share-highlight';
+    wrapper.style.cssText = [
+      'border:2px solid var(--neon-cyan)',
+      'border-radius:16px',
+      'box-shadow:0 0 32px rgba(0,255,204,.3)',
+      'margin-bottom:14px',
+      'animation:postHighlightIn .4s ease',
+      'overflow:hidden'
+    ].join(';');
+    wrapper.innerHTML = html;
+
+    // Insere no topo do feed
     feedEl.insertBefore(wrapper, feedEl.firstChild);
 
-    // Scroll para o topo e destaca
+    // Scroll para o topo
     window.scrollTo({top: 0, behavior: 'smooth'});
-    showToast('📌 Post partilhado aberto!', 'success');
+    showToast('📌 Post aberto!', 'success');
 
-    // Remove o destaque após 4 segundos
+    // Remove destaque neon após 5 segundos
     setTimeout(()=>{
-      wrapper.style.transition = 'border-color 1s, box-shadow 1s';
-      wrapper.style.borderColor = 'transparent';
-      wrapper.style.boxShadow = 'none';
-    }, 4000);
+      if(wrapper){
+        wrapper.style.transition = 'border-color 1.5s ease, box-shadow 1.5s ease';
+        wrapper.style.borderColor = 'transparent';
+        wrapper.style.boxShadow = 'none';
+      }
+    }, 5000);
 
   }catch(e){
     console.warn('[checkPostUrl]', e);
   }
-}
-
-function _scrollAndHighlightPost(el){
-  el.scrollIntoView({behavior: 'smooth', block: 'center'});
-  el.style.transition = 'box-shadow 0.3s, border 0.3s';
-  el.style.boxShadow  = '0 0 24px rgba(0,255,204,.4)';
-  el.style.border     = '2px solid var(--neon-cyan)';
-  el.style.borderRadius = '16px';
-  showToast('📌 Post partilhado!', 'success');
-  setTimeout(()=>{
-    el.style.boxShadow = '';
-    el.style.border    = '';
-  }, 4000);
 }
 
 
