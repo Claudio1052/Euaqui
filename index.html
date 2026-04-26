@@ -19756,20 +19756,24 @@ async function loadBizDashboard(){
   const {data:fresh}=await db.from('businesses').select('*').eq('id',b.id).maybeSingle();
   if(fresh) myBusiness=fresh;
   const bd=fresh||b;
-  // Calcula faturamento: agendamentos concluídos (serviço) + deals concluídos (loja)
-  let totalRevenue = 0;
-  let totalSalesDone = 0; // contagem real de vendas concluídas
+  // ── Calcula vendas reais e faturamento — fonte de verdade única ─────────────
+  // LOJA:    conta deals concluídos (done/closed+purchase_done/closed_sem_purchase)
+  // SERVIÇO: conta agendamentos concluídos (status='done')
+  // Ambos somam ao faturamento.
+  // O contador sales_done do banco é re-sincronizado silenciosamente aqui.
+  let totalRevenue   = 0;
+  let totalSalesDone = 0;
+  let totalApptsDone = 0; // agendamentos concluídos (serviço)
   try{
-    // Agendamentos concluídos (para serviços)
+    // ── Agendamentos concluídos (serviço) ──────────────────────────────────────
     const {data:doneAppts} = await db.from('appointments')
-      .select('value').eq('business_id',b.id).eq('status','done');
+      .select('value,id').eq('business_id',b.id).eq('status','done');
     if(doneAppts?.length){
-      totalRevenue += doneAppts.reduce((sum,a)=>sum+(Number(a.value)||0),0);
+      totalApptsDone  = doneAppts.length;
+      totalRevenue   += doneAppts.reduce((sum,a)=>sum+(Number(a.value)||0),0);
     }
-    // Deals concluídos (para lojas):
-    //  · status 'done' explícito OU
-    //  · status 'closed' com purchase associada já marcada como 'done' (_effectiveStatus=='done') OU
-    //  · status 'closed' sem purchase associada (retrocompatibilidade com o fluxo antigo)
+
+    // ── Deals concluídos (loja) ────────────────────────────────────────────────
     const doneDealsList = deals.filter(d=>{
       if(d.status === 'done') return true;
       if(d.status === 'closed'){
@@ -19779,17 +19783,36 @@ async function loadBizDashboard(){
       }
       return false;
     });
-    totalSalesDone = doneDealsList.length;
+    const dealsSalesCount = doneDealsList.length;
     totalRevenue += doneDealsList.reduce((sum,d)=>sum+(Number(d.value)||0),0);
+
+    // ── Total unificado de vendas ──────────────────────────────────────────────
+    // Loja: deals concluídos | Serviço: agendamentos concluídos | Ambos: soma
+    if(bd.category === 'loja'){
+      totalSalesDone = dealsSalesCount;
+    } else if(bd.category === 'servico'){
+      totalSalesDone = totalApptsDone;
+    } else {
+      totalSalesDone = dealsSalesCount + totalApptsDone;
+    }
+
+    // ── Sincroniza o contador sales_done no banco (silencioso) ─────────────────
+    // Corrige divergências acumuladas sem travar a UI
+    if(bd.id && totalSalesDone !== (bd.sales_done||0)){
+      db.from('businesses')
+        .update({ sales_done: totalSalesDone })
+        .eq('id', bd.id)
+        .then(()=>{ if(myBusiness) myBusiness.sales_done = totalSalesDone; })
+        .catch(()=>{});
+    }
   }catch(e){}
   const fmtCurrency = v => v>=1000 ? 'R$'+(v/1000).toFixed(1).replace('.',',')+'k' : 'R$'+v.toFixed(0);
   el.innerHTML=`
     <div style="font-family:Silkscreen,monospace;font-size:13px;color:var(--neon-cyan);margin-bottom:14px;">📊 Dashboard — ${xss(bd.name)}</div>
     <div class="dash-grid">
       <div class="dash-card"><div class="dash-num">${bd.followers_count||0}</div><div class="dash-lbl">👥 Seguidores</div></div>
-      ${bd.category==='servico'?`<div class="dash-card"><div class="dash-num">${bd.deals_closed||0}</div><div class="dash-lbl">📅 Agendamentos</div></div>`:''}
+      <div class="dash-card"><div class="dash-num">${totalSalesDone}</div><div class="dash-lbl">${bd.category==='servico'?'✅ Concluídos':'✅ Vendas'}</div></div>
       <div class="dash-card"><div class="dash-num">${fmtCurrency(totalRevenue)}</div><div class="dash-lbl">💰 Faturamento</div></div>
-      ${bd.category==='loja'?`<div class="dash-card"><div class="dash-num">${totalSalesDone}</div><div class="dash-lbl">✅ Vendas</div></div>`:''}
       <div class="dash-card"><div class="dash-num">${bd.rating?Number(bd.rating).toFixed(1):'—'}</div><div class="dash-lbl">⭐ Avaliação</div></div>
     </div>
     <div style="font-family:Silkscreen,monospace;font-size:11px;color:var(--neon-cyan);margin-bottom:10px;">📋 Histórico de Negócios</div>
@@ -21570,12 +21593,16 @@ async function eaDoMarkDone(id, btn){
         read: false
       });
     }
-    // ── KPI: incrementa deals_closed no dashboard ──
+    // ── KPI: incrementa deals_closed E sales_done (agendamento concluído = venda) ──
     if(myBusiness?.id){
-      const {data:bizData}=await db.from('businesses').select('deals_closed').eq('id',myBusiness.id).maybeSingle();
-      const newCount=(bizData?.deals_closed||0)+1;
-      await db.from('businesses').update({deals_closed:newCount}).eq('id',myBusiness.id);
-      if(myBusiness) myBusiness.deals_closed=newCount;
+      const {data:bizData}=await db.from('businesses').select('deals_closed,sales_done').eq('id',myBusiness.id).maybeSingle();
+      const newDeals = (bizData?.deals_closed||0)+1;
+      const newSales = (bizData?.sales_done||0)+1;
+      await db.from('businesses').update({
+        deals_closed: newDeals,
+        sales_done:   newSales
+      }).eq('id',myBusiness.id);
+      if(myBusiness){ myBusiness.deals_closed = newDeals; myBusiness.sales_done = newSales; }
     }
   }catch(e){ console.warn('[markAppointmentDone] notif/kpi erro:', e); }
 
