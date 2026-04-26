@@ -7740,50 +7740,7 @@ const _RL = (function(){
 // ── Interceptor transparente do Supabase: envolve db.from() ─────────────────
 // Substituímos db após o createClient com um Proxy que injeta rate limiting
 // em todo acesso a .from() sem alterar nenhuma linha de código existente.
-function _wrapDbWithRL(client){
-  return new Proxy(client, {
-    get(target, prop){
-      if(prop === 'from'){
-        return function(table){
-          const { ok, waitMs, reason } = _RL.check();
-          if(!ok){
-            console.warn(`[🛡️ RL] Bloqueado (${reason}) — aguarde ${Math.ceil(waitMs/1000)}s. Tabela: ${table}. Stats:`, _RL.stats());
-            // Retorna um objeto que resolve em erro controlado para todas as operações
-            const _errProxy = ()=>({
-              data: null,
-              error: { message: `[RateLimit] Muitas requisições. Aguarde ${Math.ceil(waitMs/1000)}s.`, code: 'rate_limited' }
-            });
-            const _chainProxy = new Proxy({}, { get(){ return ()=>new Proxy({},{get(){ return _chainProxy; }, apply(){ return Promise.resolve(_errProxy()); }}); }});
-            return _chainProxy;
-          }
-          const qb = target.from(table);
-          // Intercepta .then() para capturar 429s e registrar sucesso
-          return new Proxy(qb, {
-            get(qbTarget, qbProp){
-              const val = qbTarget[qbProp];
-              if(typeof val === 'function'){
-                return function(...args){
-                  const result = val.apply(qbTarget, args);
-                  if(result && typeof result.then === 'function'){
-                    return result.then(res=>{
-                      if(res?.error?.message?.includes('429') || res?.status === 429){ _RL.on429(); }
-                      else if(!res?.error){ _RL.onSuccess(); }
-                      return res;
-                    });
-                  }
-                  return result;
-                };
-              }
-              return val;
-            }
-          });
-        };
-      }
-      return target[prop];
-    }
-  });
-}
-// (aplicado após createClient — ver abaixo)
+// _wrapDbWithRL removido — substituído por patch cirúrgico em db.from() abaixo
 
 const {createClient} = window.supabase;
 let db = createClient(SB_URL, SB_KEY, {
@@ -7802,8 +7759,27 @@ let db = createClient(SB_URL, SB_KEY, {
     }
   }
 });
-// 🛡️ Aplica rate limiter transparente sobre todas as queries do Supabase
-db = _wrapDbWithRL(db);
+// 🛡️ Patch cirúrgico: sobrepõe apenas db.from() para rate limiting
+// Não usa Proxy geral — evita quebrar auth, realtime, rpc, storage
+(function(){
+  const _origFrom = db.from.bind(db);
+  db.from = function(table){
+    const { ok, waitMs, reason } = _RL.check();
+    if(!ok){
+      console.warn(`[🛡️ RL] Bloqueado (${reason}) +${Math.ceil(waitMs/1000)}s | tabela: ${table}`);
+      // Retorna thenable que resolve em erro — compatível com await e .then()
+      const _fakeErr = { data: null, error: { message: `Muitas requisições. Aguarde ${Math.ceil(waitMs/1000)}s.`, code: 'rate_limited' }, status: 429, count: null };
+      const _fake = new Proxy({}, {
+        get(_, p){
+          if(p === 'then' || p === 'catch' || p === 'finally') return undefined; // não é thenable
+          return function(){ return Promise.resolve(_fakeErr); };
+        }
+      });
+      return _fake;
+    }
+    return _origFrom(table);
+  };
+})();
 
 /* ── SQL necessário no Supabase para views e reações de stories ──────────────
    Execute no SQL Editor do Supabase:
