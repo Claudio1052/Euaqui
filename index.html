@@ -10362,35 +10362,48 @@ async function toggleHideCmt(cmtId,postId,hidden){
 }
 async function voteCmt(cmtId,vote,btn,postId){
   if(!CU)return showToast('Faça login primeiro','error');
+  const sec=btn.closest('.cmt-actions');
+  const likeBtn=sec.querySelector('.cvbtn:not(.cv-dis)');
+  const disBtn=sec.querySelector('.cv-dis');
+  const wasLike=likeBtn?.classList.contains('active-like');
+  const wasDis=disBtn?.classList.contains('active-dis');
+
+  // ── Optimistic UI: atualiza visual ANTES de ir ao banco ──
+  const _applyOptimistic = ()=>{
+    if(vote==='like'){
+      if(wasLike){ likeBtn.classList.remove('active-like'); adjustCmtCount(likeBtn,-1,'like'); }
+      else{ likeBtn?.classList.add('active-like'); adjustCmtCount(likeBtn,1,'like'); if(wasDis){ disBtn.classList.remove('active-dis'); adjustCmtCount(disBtn,-1,'dislike'); } }
+    } else {
+      if(wasDis){ disBtn.classList.remove('active-dis'); adjustCmtCount(disBtn,-1,'dislike'); }
+      else{ disBtn?.classList.add('active-dis'); adjustCmtCount(disBtn,1,'dislike'); if(wasLike){ likeBtn.classList.remove('active-like'); adjustCmtCount(likeBtn,-1,'like'); } }
+    }
+  };
+  const _revertOptimistic = ()=>{
+    likeBtn?.classList.toggle('active-like', wasLike);
+    disBtn?.classList.toggle('active-dis', wasDis);
+    // revert counts (inverse of what was applied)
+    if(vote==='like'){
+      if(wasLike){ likeBtn?.classList.add('active-like'); adjustCmtCount(likeBtn,1,'like'); }
+      else{ likeBtn?.classList.remove('active-like'); adjustCmtCount(likeBtn,-1,'like'); if(wasDis){ disBtn?.classList.add('active-dis'); adjustCmtCount(disBtn,1,'dislike'); } }
+    } else {
+      if(wasDis){ disBtn?.classList.add('active-dis'); adjustCmtCount(disBtn,1,'dislike'); }
+      else{ disBtn?.classList.remove('active-dis'); adjustCmtCount(disBtn,-1,'dislike'); if(wasLike){ likeBtn?.classList.add('active-like'); adjustCmtCount(likeBtn,1,'like'); } }
+    }
+  };
+  _applyOptimistic();
+
   try{
     const{data:ex,error:selErr}=await db.from('comment_votes').select('id,vote').eq('comment_id',cmtId).eq('user_id',CU.id).maybeSingle();
     if(selErr)throw selErr;
-    const sec=btn.closest('.cmt-actions');
-    const likeBtn=sec.querySelector('.cvbtn:not(.cv-dis)');
-    const disBtn=sec.querySelector('.cv-dis');
     if(ex){
-      if(ex.vote===vote){
-        await db.from('comment_votes').delete().eq('id',ex.id);
-        btn.classList.remove('active-like','active-dis');
-        adjustCmtCount(btn,-1,vote);
-      } else {
-        await db.from('comment_votes').update({vote}).eq('id',ex.id);
-        likeBtn?.classList.remove('active-like');disBtn?.classList.remove('active-dis');
-        btn.classList.add(vote==='like'?'active-like':'active-dis');
-        // troca de contadores
-        const otherBtn=vote==='like'?disBtn:likeBtn;
-        adjustCmtCount(btn,1,vote);
-        if(otherBtn)adjustCmtCount(otherBtn,-1,vote==='like'?'dislike':'like');
-      }
+      if(ex.vote===vote){ await db.from('comment_votes').delete().eq('id',ex.id); }
+      else { await db.from('comment_votes').update({vote}).eq('id',ex.id); }
     } else {
       await db.from('comment_votes').insert({comment_id:cmtId,user_id:CU.id,vote});
-      btn.classList.add(vote==='like'?'active-like':'active-dis');
-      adjustCmtCount(btn,1,vote);
     }
   } catch(e){
-    // comment_votes não existe — incrementa localmente só para UX
-    btn.classList.toggle(vote==='like'?'active-like':'active-dis');
-    adjustCmtCount(btn,btn.classList.contains('active-like')||btn.classList.contains('active-dis')?1:-1,vote);
+    // Erro — reverte UI para estado anterior
+    _revertOptimistic();
   }
 }
 function adjustCmtCount(btn,delta,vote){
@@ -29480,32 +29493,55 @@ async function oaReact(emoji, btn){
 
   const isSelected = btn.classList.contains('selected');
 
-  // Remove seleção visual e para loop anterior
+  // ── Optimistic UI: feedback visual IMEDIATO ──
   document.querySelectorAll('.oa-v-reaction-btn').forEach(b=>b.classList.remove('selected'));
   _oaStopFloatLoop();
+  if(!isSelected){
+    btn.classList.add('selected');
+    _oaStartFloatLoop(emoji);
+    // Incrementa badge otimisticamente
+    const cur = parseInt(btn.dataset.count||'0');
+    btn.dataset.count = cur+1;
+    _oaUpdateReactionBadges(_oaGetLocalRxCount());
+  } else {
+    const cur = parseInt(btn.dataset.count||'0');
+    btn.dataset.count = Math.max(0, cur-1);
+    _oaUpdateReactionBadges(_oaGetLocalRxCount());
+  }
 
   try{
     if(isSelected){
-      // Toggle off — remove reação
       await db.from('olha_aqui_reactions')
         .delete().eq('story_id', it.id).eq('user_id', CU.id);
     } else {
-      // Upsert nova reação
       await db.from('olha_aqui_reactions').upsert(
         { story_id: it.id, user_id: CU.id, reaction: emoji },
         { onConflict: 'story_id,user_id' }
       );
-      btn.classList.add('selected');
-      // Dispara emojis subindo continuamente
-      _oaStartFloatLoop(emoji);
     }
-    // Atualiza badges de contagem
-    const { data: rxData } = await db.from('olha_aqui_reactions')
-      .select('reaction').eq('story_id', it.id);
-    const rxCount = {};
-    (rxData||[]).forEach(r=>{ rxCount[r.reaction]=(rxCount[r.reaction]||0)+1; });
-    _oaUpdateReactionBadges(rxCount);
-  }catch(e){ showToast('Erro ao reagir','error'); }
+    // Sincroniza badges com dados reais do banco (em background)
+    db.from('olha_aqui_reactions').select('reaction').eq('story_id', it.id).then(({data:rxData})=>{
+      if(!rxData) return;
+      const rxCount = {};
+      rxData.forEach(r=>{ rxCount[r.reaction]=(rxCount[r.reaction]||0)+1; });
+      // Sincroniza data-count nos botões
+      document.querySelectorAll('.oa-v-reaction-btn').forEach(b=>{ b.dataset.count = rxCount[b.dataset.r]||0; });
+      _oaUpdateReactionBadges(rxCount);
+    });
+  }catch(e){
+    // Reverte UI se falhar
+    btn.classList.toggle('selected', isSelected);
+    showToast('Erro ao reagir','error');
+  }
+}
+// Helper: lê contagens locais dos data-count dos botões
+function _oaGetLocalRxCount(){
+  const rxCount = {};
+  document.querySelectorAll('.oa-v-reaction-btn').forEach(b=>{
+    const c = parseInt(b.dataset.count||'0');
+    if(c > 0) rxCount[b.dataset.r] = c;
+  });
+  return rxCount;
 }
 window.oaReact = oaReact;
 
