@@ -7397,6 +7397,108 @@ window.addEventListener('load', ()=>{
   }, 5000); // 5s de failsafe — aguarda Supabase em conexões lentas
 });
 
+// ════════════════════════════════════════════════════════════════════════
+// 🚀 EA-LML — Lazy Module Loader (Code Splitting Inline)
+// ════════════════════════════════════════════════════════════════════════
+// Carrega blocos de código pesados (editor de layout, lojas, modais grandes)
+// SOB DEMANDA, em vez de tudo no boot. Reduz ~120KB do parse inicial.
+//
+// Como funciona:
+//   1. Blocos pesados ficam em <script type="text/ea-lazy-module" id="ea-lm-XXX">
+//      → o navegador NÃO executa (não é JS válido para ele).
+//   2. window.EALazy.load('XXX') injeta o conteúdo como <script> real,
+//      em qualquer momento (clique, idle, hover...).
+//   3. Stubs globais (openLayoutEditor, etc.) carregam o módulo na 1ª chamada.
+//   4. Pré-carga otimista: módulos não-críticos sobem em requestIdleCallback,
+//      sem bloquear o TTI.
+// ════════════════════════════════════════════════════════════════════════
+window.EALazy = (function(){
+  const _loaded = Object.create(null);   // id → true
+  const _loading = Object.create(null);  // id → Promise
+
+  function load(id){
+    if(_loaded[id]) return Promise.resolve(true);
+    if(_loading[id]) return _loading[id];
+
+    const tpl = document.getElementById('ea-lm-'+id);
+    if(!tpl){
+      console.warn('[EA-LML] módulo não encontrado:', id);
+      return Promise.reject(new Error('module not found: '+id));
+    }
+
+    _loading[id] = new Promise((resolve, reject)=>{
+      try{
+        const t0 = performance.now();
+        const code = tpl.textContent || '';
+        const s = document.createElement('script');
+        s.setAttribute('data-ea-lm', id);
+        s.textContent = code;
+        // Insere no body — script inline executa síncrono ao ser anexado.
+        (document.body || document.head).appendChild(s);
+        _loaded[id] = true;
+        // Libera o template original (economia de memória — pode chegar a 100KB+)
+        tpl.textContent = '';
+        const dt = (performance.now()-t0).toFixed(1);
+        console.log('[EA-LML] ✓ módulo carregado:', id, '('+dt+'ms)');
+        resolve(true);
+      }catch(e){
+        console.error('[EA-LML] falha ao carregar', id, e);
+        delete _loading[id];
+        reject(e);
+      }
+    });
+    return _loading[id];
+  }
+
+  // Pré-carga em idle: chamada para módulos que provavelmente serão usados
+  // mas não imediatamente. Usa requestIdleCallback p/ não roubar tempo do TTI.
+  function preload(id){
+    const ric = window.requestIdleCallback || function(cb){ return setTimeout(cb, 1500); };
+    ric(()=>{ load(id).catch(()=>{}); }, { timeout: 6000 });
+  }
+
+  // Stub: cria uma função global que, na 1ª chamada, carrega o módulo
+  // e DEPOIS invoca a função real (já redefinida pelo módulo carregado).
+  // Os onclick="..." inline continuam funcionando normalmente.
+  function stub(fnName, moduleId){
+    if(typeof window[fnName] === 'function' && !window[fnName]._eaLazyStub){
+      // Função já foi definida pelo módulo (carregamento concluído antes do stub)
+      return;
+    }
+    const fn = function(){
+      const args = arguments;
+      const ctx  = this;
+      return load(moduleId).then(()=>{
+        const real = window[fnName];
+        if(typeof real !== 'function' || real._eaLazyStub){
+          throw new Error('Stub para '+fnName+' não foi substituído pelo módulo '+moduleId);
+        }
+        return real.apply(ctx, args);
+      });
+    };
+    fn._eaLazyStub = true;
+    window[fnName] = fn;
+  }
+
+  return { load, preload, stub };
+})();
+
+// ── STUBS DE FUNÇÕES PESADAS ──────────────────────────────────────
+// Estes nomes são chamados em onclick="..." inline pelo HTML.
+// Na 1ª chamada, baixam o módulo correspondente e re-executam.
+EALazy.stub('openLayoutEditor', 'layout-editor');
+
+// ── PRE-WARMING INTELIGENTE ───────────────────────────────────────
+// Após o app subir, em idle time, sobe módulos prováveis em segundo plano.
+// Se o usuário clicar antes do preload terminar, o load() é deduplicado.
+window.addEventListener('load', ()=>{
+  // Espera 2s após o load p/ não competir com o boot do Supabase
+  setTimeout(()=>{
+    // Layout editor: usuários logados frequentemente personalizam o perfil
+    EALazy.preload('layout-editor');
+  }, 2000);
+});
+
 // ===== CONFIG =====
 const SB_URL='https://gpustnmwxlolgyevjjtf.supabase.co';
 
@@ -32182,6 +32284,129 @@ window.oaNavigateFromHeader = function(){
   }
 
   // ─────────────────────────────────────────────────────────────
+  // INJEÇÃO DO BOTÃO 🎨 LAYOUT — desabilitada (botão agora inline na barra de botões)
+  // Nota: estes hooks ficam no IIFE crítico porque precisam ser
+  // instalados no boot (não esperam o usuário clicar em "Personalizar").
+  // ─────────────────────────────────────────────────────────────
+  function injectLayoutButton(){
+    // Botão 🎨 já é criado inline em renderProfile() junto ao "Editar Perfil"
+    return true;
+  }
+
+  // Observador: toda vez que o coverBar mudar, tenta injetar o botão
+  const _mo = new MutationObserver(()=>{
+    try{ injectLayoutButton(); }catch(_){}
+  });
+  const _startObs = ()=>{
+    const cover = document.getElementById('profile-cover-bar');
+    if(cover && !cover.dataset.lpObs){
+      _mo.observe(cover, {childList:true, subtree:true});
+      cover.dataset.lpObs = '1';
+    }
+  };
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', _startObs);
+  } else {
+    _startObs();
+  }
+
+  // Intercepta loadProfilePage: injeta o botão logo depois que o perfil carrega
+  // (backup extra caso o MutationObserver não dispare a tempo)
+  if(typeof window.loadProfilePage === 'function'){
+    const _origLoadBtn = window.loadProfilePage;
+    window.loadProfilePage = async function(){
+      const r = await _origLoadBtn.apply(this, arguments);
+      // Múltiplas tentativas escalonadas para garantir que o DOM esteja pronto
+      [200, 500, 1000, 2000].forEach(ms=>{
+        setTimeout(()=>{
+          try{ _startObs(); injectLayoutButton(); }catch(_){}
+        }, ms);
+      });
+      return r;
+    };
+  }
+
+  // ✅ MutationObserver: detecta quando a página de perfil fica ativa
+  // sem nenhum setInterval — zero custo quando o perfil não está visível.
+  const _profilePage = document.getElementById('page-profile');
+  if(_profilePage){
+    new MutationObserver(()=>{
+      if(_profilePage.classList.contains('active')){
+        _startObs();
+        if(!_profilePage.querySelector('#lp-open-btn')) injectLayoutButton();
+      }
+    }).observe(_profilePage, { attributes: true, attributeFilter: ['class'] });
+  }
+
+  // Tentativa imediata após o script carregar (caso o perfil já esteja aberto)
+  setTimeout(()=>{ try{ _startObs(); injectLayoutButton(); }catch(_){} }, 500);
+  setTimeout(()=>{ try{ injectLayoutButton(); }catch(_){} }, 1500);
+
+  // Exporta utilidades para testes/acesso externo
+  // openEditor() dispara o lazy load automaticamente via stub de openLayoutEditor.
+  window.EA_LAYOUT = {
+    apply: applyProfileLayout,
+    clear: clearProfileLayout,
+    fetchAndApply: fetchAndApplyLayout,
+    PRESETS: LP_PRESETS,
+    openEditor: ()=>window.openLayoutEditor()
+  };
+
+  console.log('[🎨 Layout Personalizado] v61 — núcleo carregado (editor é lazy)');
+
+  // ═══════════════════════════════════════════════════════════════════
+  // 🚀 CODE SPLITTING — Expor dependências para o lazy module do EDITOR
+  // ───────────────────────────────────────────────────────────────────
+  // O editor visual (modal de personalização ~33KB) foi extraído daqui
+  // e movido para o lazy module #ea-lm-layout-editor. Ele só carrega
+  // quando o usuário clica em "Personalizar Layout". Todas as constantes
+  // e helpers necessários ficam expostos via window._EA_LP_DEPS.
+  // ═══════════════════════════════════════════════════════════════════
+  window._EA_LP_DEPS = {
+    LP_PRESETS, LP_AV_FRAMES, LP_SCENES,
+    _lpClone, _lpSanitize, _lpMerged,
+    _cu, _db, _cp,
+    applyProfileLayout, clearProfileLayout, fetchAndApplyLayout
+  };
+
+  // Stub do editor: na 1ª chamada, baixa o lazy module e re-executa.
+  // Os onclick="openLayoutEditor()" do HTML continuam funcionando.
+  if(typeof window.EALazy !== 'undefined'){
+    window.EALazy.stub('openLayoutEditor', 'layout-editor');
+  }
+
+})(); // ← FIM do IIFE CRÍTICO (apply / clear / fetch / hooks)
+</script>
+
+<!-- ══════════════════════════════════════════════════════════════
+     🎨 LAZY MODULE: Editor visual de Layout (~33 KB)
+     Não executa no boot. Carrega sob demanda quando o usuário clica
+     em "🎨 Personalizar Layout", ou em idle time (preload).
+     Acessa as constantes/helpers via window._EA_LP_DEPS.
+     ══════════════════════════════════════════════════════════════ -->
+<script type="text/ea-lazy-module" id="ea-lm-layout-editor">
+(function(){
+  'use strict';
+  const D = window._EA_LP_DEPS;
+  if(!D){
+    console.error('[LP Editor] _EA_LP_DEPS não disponível — módulo crítico não carregou.');
+    return;
+  }
+  // Re-importa as dependências como locais (preserva o código original)
+  const LP_PRESETS = D.LP_PRESETS;
+  const LP_AV_FRAMES = D.LP_AV_FRAMES;
+  const LP_SCENES = D.LP_SCENES;
+  const _lpClone = D._lpClone;
+  const _lpSanitize = D._lpSanitize;
+  const _lpMerged = D._lpMerged;
+  const _cu = D._cu;
+  const _db = D._db;
+  const _cp = D._cp;
+  const applyProfileLayout = D.applyProfileLayout;
+  const clearProfileLayout = D.clearProfileLayout;
+  const fetchAndApplyLayout = D.fetchAndApplyLayout;
+
+  // ─────────────────────────────────────────────────────────────
   // EDITOR DE LAYOUT — UI do modal
   // ─────────────────────────────────────────────────────────────
   let _lpState = null; // layout em edição
@@ -32675,74 +32900,8 @@ window.oaNavigateFromHeader = function(){
     }
   };
 
-  // ─────────────────────────────────────────────────────────────
-  // INJEÇÃO DO BOTÃO 🎨 LAYOUT — desabilitada (botão agora inline na barra de botões)
-  // ─────────────────────────────────────────────────────────────
-  function injectLayoutButton(){
-    // Botão 🎨 já é criado inline em renderProfile() junto ao "Editar Perfil"
-    return true;
-  }
-
-  // Observador: toda vez que o coverBar mudar, tenta injetar o botão
-  const _mo = new MutationObserver(()=>{
-    try{ injectLayoutButton(); }catch(_){}
-  });
-  const _startObs = ()=>{
-    const cover = document.getElementById('profile-cover-bar');
-    if(cover && !cover.dataset.lpObs){
-      _mo.observe(cover, {childList:true, subtree:true});
-      cover.dataset.lpObs = '1';
-    }
-  };
-  if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', _startObs);
-  } else {
-    _startObs();
-  }
-
-  // Intercepta loadProfilePage: injeta o botão logo depois que o perfil carrega
-  // (backup extra caso o MutationObserver não dispare a tempo)
-  if(typeof window.loadProfilePage === 'function'){
-    const _origLoadBtn = window.loadProfilePage;
-    window.loadProfilePage = async function(){
-      const r = await _origLoadBtn.apply(this, arguments);
-      // Múltiplas tentativas escalonadas para garantir que o DOM esteja pronto
-      [200, 500, 1000, 2000].forEach(ms=>{
-        setTimeout(()=>{
-          try{ _startObs(); injectLayoutButton(); }catch(_){}
-        }, ms);
-      });
-      return r;
-    };
-  }
-
-  // ✅ MutationObserver: detecta quando a página de perfil fica ativa
-  // sem nenhum setInterval — zero custo quando o perfil não está visível.
-  const _profilePage = document.getElementById('page-profile');
-  if(_profilePage){
-    new MutationObserver(()=>{
-      if(_profilePage.classList.contains('active')){
-        _startObs();
-        if(!_profilePage.querySelector('#lp-open-btn')) injectLayoutButton();
-      }
-    }).observe(_profilePage, { attributes: true, attributeFilter: ['class'] });
-  }
-
-  // Tentativa imediata após o script carregar (caso o perfil já esteja aberto)
-  setTimeout(()=>{ try{ _startObs(); injectLayoutButton(); }catch(_){} }, 500);
-  setTimeout(()=>{ try{ injectLayoutButton(); }catch(_){} }, 1500);
-
-  // Exporta utilidades para testes/acesso externo
-  window.EA_LAYOUT = {
-    apply: applyProfileLayout,
-    clear: clearProfileLayout,
-    fetchAndApply: fetchAndApplyLayout,
-    PRESETS: LP_PRESETS,
-    openEditor: ()=>window.openLayoutEditor()
-  };
-
-  console.log('[🎨 Layout Personalizado] v61 carregado');
-})();
+  console.log('[🎨 Layout Editor — lazy module] carregado sob demanda');
+})(); // ← FIM do IIFE do LAZY MODULE (editor visual)
 </script>
 
 <script>
