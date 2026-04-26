@@ -18466,15 +18466,16 @@ function buildBizCard(biz, isFollowing){
       : `<span style="font-size:10px;color:var(--text-muted);">Sem avaliações</span>`;
   }
   const starsDisp = renderStarsDisp(biz.rating, biz.rating_count);
-  // Stats — Loja: Vendas + Seguidores | Serviço: Agendados + Seguidores
-  // "Fechados" removido do card público (não refletia vendas reais concluídas)
+  // Stats — Loja: Vendas reais (calculadas async) | Serviço: Agendamentos concluídos (calculados async)
+  // O span com id="biz-card-sales-<id>" começa com o valor do banco e é atualizado
+  // pela query async abaixo que conta diretamente das tabelas reais.
   const statsHtml = biz.category === 'loja'
     ? `<div class="biz-stats">
-        <div class="biz-stat"><span class="biz-stat-n">${biz.sales_done||0}</span><span class="biz-stat-l">✅ Vendas</span></div>
+        <div class="biz-stat"><span id="biz-card-sales-${biz.id}" class="biz-stat-n">${biz.sales_done||0}</span><span class="biz-stat-l">✅ Vendas</span></div>
         <div class="biz-stat"><span class="biz-stat-n">${biz.followers_count||0}</span><span class="biz-stat-l">${isFollowing?'👥 Seguindo':'👥 Seguidores'}</span></div>
        </div>`
     : `<div class="biz-stats">
-        <div class="biz-stat"><span class="biz-stat-n">${biz.deals_closed||0}</span><span class="biz-stat-l">📅 Agendados</span></div>
+        <div class="biz-stat"><span id="biz-card-sales-${biz.id}" class="biz-stat-n">${biz.deals_closed||0}</span><span class="biz-stat-l">📅 Agendamentos</span></div>
         <div class="biz-stat"><span class="biz-stat-n">${biz.followers_count||0}</span><span class="biz-stat-l">${isFollowing?'👥 Seguindo':'👥 Seguidores'}</span></div>
        </div>`;
   div.innerHTML = `
@@ -18499,7 +18500,7 @@ function buildBizCard(biz, isFollowing){
   div.querySelector('.biz-body').addEventListener('click', e=>{
     if(!e.target.closest('button')) openBizDetail(biz);
   });
-  // Busca rating direto das reviews para garantir valor sempre atualizado
+  // ── Query async 1: rating real das reviews ───────────────────────────────────
   db.from('business_reviews').select('rating').eq('business_id', biz.id).then(({data:revs})=>{
     const el = document.getElementById('biz-card-rating-'+biz.id);
     if(!el) return;
@@ -18513,6 +18514,48 @@ function buildBizCard(biz, isFollowing){
       el.innerHTML = renderStarsDisp(null, 0);
     }
   }).catch(()=>{});
+
+  // ── Query async 2: contagem REAL de vendas/agendamentos concluídos ────────────
+  // Loja:    conta deals com status done/closed (igual ao dashboard do dono)
+  // Serviço: conta appointments com status done
+  // Atualiza o span e sincroniza o contador no banco silenciosamente.
+  (async () => {
+    const salesEl = document.getElementById('biz-card-sales-' + biz.id);
+    if(!salesEl) return;
+    try{
+      let realCount = 0;
+      if(biz.category === 'loja'){
+        // Conta purchases concluídas vinculadas a este negócio
+        const {count} = await db.from('purchases')
+          .select('id', {count:'exact', head:true})
+          .eq('business_id', biz.id)
+          .eq('status', 'done');
+        // Também conta deals antigos sem purchase (retrocompat)
+        const {count:dealsDone} = await db.from('business_deals')
+          .select('id', {count:'exact', head:true})
+          .eq('business_id', biz.id)
+          .eq('status', 'done');
+        realCount = (count||0) + (dealsDone||0);
+      } else {
+        // Serviço: agendamentos concluídos
+        const {count} = await db.from('appointments')
+          .select('id', {count:'exact', head:true})
+          .eq('business_id', biz.id)
+          .eq('status', 'done');
+        realCount = count || 0;
+      }
+      // Atualiza o card se o valor mudou
+      if(parseInt(salesEl.textContent) !== realCount){
+        salesEl.textContent = realCount;
+        // Sincroniza o contador no banco silenciosamente
+        db.from('businesses')
+          .update({sales_done: realCount})
+          .eq('id', biz.id)
+          .catch(()=>{});
+      }
+    }catch(_){}
+  })();
+
   return div;
 }
 
