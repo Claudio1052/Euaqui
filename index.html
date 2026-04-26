@@ -8001,6 +8001,16 @@ document.addEventListener('error', function(e){
 
 document.addEventListener('DOMContentLoaded', async()=>{
   _initFont();
+  // ── Preserva deep-link params antes de qualquer redirect/login ──
+  (function(){
+    try{
+      const _p = new URLSearchParams(window.location.search);
+      const _post = _p.get('post'), _biz = _p.get('biz'), _comm = _p.get('comm');
+      if(_post) sessionStorage.setItem('__ea_dl_post', _post);
+      if(_biz)  sessionStorage.setItem('__ea_dl_biz',  _biz);
+      if(_comm) sessionStorage.setItem('__ea_dl_comm', _comm);
+    }catch(e){}
+  })();
   const minWait = new Promise(r=>setTimeout(r,400));
 
   try{
@@ -23067,7 +23077,7 @@ function shareBizLink(url, name){
 // ── Handle biz invite URL on load ────────────────────────────────
 function checkBizInviteUrl(){
   const params = new URLSearchParams(window.location.search);
-  const bizId = params.get('biz');
+  const bizId = params.get('biz') || (()=>{ const v=sessionStorage.getItem('__ea_dl_biz'); sessionStorage.removeItem('__ea_dl_biz'); return v; })();
   if(bizId && CU){
     // Navigate to businesses page and open this business
     setTimeout(async ()=>{
@@ -23083,7 +23093,7 @@ function checkBizInviteUrl(){
 // Usa modal flutuante — independente do feed ter carregado ou não.
 async function checkPostUrl(){
   const params = new URLSearchParams(window.location.search);
-  const postId = params.get('post');
+  const postId = params.get('post') || (()=>{ const v=sessionStorage.getItem('__ea_dl_post'); sessionStorage.removeItem('__ea_dl_post'); return v; })();
   if(!postId) return;
 
   // Limpa o param da URL imediatamente
@@ -27101,7 +27111,7 @@ function copyToClipboard(txt){
 
 async function checkCommInviteUrl(){
   const params=new URLSearchParams(window.location.search);
-  const commId=params.get('comm');
+  const commId=params.get('comm')||(()=>{ const v=sessionStorage.getItem('__ea_dl_comm'); sessionStorage.removeItem('__ea_dl_comm'); return v; })();
   if(commId&&CU){
     try{
       const{data:comm}=await db.from('communities').select('id,name').eq('id',commId).maybeSingle();
