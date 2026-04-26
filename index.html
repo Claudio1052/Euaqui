@@ -18334,6 +18334,69 @@ function changeBizCity(){
 }
 
 // ── Explorar lojas ────────────────────────────────────────────────
+// ── Contagem real de vendas em lote (1 query por tipo para toda a página) ───
+// Recebe o array de negócios já renderizados, separa lojas e serviços,
+// faz 2 queries com .in() e atualiza os spans de uma vez só.
+async function _updateBizSalesCounts(bizList){
+  if(!bizList?.length) return;
+
+  const lojas    = bizList.filter(b => b.category === 'loja').map(b => b.id);
+  const servicos = bizList.filter(b => b.category !== 'loja').map(b => b.id);
+
+  // Mapa: business_id → contagem real
+  const countMap = {};
+
+  try{
+    // ── Lojas: purchases concluídas agrupadas por business_id ─────────────────
+    if(lojas.length){
+      const {data:purchRows} = await db.from('purchases')
+        .select('business_id')
+        .in('business_id', lojas)
+        .eq('status', 'done');
+      (purchRows||[]).forEach(r=>{
+        countMap[r.business_id] = (countMap[r.business_id]||0) + 1;
+      });
+
+      // deals antigos sem purchase (retrocompat — status='done' direto no deal)
+      const {data:dealRows} = await db.from('business_deals')
+        .select('business_id')
+        .in('business_id', lojas)
+        .eq('status', 'done');
+      (dealRows||[]).forEach(r=>{
+        countMap[r.business_id] = (countMap[r.business_id]||0) + 1;
+      });
+    }
+
+    // ── Serviços: agendamentos concluídos agrupados por business_id ───────────
+    if(servicos.length){
+      const {data:apptRows} = await db.from('appointments')
+        .select('business_id')
+        .in('business_id', servicos)
+        .eq('status', 'done');
+      (apptRows||[]).forEach(r=>{
+        countMap[r.business_id] = (countMap[r.business_id]||0) + 1;
+      });
+    }
+  }catch(e){
+    console.warn('[_updateBizSalesCounts]', e?.message);
+    return;
+  }
+
+  // ── Atualiza spans e sincroniza banco silenciosamente ─────────────────────
+  bizList.forEach(biz=>{
+    const realCount = countMap[biz.id] || 0;
+    const span = document.getElementById('biz-card-sales-' + biz.id);
+    if(span && parseInt(span.textContent) !== realCount){
+      span.textContent = realCount;
+      // Sincroniza o contador no banco (silencioso, sem esperar resposta)
+      db.from('businesses')
+        .update({sales_done: realCount})
+        .eq('id', biz.id)
+        .catch(()=>{});
+    }
+  });
+}
+
 // ── Estado de paginação do browse de negócios ──────────────────────────────
 const BIZ_PAGE_SIZE    = 10;  // lojas por página — mesmo padrão do feed
 let _bizCursor         = null;  // { followers_count, id } do último card carregado
@@ -18422,6 +18485,13 @@ async function loadBizBrowse(reset=true){
 
   // Renderiza cards
   data.forEach(biz => grid.appendChild(buildBizCard(biz, _bizFollowed.has(biz.id))));
+
+  // ── Contagem REAL de vendas — 2 queries para toda a página (não 1 por card) ──
+  // Agrupa todos os IDs da página e faz apenas:
+  //   1 query em purchases (lojas)
+  //   1 query em appointments (serviços)
+  // Atualiza os spans e sincroniza o banco silenciosamente.
+  _updateBizSalesCounts(data);
 
   // ── Sentinel para scroll infinito (IntersectionObserver) ─────────────────
   // Remove sentinel anterior se existir
@@ -18514,47 +18584,6 @@ function buildBizCard(biz, isFollowing){
       el.innerHTML = renderStarsDisp(null, 0);
     }
   }).catch(()=>{});
-
-  // ── Query async 2: contagem REAL de vendas/agendamentos concluídos ────────────
-  // Loja:    conta deals com status done/closed (igual ao dashboard do dono)
-  // Serviço: conta appointments com status done
-  // Atualiza o span e sincroniza o contador no banco silenciosamente.
-  (async () => {
-    const salesEl = document.getElementById('biz-card-sales-' + biz.id);
-    if(!salesEl) return;
-    try{
-      let realCount = 0;
-      if(biz.category === 'loja'){
-        // Conta purchases concluídas vinculadas a este negócio
-        const {count} = await db.from('purchases')
-          .select('id', {count:'exact', head:true})
-          .eq('business_id', biz.id)
-          .eq('status', 'done');
-        // Também conta deals antigos sem purchase (retrocompat)
-        const {count:dealsDone} = await db.from('business_deals')
-          .select('id', {count:'exact', head:true})
-          .eq('business_id', biz.id)
-          .eq('status', 'done');
-        realCount = (count||0) + (dealsDone||0);
-      } else {
-        // Serviço: agendamentos concluídos
-        const {count} = await db.from('appointments')
-          .select('id', {count:'exact', head:true})
-          .eq('business_id', biz.id)
-          .eq('status', 'done');
-        realCount = count || 0;
-      }
-      // Atualiza o card se o valor mudou
-      if(parseInt(salesEl.textContent) !== realCount){
-        salesEl.textContent = realCount;
-        // Sincroniza o contador no banco silenciosamente
-        db.from('businesses')
-          .update({sales_done: realCount})
-          .eq('id', biz.id)
-          .catch(()=>{});
-      }
-    }catch(_){}
-  })();
 
   return div;
 }
