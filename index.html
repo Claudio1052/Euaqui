@@ -7639,8 +7639,154 @@ async function _hydrateCommAvatars(commIds){
 const CACHE_TTL=60000;
 
 // ===== DB — iniciado imediatamente (SDK já está no <head>) =====
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🛡️ CLIENT-SIDE RATE LIMITER — Proteção contra Denial-of-Wallet (v78)
+// ═══════════════════════════════════════════════════════════════════════════
+// NOTA: Esta camada é complementar ao Cloudflare WAF (servidor).
+// Impede que bugs, loops infinitos ou scripts maliciosos injeção-XSS
+// disparem milhares de requests antes de serem bloqueados pelo WAF.
+//
+// Como funciona:
+//   • Rastreia requests por janela de tempo (sliding window)
+//   • Bloqueia novas requests se o limite for ultrapassado
+//   • Exponential back-off ao receber 429 do Supabase
+//   • Alerta no console em modo dev; silencioso em produção
+// ═══════════════════════════════════════════════════════════════════════════
+const _RL = (function(){
+  // ── Configuração de limites ──────────────────────────────────────────────
+  const CFG = {
+    windowMs:     60_000,   // janela deslizante de 60 segundos
+    maxRequests:  300,      // máx. requests por janela (user real: ~20-50/min)
+    burstMax:     30,       // máx. requests em rafaga (1 segundo)
+    burstWindowMs:1_000,
+    backoffBase:  500,      // backoff inicial após 429 (ms)
+    backoffMax:   30_000,   // backoff máximo (30s)
+  };
+
+  let _timestamps    = [];   // sliding window global
+  let _burstTs       = [];   // sliding window de rafaga
+  let _blocked       = false;
+  let _blockUntil    = 0;
+  let _backoffMs     = CFG.backoffBase;
+  let _429Count      = 0;
+  let _totalBlocked  = 0;
+
+  function _now(){ return Date.now(); }
+
+  function _prune(arr, windowMs){
+    const cutoff = _now() - windowMs;
+    let i = 0;
+    while(i < arr.length && arr[i] < cutoff) i++;
+    if(i > 0) arr.splice(0, i);
+  }
+
+  // Verifica se pode prosseguir; retorna {ok, waitMs}
+  function check(){
+    const now = _now();
+
+    // Bloqueio por backoff (429 recebido do servidor)
+    if(_blocked && now < _blockUntil){
+      _totalBlocked++;
+      return { ok: false, waitMs: _blockUntil - now, reason: 'backoff' };
+    }
+    if(_blocked) _blocked = false;
+
+    // Prune sliding windows
+    _prune(_timestamps, CFG.windowMs);
+    _prune(_burstTs,    CFG.burstWindowMs);
+
+    // Limite global (60s)
+    if(_timestamps.length >= CFG.maxRequests){
+      _totalBlocked++;
+      const waitMs = (_timestamps[0] + CFG.windowMs) - now;
+      return { ok: false, waitMs, reason: 'window' };
+    }
+
+    // Limite de rafaga (1s)
+    if(_burstTs.length >= CFG.burstMax){
+      _totalBlocked++;
+      const waitMs = (_burstTs[0] + CFG.burstWindowMs) - now;
+      return { ok: false, waitMs, reason: 'burst' };
+    }
+
+    // Passa — registra o timestamp
+    _timestamps.push(now);
+    _burstTs.push(now);
+    return { ok: true, waitMs: 0 };
+  }
+
+  // Chamado quando o Supabase retorna 429
+  function on429(){
+    _429Count++;
+    _backoffMs = Math.min(_backoffMs * 2, CFG.backoffMax);
+    _blocked   = true;
+    _blockUntil = _now() + _backoffMs;
+    console.warn(`[🛡️ RL] 429 recebido (#${_429Count}). Backoff de ${_backoffMs}ms até ${new Date(_blockUntil).toLocaleTimeString()}`);
+  }
+
+  // Reset do backoff após sucesso consecutivo
+  function onSuccess(){
+    if(_backoffMs > CFG.backoffBase) _backoffMs = Math.max(CFG.backoffBase, _backoffMs / 2);
+  }
+
+  function stats(){
+    return { window: _timestamps.length, burst: _burstTs.length, blocked: _totalBlocked, backoffMs: _backoffMs, blocked429: _429Count };
+  }
+
+  return { check, on429, onSuccess, stats, CFG };
+})();
+
+// ── Interceptor transparente do Supabase: envolve db.from() ─────────────────
+// Substituímos db após o createClient com um Proxy que injeta rate limiting
+// em todo acesso a .from() sem alterar nenhuma linha de código existente.
+function _wrapDbWithRL(client){
+  return new Proxy(client, {
+    get(target, prop){
+      if(prop === 'from'){
+        return function(table){
+          const { ok, waitMs, reason } = _RL.check();
+          if(!ok){
+            console.warn(`[🛡️ RL] Bloqueado (${reason}) — aguarde ${Math.ceil(waitMs/1000)}s. Tabela: ${table}. Stats:`, _RL.stats());
+            // Retorna um objeto que resolve em erro controlado para todas as operações
+            const _errProxy = ()=>({
+              data: null,
+              error: { message: `[RateLimit] Muitas requisições. Aguarde ${Math.ceil(waitMs/1000)}s.`, code: 'rate_limited' }
+            });
+            const _chainProxy = new Proxy({}, { get(){ return ()=>new Proxy({},{get(){ return _chainProxy; }, apply(){ return Promise.resolve(_errProxy()); }}); }});
+            return _chainProxy;
+          }
+          const qb = target.from(table);
+          // Intercepta .then() para capturar 429s e registrar sucesso
+          return new Proxy(qb, {
+            get(qbTarget, qbProp){
+              const val = qbTarget[qbProp];
+              if(typeof val === 'function'){
+                return function(...args){
+                  const result = val.apply(qbTarget, args);
+                  if(result && typeof result.then === 'function'){
+                    return result.then(res=>{
+                      if(res?.error?.message?.includes('429') || res?.status === 429){ _RL.on429(); }
+                      else if(!res?.error){ _RL.onSuccess(); }
+                      return res;
+                    });
+                  }
+                  return result;
+                };
+              }
+              return val;
+            }
+          });
+        };
+      }
+      return target[prop];
+    }
+  });
+}
+// (aplicado após createClient — ver abaixo)
+
 const {createClient} = window.supabase;
-const db = createClient(SB_URL, SB_KEY, {
+let db = createClient(SB_URL, SB_KEY, {
   auth: {
     storage: window.localStorage,
     storageKey: 'sb-'+SB_URL.split('.')[0].split('//')[1]+'-auth-token',
@@ -7656,6 +7802,8 @@ const db = createClient(SB_URL, SB_KEY, {
     }
   }
 });
+// 🛡️ Aplica rate limiter transparente sobre todas as queries do Supabase
+db = _wrapDbWithRL(db);
 
 /* ── SQL necessário no Supabase para views e reações de stories ──────────────
    Execute no SQL Editor do Supabase:
