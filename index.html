@@ -8104,31 +8104,15 @@ function showApp(){
 
   // ── Restaurar página pela URL, pelo redirect 404 ou iniciar em home ──
   try{
-    // Recupera a página salva: prioridade → hash da URL → sessionStorage → home
-    // O hash (#/lojas) é preservado pelo browser ao recarregar e ao voltar/avançar.
-    let redirectPath = null;
-
-    // 1) Hash na URL (ex: #/lojas) — preservado automaticamente pelo browser
-    if(location.hash && location.hash.length > 1){
-      redirectPath = location.hash;
-    }
-
-    // 2) sessionStorage — salvo a cada navegação como fallback
-    if(!redirectPath){
-      try{ redirectPath = sessionStorage.getItem('__ea_last_page'); }catch(e){}
-    }
-
-    const urlPage = _eaGetPageFromPath(redirectPath || location.pathname);
+    // Recupera a última página visitada do sessionStorage
+    let _savedPage = null;
+    try{ _savedPage = sessionStorage.getItem('__ea_last_page'); }catch(e){}
+    const urlPage = _savedPage || 'home';
     const startPage = urlPage || 'home';
     _eaLastPushedPage = startPage;
 
-    if(startPage !== 'home'){
-      // Coloca a home como base da pilha, depois a página restaurada
-      history.replaceState({eaPage:'home'}, '', '/');
-      history.pushState({eaPage: startPage}, '', _EA_ROUTES[startPage] || '/');
-    } else {
-      history.replaceState({eaPage:'home'}, '', '/');
-    }
+    // Sempre mantém a URL como '/' — evita 404 no GitHub Pages ao recarregar
+    history.replaceState({eaPage: startPage}, '', '/');
     _navBase(startPage);
 
   }catch(e){ console.warn('[EA-History] showApp init:', e); }
@@ -8541,13 +8525,11 @@ let _eaLastPushedPage = null;
 function _eaPushState(page){
   if(_eaLastPushedPage === page) return; // evita duplicatas consecutivas
   _eaLastPushedPage = page;
+  // Salva a página no sessionStorage para recuperar ao recarregar
+  try{ sessionStorage.setItem('__ea_last_page', page); }catch(e){}
   try{
-    // Usa hash routing (#/rota) — o servidor nunca vê a rota, evita erro 404 ao recarregar
-    const hash = _EA_ROUTES[page] || '/';
-    history.pushState({eaPage: page}, '', '#' + hash);
+    history.pushState({eaPage: page}, '', '/');
   }catch(e){ console.warn('[EA-History] pushState:', e); }
-  // Memoriza página atual no sessionStorage — recuperado ao recarregar
-  try{ sessionStorage.setItem('__ea_last_page', '#' + (_EA_ROUTES[page] || '/')); }catch(e){}
 }
 
 // Listener do botão voltar (popstate)
