@@ -9855,10 +9855,13 @@ async function react(postId,reaction,btn){
       const card=btn.closest('.post-card');
       const commId=card?.dataset?.commid||card?.closest('[data-commid]')?.dataset?.commid;
       if(commId&&commId!=='undefined') addCommXP(commId,CU.id,'like',2);
-      // Notificar o autor do post (com post_id para roteamento)
+      // Notificar o autor do post (com post_id para roteamento) — só se for amigo
       try{
         const{data:postOwner}=await db.from('posts').select('user_id').eq('id',postId).maybeSingle();
         if(postOwner && postOwner.user_id!==CU.id){
+          // Verifica se são amigos antes de notificar
+          const{data:friCheck}=await db.from('friends').select('id').eq('user_id',CU.id).eq('friend_id',postOwner.user_id).maybeSingle();
+          if(friCheck){
           // Mapa de emoji → label legível
           const RX_LABEL={'👍':'👍','❤':'❤','😂':'😂','😮':'😮','😢':'😢'};
           const rxEmoji = RX_LABEL[reaction] || reaction;
@@ -9869,6 +9872,7 @@ async function react(postId,reaction,btn){
             post_id:postId, read:false,
             reaction_type: reaction   // salvo para exibição dinâmica no ícone
           });
+          }
         }
       }catch(e_notif){}
     }
@@ -10455,10 +10459,12 @@ async function submitCmt(postId, btnEl){
     }
     inp._mentions = {};
     inp.value='';
-    // Notificar o autor do post
+    // Notificar o autor do post — só se for amigo
     try{
       const{data:postOwner}=await db.from('posts').select('user_id').eq('id',postId).maybeSingle();
       if(postOwner && postOwner.user_id !== CU.id){
+        const{data:friCheck2}=await db.from('friends').select('id').eq('user_id',CU.id).eq('friend_id',postOwner.user_id).maybeSingle();
+        if(friCheck2){
         await db.from('notifications').insert({
           user_id: postOwner.user_id,
           actor_id: CU.id,
@@ -10467,6 +10473,7 @@ async function submitCmt(postId, btnEl){
           post_id: postId,
           read: false
         });
+        }
       }
     }catch(e){}
     document.querySelectorAll('[id="cmtcnt-'+postId+'"]').forEach(el=>{
@@ -17158,6 +17165,14 @@ async function loadFriendsList(type){
       const{data} = await db.from('follows')
         .select('id,follower_id,profiles!follows_follower_id_fkey(id,username,full_name,avatar_url)')
         .eq('following_id',CU.id);
+      // Verifica quais seguidores já são amigos
+      let followerFriendIds = new Set();
+      if(CU && (data||[]).length){
+        try{
+          const{data:frData}=await db.from('friends').select('friend_id').eq('user_id',CU.id).in('friend_id',(data||[]).map(f=>f.follower_id));
+          (frData||[]).forEach(f=>followerFriendIds.add(f.friend_id));
+        }catch(e){}
+      }
       list.innerHTML = (data||[]).length ? data.map(f => `
         <div class="friend-card">
           <div class="friend-av-wrap" onclick="loadProfilePage('${f.follower_id}')" style="cursor:pointer;">
@@ -17167,7 +17182,10 @@ async function loadFriendsList(type){
             <div class="friend-name">${xss(f.profiles?.full_name||f.profiles?.username)}</div>
             <div class="friend-user">@${xss(f.profiles?.username)}</div>
           </div>
-          <div class="friend-act"><button class="fbtn accept" onclick="sendFriendReq('${f.follower_id}',this)">+ Amigo</button></div>
+          <div class="friend-act">${followerFriendIds.has(f.follower_id)
+            ? `<button class="fbtn reject" disabled>✓ Amigos</button>`
+            : `<button class="fbtn accept" onclick="sendFriendReq('${f.follower_id}',this)">+ Amigo</button>`
+          }</div>
         </div>`).join('') : '<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px;">Nenhum seguidor ainda</div>';
     }
   } catch(e){
@@ -17881,7 +17899,7 @@ async function loadNotifTab(tabId){
     'nt-all':null,
     'nt-mentions':'mention',
     'nt-social':['follow','like','comment','friend_request','friend_accept','call_missed'],
-    'nt-system':['message','community_invite','community_post','community_live','olha_aqui_new','olha_aqui_comm','olha_aqui_biz']
+    'nt-system':['message','community_invite','community_post','community_live','olha_aqui_comm','olha_aqui_biz']
   };
   const filter=typeMap[tabId];
   const el=document.getElementById('notif-list-'+tabId.replace('nt-',''));
@@ -17897,6 +17915,8 @@ async function loadNotifTab(tabId){
       .order('created_at',{ascending:false}).limit(50);
     if(Array.isArray(filter)) q=q.in('type',filter);
     else if(filter) q=q.eq('type',filter);
+    // Sempre exclui olha_aqui_new (notif de usuário postou no OlhaAqui)
+    else q=q.neq('type','olha_aqui_new');
     return await q;
   }
   // Tenta com metadata+reaction_type; se a view/coluna não existir, retenta na tabela base
@@ -17910,6 +17930,8 @@ async function loadNotifTab(tabId){
       .order('created_at',{ascending:false}).limit(50);
     if(Array.isArray(filter)) q2=q2.in('type',filter);
     else if(filter) q2=q2.eq('type',filter);
+    // Sempre exclui olha_aqui_new (notif de usuário postou no OlhaAqui)
+    else q2=q2.neq('type','olha_aqui_new');
     res = await q2;
   }
   const data = res.data;
