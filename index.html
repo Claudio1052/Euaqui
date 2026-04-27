@@ -6464,7 +6464,9 @@ body.day-mode .lp-chip{ background:rgba(0,0,0,.04); color:#1a1a2e; }
 
         <div class="composer" id="composer-box">
           <div style="display:flex;gap:10px;margin-bottom:10px;">
-            <img class="cav" id="c-av" src="https://api.dicebear.com/7.x/pixel-art/svg?seed=default" data-dicebear-direct="1" onclick="if(CU)nav('profile')" style="cursor:pointer;" title="Ver meu perfil">
+            <div id="c-av-wrap" class="ea-lp-avframe" style="display:inline-flex;flex-shrink:0;align-self:flex-start;">
+              <img class="cav" id="c-av" src="https://api.dicebear.com/7.x/pixel-art/svg?seed=default" data-dicebear-direct="1" onclick="if(CU)nav('profile')" style="cursor:pointer;" title="Ver meu perfil">
+            </div>
             <span style="font-size:12px;color:var(--text-muted);padding-top:10px;">O que está acontecendo?</span>
           </div>
           <textarea class="ctxt" id="post-txt" placeholder="Compartilhe algo... (máx. 500 chars)" maxlength="500" rows="3" oninput="updateChar()"></textarea>
@@ -8376,7 +8378,7 @@ async function loadProfile(){
   if(CP && (Date.now()-_cpAt)<300000) return;
   let data=null;
   try{
-    const res=await db.from('profiles').select('id,username,full_name,email,avatar_url,avatar_type,retro_icon,bio,instagram,twitter,github,status_message,created_at').eq('id',CU.id).maybeSingle();
+    const res=await db.from('profiles').select('id,username,full_name,email,avatar_url,avatar_type,retro_icon,bio,instagram,twitter,github,status_message,created_at,profile_layout').eq('id',CU.id).maybeSingle();
     data=res.data;
     if(res.error)console.warn('Profile fetch:',res.error.message);
   }catch(e){ console.warn('loadProfile exception:',e.message); }
@@ -8411,6 +8413,17 @@ function refreshUI(){
       el.removeAttribute('data-emoji');
     }
   });
+  // Aplica avatarFrame do profile_layout no avatar do composer (igual ao card de post)
+  const _cAvWrap = document.getElementById('c-av-wrap');
+  if(_cAvWrap){
+    const _layout = CP.profile_layout && typeof CP.profile_layout === 'object' ? CP.profile_layout : {};
+    const _frame = _layout.avatarFrame || null;
+    // Remove qualquer frame anterior
+    _cAvWrap.className = 'ea-lp-avframe';
+    if(_frame && _frame !== 'none'){
+      _cAvWrap.classList.add('ea-lp-avframe-'+_frame);
+    }
+  }
   document.getElementById('sl-name').textContent='@'+CP.username;
   document.getElementById('dr-name').textContent='@'+CP.username;
   document.getElementById('sl-status').textContent=CP.status_message||'...';
@@ -33608,6 +33621,10 @@ window.oaNavigateFromHeader = function(){
       }
       if(typeof showToast==='function') showToast('🎨 Layout salvo! Visite seu perfil.','success');
       document.getElementById('lp-editor-overlay')?.remove();
+      // Atualiza CP local com o novo layout para o frame do composer ser atualizado imediatamente
+      if(typeof CP !== 'undefined' && CP){ CP.profile_layout = clean; }
+      sessionStorage.removeItem('_cp_cache_at');
+      if(typeof refreshUI === 'function') refreshUI();
       // Recarregar o perfil para aplicar
       if(typeof window.loadProfilePage==='function'){
         setTimeout(()=>window.loadProfilePage(currentUser.id), 200);
@@ -33628,6 +33645,10 @@ window.oaNavigateFromHeader = function(){
       await DB.from('profiles').update({profile_layout: null}).eq('id', currentUser.id);
       if(typeof showToast==='function') showToast('Layout restaurado','success');
       document.getElementById('lp-editor-overlay')?.remove();
+      // Limpa profile_layout do CP local para o frame do composer sumir imediatamente
+      if(typeof CP !== 'undefined' && CP){ CP.profile_layout = null; }
+      sessionStorage.removeItem('_cp_cache_at');
+      if(typeof refreshUI === 'function') refreshUI();
       clearProfileLayout();
       if(typeof window.loadProfilePage==='function'){
         setTimeout(()=>window.loadProfilePage(currentUser.id), 200);
