@@ -18339,6 +18339,10 @@ function changeBizCity(){
 // faz 2 queries com .in() e atualiza os spans de uma vez só.
 async function _updateBizSalesCounts(bizList){
   if(!bizList?.length) return;
+  // Captura a geração atual: se loadBizBrowse(true) rodar novamente enquanto
+  // esta função ainda executa as queries async, a geração muda e abortamos
+  // antes de tocar no DOM — evita o flash N → 0.
+  const myGeneration = _bizGeneration;
 
   const lojas    = bizList.filter(b => b.category === 'loja').map(b => b.id);
   const servicos = bizList.filter(b => b.category !== 'loja').map(b => b.id);
@@ -18399,6 +18403,11 @@ async function _updateBizSalesCounts(bizList){
   // ── Atualiza spans e sincroniza banco silenciosamente ─────────────────────
   // Só atualiza negócios cujos IDs tiveram query executada com sucesso.
   // Se a query falhou ou não rodou, o span mantém o valor que veio do banco.
+
+  // Aborta se loadBizBrowse(true) foi chamado enquanto as queries rodavam
+  // (ex: detectBizLocation termina e chama setBizCity → loadBizBrowse de novo)
+  if(_bizGeneration !== myGeneration) return;
+
   bizList.forEach(biz=>{
     // Query não executou para este negócio → não toca no span
     if(!queriedIds.has(biz.id)) return;
@@ -18430,6 +18439,7 @@ let _bizHasMore        = true;
 let _bizLoading        = false;
 let _bizFollowed       = new Set();  // cache de follows para não re-buscar a cada página
 let _bizScrollObserver = null;
+let _bizGeneration     = 0;  // token de geração: cancela _updateBizSalesCounts obsoletos
 
 // Reseta o estado ao mudar filtros (cidade, categoria, busca)
 function _resetBizBrowse(){
@@ -18437,6 +18447,7 @@ function _resetBizBrowse(){
   _bizHasMore  = true;
   _bizLoading  = false;
   _bizFollowed = new Set();
+  _bizGeneration++;  // invalida qualquer _updateBizSalesCounts em andamento
   if(_bizScrollObserver){ _bizScrollObserver.disconnect(); _bizScrollObserver = null; }
   const sentinel = document.getElementById('biz-scroll-sentinel');
   if(sentinel) sentinel.remove();
