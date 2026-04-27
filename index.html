@@ -8089,23 +8089,6 @@ let db = createClient(SB_URL, SB_KEY, {
 
    3. Opcionalmente limpe a fila concluída 1x por dia:
       DELETE FROM r2_delete_queue WHERE done = true AND created_at < now() - interval '7 days';
-
-   ══════════════════════════════════════════════════════════════════════════
-   📦 MIGRAÇÃO — RPC enqueue_r2_delete (execute no Supabase SQL Editor)
-   ══════════════════════════════════════════════════════════════════════════
-   Permite que o frontend enfileire keys para deleção sem expor a tabela
-   diretamente (a RLS da r2_delete_queue bloqueia acesso direto do client).
-
-   -- RPC segura: qualquer usuário autenticado pode enfileirar sua própria key
-   CREATE OR REPLACE FUNCTION enqueue_r2_delete(object_key text)
-   RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
-   BEGIN
-     IF object_key IS NULL OR object_key = '' THEN RETURN; END IF;
-     INSERT INTO r2_delete_queue (object_key, done) VALUES (object_key, false)
-       ON CONFLICT DO NOTHING;
-   END;
-   $$;
-   GRANT EXECUTE ON FUNCTION enqueue_r2_delete(text) TO authenticated;
    ══════════════════════════════════════════════════════════════════════════
 ─────────────────────────────────────────────────────────────────────────── */
 
@@ -10258,14 +10241,6 @@ function editProduct(prodId, name, price, priceLabel, desc, imageUrl, imageUrls,
       };
       const{error}=await db.from('business_products').update(_editUpdates).eq('id',prodId).eq('business_id',bizId);
       if(error) throw error;
-
-      // 🗑️ Detecta fotos REMOVIDAS (estavam em existingUrls mas não em finalUrls)
-      // e apaga do R2 (fire-and-forget)
-      try{
-        const _removedUrls = (existingUrls||[]).filter(u => u && !finalUrls.includes(u) && _r2ExtractKey(u));
-        if(_removedUrls.length) _deleteFromR2(_removedUrls);
-      }catch(_){}
-
       // Limpa estado temporário
       delete window._prodPhotoFiles[cid]; delete window._prodPhotoUrls[cid];
       showToast('✅ Produto atualizado!','success');
@@ -10293,14 +10268,6 @@ async function updateProduct(prodId, bizId, btn){
   btn.textContent='⏳ Salvando...'; btn.disabled=true;
 
   try{
-    // 🗑️ Busca imagem ANTIGA para limpar do R2 caso seja trocada
-    let _oldProdImg = null;
-    try{
-      const {data:_op} = await db.from('business_products')
-        .select('image_url').eq('id',prodId).maybeSingle();
-      _oldProdImg = _op?.image_url || null;
-    }catch(_){}
-
     // Upload de nova imagem se tiver arquivo selecionado
     let finalImg = imageUrl;
     if(window._bizImgFiles?.['prod-img-'+bizId]){
@@ -10318,11 +10285,6 @@ async function updateProduct(prodId, bizId, btn){
 
     const{error}=await db.from('business_products').update(updates).eq('id',prodId).eq('business_id',bizId);
     if(error) throw error;
-
-    // 🗑️ Apaga imagem antiga do R2 se foi substituída
-    if(_oldProdImg && finalImg && finalImg !== _oldProdImg && _r2ExtractKey(_oldProdImg)){
-      _deleteFromR2(_oldProdImg);
-    }
 
     showToast('✅ Produto atualizado!','success');
     // Restaura botão e recarrega produtos
@@ -11445,30 +11407,18 @@ async function uploadWithPipeline(file, type, setStatus){
   await r2UploadToPresigned(pres.uploadUrl, compressed, pres.headers);
 
   // 4.1) Upload miniatura (se for imagem) — silencioso, não bloqueia
-  let thumbPublicUrl = null;
   if(thumbFile){
     try{
       const presThumb = await r2GetPresign(thumbFile);
       await r2UploadToPresigned(presThumb.uploadUrl, thumbFile, presThumb.headers);
-      thumbPublicUrl = presThumb.publicUrl;
-      console.log('[pipeline] miniatura enviada:', thumbPublicUrl);
+      console.log('[pipeline] miniatura enviada:', presThumb.publicUrl);
     }catch(e){
       console.warn('[pipeline] falha ao enviar miniatura:', e.message);
     }
   }
 
   progress(100, 'Pronto!');
-
-  // ✅ Retorna a URL principal como string (mantém compatibilidade com callers antigos)
-  // mas anexa a thumbUrl como propriedade no objeto String — quem precisar acessa via .thumbUrl
-  // (Strings em JS são primitivas; usa-se object wrapper só nesse caso pra carregar a metadata)
-  const result = new String(pres.publicUrl);
-  result.thumbUrl = thumbPublicUrl;
-  result.publicUrl = pres.publicUrl;
-  // Registro global do último thumb produzido — usado por createPost para casar 1-a-1 com cada upload
-  window._lastUploadThumbs = window._lastUploadThumbs || [];
-  window._lastUploadThumbs.push({ url: pres.publicUrl, thumb: thumbPublicUrl });
-  return result;
+  return pres.publicUrl;
 }
 
 async function createPost(){
@@ -11490,7 +11440,7 @@ async function createPost(){
     }
   }
   btn.textContent='⏳...';
-  let urls=[],mTypes=[],mThumbs=[];
+  let urls=[],mTypes=[];
   // ── Validação de mídia ──
   const ALLOWED_MIME = ['image/jpeg','image/jpg','image/png','image/gif','image/webp',
                         'video/mp4','video/webm','video/ogg','video/quicktime'];
@@ -11539,11 +11489,8 @@ async function createPost(){
     try{
       setStatus('PROGRESS:0:Carregando post');
       const publicUrl = await uploadWithPipeline(f, t, (m)=>setStatus(m));
-      // publicUrl é uma String wrapper que pode ter .thumbUrl anexado
-      urls.push(String(publicUrl));
+      urls.push(publicUrl);
       mTypes.push(t);
-      // Captura thumb (pode ser null para vídeos ou casos de falha)
-      mThumbs.push(publicUrl && publicUrl.thumbUrl ? String(publicUrl.thumbUrl) : null);
     }catch(e){
       console.error('Pipeline upload falhou:', e);
       const msg = e.userMessage || ('Falha ao enviar mídia: '+(e.message||'erro desconhecido'));
@@ -11563,16 +11510,7 @@ async function createPost(){
     media_urls: urls.length ? urls : [],
     media_types: mTypes.length ? mTypes : []
   };
-  // Adiciona media_thumbs apenas se houver pelo menos 1 thumb não-null
-  // (campo opcional — graceful se a coluna não existir no banco)
-  if(mThumbs.some(Boolean)) payload.media_thumbs = mThumbs;
-  let{data:postData,error}=await db.from('posts').insert(payload).select().maybeSingle();
-  // Fallback: se a coluna media_thumbs ainda não foi criada, retenta sem ela
-  if(error && error.message && error.message.includes('media_thumbs')){
-    console.warn('[createPost] coluna media_thumbs ausente, retentando sem ela. Execute o ALTER TABLE para habilitar limpeza de thumbs no R2.');
-    delete payload.media_thumbs;
-    ({data:postData,error}=await db.from('posts').insert(payload).select().maybeSingle());
-  }
+  const{data:postData,error}=await db.from('posts').insert(payload).select().maybeSingle();
   if(error){
     console.error('Insert post error:',error);
     if(error.message.includes('media_types')||error.message.includes('media_urls')){
@@ -11626,125 +11564,8 @@ function _euConfirm(msg, icon){
   });
 }
 
-
-// ═══════════════════════════════════════════════════════════════════
-// 🗑️ EXCLUSÃO DO R2 — remove arquivos do bucket quando posts/stories/
-//    avatares são excluídos, economizando espaço de armazenamento.
-//
-//  _r2ExtractKey(url)  → extrai a object key de qualquer URL R2/Worker
-//  _deleteFromR2(urls) → tenta DELETE /api/r2/object no backend Java;
-//                        se falhar, enfileira na r2_delete_queue do Supabase
-// ═══════════════════════════════════════════════════════════════════
-function _r2ExtractKey(url){
-  if(!url || typeof url !== 'string') return null;
-  try{
-    const u = new URL(url);
-    // Worker: https://media.euaqui.store/media/posts/user/file.jpg
-    //         https://media.euaqui.store/avatar/r2/...
-    if(u.hostname === 'media.euaqui.store'){
-      // u.pathname já tem os %2F decodificados pelo browser
-      const key = u.pathname
-        .replace(/^\/media\//, '')
-        .replace(/^\/avatar\/r2\//, '')
-        .replace(/^\/avatar\/thumb\//, '')
-        .replace(/^\//, '');
-      return key || null;
-    }
-    // URL direta do R2 (*.r2.cloudflarestorage.com/key)
-    if(u.hostname.endsWith('.r2.cloudflarestorage.com')){
-      return u.pathname.replace(/^\//, '');
-    }
-    // Supabase Storage (URLs antigas ainda no banco)
-    if(u.hostname.endsWith('.supabase.co') && u.pathname.includes('/storage/v1/object/public/')){
-      return u.pathname.replace(/^\/storage\/v1\/object\/public\//, '');
-    }
-  }catch(e){}
-  return null;
-}
-
-// Aceita string ou array de URLs.
-// Estratégia dupla: 1° tenta backend Java; 2° enfileira no Supabase r2_delete_queue
-async function _deleteFromR2(urls){
-  const list = (Array.isArray(urls) ? urls : [urls]).filter(Boolean);
-  if(!list.length){ console.log('[R2 delete] lista vazia, nada a fazer'); return; }
-
-  console.log('[R2 delete] iniciando exclusão de', list.length, 'URL(s):', list);
-
-  for(const url of list){
-    const key = _r2ExtractKey(url);
-    if(!key){ console.warn('[R2 delete] ❌ key NÃO extraída de:', url); continue; }
-    console.log('[R2 delete] key extraída:', key, '(de', url+')');
-
-    let backendOk = false;
-
-    // ── Tentativa 1: DELETE via backend Java/Worker ────────────────
-    // ✅ FIX: usa R2_BACKEND_URL (const com fallback) ao invés de window.R2_BACKEND_URL
-    //        O bug anterior fazia esta tentativa NUNCA rodar, pois ninguém setava
-    //        window.R2_BACKEND_URL — só a const local.
-    if(typeof R2_BACKEND_URL !== 'undefined' && R2_BACKEND_URL){
-      try{
-        const session = (typeof db !== 'undefined' && db.auth) ? await db.auth.getSession() : null;
-        const token = session?.data?.session?.access_token || (CU?.id || '');
-        const res = await fetch(R2_BACKEND_URL + '/api/r2/object?key=' + encodeURIComponent(key), {
-          method: 'DELETE',
-          headers: { 'Authorization': 'Bearer ' + token }
-        });
-        if(res.ok || res.status === 404){
-          console.log('[R2 delete] ✓ backend deletou:', key, '(status', res.status+')');
-          backendOk = true;
-        } else {
-          const body = await res.text().catch(()=>'');
-          console.warn('[R2 delete] backend retornou', res.status, body, '— tentando fila Supabase');
-        }
-      }catch(e){
-        console.warn('[R2 delete] backend inacessível:', e.message, '— tentando fila Supabase');
-      }
-    } else {
-      console.warn('[R2 delete] R2_BACKEND_URL não definido, pulando tentativa via backend');
-    }
-
-    // ── Tentativa 2: enfileira via RPC enqueue_r2_delete no Supabase ─
-    // RLS bloqueia INSERT direto; a RPC SECURITY DEFINER contorna isso.
-    // O backend Java consome a fila periodicamente (SELECT WHERE done=false)
-    if(!backendOk && typeof db !== 'undefined' && db){
-      try{
-        const { error } = await db.rpc('enqueue_r2_delete', { object_key: key });
-        if(error){
-          console.error('[R2 delete] ❌ RPC enqueue_r2_delete falhou:', error.message, error);
-          // Diagnóstico: se a RPC não existe, avisa em produção
-          if(error.message && (error.message.includes('does not exist') || error.message.includes('not found'))){
-            console.error('[R2 delete] ⚠️ A RPC enqueue_r2_delete NÃO foi criada no Supabase. Execute o SQL de migração.');
-          }
-        } else {
-          console.log('[R2 delete] ✓ enfileirado via RPC enqueue_r2_delete:', key);
-        }
-      }catch(e){
-        console.error('[R2 delete] RPC enqueue exception:', e.message, e);
-      }
-    }
-  }
-}
-window._deleteFromR2 = _deleteFromR2;
-window._r2ExtractKey = _r2ExtractKey;
-
 async function deletePost(postId){
   if(!await _euConfirm('Deseja excluir este post?<br>Esta ação não pode ser desfeita.','🗑️')) return;
-
-  // Busca media_urls + media_thumbs ANTES de deletar para poder limpar o R2 depois
-  let _postMediaUrls = [];
-  try{
-    // Tenta primeiro com media_thumbs (coluna nova). Se não existir, retenta sem ela.
-    let { data: _pm, error: _err } = await db.from('posts')
-      .select('media_urls,media_thumbs').eq('id', postId).maybeSingle();
-    if(_err && _err.message && _err.message.includes('media_thumbs')){
-      const r2 = await db.from('posts').select('media_urls').eq('id', postId).maybeSingle();
-      _pm = r2.data;
-    }
-    if(_pm?.media_urls && Array.isArray(_pm.media_urls))
-      _postMediaUrls.push(..._pm.media_urls.filter(Boolean));
-    if(_pm?.media_thumbs && Array.isArray(_pm.media_thumbs))
-      _postMediaUrls.push(..._pm.media_thumbs.filter(Boolean));
-  }catch(e){}
 
   // ── Estratégia: tentar deletar via RPC que bypassa o trigger problemático
   // Se não tiver RPC, usa DELETE REST direto com header prefer=return=minimal
@@ -11825,9 +11646,6 @@ async function deletePost(postId){
     db.from('saved_posts').delete().eq('post_id',postId),
     db.from('notifications').delete().eq('post_id',postId),
   ]);
-
-  // 🗑️ Remove arquivos de mídia do R2 (fire-and-forget)
-  if(_postMediaUrls.length) _deleteFromR2(_postMediaUrls);
 
   // Remove card do DOM imediatamente
   document.getElementById('post-'+postId)?.remove();
@@ -11991,12 +11809,6 @@ async function applyRetroAvatar(){
     }).eq('id', CU.id);
 
     if(error) throw error;
-
-    // 🗑️ Apaga avatar antigo do R2 se for uma URL do nosso CDN
-    const _oldRetroAv = CP?.avatar_url || null;
-    if(_oldRetroAv && _oldRetroAv !== r2Url && _r2ExtractKey(_oldRetroAv)){
-      _deleteFromR2(_oldRetroAv);
-    }
 
     // Atualiza CP local
     if(CP){ CP.avatar_url=r2Url; CP.avatar_type='upload'; CP.retro_icon=null; }
@@ -12913,53 +12725,11 @@ async function ppDeleteConfirm(){
   const btn = document.getElementById('pp-del-btn-confirm');
   if(btn){ btn.disabled=true; btn.textContent='⏳ Excluindo...'; }
 
-  // Busca media_urls + media_thumbs de todos os posts ANTES de deletar
-  let _allMediaUrls = [];
-  try{
-    let { data: _mdata, error: _err } = await db.from('posts')
-      .select('id,media_urls,media_thumbs').eq('user_id', CU.id).in('id', s.postIds);
-    if(_err && _err.message && _err.message.includes('media_thumbs')){
-      const r2 = await db.from('posts').select('id,media_urls').eq('user_id', CU.id).in('id', s.postIds);
-      _mdata = r2.data;
-    }
-    (_mdata||[]).forEach(p=>{
-      if(Array.isArray(p.media_urls))   _allMediaUrls.push(...p.media_urls.filter(Boolean));
-      if(Array.isArray(p.media_thumbs)) _allMediaUrls.push(...p.media_thumbs.filter(Boolean));
-    });
-  }catch(e){}
-
   let deleted=0, errored=0;
   for(const pid of s.postIds){
-    let postDeleted = false;
-
-    // Tentativa 1: RPC segura (bypassa trigger problemático)
     try{
-      const { error: rpcErr } = await db.rpc('delete_post_safe', { target_post_id: pid, owner_id: CU.id });
-      if(!rpcErr) postDeleted = true;
-    }catch(_){}
-
-    // Tentativa 2: DELETE padrão
-    if(!postDeleted){
-      try{
-        const { error } = await db.from('posts').delete().eq('id', pid).eq('user_id', CU.id);
-        if(!error){ postDeleted = true; }
-        else {
-          // Se foi erro de trigger R2, verifica se o post sumiu mesmo assim
-          const isTriggerErr = error.message && (
-            error.message.includes('jsonb_array_elements') ||
-            error.message.includes('r2_delete_queue')   ||
-            error.message.includes('_extract_r2_key')   ||
-            error.message.includes('_on_post_delete')
-          );
-          if(isTriggerErr){
-            const { data: stillExists } = await db.from('posts').select('id').eq('id', pid).maybeSingle();
-            if(!stillExists) postDeleted = true;
-          }
-        }
-      }catch(err){ console.error('[pp-delete]',err); }
-    }
-
-    if(postDeleted){
+      const { error } = await db.from('posts').delete().eq('id', pid).eq('user_id', CU.id);
+      if(error) throw error;
       deleted++;
       // Remove visualmente
       const panelId = s.tab==='fotos'?'profile-fotos':'profile-videos';
@@ -12969,21 +12739,8 @@ async function ppDeleteConfirm(){
         el.style.opacity='0'; el.style.transform='scale(.82)';
         setTimeout(()=>{ el.remove(); }, 240);
       }
-      // Remove referências em tabelas filhas (silencioso)
-      Promise.allSettled([
-        db.from('likes').delete().eq('post_id',pid),
-        db.from('comments').delete().eq('post_id',pid),
-        db.from('community_posts').delete().eq('post_id',pid),
-        db.from('saved_posts').delete().eq('post_id',pid),
-        db.from('notifications').delete().eq('post_id',pid),
-      ]).catch(()=>{});
-    } else {
-      errored++;
-    }
+    }catch(err){ errored++; console.error('[pp-delete]',err); }
   }
-
-  // 🗑️ Remove arquivos de mídia do R2 (fire-and-forget)
-  if(_allMediaUrls.length) _deleteFromR2(_allMediaUrls);
 
   setTimeout(()=>{
     const panelId = s.tab==='fotos'?'profile-fotos':'profile-videos';
@@ -13384,13 +13141,6 @@ async function saveSettings(){
   }
 
   _setSaveProgress(80, 'Salvando perfil...');
-
-  // 🗑️ Se houver novo avatar via upload, apaga o avatar antigo do R2
-  const _oldAvatarUrl = CP?.avatar_url || null;
-  const _avatarChanged = avatarUrl && avatarUrl !== _oldAvatarUrl;
-  if(_avatarChanged && _oldAvatarUrl && _r2ExtractKey(_oldAvatarUrl)){
-    _deleteFromR2(_oldAvatarUrl); // fire-and-forget
-  }
 
   const updates={
     full_name:   document.getElementById('set-name').value.trim(),
@@ -19599,27 +19349,8 @@ async function saveNewProduct(bizId, btn){
 
 async function deleteProduct(prodId){
   if(!confirm('Remover produto?')) return;
-
-  // 🗑️ Busca imagens ANTES de deletar para limpar R2
-  let _prodMediaUrls = [];
-  try{
-    const {data:_pp} = await db.from('business_products')
-      .select('image_url,image_urls').eq('id',prodId).maybeSingle();
-    if(_pp?.image_url) _prodMediaUrls.push(_pp.image_url);
-    if(_pp?.image_urls){
-      try{
-        const arr = typeof _pp.image_urls === 'string' ? JSON.parse(_pp.image_urls) : _pp.image_urls;
-        if(Array.isArray(arr)) arr.filter(Boolean).forEach(u=>{ if(!_prodMediaUrls.includes(u)) _prodMediaUrls.push(u); });
-      }catch(_){}
-    }
-  }catch(e){}
-
   const {error} = await db.from('business_products').delete().eq('id',prodId);
-  if(!error){
-    // 🗑️ Remove imagens do R2 (fire-and-forget)
-    if(_prodMediaUrls.length) _deleteFromR2(_prodMediaUrls);
-    showToast('Removido','success'); loadMyBusiness();
-  }
+  if(!error){ showToast('Removido','success'); loadMyBusiness(); }
 }
 
 // ── Chat cliente → negócio ────────────────────────────────────────
@@ -23402,18 +23133,6 @@ async function uploadBizImage(fieldId, folder){
 // ── Patch saveBusiness to upload images ─────────────────────────
 const _origSaveBusiness = saveBusiness;
 saveBusiness = async function(){
-  // 🗑️ Captura logo/banner ATUAIS para apagar do R2 caso sejam substituídos
-  const editId = document.getElementById('biz-edit-id')?.value;
-  let _oldBizLogo = null, _oldBizBanner = null;
-  if(editId){
-    try{
-      const {data:_ob} = await db.from('businesses')
-        .select('logo_url,banner_url').eq('id',editId).maybeSingle();
-      _oldBizLogo  = _ob?.logo_url  || null;
-      _oldBizBanner= _ob?.banner_url|| null;
-    }catch(_){}
-  }
-
   // Upload logo and banner before saving
   if(window._bizImgFiles?.['biz-logo-url']){
     showToast('⏳ Enviando logo...','');
@@ -23426,16 +23145,6 @@ saveBusiness = async function(){
     if(url) document.getElementById('biz-banner-url').value = url;
   }
   await _origSaveBusiness();
-
-  // 🗑️ Após salvar, apaga logo/banner antigos do R2 (fire-and-forget)
-  try{
-    const _newLogo   = document.getElementById('biz-logo-url')?.value || null;
-    const _newBanner = document.getElementById('biz-banner-url')?.value || null;
-    const _toDel = [];
-    if(_oldBizLogo  && _newLogo  && _newLogo  !== _oldBizLogo  && _r2ExtractKey(_oldBizLogo))  _toDel.push(_oldBizLogo);
-    if(_oldBizBanner&& _newBanner&& _newBanner!== _oldBizBanner&& _r2ExtractKey(_oldBizBanner))_toDel.push(_oldBizBanner);
-    if(_toDel.length) _deleteFromR2(_toDel);
-  }catch(_){}
 };
 
 // saveNewProduct upload now handled internally via collectProdPhotos
@@ -28141,16 +27850,6 @@ function previewEditCommImg(input){
 
 async function saveEditComm(commId,btn){
   btn.disabled=true;btn.textContent='⏳...';
-
-  // 🗑️ Busca avatar/banner ANTIGOS para apagar do R2 caso sejam substituídos
-  let _oldCommAvatar = null, _oldCommBanner = null;
-  try{
-    const {data:_oldComm} = await db.from('communities')
-      .select('avatar_url,banner_url').eq('id',commId).maybeSingle();
-    _oldCommAvatar = _oldComm?.avatar_url || null;
-    _oldCommBanner = _oldComm?.banner_url || null;
-  }catch(e){}
-
   let avatarUrl=document.getElementById('edit-comm-img-url')?.value||'';
   if(window._editCommImgFile){
     try{
@@ -28182,20 +27881,6 @@ async function saveEditComm(commId,btn){
     updated_at:new Date().toISOString()
   }).eq('id',commId).eq('owner_id',CU.id);
   if(error){showToast('Erro: '+error.message,'error');btn.disabled=false;btn.textContent='✅ Salvar';return;}
-
-  // 🗑️ Apaga arquivos antigos do R2 (fire-and-forget)
-  // — só se realmente trocou e a URL antiga era do nosso CDN
-  try{
-    const _toDel = [];
-    if(_oldCommAvatar && avatarUrl && avatarUrl !== _oldCommAvatar && _r2ExtractKey(_oldCommAvatar)){
-      _toDel.push(_oldCommAvatar);
-    }
-    if(_oldCommBanner && bannerUrl2 && bannerUrl2 !== _oldCommBanner && _r2ExtractKey(_oldCommBanner)){
-      _toDel.push(_oldCommBanner);
-    }
-    if(_toDel.length) _deleteFromR2(_toDel);
-  }catch(_){}
-
   btn.closest('[style*=fixed]').remove();
   showToast('✅ Comunidade atualizada!','success');
   // Atualiza o cache e o grid para refletir banner/avatar novos imediatamente
@@ -28240,15 +27925,6 @@ async function deleteComm(commId){
 
   showToast('Excluindo...','');
 
-  // 🗑️ Busca avatar/banner ANTES de deletar para limpar do R2
-  let _commMediaUrls = [];
-  try{
-    const {data:_cm} = await db.from('communities')
-      .select('avatar_url,banner_url').eq('id',commId).maybeSingle();
-    if(_cm?.avatar_url) _commMediaUrls.push(_cm.avatar_url);
-    if(_cm?.banner_url) _commMediaUrls.push(_cm.banner_url);
-  }catch(e){}
-
   // Deleta dependências com try/catch (Supabase v2 não suporta .catch() encadeado)
   try{ await db.from('community_members').delete().eq('community_id',commId); }catch(e){}
   try{ await db.from('community_posts').delete().eq('community_id',commId); }catch(e){}
@@ -28262,9 +27938,6 @@ async function deleteComm(commId){
     showToast('Erro: '+delErr.message,'error');
     return;
   }
-
-  // 🗑️ Remove avatar/banner do R2 (fire-and-forget)
-  if(_commMediaUrls.length) _deleteFromR2(_commMediaUrls);
 
   // Sucesso
   if(window._commCache) delete window._commCache[commId];
@@ -30479,9 +30152,22 @@ async function oaDeleteCurrent(){
     const { error } = await db.from('olha_aqui').delete().eq('id', it.id);
     if(error) throw error;
 
-    // 2) 🗑️ Remove arquivos do R2 (media_url + thumb_url se existir)
-    const _oaUrls = [it.media_url, it.thumb_url].filter(Boolean);
-    if(_oaUrls.length) _deleteFromR2(_oaUrls);
+    // 2) Remove arquivo do R2 via backend Java (opcional mas recomendado)
+    //    O backend deve expor DELETE /api/r2/object?key=... autenticado
+    //    Se você já tem essa rota, chamamos silenciosamente. Se não tem,
+    //    o lifecycle rule de 1 dia garante a limpeza igual. Vale nos 2 casos.
+    try{
+      if(window.R2_BACKEND_URL && it.media_url){
+        // Tenta extrair a key (último segmento ou tudo após '/media/')
+        const key = _oaExtractKey(it.media_url);
+        if(key){
+          fetch(window.R2_BACKEND_URL + '/api/r2/object?key=' + encodeURIComponent(key), {
+            method:'DELETE',
+            headers:{ 'Authorization':'Bearer '+(CU.id||'') }
+          }).catch(()=>{});
+        }
+      }
+    }catch(e){}
 
     // Remove do estado local
     g.items.splice(oaViewer.itemIdx, 1);
