@@ -18344,16 +18344,30 @@ async function _updateBizSalesCounts(bizList){
   // antes de tocar no DOM — evita o flash N → 0.
   const myGeneration = _bizGeneration;
 
+  // ── Visitante não logado: RLS bloqueia appointments e purchases ───────────
+  // Não fazemos queries — apenas exibimos sales_done que já vem do banco.
+  // Isso evita que a query retorne [] vazio por RLS e zere os spans.
+  if(!CU){
+    if(_bizGeneration !== myGeneration) return;
+    bizList.forEach(biz=>{
+      const span = document.getElementById('biz-card-sales-' + biz.id);
+      if(span && parseInt(span.textContent) !== (biz.sales_done||0)){
+        span.textContent = biz.sales_done||0;
+      }
+    });
+    return;
+  }
+
   const lojas    = bizList.filter(b => b.category === 'loja').map(b => b.id);
   const servicos = bizList.filter(b => b.category !== 'loja').map(b => b.id);
 
   // Mapa: business_id → contagem real
   // NÃO inicializa com 0 — só recebe valor quem apareceu nas queries.
-  // Isso evita zerar o span de negócios que não têm registros ainda
-  // ou cuja query falhou silenciosamente.
+  // Isso evita zerar o span de negócios sem registros ou com query falha.
   const countMap = {};
 
   // Rastreia quais grupos de IDs tiveram query executada com sucesso
+  // e retornaram dados confiáveis (sem erro de RLS).
   const queriedIds = new Set();
 
   try{
@@ -18389,10 +18403,17 @@ async function _updateBizSalesCounts(bizList){
         .in('business_id', servicos)
         .eq('status', 'done');
       if(!e2){
-        servicos.forEach(id => queriedIds.add(id));
-        (apptRows||[]).forEach(r=>{
-          countMap[r.business_id] = (countMap[r.business_id]||0) + 1;
-        });
+        // Só marca como consultado se a query retornou pelo menos 1 resultado
+        // OU se o usuário é dono de algum desses negócios (resultado confiável)
+        const isOwnerQuery = servicos.some(id => myBusiness && myBusiness.id === id);
+        const hasResults   = (apptRows||[]).length > 0;
+        if(hasResults || isOwnerQuery){
+          servicos.forEach(id => queriedIds.add(id));
+          (apptRows||[]).forEach(r=>{
+            countMap[r.business_id] = (countMap[r.business_id]||0) + 1;
+          });
+        }
+        // Se retornou [] E não é o dono, pode ser RLS — não toca nos spans
       }
     }
   }catch(e){
@@ -18401,18 +18422,18 @@ async function _updateBizSalesCounts(bizList){
   }
 
   // ── Atualiza spans e sincroniza banco silenciosamente ─────────────────────
-  // Só atualiza negócios cujos IDs tiveram query executada com sucesso.
-  // Se a query falhou ou não rodou, o span mantém o valor que veio do banco.
+  // Só atualiza negócios cujos IDs tiveram query executada com resultado confiável.
+  // Se a query retornou [] por RLS (não é dono), o span mantém o valor do banco.
 
   // Aborta se loadBizBrowse(true) foi chamado enquanto as queries rodavam
   // (ex: detectBizLocation termina e chama setBizCity → loadBizBrowse de novo)
   if(_bizGeneration !== myGeneration) return;
 
   bizList.forEach(biz=>{
-    // Query não executou para este negócio → não toca no span
+    // Query não executou ou resultado não confiável → não toca no span
     if(!queriedIds.has(biz.id)) return;
 
-    // Query executou: se não apareceu no resultado = zero real
+    // Query executou com resultado confiável: ausente do mapa = zero real
     const realCount = countMap[biz.id] || 0;
     const span = document.getElementById('biz-card-sales-' + biz.id);
     if(!span) return;
