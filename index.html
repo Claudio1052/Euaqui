@@ -11642,23 +11642,31 @@ function _r2ExtractKey(url){
 // Estratégia dupla: 1° tenta backend Java; 2° enfileira no Supabase r2_delete_queue
 async function _deleteFromR2(urls){
   const list = (Array.isArray(urls) ? urls : [urls]).filter(Boolean);
-  if(!list.length) return;
+  if(!list.length){ console.log('[R2 delete] lista vazia, nada a fazer'); return; }
+
+  console.log('[R2 delete] iniciando exclusão de', list.length, 'URL(s):', list);
 
   for(const url of list){
     const key = _r2ExtractKey(url);
-    if(!key){ console.warn('[R2 delete] key não extraída de:', url); continue; }
+    if(!key){ console.warn('[R2 delete] ❌ key NÃO extraída de:', url); continue; }
+    console.log('[R2 delete] key extraída:', key, '(de', url+')');
 
     let backendOk = false;
 
-    // ── Tentativa 1: DELETE via backend Java ──────────────────────
-    if(window.R2_BACKEND_URL){
+    // ── Tentativa 1: DELETE via backend Java/Worker ────────────────
+    // ✅ FIX: usa R2_BACKEND_URL (const com fallback) ao invés de window.R2_BACKEND_URL
+    //        O bug anterior fazia esta tentativa NUNCA rodar, pois ninguém setava
+    //        window.R2_BACKEND_URL — só a const local.
+    if(typeof R2_BACKEND_URL !== 'undefined' && R2_BACKEND_URL){
       try{
+        const session = (typeof db !== 'undefined' && db.auth) ? await db.auth.getSession() : null;
+        const token = session?.data?.session?.access_token || (CU?.id || '');
         const res = await fetch(R2_BACKEND_URL + '/api/r2/object?key=' + encodeURIComponent(key), {
           method: 'DELETE',
-          headers: { 'Authorization': 'Bearer ' + (CU?.id || '') }
+          headers: { 'Authorization': 'Bearer ' + token }
         });
         if(res.ok || res.status === 404){
-          console.log('[R2 delete] ✓ backend deletou:', key);
+          console.log('[R2 delete] ✓ backend deletou:', key, '(status', res.status+')');
           backendOk = true;
         } else {
           const body = await res.text().catch(()=>'');
@@ -11667,22 +11675,33 @@ async function _deleteFromR2(urls){
       }catch(e){
         console.warn('[R2 delete] backend inacessível:', e.message, '— tentando fila Supabase');
       }
+    } else {
+      console.warn('[R2 delete] R2_BACKEND_URL não definido, pulando tentativa via backend');
     }
 
     // ── Tentativa 2: enfileira via RPC enqueue_r2_delete no Supabase ─
     // RLS bloqueia INSERT direto; a RPC SECURITY DEFINER contorna isso.
     // O backend Java consome a fila periodicamente (SELECT WHERE done=false)
-    if(!backendOk && window.db){
+    if(!backendOk && typeof db !== 'undefined' && db){
       try{
         const { error } = await db.rpc('enqueue_r2_delete', { object_key: key });
-        if(error) console.warn('[R2 delete] RPC enqueue falhou:', error.message);
-        else       console.log('[R2 delete] ✓ enfileirado via RPC:', key);
+        if(error){
+          console.error('[R2 delete] ❌ RPC enqueue_r2_delete falhou:', error.message, error);
+          // Diagnóstico: se a RPC não existe, avisa em produção
+          if(error.message && (error.message.includes('does not exist') || error.message.includes('not found'))){
+            console.error('[R2 delete] ⚠️ A RPC enqueue_r2_delete NÃO foi criada no Supabase. Execute o SQL de migração.');
+          }
+        } else {
+          console.log('[R2 delete] ✓ enfileirado via RPC enqueue_r2_delete:', key);
+        }
       }catch(e){
-        console.warn('[R2 delete] RPC enqueue exception:', e.message);
+        console.error('[R2 delete] RPC enqueue exception:', e.message, e);
       }
     }
   }
 }
+window._deleteFromR2 = _deleteFromR2;
+window._r2ExtractKey = _r2ExtractKey;
 
 async function deletePost(postId){
   if(!await _euConfirm('Deseja excluir este post?<br>Esta ação não pode ser desfeita.','🗑️')) return;
