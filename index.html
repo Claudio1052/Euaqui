@@ -18344,76 +18344,71 @@ async function _updateBizSalesCounts(bizList){
   // antes de tocar no DOM — evita o flash N → 0.
   const myGeneration = _bizGeneration;
 
-  // ── Visitante não logado: RLS bloqueia appointments e purchases ───────────
-  // Não fazemos queries — apenas exibimos sales_done que já vem do banco.
-  // Isso evita que a query retorne [] vazio por RLS e zere os spans.
-  if(!CU){
-    if(_bizGeneration !== myGeneration) return;
-    bizList.forEach(biz=>{
-      const span = document.getElementById('biz-card-sales-' + biz.id);
-      if(span && parseInt(span.textContent) !== (biz.sales_done||0)){
-        span.textContent = biz.sales_done||0;
-      }
-    });
-    return;
-  }
+  // ══════════════════════════════════════════════════════════════════════════
+  // ESTRATÉGIA: RLS do Supabase impede que qualquer usuário (mesmo logado)
+  // leia purchases/appointments de outros. A query retorna [] sem erro,
+  // o que faria zerar os spans incorretamente.
+  //
+  // SOLUÇÃO: usar sales_done do banco para todos os negócios que o usuário
+  // NÃO é dono. Só recontamos via query direta quando é o próprio dono,
+  // pois o RLS permite que o dono veja todos os registros do seu negócio.
+  // ══════════════════════════════════════════════════════════════════════════
 
-  const lojas    = bizList.filter(b => b.category === 'loja').map(b => b.id);
-  const servicos = bizList.filter(b => b.category !== 'loja').map(b => b.id);
+  // ID do negócio que o usuário logado possui (null se não tem negócio)
+  const ownedBizId = myBusiness?.id || null;
 
-  // Mapa: business_id → contagem real
-  // NÃO inicializa com 0 — só recebe valor quem apareceu nas queries.
-  // Isso evita zerar o span de negócios sem registros ou com query falha.
+  // Negócios que NÃO são do usuário → exibir sales_done direto do banco
+  const notOwned = bizList.filter(b => b.id !== ownedBizId);
+  const ownedBiz = bizList.filter(b => b.id === ownedBizId);
+
+  if(_bizGeneration !== myGeneration) return;
+
+  // Atualiza imediatamente os negócios não-próprios com o valor confiável do banco
+  notOwned.forEach(biz=>{
+    const span = document.getElementById('biz-card-sales-' + biz.id);
+    if(!span) return;
+    const val = biz.sales_done || 0;
+    if(parseInt(span.textContent) !== val) span.textContent = val;
+  });
+
+  // Se o usuário não tem negócio próprio na lista, termina aqui
+  if(!ownedBiz.length || !CU) return;
+
+  // ── Recontagem real apenas para o negócio do próprio usuário ─────────────
+  // O dono tem acesso via RLS a todos os registros do seu negócio.
+  const biz = ownedBiz[0];
   const countMap = {};
 
-  // Rastreia quais grupos de IDs tiveram query executada com sucesso
-  // e retornaram dados confiáveis (sem erro de RLS).
-  const queriedIds = new Set();
-
   try{
-    // ── Lojas: purchases concluídas agrupadas por business_id ─────────────────
-    if(lojas.length){
+    if(biz.category === 'loja'){
+      // Lojas: purchases concluídas
       const {data:purchRows, error:e1} = await db.from('purchases')
         .select('business_id')
-        .in('business_id', lojas)
+        .eq('business_id', biz.id)
         .eq('status', 'done');
       if(!e1){
-        lojas.forEach(id => queriedIds.add(id));
         (purchRows||[]).forEach(r=>{
           countMap[r.business_id] = (countMap[r.business_id]||0) + 1;
         });
-
-        // deals antigos sem purchase (retrocompat — status='done' direto no deal)
+        // deals antigos sem purchase (retrocompat)
         const {data:dealRows} = await db.from('business_deals')
           .select('business_id')
-          .in('business_id', lojas)
+          .eq('business_id', biz.id)
           .eq('status', 'done');
         (dealRows||[]).forEach(r=>{
           countMap[r.business_id] = (countMap[r.business_id]||0) + 1;
         });
       }
-    }
-
-    // ── Serviços: conta APENAS appointments com status='done' ───────────────────
-    // Fluxo correto: deal aceito → cria appointment 'confirmed' → dono conclui → 'done'
-    // deals com status 'closed' = apenas aceito, ainda não concluído → não conta
-    if(servicos.length){
+    } else {
+      // Serviços: appointments concluídos
       const {data:apptRows, error:e2} = await db.from('appointments')
         .select('business_id')
-        .in('business_id', servicos)
+        .eq('business_id', biz.id)
         .eq('status', 'done');
       if(!e2){
-        // Só marca como consultado se a query retornou pelo menos 1 resultado
-        // OU se o usuário é dono de algum desses negócios (resultado confiável)
-        const isOwnerQuery = servicos.some(id => myBusiness && myBusiness.id === id);
-        const hasResults   = (apptRows||[]).length > 0;
-        if(hasResults || isOwnerQuery){
-          servicos.forEach(id => queriedIds.add(id));
-          (apptRows||[]).forEach(r=>{
-            countMap[r.business_id] = (countMap[r.business_id]||0) + 1;
-          });
-        }
-        // Se retornou [] E não é o dono, pode ser RLS — não toca nos spans
+        (apptRows||[]).forEach(r=>{
+          countMap[r.business_id] = (countMap[r.business_id]||0) + 1;
+        });
       }
     }
   }catch(e){
@@ -18421,36 +18416,24 @@ async function _updateBizSalesCounts(bizList){
     return;
   }
 
-  // ── Atualiza spans e sincroniza banco silenciosamente ─────────────────────
-  // Só atualiza negócios cujos IDs tiveram query executada com resultado confiável.
-  // Se a query retornou [] por RLS (não é dono), o span mantém o valor do banco.
-
-  // Aborta se loadBizBrowse(true) foi chamado enquanto as queries rodavam
-  // (ex: detectBizLocation termina e chama setBizCity → loadBizBrowse de novo)
+  // Aborta se loadBizBrowse(true) rodou enquanto fazíamos as queries
   if(_bizGeneration !== myGeneration) return;
 
-  bizList.forEach(biz=>{
-    // Query não executou ou resultado não confiável → não toca no span
-    if(!queriedIds.has(biz.id)) return;
+  const realCount = countMap[biz.id] || 0;
+  const span = document.getElementById('biz-card-sales-' + biz.id);
+  if(!span) return;
 
-    // Query executou com resultado confiável: ausente do mapa = zero real
-    const realCount = countMap[biz.id] || 0;
-    const span = document.getElementById('biz-card-sales-' + biz.id);
-    if(!span) return;
+  if(parseInt(span.textContent) !== realCount){
+    span.textContent = realCount;
+  }
 
-    // Só atualiza o DOM se o valor realmente mudou
-    if(parseInt(span.textContent) !== realCount){
-      span.textContent = realCount;
-    }
-
-    // Sincroniza banco apenas se diferente do que estava salvo
-    if(realCount !== (biz.sales_done||0)){
-      db.from('businesses')
-        .update({sales_done: realCount})
-        .eq('id', biz.id)
-        .catch(()=>{});
-    }
-  });
+  // Sincroniza banco silenciosamente se divergiu
+  if(realCount !== (biz.sales_done||0)){
+    db.from('businesses')
+      .update({sales_done: realCount})
+      .eq('id', biz.id)
+      .catch(()=>{});
+  }
 }
 
 // ── Estado de paginação do browse de negócios ──────────────────────────────
@@ -20476,10 +20459,9 @@ async function openBizDetail(biz){
   if(statsEl && freshBizRes.data){
     const bd = freshBizRes.data;
     statsEl.innerHTML = bd.category==='loja'
-      ? `<div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${bd.sales_done||0}</div><div class="dash-lbl">🛍️ Vendas</div></div>
-         <div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${bd.deals_closed||0}</div><div class="dash-lbl">🤝 Fechados</div></div>
+      ? `<div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${bd.sales_done||0}</div><div class="dash-lbl">✅ Vendas</div></div>
          <div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${bd.followers_count||0}</div><div class="dash-lbl">👥 Seguidores</div></div>`
-      : `<div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${bd.deals_closed||0}</div><div class="dash-lbl">📅 Agendamentos</div></div>
+      : `<div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${bd.sales_done||0}</div><div class="dash-lbl">📅 Agendamentos</div></div>
          <div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${bd.followers_count||0}</div><div class="dash-lbl">👥 Seguidores</div></div>`;
   }
   const prods = prodsRes.data;
