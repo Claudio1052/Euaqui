@@ -7141,31 +7141,13 @@ body.day-mode .lp-chip{ background:rgba(0,0,0,.04); color:#1a1a2e; }
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
                   <div>
                     <label style="font-size:9px;color:var(--text-muted);letter-spacing:1px;text-transform:uppercase;">Estilo</label>
-                    <select class="ainput" id="av-gen-style" style="margin-top:4px;font-size:11px;" onchange="generateRetroAvatar()">
-                      <option value="pixel-art">🎮 Pixel Art</option>
-                      <option value="adventurer">🧝 Aventureiro</option>
-                      <option value="avataaars">😊 Cartoon</option>
-                      <option value="bottts">🤖 Robô</option>
-                      <option value="fun-emoji">🎭 Emoji Fun</option>
-                      <option value="lorelei">🧑 Lorelei</option>
-                      <option value="micah">✏️ Micah</option>
-                      <option value="notionists">🎨 Notionists</option>
-                      <option value="open-peeps">👤 Open Peeps</option>
-                      <option value="croodles">🖊️ Croodles</option>
-                    </select>
+                    <div id="av-style-drop-wrap" style="margin-top:4px;"></div>
+                    <input type="hidden" id="av-gen-style" value="pixel-art">
                   </div>
                   <div>
                     <label style="font-size:9px;color:var(--text-muted);letter-spacing:1px;text-transform:uppercase;">Cor de fundo</label>
-                    <select class="ainput" id="av-gen-bg" style="margin-top:4px;font-size:11px;" onchange="generateRetroAvatar()">
-                      <option value="0a0a2a">🌌 Noturno</option>
-                      <option value="1a1a4e">💙 Azul escuro</option>
-                      <option value="2d1b69">💜 Roxo</option>
-                      <option value="1b4332">🌲 Verde escuro</option>
-                      <option value="7f1d1d">❤️ Vermelho</option>
-                      <option value="78350f">🟠 Laranja escuro</option>
-                      <option value="064e3b">🩵 Verde água</option>
-                      <option value="transparent">🔲 Sem fundo</option>
-                    </select>
+                    <div id="av-bg-drop-wrap" style="margin-top:4px;"></div>
+                    <input type="hidden" id="av-gen-bg" value="0a0a2a">
                   </div>
                 </div>
                 <!-- Preview do avatar gerado -->
@@ -11975,7 +11957,101 @@ function switchAvTab(t,btn){
   const r=document.getElementById('av-retro-sec');
   if(u) u.style.display=t==='upload'?'block':'none';
   if(r) r.style.display=t==='retro'?'block':'none';
-  if(t==='retro' && !_retro_av_url) generateRetroAvatar();
+  if(t==='retro'){
+    _initAvatarDropdowns();
+    if(!_retro_av_url) generateRetroAvatar();
+  }
+}
+
+let _avDropsInited = false;
+function _initAvatarDropdowns(){
+  if(_avDropsInited) return;
+  _avDropsInited = true;
+
+  function _makeAvDrop({ wrapperId, hiddenId, defaultLabel, defaultVal, options, onChange }){
+    const wrap = document.getElementById(wrapperId);
+    if(!wrap) return;
+    wrap.style.cssText = 'position:relative;';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.style.cssText = 'width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px;background:rgba(255,255,255,.05);border:1px solid var(--border-glow);border-radius:10px;padding:7px 12px;color:var(--text-light);font-family:"Space Mono",monospace;font-size:10px;cursor:pointer;white-space:nowrap;';
+
+    const lbl = document.createElement('span');
+    lbl.textContent = defaultLabel;
+
+    const arrow = document.createElement('span');
+    arrow.textContent = '▾';
+    arrow.style.cssText = 'color:var(--text-muted);font-size:10px;flex-shrink:0;';
+
+    btn.appendChild(lbl);
+    btn.appendChild(arrow);
+
+    const hidden = document.getElementById(hiddenId);
+    if(hidden) hidden.value = defaultVal;
+
+    const list = document.createElement('div');
+    list.style.cssText = 'display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;min-width:100%;background:var(--bg-card);border:1px solid var(--border-glow);border-radius:12px;overflow-y:auto;max-height:220px;z-index:9999;box-shadow:0 8px 32px rgba(0,0,0,.6);';
+
+    options.forEach(([v, t]) => {
+      const item = document.createElement('div');
+      item.textContent = t;
+      item.style.cssText = 'padding:9px 14px;cursor:pointer;font-family:"Space Mono",monospace;font-size:10px;color:var(--text-light);border-bottom:1px solid rgba(255,255,255,.04);transition:background .1s;white-space:nowrap;';
+      if(v === defaultVal) item.style.color = 'var(--neon-cyan)';
+      item.onmouseenter = () => item.style.background = 'rgba(0,255,204,.08)';
+      item.onmouseleave = () => item.style.background = 'transparent';
+      item.onclick = () => {
+        if(hidden) hidden.value = v;
+        lbl.textContent = t;
+        list.querySelectorAll('div').forEach(d => d.style.color = 'var(--text-light)');
+        item.style.color = 'var(--neon-cyan)';
+        list.style.display = 'none';
+        arrow.textContent = '▾';
+        if(onChange) onChange();
+      };
+      list.appendChild(item);
+    });
+
+    btn.onclick = () => {
+      const open = list.style.display === 'none';
+      list.style.display = open ? 'block' : 'none';
+      arrow.textContent = open ? '▴' : '▾';
+      if(open){
+        setTimeout(() => {
+          document.addEventListener('pointerdown', function _cls(e){
+            if(!wrap.contains(e.target)){ list.style.display='none'; arrow.textContent='▾'; }
+            document.removeEventListener('pointerdown', _cls);
+          }, { once:true });
+        }, 10);
+      }
+    };
+
+    wrap.appendChild(btn);
+    wrap.appendChild(list);
+  }
+
+  _makeAvDrop({
+    wrapperId:'av-style-drop-wrap', hiddenId:'av-gen-style',
+    defaultLabel:'🎮 Pixel Art', defaultVal:'pixel-art',
+    options:[
+      ['pixel-art','🎮 Pixel Art'],['adventurer','🧝 Aventureiro'],['avataaars','😊 Cartoon'],
+      ['bottts','🤖 Robô'],['fun-emoji','🎭 Emoji Fun'],['lorelei','🧑 Lorelei'],
+      ['micah','✏️ Micah'],['notionists','🎨 Notionists'],['open-peeps','👤 Open Peeps'],
+      ['croodles','🖊️ Croodles']
+    ],
+    onChange: generateRetroAvatar
+  });
+
+  _makeAvDrop({
+    wrapperId:'av-bg-drop-wrap', hiddenId:'av-gen-bg',
+    defaultLabel:'🌌 Noturno', defaultVal:'0a0a2a',
+    options:[
+      ['0a0a2a','🌌 Noturno'],['1a1a4e','💙 Azul escuro'],['2d1b69','💜 Roxo'],
+      ['1b4332','🌲 Verde escuro'],['7f1d1d','❤️ Vermelho'],['78350f','🟠 Laranja escuro'],
+      ['064e3b','🩵 Verde água'],['transparent','🔲 Sem fundo']
+    ],
+    onChange: generateRetroAvatar
+  });
 }
 function toggleAvPicker(){const s=document.getElementById('av-retro-sec')?.parentElement;s.style.display=s.style.display==='none'?'block':'none';}
 
