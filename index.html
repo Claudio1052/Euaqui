@@ -11564,8 +11564,61 @@ function _euConfirm(msg, icon){
   });
 }
 
+
+// ═══════════════════════════════════════════════════════════════════
+// 🗑️ EXCLUSÃO DO R2 — remove arquivos do bucket quando posts/stories/
+//    avatares são excluídos, economizando espaço de armazenamento.
+//
+//  _r2ExtractKey(url)  → extrai a object key de qualquer URL R2/Worker
+//  _deleteFromR2(urls) → chama DELETE /api/r2/object para cada URL
+//                        de forma silenciosa (fire-and-forget)
+// ═══════════════════════════════════════════════════════════════════
+function _r2ExtractKey(url){
+  if(!url || typeof url !== 'string') return null;
+  try{
+    const u = new URL(url);
+    // Worker: https://media.euaqui.store/media/posts%2F...
+    //         https://media.euaqui.store/avatar/r2/...
+    if(u.hostname === 'media.euaqui.store'){
+      const key = u.pathname
+        .replace(/^\/media\//, '')
+        .replace(/^\/avatar\/r2\//, '')
+        .replace(/^\/avatar\/thumb\//, '');
+      // decode se vier percent-encoded (ex: posts%2Fuser%2F...)
+      try{ return decodeURIComponent(key); }catch(e){ return key; }
+    }
+    // URL direta do R2 (*.r2.cloudflarestorage.com/key)
+    if(u.hostname.endsWith('.r2.cloudflarestorage.com')){
+      return u.pathname.replace(/^\//, '');
+    }
+  }catch(e){}
+  return null;
+}
+
+// Aceita string ou array de URLs. Fire-and-forget — nunca lança exceção.
+function _deleteFromR2(urls){
+  if(!window.R2_BACKEND_URL) return;
+  const list = Array.isArray(urls) ? urls : [urls];
+  list.forEach(url => {
+    if(!url) return;
+    const key = _r2ExtractKey(url);
+    if(!key) return;
+    fetch(R2_BACKEND_URL + '/api/r2/object?key=' + encodeURIComponent(key), {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + (CU?.id || '') }
+    }).catch(()=>{}); // silencioso — falha não bloqueia o fluxo
+  });
+}
+
 async function deletePost(postId){
   if(!await _euConfirm('Deseja excluir este post?<br>Esta ação não pode ser desfeita.','🗑️')) return;
+
+  // Busca media_urls ANTES de deletar para poder limpar o R2 depois
+  let _postMediaUrls = [];
+  try{
+    const { data: _pm } = await db.from('posts').select('media_urls,avatar_url').eq('id', postId).maybeSingle();
+    if(_pm?.media_urls && Array.isArray(_pm.media_urls)) _postMediaUrls = _pm.media_urls.filter(Boolean);
+  }catch(e){}
 
   // ── Estratégia: tentar deletar via RPC que bypassa o trigger problemático
   // Se não tiver RPC, usa DELETE REST direto com header prefer=return=minimal
@@ -11646,6 +11699,9 @@ async function deletePost(postId){
     db.from('saved_posts').delete().eq('post_id',postId),
     db.from('notifications').delete().eq('post_id',postId),
   ]);
+
+  // 🗑️ Remove arquivos de mídia do R2 (fire-and-forget)
+  if(_postMediaUrls.length) _deleteFromR2(_postMediaUrls);
 
   // Remove card do DOM imediatamente
   document.getElementById('post-'+postId)?.remove();
@@ -11809,6 +11865,12 @@ async function applyRetroAvatar(){
     }).eq('id', CU.id);
 
     if(error) throw error;
+
+    // 🗑️ Apaga avatar antigo do R2 se for uma URL do nosso CDN
+    const _oldRetroAv = CP?.avatar_url || null;
+    if(_oldRetroAv && _oldRetroAv !== r2Url && _r2ExtractKey(_oldRetroAv)){
+      _deleteFromR2(_oldRetroAv);
+    }
 
     // Atualiza CP local
     if(CP){ CP.avatar_url=r2Url; CP.avatar_type='upload'; CP.retro_icon=null; }
@@ -12725,6 +12787,15 @@ async function ppDeleteConfirm(){
   const btn = document.getElementById('pp-del-btn-confirm');
   if(btn){ btn.disabled=true; btn.textContent='⏳ Excluindo...'; }
 
+  // Busca media_urls de todos os posts ANTES de deletar
+  let _allMediaUrls = [];
+  try{
+    const { data: _mdata } = await db.from('posts').select('id,media_urls').eq('user_id', CU.id).in('id', s.postIds);
+    (_mdata||[]).forEach(p=>{
+      if(Array.isArray(p.media_urls)) _allMediaUrls.push(...p.media_urls.filter(Boolean));
+    });
+  }catch(e){}
+
   let deleted=0, errored=0;
   for(const pid of s.postIds){
     try{
@@ -12741,6 +12812,9 @@ async function ppDeleteConfirm(){
       }
     }catch(err){ errored++; console.error('[pp-delete]',err); }
   }
+
+  // 🗑️ Remove arquivos de mídia do R2 (fire-and-forget)
+  if(_allMediaUrls.length) _deleteFromR2(_allMediaUrls);
 
   setTimeout(()=>{
     const panelId = s.tab==='fotos'?'profile-fotos':'profile-videos';
@@ -13141,6 +13215,13 @@ async function saveSettings(){
   }
 
   _setSaveProgress(80, 'Salvando perfil...');
+
+  // 🗑️ Se houver novo avatar via upload, apaga o avatar antigo do R2
+  const _oldAvatarUrl = CP?.avatar_url || null;
+  const _avatarChanged = avatarUrl && avatarUrl !== _oldAvatarUrl;
+  if(_avatarChanged && _oldAvatarUrl && _r2ExtractKey(_oldAvatarUrl)){
+    _deleteFromR2(_oldAvatarUrl); // fire-and-forget
+  }
 
   const updates={
     full_name:   document.getElementById('set-name').value.trim(),
@@ -30152,22 +30233,9 @@ async function oaDeleteCurrent(){
     const { error } = await db.from('olha_aqui').delete().eq('id', it.id);
     if(error) throw error;
 
-    // 2) Remove arquivo do R2 via backend Java (opcional mas recomendado)
-    //    O backend deve expor DELETE /api/r2/object?key=... autenticado
-    //    Se você já tem essa rota, chamamos silenciosamente. Se não tem,
-    //    o lifecycle rule de 1 dia garante a limpeza igual. Vale nos 2 casos.
-    try{
-      if(window.R2_BACKEND_URL && it.media_url){
-        // Tenta extrair a key (último segmento ou tudo após '/media/')
-        const key = _oaExtractKey(it.media_url);
-        if(key){
-          fetch(window.R2_BACKEND_URL + '/api/r2/object?key=' + encodeURIComponent(key), {
-            method:'DELETE',
-            headers:{ 'Authorization':'Bearer '+(CU.id||'') }
-          }).catch(()=>{});
-        }
-      }
-    }catch(e){}
+    // 2) 🗑️ Remove arquivos do R2 (media_url + thumb_url se existir)
+    const _oaUrls = [it.media_url, it.thumb_url].filter(Boolean);
+    if(_oaUrls.length) _deleteFromR2(_oaUrls);
 
     // Remove do estado local
     g.items.splice(oaViewer.itemIdx, 1);
