@@ -8089,6 +8089,23 @@ let db = createClient(SB_URL, SB_KEY, {
 
    3. Opcionalmente limpe a fila concluída 1x por dia:
       DELETE FROM r2_delete_queue WHERE done = true AND created_at < now() - interval '7 days';
+
+   ══════════════════════════════════════════════════════════════════════════
+   📦 MIGRAÇÃO — RPC enqueue_r2_delete (execute no Supabase SQL Editor)
+   ══════════════════════════════════════════════════════════════════════════
+   Permite que o frontend enfileire keys para deleção sem expor a tabela
+   diretamente (a RLS da r2_delete_queue bloqueia acesso direto do client).
+
+   -- RPC segura: qualquer usuário autenticado pode enfileirar sua própria key
+   CREATE OR REPLACE FUNCTION enqueue_r2_delete(object_key text)
+   RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+   BEGIN
+     IF object_key IS NULL OR object_key = '' THEN RETURN; END IF;
+     INSERT INTO r2_delete_queue (object_key, done) VALUES (object_key, false)
+       ON CONFLICT DO NOTHING;
+   END;
+   $$;
+   GRANT EXECUTE ON FUNCTION enqueue_r2_delete(text) TO authenticated;
    ══════════════════════════════════════════════════════════════════════════
 ─────────────────────────────────────────────────────────────────────────── */
 
@@ -11570,44 +11587,80 @@ function _euConfirm(msg, icon){
 //    avatares são excluídos, economizando espaço de armazenamento.
 //
 //  _r2ExtractKey(url)  → extrai a object key de qualquer URL R2/Worker
-//  _deleteFromR2(urls) → chama DELETE /api/r2/object para cada URL
-//                        de forma silenciosa (fire-and-forget)
+//  _deleteFromR2(urls) → tenta DELETE /api/r2/object no backend Java;
+//                        se falhar, enfileira na r2_delete_queue do Supabase
 // ═══════════════════════════════════════════════════════════════════
 function _r2ExtractKey(url){
   if(!url || typeof url !== 'string') return null;
   try{
     const u = new URL(url);
-    // Worker: https://media.euaqui.store/media/posts%2F...
+    // Worker: https://media.euaqui.store/media/posts/user/file.jpg
     //         https://media.euaqui.store/avatar/r2/...
     if(u.hostname === 'media.euaqui.store'){
+      // u.pathname já tem os %2F decodificados pelo browser
       const key = u.pathname
         .replace(/^\/media\//, '')
         .replace(/^\/avatar\/r2\//, '')
-        .replace(/^\/avatar\/thumb\//, '');
-      // decode se vier percent-encoded (ex: posts%2Fuser%2F...)
-      try{ return decodeURIComponent(key); }catch(e){ return key; }
+        .replace(/^\/avatar\/thumb\//, '')
+        .replace(/^\//, '');
+      return key || null;
     }
     // URL direta do R2 (*.r2.cloudflarestorage.com/key)
     if(u.hostname.endsWith('.r2.cloudflarestorage.com')){
       return u.pathname.replace(/^\//, '');
     }
+    // Supabase Storage (URLs antigas ainda no banco)
+    if(u.hostname.endsWith('.supabase.co') && u.pathname.includes('/storage/v1/object/public/')){
+      return u.pathname.replace(/^\/storage\/v1\/object\/public\//, '');
+    }
   }catch(e){}
   return null;
 }
 
-// Aceita string ou array de URLs. Fire-and-forget — nunca lança exceção.
-function _deleteFromR2(urls){
-  if(!window.R2_BACKEND_URL) return;
-  const list = Array.isArray(urls) ? urls : [urls];
-  list.forEach(url => {
-    if(!url) return;
+// Aceita string ou array de URLs.
+// Estratégia dupla: 1° tenta backend Java; 2° enfileira no Supabase r2_delete_queue
+async function _deleteFromR2(urls){
+  const list = (Array.isArray(urls) ? urls : [urls]).filter(Boolean);
+  if(!list.length) return;
+
+  for(const url of list){
     const key = _r2ExtractKey(url);
-    if(!key) return;
-    fetch(R2_BACKEND_URL + '/api/r2/object?key=' + encodeURIComponent(key), {
-      method: 'DELETE',
-      headers: { 'Authorization': 'Bearer ' + (CU?.id || '') }
-    }).catch(()=>{}); // silencioso — falha não bloqueia o fluxo
-  });
+    if(!key){ console.warn('[R2 delete] key não extraída de:', url); continue; }
+
+    let backendOk = false;
+
+    // ── Tentativa 1: DELETE via backend Java ──────────────────────
+    if(window.R2_BACKEND_URL){
+      try{
+        const res = await fetch(R2_BACKEND_URL + '/api/r2/object?key=' + encodeURIComponent(key), {
+          method: 'DELETE',
+          headers: { 'Authorization': 'Bearer ' + (CU?.id || '') }
+        });
+        if(res.ok || res.status === 404){
+          console.log('[R2 delete] ✓ backend deletou:', key);
+          backendOk = true;
+        } else {
+          const body = await res.text().catch(()=>'');
+          console.warn('[R2 delete] backend retornou', res.status, body, '— tentando fila Supabase');
+        }
+      }catch(e){
+        console.warn('[R2 delete] backend inacessível:', e.message, '— tentando fila Supabase');
+      }
+    }
+
+    // ── Tentativa 2: enfileira via RPC enqueue_r2_delete no Supabase ─
+    // RLS bloqueia INSERT direto; a RPC SECURITY DEFINER contorna isso.
+    // O backend Java consome a fila periodicamente (SELECT WHERE done=false)
+    if(!backendOk && window.db){
+      try{
+        const { error } = await db.rpc('enqueue_r2_delete', { object_key: key });
+        if(error) console.warn('[R2 delete] RPC enqueue falhou:', error.message);
+        else       console.log('[R2 delete] ✓ enfileirado via RPC:', key);
+      }catch(e){
+        console.warn('[R2 delete] RPC enqueue exception:', e.message);
+      }
+    }
+  }
 }
 
 async function deletePost(postId){
