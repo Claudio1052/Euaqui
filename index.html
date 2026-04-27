@@ -8104,25 +8104,21 @@ function showApp(){
 
   // ── Restaurar página pela URL, pelo redirect 404 ou iniciar em home ──
   try{
-    // 1) GitHub Pages SPA redirect: recupera ?p=path enviado pelo 404.html
+    // Recupera a página salva: prioridade → hash da URL → sessionStorage → home
+    // O hash (#/lojas) é preservado pelo browser ao recarregar e ao voltar/avançar.
     let redirectPath = null;
-    try{
-      const _sp = new URLSearchParams(location.search);
-      const _p = _sp.get('p');
-      if(_p){
-        redirectPath = decodeURIComponent(_p);
-        // Limpa o ?p= da URL sem recarregar
-        history.replaceState(null, '', '/');
-      }
-    }catch(e){}
 
-    // 2) Fallback: sessionStorage (compatibilidade com versão anterior)
-    if(!redirectPath){
-      try{ redirectPath = sessionStorage.getItem('__ea_redirect'); sessionStorage.removeItem('__ea_redirect'); }catch(e){}
+    // 1) Hash na URL (ex: #/lojas) — preservado automaticamente pelo browser
+    if(location.hash && location.hash.length > 1){
+      redirectPath = location.hash;
     }
 
-    // 3) Resolve a página: redirect 404 > URL atual > home
-    const urlPage = _eaGetPageFromPath(redirectPath || location.hash || location.pathname);
+    // 2) sessionStorage — salvo a cada navegação como fallback
+    if(!redirectPath){
+      try{ redirectPath = sessionStorage.getItem('__ea_last_page'); }catch(e){}
+    }
+
+    const urlPage = _eaGetPageFromPath(redirectPath || location.pathname);
     const startPage = urlPage || 'home';
     _eaLastPushedPage = startPage;
 
@@ -8550,6 +8546,8 @@ function _eaPushState(page){
     const hash = _EA_ROUTES[page] || '/';
     history.pushState({eaPage: page}, '', '#' + hash);
   }catch(e){ console.warn('[EA-History] pushState:', e); }
+  // Memoriza página atual no sessionStorage — recuperado ao recarregar
+  try{ sessionStorage.setItem('__ea_last_page', '#' + (_EA_ROUTES[page] || '/')); }catch(e){}
 }
 
 // Listener do botão voltar (popstate)
