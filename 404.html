@@ -20,12 +20,19 @@
     .msg{ text-align:center; opacity:.7; }
   </style>
   <script>
+    // GitHub Pages SPA redirect — técnica spa-github-pages
+    // Converte o path em query string para o index.html recuperar
     (function(){
-      var path = window.location.pathname + window.location.search + window.location.hash;
-      if(path && path !== '/'){
-        try{ sessionStorage.setItem('__ea_redirect', path); }catch(e){}
+      var l = window.location;
+      var path = l.pathname.slice(1) + (l.search ? l.search : '') + l.hash;
+      if(path){
+        l.replace(
+          l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+          '/?p=' + encodeURIComponent(path)
+        );
+      } else {
+        l.replace(l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') + '/');
       }
-      window.location.replace('/');
     })();
   </script>
 </head>
