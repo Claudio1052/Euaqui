@@ -8104,12 +8104,25 @@ function showApp(){
 
   // ── Restaurar página pela URL, pelo redirect 404 ou iniciar em home ──
   try{
-    // 1) Verifica se veio de um redirect do 404.html (ex: /amigos → salvo no sessionStorage)
+    // 1) GitHub Pages SPA redirect: recupera ?p=path enviado pelo 404.html
     let redirectPath = null;
-    try{ redirectPath = sessionStorage.getItem('__ea_redirect'); sessionStorage.removeItem('__ea_redirect'); }catch(e){}
+    try{
+      const _sp = new URLSearchParams(location.search);
+      const _p = _sp.get('p');
+      if(_p){
+        redirectPath = decodeURIComponent(_p);
+        // Limpa o ?p= da URL sem recarregar
+        history.replaceState(null, '', '/');
+      }
+    }catch(e){}
 
-    // 2) Resolve a página: redirect 404 > URL atual > home
-    const urlPage = _eaGetPageFromPath(redirectPath || location.pathname);
+    // 2) Fallback: sessionStorage (compatibilidade com versão anterior)
+    if(!redirectPath){
+      try{ redirectPath = sessionStorage.getItem('__ea_redirect'); sessionStorage.removeItem('__ea_redirect'); }catch(e){}
+    }
+
+    // 3) Resolve a página: redirect 404 > URL atual > home
+    const urlPage = _eaGetPageFromPath(redirectPath || location.hash || location.pathname);
     const startPage = urlPage || 'home';
     _eaLastPushedPage = startPage;
 
@@ -8516,7 +8529,13 @@ const _EA_ROUTES = {
 const _EA_ROUTES_REVERSE = Object.fromEntries(Object.entries(_EA_ROUTES).map(([k,v])=>[v,k]));
 
 function _eaGetPageFromPath(path){
-  // normaliza: remove trailing slash exceto raiz
+  // Suporte a hash routing: extrai rota do hash se existir
+  const hash = window.location.hash;
+  if(hash && hash.startsWith('#/')){
+    const p = hash.slice(1).replace(/\/+$/,'') || '/';
+    return _EA_ROUTES_REVERSE[p] || null;
+  }
+  // Fallback: tenta pelo pathname (compatibilidade)
   const p = path.replace(/\/+$/,'') || '/';
   return _EA_ROUTES_REVERSE[p] || _EA_ROUTES_REVERSE[path] || null;
 }
@@ -8524,11 +8543,12 @@ function _eaGetPageFromPath(path){
 // Empurra entrada na history apenas quando a página muda
 let _eaLastPushedPage = null;
 function _eaPushState(page){
-  const url = _EA_ROUTES[page] || '/';
   if(_eaLastPushedPage === page) return; // evita duplicatas consecutivas
   _eaLastPushedPage = page;
   try{
-    history.pushState({eaPage: page}, '', url);
+    // Usa hash routing (#/rota) — o servidor nunca vê a rota, evita erro 404 ao recarregar
+    const hash = _EA_ROUTES[page] || '/';
+    history.pushState({eaPage: page}, '', '#' + hash);
   }catch(e){ console.warn('[EA-History] pushState:', e); }
 }
 
