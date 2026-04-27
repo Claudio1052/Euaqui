@@ -14576,6 +14576,20 @@ async function loadMsgs(userId){
   if(marked) console.log('[chat-read] ✅ SUCESSO: destinatário vai ver os ticks');
   document.getElementById('bnav-msg-dot')?.classList.remove('active');
   updateUnreadMsgBadge();
+
+  // ── Marca notificação de mensagem deste remetente como lida ──────────────
+  // Assim quando o usuário abre o chat e lê, a notificação some.
+  // Na próxima mensagem nova, uma nova notificação será criada.
+  if(CU && userId){
+    try{
+      await db.from('notifications')
+        .update({read:true})
+        .eq('user_id', CU.id)
+        .eq('actor_id', userId)
+        .eq('type', 'message')
+        .eq('read', false);
+    }catch(_){}
+  }
 }
 
 // ── Extrai o postId de uma mensagem com marcador [POST_SHARE:id] ──
@@ -14957,7 +14971,17 @@ async function sendMsg(){
       // Avanca _lastMsgCheck para o poll nao reprocessar esta msg
       if(inserted.created_at && inserted.created_at > _lastMsgCheck) _lastMsgCheck=inserted.created_at;
     }
-    try{await db.from('notifications').insert({user_id:currentChatUser.id,actor_id:CU.id,type:'message',content:`@${CP?.username||'alguém'} enviou uma mensagem`,read:false});}catch(e){}
+    try{
+      // Só cria notificação se não existe uma não lida de mensagem deste remetente
+      const {data:_existMsg} = await db.from('notifications')
+        .select('id').eq('user_id',currentChatUser.id).eq('actor_id',CU.id)
+        .eq('type','message').eq('read',false).limit(1).maybeSingle();
+      if(!_existMsg){
+        await db.from('notifications').insert({user_id:currentChatUser.id,actor_id:CU.id,type:'message',content:'Você tem mensagens não lidas',read:false});
+      } else {
+        await db.from('notifications').update({created_at:new Date().toISOString()}).eq('id',_existMsg.id);
+      }
+    }catch(e){}
   } finally {
     inp.disabled=false;
     if(sendBtn){ sendBtn.disabled=false; sendBtn.style.opacity=''; sendBtn.style.cursor=''; }
@@ -15677,7 +15701,17 @@ async function sendHomeMsg(){
     if(lastBubbleHt) lastBubbleHt.dataset.msgId=insertedHt.id;
     if(insertedHt.created_at && insertedHt.created_at > _lastMsgCheck) _lastMsgCheck=insertedHt.created_at;
   }
-  try{await db.from('notifications').insert({user_id:homeChatUser.id,actor_id:CU.id,type:'message',content:'@'+(CP?.username||'alguém')+' enviou uma mensagem',read:false});}catch(e){}
+  try{
+    // Só cria notificação se não existe uma não lida de mensagem deste remetente
+    const {data:_existMsgHt} = await db.from('notifications')
+      .select('id').eq('user_id',homeChatUser.id).eq('actor_id',CU.id)
+      .eq('type','message').eq('read',false).limit(1).maybeSingle();
+    if(!_existMsgHt){
+      await db.from('notifications').insert({user_id:homeChatUser.id,actor_id:CU.id,type:'message',content:'Você tem mensagens não lidas',read:false});
+    } else {
+      await db.from('notifications').update({created_at:new Date().toISOString()}).eq('id',_existMsgHt.id);
+    }
+  }catch(e){}
 }
 
 async function loadHomeProfile(){
