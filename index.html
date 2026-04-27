@@ -9394,8 +9394,14 @@ function renderPost(post,rxCounts={},myRx='',_origPostMap){
         ? `<div style="margin-top:8px;border-radius:8px;overflow:hidden;"><img src="${xss(_mUrls[0])}" style="width:100%;max-height:220px;object-fit:cover;display:block;border-radius:8px;" loading="lazy" onerror="this.style.display='none'"></div>`
         : '';
       const _origPostId = xss(repostMeta.originalPostId);
+      // Detecta se o post original é de comunidade
+      const _opCommMatch = (_op.content||'').match(/^\[COMM_POST:([^:\]]+)/);
+      const _opCommId = _opCommMatch ? _opCommMatch[1] : null;
+      const _origOnclick = _opCommId
+        ? `event.stopPropagation();nav('communities');setTimeout(()=>openCommDetail('${_opCommId}'),300)`
+        : `_goToOriginalPost('${_origPostId}')`;
       repostCardHtml = `
-        <div class="repost-embed-card" style="background:rgba(255,255,255,.04);border:1px solid rgba(0,255,204,.2);border-left:3px solid var(--neon-cyan);border-radius:12px;padding:12px 12px 12px 14px;margin:8px 0 10px;cursor:pointer;position:relative;overflow:hidden;" onclick="_goToOriginalPost('${_origPostId}')">
+        <div class="repost-embed-card" style="background:rgba(255,255,255,.04);border:1px solid rgba(0,255,204,.2);border-left:3px solid var(--neon-cyan);border-radius:12px;padding:12px 12px 12px 14px;margin:8px 0 10px;cursor:pointer;position:relative;overflow:hidden;" onclick="${_origOnclick}">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
             <div style="width:28px;height:28px;border-radius:50%;background:rgba(0,255,204,.15);border:1px solid rgba(0,255,204,.3);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="event.stopPropagation();loadProfilePage('${_uid}')">${_avHtml}</div>
             <div>
@@ -9591,7 +9597,14 @@ function _fillRepostCard(repostPostId, op, origId){
     :'') + mediaHtml;
   if(elOrig){
     const card=elOrig.closest('.repost-embed-card');
-    if(card) card.onclick=function(e){e.stopPropagation();_goToOriginalPost(origId);};
+    if(card){
+      if(commId){
+        // Post de comunidade → abre direto na comunidade
+        card.onclick=function(e){e.stopPropagation();nav('communities');setTimeout(()=>openCommDetail(commId),300);};
+      } else {
+        card.onclick=function(e){e.stopPropagation();_goToOriginalPost(origId);};
+      }
+    }
   }
 }
 
@@ -16173,27 +16186,48 @@ function _hydrateAllReposts(container){
 }
 
 async function _goToOriginalPost(postId){
-  // 1. Navegar para o feed principal
-  nav('home');
-  // 2. Esperar o feed carregar, depois tentar encontrar o post
-  await new Promise(r=>setTimeout(r,400));
-  // 3. Verificar se o post já está no DOM
-  let el = document.getElementById('post-'+postId);
-  if(el){
-    el.scrollIntoView({behavior:'smooth', block:'center'});
-    // Highlight breve
-    el.style.transition='box-shadow .3s';
-    el.style.boxShadow='0 0 0 3px var(--neon-cyan), 0 0 24px rgba(0,255,204,.4)';
-    setTimeout(()=>{ el.style.boxShadow=''; }, 1800);
-    return;
-  }
-  // 4. Post não está no feed — buscar e renderizar diretamente
+  // Busca o post original para verificar se é de comunidade
   try{
-    const{data:p} = await db.from('posts')
+    const {data:p} = await db.from('posts')
       .select('id,user_id,content,media_urls,media_types,type,visibility,likes_count,comments_count,video_views,created_at,profiles(id,username,full_name,avatar_url,status_message,profile_layout->avatarFrame)')
       .eq('id', postId).maybeSingle();
     if(!p){ showToast('Post original não encontrado','error'); return; }
 
+    // ── Detecta se é post de comunidade ──────────────────────────────────────
+    const commMatch = (p.content||'').match(/^\[COMM_POST:([^:\]]+)/);
+    if(commMatch){
+      // É post de comunidade → navega para a comunidade e destaca o post lá
+      const commId = commMatch[1];
+      nav('communities');
+      await new Promise(r=>setTimeout(r,300));
+      openCommDetail(commId);
+      await new Promise(r=>setTimeout(r,600));
+      // Tenta destacar o post dentro da comunidade
+      const el = document.getElementById('post-'+postId) || document.getElementById('comm-post-'+postId);
+      if(el){
+        el.scrollIntoView({behavior:'smooth', block:'center'});
+        el.style.transition='box-shadow .3s';
+        el.style.boxShadow='0 0 0 3px var(--neon-cyan), 0 0 24px rgba(0,255,204,.4)';
+        setTimeout(()=>{ el.style.boxShadow=''; }, 1800);
+      }
+      return;
+    }
+
+    // ── Post normal: navega para o feed ──────────────────────────────────────
+    nav('home');
+    await new Promise(r=>setTimeout(r,400));
+
+    // Verifica se o post já está no DOM
+    let el = document.getElementById('post-'+postId);
+    if(el){
+      el.scrollIntoView({behavior:'smooth', block:'center'});
+      el.style.transition='box-shadow .3s';
+      el.style.boxShadow='0 0 0 3px var(--neon-cyan), 0 0 24px rgba(0,255,204,.4)';
+      setTimeout(()=>{ el.style.boxShadow=''; }, 1800);
+      return;
+    }
+
+    // Post não está no feed — renderizar no topo
     const[rxRes, myRxRes] = await Promise.all([
       db.from('likes').select('post_id,reaction_type').eq('post_id',postId).limit(200),
       CU ? db.from('likes').select('post_id,reaction_type').eq('post_id',postId).eq('user_id',CU.id).limit(1) : {data:[]}
@@ -16205,14 +16239,12 @@ async function _goToOriginalPost(postId){
 
     const feed = document.getElementById('feed');
     if(!feed) return;
-    // Inserir no topo do feed com destaque
     const wrapper = document.createElement('div');
     wrapper.innerHTML = renderPost(p, rxMap[p.id]||{}, myRxMap[p.id]||'');
     const postEl = wrapper.firstElementChild;
     if(!postEl) return;
     postEl.style.border = '2px solid var(--neon-cyan)';
     postEl.style.boxShadow = '0 0 24px rgba(0,255,204,.35)';
-    // Adicionar badge "Post original"
     const badge = document.createElement('div');
     badge.style.cssText = 'font-family:Silkscreen,monospace;font-size:9px;color:var(--neon-cyan);letter-spacing:1px;padding:4px 10px 6px;';
     badge.textContent = '📌 POST ORIGINAL';
