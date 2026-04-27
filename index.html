@@ -18344,43 +18344,52 @@ async function _updateBizSalesCounts(bizList){
   const servicos = bizList.filter(b => b.category !== 'loja').map(b => b.id);
 
   // Mapa: business_id → contagem real
-  // Inicializa todos os IDs com 0 — assim negócios sem vendas também entram no mapa
-  // e o hasOwnProperty distingue "zero real" de "query não encontrou"
+  // NÃO inicializa com 0 — só recebe valor quem apareceu nas queries.
+  // Isso evita zerar o span de negócios que não têm registros ainda
+  // ou cuja query falhou silenciosamente.
   const countMap = {};
-  bizList.forEach(b => { countMap[b.id] = 0; });
+
+  // Rastreia quais grupos de IDs tiveram query executada com sucesso
+  const queriedIds = new Set();
 
   try{
     // ── Lojas: purchases concluídas agrupadas por business_id ─────────────────
     if(lojas.length){
-      const {data:purchRows} = await db.from('purchases')
+      const {data:purchRows, error:e1} = await db.from('purchases')
         .select('business_id')
         .in('business_id', lojas)
         .eq('status', 'done');
-      (purchRows||[]).forEach(r=>{
-        countMap[r.business_id] = (countMap[r.business_id]||0) + 1;
-      });
+      if(!e1){
+        lojas.forEach(id => queriedIds.add(id));
+        (purchRows||[]).forEach(r=>{
+          countMap[r.business_id] = (countMap[r.business_id]||0) + 1;
+        });
 
-      // deals antigos sem purchase (retrocompat — status='done' direto no deal)
-      const {data:dealRows} = await db.from('business_deals')
-        .select('business_id')
-        .in('business_id', lojas)
-        .eq('status', 'done');
-      (dealRows||[]).forEach(r=>{
-        countMap[r.business_id] = (countMap[r.business_id]||0) + 1;
-      });
+        // deals antigos sem purchase (retrocompat — status='done' direto no deal)
+        const {data:dealRows} = await db.from('business_deals')
+          .select('business_id')
+          .in('business_id', lojas)
+          .eq('status', 'done');
+        (dealRows||[]).forEach(r=>{
+          countMap[r.business_id] = (countMap[r.business_id]||0) + 1;
+        });
+      }
     }
 
     // ── Serviços: conta APENAS appointments com status='done' ───────────────────
     // Fluxo correto: deal aceito → cria appointment 'confirmed' → dono conclui → 'done'
     // deals com status 'closed' = apenas aceito, ainda não concluído → não conta
     if(servicos.length){
-      const {data:apptRows} = await db.from('appointments')
+      const {data:apptRows, error:e2} = await db.from('appointments')
         .select('business_id')
         .in('business_id', servicos)
         .eq('status', 'done');
-      (apptRows||[]).forEach(r=>{
-        countMap[r.business_id] = (countMap[r.business_id]||0) + 1;
-      });
+      if(!e2){
+        servicos.forEach(id => queriedIds.add(id));
+        (apptRows||[]).forEach(r=>{
+          countMap[r.business_id] = (countMap[r.business_id]||0) + 1;
+        });
+      }
     }
   }catch(e){
     console.warn('[_updateBizSalesCounts]', e?.message);
@@ -18388,15 +18397,14 @@ async function _updateBizSalesCounts(bizList){
   }
 
   // ── Atualiza spans e sincroniza banco silenciosamente ─────────────────────
-  // IMPORTANTE: só atualiza se o ID existir no countMap.
-  // Se não existir, significa que a query não retornou linhas para esse negócio
-  // (zero vendas real) — aí sim gravamos 0. Mas não confundimos "ausente do mapa"
-  // com "zero": usamos hasOwnProperty para distinguir os dois casos.
+  // Só atualiza negócios cujos IDs tiveram query executada com sucesso.
+  // Se a query falhou ou não rodou, o span mantém o valor que veio do banco.
   bizList.forEach(biz=>{
-    // Negócio não apareceu em nenhuma query → sem dados = não toca no span nem no banco
-    if(!Object.prototype.hasOwnProperty.call(countMap, biz.id)) return;
+    // Query não executou para este negócio → não toca no span
+    if(!queriedIds.has(biz.id)) return;
 
-    const realCount = countMap[biz.id]; // já é número >= 0
+    // Query executou: se não apareceu no resultado = zero real
+    const realCount = countMap[biz.id] || 0;
     const span = document.getElementById('biz-card-sales-' + biz.id);
     if(!span) return;
 
