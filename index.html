@@ -15015,13 +15015,33 @@ async function loadNotifCount(force=false){
   if(!force && _notifCache!==null && (Date.now()-_notifCacheAt)<NOTIF_CACHE_TTL){
     _applyNotifCache(_notifCache);return;
   }
+  // ─── Busca apenas os tipos que realmente aparecem na tela ───
+  // Exclui olha_aqui_new (notif de usuário postou no OlhaAqui — removida da exibição)
+  // Para like/comment verifica se o actor é amigo do usuário
   const{data:notifs}=await db.from('notifications')
-    .select('id,type')
-    .eq('user_id',CU.id).eq('read',false).limit(100);
+    .select('id,type,actor_id')
+    .eq('user_id',CU.id).eq('read',false)
+    .neq('type','olha_aqui_new')
+    .limit(200);
   const all=notifs||[];
+  // Verifica amizade para like/comment (só aparecem se forem amigos)
+  const socialTypes=new Set(['like','comment']);
+  const actorIds=[...new Set(all.filter(n=>socialTypes.has(n.type)&&n.actor_id).map(n=>n.actor_id))];
+  let friendSet=new Set();
+  if(actorIds.length){
+    try{
+      const{data:frRows}=await db.from('friends').select('friend_id').eq('user_id',CU.id).in('friend_id',actorIds);
+      (frRows||[]).forEach(f=>friendSet.add(f.friend_id));
+    }catch(e){}
+  }
+  // Filtra: notificações sociais (like/comment) só contam se o actor é amigo
+  const visible=all.filter(n=>{
+    if(socialTypes.has(n.type)) return n.actor_id && friendSet.has(n.actor_id);
+    return true;
+  });
   const BIZ_TYPES=['biz_promo','olha_aqui_biz'];
   const COMM_TYPES=['community_invite','community_post','community_mention','community_comment','community_live','olha_aqui_comm'];
-  _notifCache={count:all.length,hasBiz:all.some(n=>BIZ_TYPES.includes(n.type)),hasComm:all.some(n=>COMM_TYPES.includes(n.type))};
+  _notifCache={count:visible.length,hasBiz:visible.some(n=>BIZ_TYPES.includes(n.type)),hasComm:visible.some(n=>COMM_TYPES.includes(n.type))};
   _notifCacheAt=Date.now();
   _applyNotifCache(_notifCache);
 }
