@@ -20378,13 +20378,12 @@ async function openBizDetail(biz){
   // starsLine é colocado num elemento com id para atualização dinâmica
   // Stats section
   const statsSection = biz.category==='loja'
-    ? `<div style="display:flex;gap:14px;margin-bottom:14px;">
-        <div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${biz.sales_done||0}</div><div class="dash-lbl">🛍️ Vendas</div></div>
-        <div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${biz.deals_closed||0}</div><div class="dash-lbl">🤝 Fechados</div></div>
+    ? `<div style="display:flex;gap:14px;margin-bottom:14px;" id="biz-stats-${biz.id}">
+        <div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${biz.sales_done||0}</div><div class="dash-lbl">✅ Vendas</div></div>
         <div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${biz.followers_count||0}</div><div class="dash-lbl">👥 Seguidores</div></div>
        </div>`
-    : `<div style="display:flex;gap:14px;margin-bottom:14px;">
-        <div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${biz.deals_closed||0}</div><div class="dash-lbl">📅 Agendamentos</div></div>
+    : `<div style="display:flex;gap:14px;margin-bottom:14px;" id="biz-stats-${biz.id}">
+        <div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${biz.sales_done||0}</div><div class="dash-lbl">📅 Agendamentos</div></div>
         <div class="dash-card" style="flex:1;padding:10px;"><div class="dash-num">${biz.followers_count||0}</div><div class="dash-lbl">👥 Seguidores</div></div>
        </div>`;
   modal.innerHTML=`
