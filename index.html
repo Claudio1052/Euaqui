@@ -18844,7 +18844,7 @@ async function loadMyBusiness(){
       let _pImgs = [];
       try{ _pImgs = p.image_urls ? JSON.parse(p.image_urls) : []; }catch(_){ _pImgs=[]; }
       if(!_pImgs.length && p.image_url) _pImgs=[p.image_url];
-      const _pCarousel = renderProdCarousel(_pImgs, 100);
+      const _pCarousel = renderProdCarousel(_pImgs, 100, true);
       const _pUrls = JSON.stringify(_pImgs).replace(/"/g,'&quot;');
       const _esgotado = (p.stock != null && p.stock <= 0);
       const _stockBadge = p.stock != null
