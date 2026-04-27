@@ -10258,6 +10258,14 @@ function editProduct(prodId, name, price, priceLabel, desc, imageUrl, imageUrls,
       };
       const{error}=await db.from('business_products').update(_editUpdates).eq('id',prodId).eq('business_id',bizId);
       if(error) throw error;
+
+      // 🗑️ Detecta fotos REMOVIDAS (estavam em existingUrls mas não em finalUrls)
+      // e apaga do R2 (fire-and-forget)
+      try{
+        const _removedUrls = (existingUrls||[]).filter(u => u && !finalUrls.includes(u) && _r2ExtractKey(u));
+        if(_removedUrls.length) _deleteFromR2(_removedUrls);
+      }catch(_){}
+
       // Limpa estado temporário
       delete window._prodPhotoFiles[cid]; delete window._prodPhotoUrls[cid];
       showToast('✅ Produto atualizado!','success');
@@ -10285,6 +10293,14 @@ async function updateProduct(prodId, bizId, btn){
   btn.textContent='⏳ Salvando...'; btn.disabled=true;
 
   try{
+    // 🗑️ Busca imagem ANTIGA para limpar do R2 caso seja trocada
+    let _oldProdImg = null;
+    try{
+      const {data:_op} = await db.from('business_products')
+        .select('image_url').eq('id',prodId).maybeSingle();
+      _oldProdImg = _op?.image_url || null;
+    }catch(_){}
+
     // Upload de nova imagem se tiver arquivo selecionado
     let finalImg = imageUrl;
     if(window._bizImgFiles?.['prod-img-'+bizId]){
@@ -10302,6 +10318,11 @@ async function updateProduct(prodId, bizId, btn){
 
     const{error}=await db.from('business_products').update(updates).eq('id',prodId).eq('business_id',bizId);
     if(error) throw error;
+
+    // 🗑️ Apaga imagem antiga do R2 se foi substituída
+    if(_oldProdImg && finalImg && finalImg !== _oldProdImg && _r2ExtractKey(_oldProdImg)){
+      _deleteFromR2(_oldProdImg);
+    }
 
     showToast('✅ Produto atualizado!','success');
     // Restaura botão e recarrega produtos
@@ -12851,9 +12872,36 @@ async function ppDeleteConfirm(){
 
   let deleted=0, errored=0;
   for(const pid of s.postIds){
+    let postDeleted = false;
+
+    // Tentativa 1: RPC segura (bypassa trigger problemático)
     try{
-      const { error } = await db.from('posts').delete().eq('id', pid).eq('user_id', CU.id);
-      if(error) throw error;
+      const { error: rpcErr } = await db.rpc('delete_post_safe', { target_post_id: pid, owner_id: CU.id });
+      if(!rpcErr) postDeleted = true;
+    }catch(_){}
+
+    // Tentativa 2: DELETE padrão
+    if(!postDeleted){
+      try{
+        const { error } = await db.from('posts').delete().eq('id', pid).eq('user_id', CU.id);
+        if(!error){ postDeleted = true; }
+        else {
+          // Se foi erro de trigger R2, verifica se o post sumiu mesmo assim
+          const isTriggerErr = error.message && (
+            error.message.includes('jsonb_array_elements') ||
+            error.message.includes('r2_delete_queue')   ||
+            error.message.includes('_extract_r2_key')   ||
+            error.message.includes('_on_post_delete')
+          );
+          if(isTriggerErr){
+            const { data: stillExists } = await db.from('posts').select('id').eq('id', pid).maybeSingle();
+            if(!stillExists) postDeleted = true;
+          }
+        }
+      }catch(err){ console.error('[pp-delete]',err); }
+    }
+
+    if(postDeleted){
       deleted++;
       // Remove visualmente
       const panelId = s.tab==='fotos'?'profile-fotos':'profile-videos';
@@ -12863,7 +12911,17 @@ async function ppDeleteConfirm(){
         el.style.opacity='0'; el.style.transform='scale(.82)';
         setTimeout(()=>{ el.remove(); }, 240);
       }
-    }catch(err){ errored++; console.error('[pp-delete]',err); }
+      // Remove referências em tabelas filhas (silencioso)
+      Promise.allSettled([
+        db.from('likes').delete().eq('post_id',pid),
+        db.from('comments').delete().eq('post_id',pid),
+        db.from('community_posts').delete().eq('post_id',pid),
+        db.from('saved_posts').delete().eq('post_id',pid),
+        db.from('notifications').delete().eq('post_id',pid),
+      ]).catch(()=>{});
+    } else {
+      errored++;
+    }
   }
 
   // 🗑️ Remove arquivos de mídia do R2 (fire-and-forget)
@@ -19483,8 +19541,27 @@ async function saveNewProduct(bizId, btn){
 
 async function deleteProduct(prodId){
   if(!confirm('Remover produto?')) return;
+
+  // 🗑️ Busca imagens ANTES de deletar para limpar R2
+  let _prodMediaUrls = [];
+  try{
+    const {data:_pp} = await db.from('business_products')
+      .select('image_url,image_urls').eq('id',prodId).maybeSingle();
+    if(_pp?.image_url) _prodMediaUrls.push(_pp.image_url);
+    if(_pp?.image_urls){
+      try{
+        const arr = typeof _pp.image_urls === 'string' ? JSON.parse(_pp.image_urls) : _pp.image_urls;
+        if(Array.isArray(arr)) arr.filter(Boolean).forEach(u=>{ if(!_prodMediaUrls.includes(u)) _prodMediaUrls.push(u); });
+      }catch(_){}
+    }
+  }catch(e){}
+
   const {error} = await db.from('business_products').delete().eq('id',prodId);
-  if(!error){ showToast('Removido','success'); loadMyBusiness(); }
+  if(!error){
+    // 🗑️ Remove imagens do R2 (fire-and-forget)
+    if(_prodMediaUrls.length) _deleteFromR2(_prodMediaUrls);
+    showToast('Removido','success'); loadMyBusiness();
+  }
 }
 
 // ── Chat cliente → negócio ────────────────────────────────────────
@@ -23267,6 +23344,18 @@ async function uploadBizImage(fieldId, folder){
 // ── Patch saveBusiness to upload images ─────────────────────────
 const _origSaveBusiness = saveBusiness;
 saveBusiness = async function(){
+  // 🗑️ Captura logo/banner ATUAIS para apagar do R2 caso sejam substituídos
+  const editId = document.getElementById('biz-edit-id')?.value;
+  let _oldBizLogo = null, _oldBizBanner = null;
+  if(editId){
+    try{
+      const {data:_ob} = await db.from('businesses')
+        .select('logo_url,banner_url').eq('id',editId).maybeSingle();
+      _oldBizLogo  = _ob?.logo_url  || null;
+      _oldBizBanner= _ob?.banner_url|| null;
+    }catch(_){}
+  }
+
   // Upload logo and banner before saving
   if(window._bizImgFiles?.['biz-logo-url']){
     showToast('⏳ Enviando logo...','');
@@ -23279,6 +23368,16 @@ saveBusiness = async function(){
     if(url) document.getElementById('biz-banner-url').value = url;
   }
   await _origSaveBusiness();
+
+  // 🗑️ Após salvar, apaga logo/banner antigos do R2 (fire-and-forget)
+  try{
+    const _newLogo   = document.getElementById('biz-logo-url')?.value || null;
+    const _newBanner = document.getElementById('biz-banner-url')?.value || null;
+    const _toDel = [];
+    if(_oldBizLogo  && _newLogo  && _newLogo  !== _oldBizLogo  && _r2ExtractKey(_oldBizLogo))  _toDel.push(_oldBizLogo);
+    if(_oldBizBanner&& _newBanner&& _newBanner!== _oldBizBanner&& _r2ExtractKey(_oldBizBanner))_toDel.push(_oldBizBanner);
+    if(_toDel.length) _deleteFromR2(_toDel);
+  }catch(_){}
 };
 
 // saveNewProduct upload now handled internally via collectProdPhotos
@@ -27984,6 +28083,16 @@ function previewEditCommImg(input){
 
 async function saveEditComm(commId,btn){
   btn.disabled=true;btn.textContent='⏳...';
+
+  // 🗑️ Busca avatar/banner ANTIGOS para apagar do R2 caso sejam substituídos
+  let _oldCommAvatar = null, _oldCommBanner = null;
+  try{
+    const {data:_oldComm} = await db.from('communities')
+      .select('avatar_url,banner_url').eq('id',commId).maybeSingle();
+    _oldCommAvatar = _oldComm?.avatar_url || null;
+    _oldCommBanner = _oldComm?.banner_url || null;
+  }catch(e){}
+
   let avatarUrl=document.getElementById('edit-comm-img-url')?.value||'';
   if(window._editCommImgFile){
     try{
@@ -28015,6 +28124,20 @@ async function saveEditComm(commId,btn){
     updated_at:new Date().toISOString()
   }).eq('id',commId).eq('owner_id',CU.id);
   if(error){showToast('Erro: '+error.message,'error');btn.disabled=false;btn.textContent='✅ Salvar';return;}
+
+  // 🗑️ Apaga arquivos antigos do R2 (fire-and-forget)
+  // — só se realmente trocou e a URL antiga era do nosso CDN
+  try{
+    const _toDel = [];
+    if(_oldCommAvatar && avatarUrl && avatarUrl !== _oldCommAvatar && _r2ExtractKey(_oldCommAvatar)){
+      _toDel.push(_oldCommAvatar);
+    }
+    if(_oldCommBanner && bannerUrl2 && bannerUrl2 !== _oldCommBanner && _r2ExtractKey(_oldCommBanner)){
+      _toDel.push(_oldCommBanner);
+    }
+    if(_toDel.length) _deleteFromR2(_toDel);
+  }catch(_){}
+
   btn.closest('[style*=fixed]').remove();
   showToast('✅ Comunidade atualizada!','success');
   // Atualiza o cache e o grid para refletir banner/avatar novos imediatamente
@@ -28059,6 +28182,15 @@ async function deleteComm(commId){
 
   showToast('Excluindo...','');
 
+  // 🗑️ Busca avatar/banner ANTES de deletar para limpar do R2
+  let _commMediaUrls = [];
+  try{
+    const {data:_cm} = await db.from('communities')
+      .select('avatar_url,banner_url').eq('id',commId).maybeSingle();
+    if(_cm?.avatar_url) _commMediaUrls.push(_cm.avatar_url);
+    if(_cm?.banner_url) _commMediaUrls.push(_cm.banner_url);
+  }catch(e){}
+
   // Deleta dependências com try/catch (Supabase v2 não suporta .catch() encadeado)
   try{ await db.from('community_members').delete().eq('community_id',commId); }catch(e){}
   try{ await db.from('community_posts').delete().eq('community_id',commId); }catch(e){}
@@ -28072,6 +28204,9 @@ async function deleteComm(commId){
     showToast('Erro: '+delErr.message,'error');
     return;
   }
+
+  // 🗑️ Remove avatar/banner do R2 (fire-and-forget)
+  if(_commMediaUrls.length) _deleteFromR2(_commMediaUrls);
 
   // Sucesso
   if(window._commCache) delete window._commCache[commId];
