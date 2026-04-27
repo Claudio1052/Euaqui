@@ -18563,7 +18563,7 @@ function buildBizCard(biz, isFollowing){
         <div class="biz-stat"><span class="biz-stat-n">${biz.followers_count||0}</span><span class="biz-stat-l">${isFollowing?'👥 Seguindo':'👥 Seguidores'}</span></div>
        </div>`
     : `<div class="biz-stats">
-        <div class="biz-stat"><span id="biz-card-sales-${biz.id}" class="biz-stat-n">${biz.deals_closed||0}</span><span class="biz-stat-l">📅 Agendamentos</span></div>
+        <div class="biz-stat"><span id="biz-card-sales-${biz.id}" class="biz-stat-n">${biz.sales_done||0}</span><span class="biz-stat-l">📅 Agendamentos</span></div>
         <div class="biz-stat"><span class="biz-stat-n">${biz.followers_count||0}</span><span class="biz-stat-l">${isFollowing?'👥 Seguindo':'👥 Seguidores'}</span></div>
        </div>`;
   div.innerHTML = `
