@@ -1173,6 +1173,9 @@ body.day-mode .repost-embed-card:hover{
 .page-tabs{display:flex;gap:0;background:rgba(10,10,42,.9);border-bottom:2px solid var(--border-glow);position:sticky;top:var(--nav-h);z-index:100;overflow-x:auto;scrollbar-width:none;}
 .page-tabs::-webkit-scrollbar{display:none;}
 .ptab{flex-shrink:0;padding:12px 18px;font-family:'Silkscreen',monospace;font-size:10px;letter-spacing:1px;color:var(--text-muted);cursor:pointer;border:none;background:transparent;border-bottom:3px solid transparent;transition:all .2s;white-space:nowrap;}
+/* Biz tab labels: desktop mostra completo, mobile mostra curto */
+#biz-page-tabs .ptab .btl-s{display:none;}
+#biz-page-tabs .ptab .btl-f{display:inline;}
 .ptab:hover{color:var(--text-light);}
 .ptab.active{color:var(--neon-cyan);border-bottom-color:var(--neon-cyan);}
 .tab-panel{display:none;padding:20px 0;}
@@ -1770,6 +1773,10 @@ body{
   .page-tabs{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;}
   .page-tabs::-webkit-scrollbar{display:none;}
   .ptab{padding:9px 10px;font-size:9px;flex-shrink:0;}
+  /* Biz tabs mobile: compacto, mostra label curto, esconde label longo */
+  #biz-page-tabs .ptab{padding:8px 7px;font-size:8px;letter-spacing:0;}
+  #biz-page-tabs .ptab .btl-f{display:none;}
+  #biz-page-tabs .ptab .btl-s{display:inline;}
 
   /* Feed filter tabs */
   .ftabs{border-radius:0;margin-left:0;margin-right:0;margin-bottom:2px;padding:3px 10px;overflow-x:auto;scrollbar-width:none;max-width:100vw;}
@@ -6822,13 +6829,13 @@ body.day-mode .lp-chip{ background:rgba(0,0,0,.04); color:#1a1a2e; }
     <div class="page" id="page-businesses">
       <!-- ABAS -->
       <div class="page-tabs" id="biz-page-tabs">
-        <button class="ptab active" data-tab="biz-browse" onclick="switchBizTab(this)">🏪 Lojas & Serviços</button>
-        <button class="ptab" data-tab="biz-mine" onclick="switchBizTab(this)">⚙️ Meu Negócio</button>
-        <button class="ptab" data-tab="biz-following" onclick="switchBizTab(this)">❤️ Seguindo</button>
-        <button class="ptab" data-tab="biz-chats" onclick="switchBizTab(this)">💬 Atendimento</button>
-        <button class="ptab" id="biz-dash-tab" data-tab="biz-dashboard" onclick="switchBizTab(this)" style="display:none;">📊 Dashboard</button>
-        <button class="ptab" id="biz-appointments-tab" data-tab="biz-appointments" onclick="switchBizTab(this)" style="display:none;">📅 Agendamentos</button>
-        <button class="ptab" id="biz-purchases-tab" data-tab="biz-purchases" onclick="switchBizTab(this)" style="display:none;">🛒 Compras</button>
+        <button class="ptab active" data-tab="biz-browse" onclick="switchBizTab(this)">🏪 <span class="btl-s">Lojas</span><span class="btl-f">Lojas & Serviços</span></button>
+        <button class="ptab" data-tab="biz-mine" onclick="switchBizTab(this)">⚙️ <span class="btl-s">Negócio</span><span class="btl-f">Meu Negócio</span></button>
+        <button class="ptab" data-tab="biz-following" onclick="switchBizTab(this)">❤️ <span class="btl-s">Seguindo</span><span class="btl-f">Seguindo</span></button>
+        <button class="ptab" data-tab="biz-chats" onclick="switchBizTab(this)">💬 <span class="btl-s">Atend.</span><span class="btl-f">Atendimento</span></button>
+        <button class="ptab" id="biz-dash-tab" data-tab="biz-dashboard" onclick="switchBizTab(this)" style="display:none;">📊 <span class="btl-s">Dash</span><span class="btl-f">Dashboard</span></button>
+        <button class="ptab" id="biz-appointments-tab" data-tab="biz-appointments" onclick="switchBizTab(this)" style="display:none;">📅 <span class="btl-s">Agenda</span><span class="btl-f">Agendamentos</span></button>
+        <button class="ptab" id="biz-purchases-tab" data-tab="biz-purchases" onclick="switchBizTab(this)" style="display:none;">🛒 <span class="btl-s">Compras</span><span class="btl-f">Compras</span></button>
       </div>
 
       <!-- TAB: EXPLORAR LOJAS -->
