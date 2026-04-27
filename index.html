@@ -11445,18 +11445,30 @@ async function uploadWithPipeline(file, type, setStatus){
   await r2UploadToPresigned(pres.uploadUrl, compressed, pres.headers);
 
   // 4.1) Upload miniatura (se for imagem) — silencioso, não bloqueia
+  let thumbPublicUrl = null;
   if(thumbFile){
     try{
       const presThumb = await r2GetPresign(thumbFile);
       await r2UploadToPresigned(presThumb.uploadUrl, thumbFile, presThumb.headers);
-      console.log('[pipeline] miniatura enviada:', presThumb.publicUrl);
+      thumbPublicUrl = presThumb.publicUrl;
+      console.log('[pipeline] miniatura enviada:', thumbPublicUrl);
     }catch(e){
       console.warn('[pipeline] falha ao enviar miniatura:', e.message);
     }
   }
 
   progress(100, 'Pronto!');
-  return pres.publicUrl;
+
+  // ✅ Retorna a URL principal como string (mantém compatibilidade com callers antigos)
+  // mas anexa a thumbUrl como propriedade no objeto String — quem precisar acessa via .thumbUrl
+  // (Strings em JS são primitivas; usa-se object wrapper só nesse caso pra carregar a metadata)
+  const result = new String(pres.publicUrl);
+  result.thumbUrl = thumbPublicUrl;
+  result.publicUrl = pres.publicUrl;
+  // Registro global do último thumb produzido — usado por createPost para casar 1-a-1 com cada upload
+  window._lastUploadThumbs = window._lastUploadThumbs || [];
+  window._lastUploadThumbs.push({ url: pres.publicUrl, thumb: thumbPublicUrl });
+  return result;
 }
 
 async function createPost(){
@@ -11478,7 +11490,7 @@ async function createPost(){
     }
   }
   btn.textContent='⏳...';
-  let urls=[],mTypes=[];
+  let urls=[],mTypes=[],mThumbs=[];
   // ── Validação de mídia ──
   const ALLOWED_MIME = ['image/jpeg','image/jpg','image/png','image/gif','image/webp',
                         'video/mp4','video/webm','video/ogg','video/quicktime'];
@@ -11527,8 +11539,11 @@ async function createPost(){
     try{
       setStatus('PROGRESS:0:Carregando post');
       const publicUrl = await uploadWithPipeline(f, t, (m)=>setStatus(m));
-      urls.push(publicUrl);
+      // publicUrl é uma String wrapper que pode ter .thumbUrl anexado
+      urls.push(String(publicUrl));
       mTypes.push(t);
+      // Captura thumb (pode ser null para vídeos ou casos de falha)
+      mThumbs.push(publicUrl && publicUrl.thumbUrl ? String(publicUrl.thumbUrl) : null);
     }catch(e){
       console.error('Pipeline upload falhou:', e);
       const msg = e.userMessage || ('Falha ao enviar mídia: '+(e.message||'erro desconhecido'));
@@ -11548,7 +11563,16 @@ async function createPost(){
     media_urls: urls.length ? urls : [],
     media_types: mTypes.length ? mTypes : []
   };
-  const{data:postData,error}=await db.from('posts').insert(payload).select().maybeSingle();
+  // Adiciona media_thumbs apenas se houver pelo menos 1 thumb não-null
+  // (campo opcional — graceful se a coluna não existir no banco)
+  if(mThumbs.some(Boolean)) payload.media_thumbs = mThumbs;
+  let{data:postData,error}=await db.from('posts').insert(payload).select().maybeSingle();
+  // Fallback: se a coluna media_thumbs ainda não foi criada, retenta sem ela
+  if(error && error.message && error.message.includes('media_thumbs')){
+    console.warn('[createPost] coluna media_thumbs ausente, retentando sem ela. Execute o ALTER TABLE para habilitar limpeza de thumbs no R2.');
+    delete payload.media_thumbs;
+    ({data:postData,error}=await db.from('posts').insert(payload).select().maybeSingle());
+  }
   if(error){
     console.error('Insert post error:',error);
     if(error.message.includes('media_types')||error.message.includes('media_urls')){
@@ -11706,11 +11730,20 @@ window._r2ExtractKey = _r2ExtractKey;
 async function deletePost(postId){
   if(!await _euConfirm('Deseja excluir este post?<br>Esta ação não pode ser desfeita.','🗑️')) return;
 
-  // Busca media_urls ANTES de deletar para poder limpar o R2 depois
+  // Busca media_urls + media_thumbs ANTES de deletar para poder limpar o R2 depois
   let _postMediaUrls = [];
   try{
-    const { data: _pm } = await db.from('posts').select('media_urls,avatar_url').eq('id', postId).maybeSingle();
-    if(_pm?.media_urls && Array.isArray(_pm.media_urls)) _postMediaUrls = _pm.media_urls.filter(Boolean);
+    // Tenta primeiro com media_thumbs (coluna nova). Se não existir, retenta sem ela.
+    let { data: _pm, error: _err } = await db.from('posts')
+      .select('media_urls,media_thumbs').eq('id', postId).maybeSingle();
+    if(_err && _err.message && _err.message.includes('media_thumbs')){
+      const r2 = await db.from('posts').select('media_urls').eq('id', postId).maybeSingle();
+      _pm = r2.data;
+    }
+    if(_pm?.media_urls && Array.isArray(_pm.media_urls))
+      _postMediaUrls.push(..._pm.media_urls.filter(Boolean));
+    if(_pm?.media_thumbs && Array.isArray(_pm.media_thumbs))
+      _postMediaUrls.push(..._pm.media_thumbs.filter(Boolean));
   }catch(e){}
 
   // ── Estratégia: tentar deletar via RPC que bypassa o trigger problemático
@@ -12880,12 +12913,18 @@ async function ppDeleteConfirm(){
   const btn = document.getElementById('pp-del-btn-confirm');
   if(btn){ btn.disabled=true; btn.textContent='⏳ Excluindo...'; }
 
-  // Busca media_urls de todos os posts ANTES de deletar
+  // Busca media_urls + media_thumbs de todos os posts ANTES de deletar
   let _allMediaUrls = [];
   try{
-    const { data: _mdata } = await db.from('posts').select('id,media_urls').eq('user_id', CU.id).in('id', s.postIds);
+    let { data: _mdata, error: _err } = await db.from('posts')
+      .select('id,media_urls,media_thumbs').eq('user_id', CU.id).in('id', s.postIds);
+    if(_err && _err.message && _err.message.includes('media_thumbs')){
+      const r2 = await db.from('posts').select('id,media_urls').eq('user_id', CU.id).in('id', s.postIds);
+      _mdata = r2.data;
+    }
     (_mdata||[]).forEach(p=>{
-      if(Array.isArray(p.media_urls)) _allMediaUrls.push(...p.media_urls.filter(Boolean));
+      if(Array.isArray(p.media_urls))   _allMediaUrls.push(...p.media_urls.filter(Boolean));
+      if(Array.isArray(p.media_thumbs)) _allMediaUrls.push(...p.media_thumbs.filter(Boolean));
     });
   }catch(e){}
 
