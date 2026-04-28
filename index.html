@@ -30228,20 +30228,18 @@ async function oaDeleteCurrent(){
     const { error } = await db.from('olha_aqui').delete().eq('id', it.id);
     if(error) throw error;
 
-    // 2) Remove arquivo do R2 via backend Java (opcional mas recomendado)
-    //    O backend deve expor DELETE /api/r2/object?key=... autenticado
-    //    Se você já tem essa rota, chamamos silenciosamente. Se não tem,
-    //    o lifecycle rule de 1 dia garante a limpeza igual. Vale nos 2 casos.
+    // 2) Remove arquivo do R2 via Worker (delete-batch cobre imagem + _thumb)
     try{
       if(window.R2_BACKEND_URL && it.media_url){
-        // Tenta extrair a key (último segmento ou tudo após '/media/')
-        const key = _oaExtractKey(it.media_url);
-        if(key){
-          fetch(window.R2_BACKEND_URL + '/api/r2/object?key=' + encodeURIComponent(key), {
-            method:'DELETE',
-            headers:{ 'Authorization':'Bearer '+(CU.id||'') }
-          }).catch(()=>{});
-        }
+        const base = window.R2_BACKEND_URL || 'https://media.euaqui.store';
+        fetch(base + '/api/r2/delete-batch', {
+          method: 'POST',
+          headers: {
+            'Content-Type':  'application/json',
+            'Authorization': 'Bearer ' + (CU.id || '')
+          },
+          body: JSON.stringify({ urls: [it.media_url] })
+        }).catch(()=>{});
       }
     }catch(e){}
 
@@ -30266,10 +30264,17 @@ async function oaDeleteCurrent(){
 window.oaDeleteCurrent = oaDeleteCurrent;
 
 function _oaExtractKey(url){
+  // Extrai a R2 key de uma URL do Worker (media.euaqui.store/media/<encodedKey>)
+  // ou de qualquer path. Usado apenas como fallback — prefira delete-batch com a URL completa.
   try{
     const u = new URL(url);
-    // Remove barra inicial do path
-    return u.pathname.replace(/^\//,'');
+    if(u.hostname === 'media.euaqui.store' || u.hostname === 'midia.euaqui.store'){
+      // /media/<encodedKey>  →  decodifica para obter a key real
+      const after = u.pathname.replace(/^\/media\//, '');
+      return after ? decodeURIComponent(after) : null;
+    }
+    // Fallback: remove barra inicial
+    return u.pathname.replace(/^\//,'') || null;
   }catch(e){ return null; }
 }
 
