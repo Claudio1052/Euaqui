@@ -34451,5 +34451,285 @@ self.addEventListener('fetch', e => {
 })();
 </script>
 
+
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+// EuAqui — PATCH v94 — Limpeza automática de R2
+// ════════════════════════════════════════════════════════════════════════════
+//
+// ONDE INSERIR NO HTML:
+//   Cole este bloco logo ANTES do </body> final (ou após o último <script>).
+//
+// O que este patch faz — 4 pontos cirúrgicos:
+//
+//   1. _r2DeleteOldMedia(urls)
+//      Helper centralizado. Chama POST /api/r2/delete-batch no Worker.
+//      Fire-and-forget — nunca bloqueia o fluxo principal.
+//
+//   2. deletePost  (monkey-patch)
+//      Antes de deletar o registro no Supabase, captura media_urls do post
+//      e envia para o Worker apagar do R2.
+//
+//   3. saveSettings  (monkey-patch)
+//      Se o utilizador fez upload de novo avatar (avatarFile != null),
+//      guarda o avatar_url ANTIGO e, após o save ter sucesso, manda apagar
+//      o ficheiro antigo do R2.
+//
+//   4. saveBusiness  (monkey-patch)
+//      Se logo ou banner foram trocados, guarda as URLs antigas e, após
+//      o update no Supabase, manda apagar as imagens antigas do R2.
+//
+//   5. saveEditComm  (monkey-patch)
+//      Se avatar ou banner da comunidade foram trocados, apaga os antigos.
+//
+// ════════════════════════════════════════════════════════════════════════════
+
+(function() {
+  'use strict';
+
+  // ── 1. Helper centralizado ────────────────────────────────────────────────
+  /**
+   * Envia uma lista de URLs/keys para o Worker apagar do R2.
+   * Fire-and-forget: nunca lança, nunca bloqueia.
+   *
+   * @param {string|string[]} urls  URLs ou keys R2 a apagar
+   */
+  function _r2DeleteOldMedia(urls) {
+    if (!urls) return;
+    const list = (Array.isArray(urls) ? urls : [urls])
+      .filter(u => u && typeof u === 'string' && u.startsWith('http'));
+
+    // Só apaga URLs do próprio R2 (media.euaqui.store / midia.euaqui.store)
+    const r2Urls = list.filter(u =>
+      u.includes('media.euaqui.store') ||
+      u.includes('midia.euaqui.store')
+    );
+
+    if (!r2Urls.length) return;
+
+    const base = (typeof R2_BACKEND_URL !== 'undefined' ? R2_BACKEND_URL : 'https://media.euaqui.store');
+
+    // Auth: envia o user_id como Bearer para o Worker validar ownership
+    const token = (typeof CU !== 'undefined' && CU?.id) ? CU.id : '';
+
+    fetch(base + '/api/r2/delete-batch', {
+      method: 'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': 'Bearer ' + token,
+      },
+      body: JSON.stringify({ urls: r2Urls }),
+    })
+    .then(r => r.json())
+    .then(d => {
+      if (d.deleted?.length) console.log('[r2-cleanup] apagados:', d.deleted);
+      if (d.errors?.length)  console.warn('[r2-cleanup] erros:', d.errors);
+    })
+    .catch(e => console.warn('[r2-cleanup] delete-batch falhou (silencioso):', e.message));
+  }
+
+  // Expõe globalmente para uso em outros pontos, se necessário
+  window._r2DeleteOldMedia = _r2DeleteOldMedia;
+
+
+  // ── 2. deletePost — apaga media do R2 antes de remover do Supabase ────────
+  //
+  // Estratégia: buscamos o post no Supabase para obter media_urls,
+  // chamamos _r2DeleteOldMedia, depois deixamos o deletePost original correr.
+  //
+  if (typeof deletePost === 'function') {
+    const _origDeletePost = deletePost;
+
+    window.deletePost = async function(postId) {
+      // Captura media_urls ANTES de deletar (silencioso — não bloqueia confirm)
+      let mediaToDelete = [];
+      try {
+        const { data: post } = await db.from('posts')
+          .select('media_urls')
+          .eq('id', postId)
+          .maybeSingle();
+
+        if (post?.media_urls) {
+          const urls = Array.isArray(post.media_urls)
+            ? post.media_urls
+            : (typeof post.media_urls === 'string'
+                ? JSON.parse(post.media_urls || '[]')
+                : []);
+          mediaToDelete = urls.filter(Boolean);
+        }
+      } catch (_) { /* silencioso — não impede o delete */ }
+
+      // Executa o delete original (com confirme, RPC, fallbacks, etc.)
+      await _origDeletePost(postId);
+
+      // Depois que o DB confirmou o delete → manda limpar o R2
+      if (mediaToDelete.length) {
+        _r2DeleteOldMedia(mediaToDelete);
+      }
+    };
+  }
+
+
+  // ── 3. saveSettings — apaga avatar antigo quando troca foto ──────────────
+  //
+  // Captura CP.avatar_url antes do upload do novo avatar.
+  // Após o save (que sobrescreve CP.avatar_url), apaga o ficheiro antigo.
+  //
+  if (typeof saveSettings === 'function') {
+    const _origSaveSettings = saveSettings;
+
+    window.saveSettings = async function() {
+      // Só interessa se vai fazer upload de uma nova foto
+      const willUpload = (typeof avatarFile !== 'undefined' && avatarFile != null);
+      const oldAvatarUrl = (willUpload && typeof CP !== 'undefined' && CP?.avatar_url)
+        ? CP.avatar_url
+        : null;
+
+      // Executa save original (faz upload, salva no DB, atualiza CP)
+      await _origSaveSettings();
+
+      // Se havia uma URL antiga R2 e o save foi bem-sucedido (CP.avatar_url mudou)
+      if (oldAvatarUrl && typeof CP !== 'undefined' && CP?.avatar_url !== oldAvatarUrl) {
+        _r2DeleteOldMedia(oldAvatarUrl);
+      }
+    };
+  }
+
+
+  // ── 4. saveBusiness — apaga logo/banner antigos quando troca imagem ───────
+  //
+  // O monkey-patch original de saveBusiness (que faz upload de logo/banner)
+  // já existe no HTML. Precisamos de adicionar a limpeza das imagens antigas
+  // APÓS o update ter sucesso.
+  //
+  // Abordagem: guardamos as URLs actuais antes do upload e apagamos depois.
+  //
+  if (typeof saveBusiness === 'function') {
+    const _origSaveBusinessV94 = saveBusiness;
+
+    window.saveBusiness = async function() {
+      // Lê URLs actuais dos hidden inputs ANTES de qualquer upload
+      const oldLogoUrl   = document.getElementById('biz-logo-url')?.dataset?.originalUrl   || null;
+      const oldBannerUrl = document.getElementById('biz-banner-url')?.dataset?.originalUrl || null;
+
+      // Executa pipeline completo (upload de novas imagens + save no Supabase)
+      await _origSaveBusinessV94();
+
+      // Após o save, compara com o que está agora nos inputs
+      const newLogoUrl   = document.getElementById('biz-logo-url')?.value   || null;
+      const newBannerUrl = document.getElementById('biz-banner-url')?.value || null;
+
+      const toDelete = [];
+      if (oldLogoUrl   && newLogoUrl   && oldLogoUrl   !== newLogoUrl)   toDelete.push(oldLogoUrl);
+      if (oldBannerUrl && newBannerUrl && oldBannerUrl !== newBannerUrl) toDelete.push(oldBannerUrl);
+
+      if (toDelete.length) _r2DeleteOldMedia(toDelete);
+    };
+  }
+
+  // Guarda URLs originais quando o form de loja é aberto para edição
+  // (openBizForm chama loadMyBusiness que preenche os inputs)
+  // Usamos MutationObserver no input para capturar o valor inicial.
+  function _attachBizOriginalUrlTracker() {
+    const logoInput   = document.getElementById('biz-logo-url');
+    const bannerInput = document.getElementById('biz-banner-url');
+
+    function track(input) {
+      if (!input) return;
+      // Cada vez que o valor muda programaticamente (via .value = ...) e o campo
+      // ainda não tem um originalUrl guardado, guardamos o valor actual.
+      const obs = new MutationObserver(() => {
+        if (input.value && !input.dataset.originalUrl) {
+          input.dataset.originalUrl = input.value;
+        }
+      });
+      obs.observe(input, { attributes: true, attributeFilter: ['value'] });
+
+      // Também captura quando o form é resetado (closeBizForm)
+      input.addEventListener('change', () => { input.dataset.originalUrl = ''; });
+    }
+
+    track(logoInput);
+    track(bannerInput);
+  }
+
+  // Roda quando o DOM estiver pronto
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _attachBizOriginalUrlTracker);
+  } else {
+    _attachBizOriginalUrlTracker();
+  }
+
+  // Patch adicional: limpa originalUrl ao fechar o form (para não reutilizar em criação nova)
+  if (typeof closeBizForm === 'function') {
+    const _origCloseBizForm = closeBizForm;
+    window.closeBizForm = function() {
+      const li = document.getElementById('biz-logo-url');
+      const bi = document.getElementById('biz-banner-url');
+      if (li) li.dataset.originalUrl = '';
+      if (bi) bi.dataset.originalUrl = '';
+      _origCloseBizForm();
+    };
+  }
+
+
+  // ── 5. saveEditComm — apaga avatar/banner antigos da comunidade ───────────
+  //
+  // saveEditComm recebe commId e btn. Lemos as URLs actuais antes do upload.
+  //
+  if (typeof saveEditComm === 'function') {
+    const _origSaveEditComm = saveEditComm;
+
+    window.saveEditComm = async function(commId, btn) {
+      // Captura URLs actuais antes de qualquer upload
+      const oldAvatarUrl = document.getElementById('edit-comm-img-url')?.value    || null;
+      const oldBannerUrl = document.getElementById('edit-comm-banner-url')?.value || null;
+
+      // Determina se vai fazer upload (há ficheiro novo seleccionado)
+      const willUploadAvatar = !!(window._editCommImgFile);
+      const willUploadBanner = !!(window._commBannerFiles?.['edit-comm-banner-prev']);
+
+      // Executa save original
+      await _origSaveEditComm(commId, btn);
+
+      // Apaga antigos se houve substituição
+      const toDelete = [];
+      if (willUploadAvatar && oldAvatarUrl) toDelete.push(oldAvatarUrl);
+      if (willUploadBanner && oldBannerUrl) toDelete.push(oldBannerUrl);
+
+      if (toDelete.length) _r2DeleteOldMedia(toDelete);
+    };
+  }
+
+
+  // ── Bonus: applyRetroAvatar — apaga avatar antigo ao aplicar retro ────────
+  //
+  // A função applyRetroAvatar faz upload para R2 e depois chama
+  // db.from('profiles').update({ avatar_url: r2Url, ... }).
+  // Queremos apagar o avatar_url antigo após o update.
+  //
+  if (typeof applyRetroAvatar === 'function') {
+    const _origApplyRetroAvatar = applyRetroAvatar;
+
+    window.applyRetroAvatar = async function() {
+      const oldAvatarUrl = (typeof CP !== 'undefined' && CP?.avatar_url &&
+                            CP.avatar_url.startsWith('http'))
+        ? CP.avatar_url
+        : null;
+
+      await _origApplyRetroAvatar();
+
+      // Se CP.avatar_url mudou e o antigo era R2, apaga
+      if (oldAvatarUrl && typeof CP !== 'undefined' && CP?.avatar_url !== oldAvatarUrl) {
+        _r2DeleteOldMedia(oldAvatarUrl);
+      }
+    };
+  }
+
+  console.log('[EuAqui v94] Patch de limpeza R2 activo — delete-batch em todos os pontos de substituição.');
+
+})();
+
+</script>
 </body>
 </html>
